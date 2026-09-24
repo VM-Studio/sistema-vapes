@@ -187,7 +187,8 @@ async function seedUsuarios() {
       await prisma.usuario.upsert({
         where: { email: u.email },
         update: {},
-        create: { ...u, passwordHash },
+        // La password del seed es conocida: se obliga a cambiarla al primer ingreso.
+        create: { ...u, passwordHash, debeCambiarPassword: true },
       }),
     );
   }

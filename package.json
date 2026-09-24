@@ -21,16 +21,25 @@
     "test:stock": "PRISMA_LOG=silent tsx scripts/test-stock.ts",
     "postinstall": "prisma generate",
     "test:integridad": "PRISMA_LOG=silent tsx scripts/test-integridad.ts",
-    "test": "pnpm test:stock && pnpm test:integridad"
+    "test": "pnpm test:stock && pnpm test:integridad && pnpm test:auth",
+    "test:auth": "PRISMA_LOG=silent tsx --env-file=.env scripts/test-auth.ts",
+    "test:e2e": "node scripts/e2e-auth.mjs"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "jose": "^6.2.12",
+    "lucide-react": "^1.48.0",
     "next": "15.5.26",
     "prisma": "^6.19.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-hook-form": "^7.88.0",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -45,6 +54,7 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
+    "puppeteer-core": "^25.12.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"

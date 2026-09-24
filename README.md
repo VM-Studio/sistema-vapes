@@ -13,7 +13,7 @@ pnpm db:seed
 pnpm dev                    # http://localhost:3000/api/health
 ```
 
-Usuarios de seed (password `Cambiar123!`): `dueno1@negocio.com`, `dueno2@negocio.com` (OWNER),
+Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso): `dueno1@negocio.com`, `dueno2@negocio.com` (OWNER),
 `empleado@negocio.com` (EMPLEADO: ver/crear en VENTAS e INVENTARIO).
 
 ## Scripts
@@ -41,3 +41,17 @@ Usuarios de seed (password `Cambiar123!`): `dueno1@negocio.com`, `dueno2@negocio
 - Comprobantes: numeración con `siguienteNumeroComprobante()` (`SELECT … FOR UPDATE`), inmutables.
 - Vistas: `vw_stock_consolidado` (una columna por depósito, se regenera sola al
   crear/renombrar depósitos, + `por_deposito` jsonb) y `vw_alertas_stock`.
+
+## Auth y permisos
+
+- Login propio (sin NextAuth): `POST /api/auth/login` → JWT HS256 (`sub`, `rol`, `iat`, `exp`) en la
+  cookie `session` (httpOnly, sameSite lax, 7 días, renovación deslizante en el middleware).
+- Los permisos **no** van en el token: se leen de la DB en cada request (un cambio aplica al instante).
+- Rate limit persistente: 5 intentos fallidos por email cada 15 min (tabla `IntentoLogin`).
+- `src/middleware.ts` (runtime Node) verifica en cada request que el usuario siga activo.
+- Tres capas de autorización (`src/server/auth/permissions.ts`):
+  1. Server Actions / Route Handlers: `requirePermiso()` / `requireOwner()` → `ForbiddenError`.
+  2. Páginas: `requirePaginaPermiso()` → redirige a `/sin-acceso`.
+  3. UI: `<Puede>` / `usePuede()` con el usuario que manda el servidor (solo qué se muestra).
+- Server Actions envueltas en `actionHandler()`: siempre devuelven `{ ok, data } | { ok: false, error }`.
+- Navegación: una sola fuente, `src/config/navigation.ts`, filtrada por permisos.

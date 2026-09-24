@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Sin conexión · Gestión</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f5f7;
+        --fg: #111116;
+        --muted: #5c5c6a;
+        --primary: #4338ca;
+        --on-primary: #fff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b0b10;
+          --fg: #f3f3f6;
+          --muted: #a3a3b2;
+          --primary: #8b93ff;
+          --on-primary: #0b0b10;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        padding: 1.5rem;
+        box-sizing: border-box;
+        text-align: center;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        color: var(--muted);
+        margin: 0 0 1.5rem;
+        max-width: 22rem;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        min-height: 44px;
+        padding: 0 1.25rem;
+        border: 0;
+        border-radius: 0.5rem;
+        background: var(--primary);
+        color: var(--on-primary);
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Sin conexión</h1>
+      <p>No hay internet en este momento. Cuando vuelva la conexión, reintentá.</p>
+      <button type="button" onclick="location.reload()">Reintentar</button>
+    </main>
+  </body>
+</html>

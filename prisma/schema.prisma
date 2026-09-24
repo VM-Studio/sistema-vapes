@@ -104,17 +104,19 @@ enum AccionAuditoria {
 // -----------------------------------------------------------------------------
 
 model Usuario {
-  id           String     @id @default(cuid())
-  nombre       String
+  id                  String     @id @default(cuid())
+  nombre              String
   /// Siempre en minúsculas (CHECK en DB + toLowerCase() en Zod).
-  email        String     @unique
-  passwordHash String
-  rol          RolUsuario
-  activo       Boolean    @default(true)
-  ultimoLogin  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  deletedAt    DateTime?
+  email               String     @unique
+  passwordHash        String
+  rol                 RolUsuario
+  activo              Boolean    @default(true)
+  /// true => al iniciar sesión se lo obliga a ir a /cuenta a cambiarla.
+  debeCambiarPassword Boolean    @default(false)
+  ultimoLogin         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  deletedAt           DateTime?
 
   permisos       PermisoUsuario[]
   movimientos    MovimientoStock[]
@@ -124,6 +126,20 @@ model Usuario {
   transferencias Transferencia[]
   gastos         Gasto[]
   auditLogs      AuditLog[]
+}
+
+/// Registro de intentos de login para rate limit (persistente: sobrevive a
+/// redeploys y funciona con múltiples instancias, a diferencia de memoria).
+model IntentoLogin {
+  id        String   @id @default(cuid())
+  /// Normalizado (trim + minúsculas). No es FK: se registran emails inexistentes.
+  email     String
+  ip        String?
+  exitoso   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
 }
 
 /// Los OWNER tienen acceso total por rol y no necesitan filas acá.

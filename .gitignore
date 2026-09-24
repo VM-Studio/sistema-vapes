@@ -44,3 +44,4 @@ next-env.d.ts
 # editor / os
 .vscode/*
 !.vscode/extensions.json
+verificacion/

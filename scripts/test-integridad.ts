@@ -603,25 +603,21 @@ async function main() {
     !v.crearProveedorSchema.safeParse({ nombre: "P", cuit: "20-12345678-0" }).success,
     "CUIT con dígito verificador inválido es error",
   );
-  const owner2 = v.crearUsuarioSchema.safeParse({
-    nombre: "A",
-    email: "a@b.com",
-    password: "Abcdefg1",
-    rol: "OWNER",
+  const perm = v.actualizarPermisosSchema.safeParse({
+    usuarioId: "u",
     permisos: [{ modulo: "VENTAS", puedeCrear: true }],
   });
+  check(perm.data?.permisos[0]?.puedeVer === true, "puedeCrear implica puedeVer");
   check(
-    owner2.success && owner2.data.permisos.length === 0,
-    "OWNER no guarda permisos (tiene todo por rol)",
+    !v.actualizarPermisosSchema.safeParse({
+      usuarioId: "u",
+      permisos: [{ modulo: "USUARIOS", puedeVer: true }],
+    }).success,
+    "el módulo USUARIOS no se asigna a empleados",
   );
-  const emp = v.crearUsuarioSchema.safeParse({
-    nombre: "A",
-    email: "a@b.com",
-    password: "Abcdefg1",
-    rol: "EMPLEADO",
-    permisos: [{ modulo: "VENTAS", puedeCrear: true }],
-  });
-  check(emp.data?.permisos[0]?.puedeVer === true, "puedeCrear implica puedeVer");
+  check(!v.password.safeParse("abcdefgh").success, "password sin número es error");
+  check(!v.password.safeParse("12345678").success, "password sin letra es error");
+  check(v.password.safeParse("clave1234").success, "password con letra y número (8+) es válida");
   check(
     !v.crearUsuarioSchema.safeParse({
       nombre: "A",
