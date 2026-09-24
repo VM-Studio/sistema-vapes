@@ -6,8 +6,10 @@ import {
   Controller,
   FormProvider,
   get,
+  set,
   useForm,
   useFormContext,
+  type FieldErrors,
   type FieldValues,
   type Path,
   type SubmitHandler,
@@ -33,12 +35,30 @@ import { Textarea, type TextareaProps } from "./textarea";
  */
 export function useZodForm<TIn extends FieldValues, TOut extends FieldValues>(
   schema: z.ZodType<TOut, TIn>,
-  props?: Omit<UseFormProps<TIn, unknown, TOut>, "resolver">,
+  props?: Omit<UseFormProps<TIn, unknown, TOut>, "resolver"> & {
+    /**
+     * Errores extra que tienen que sobrevivir a cada validación (ej: "este
+     * código ya existe en la DB", verificado en vivo). Si el resolver de Zod
+     * pasa pero hay errores extra, el form queda inválido con esos errores.
+     */
+    erroresExtra?: (valores: TIn) => Record<string, string>;
+  },
 ): UseFormReturn<TIn, unknown, TOut> {
+  const { erroresExtra, ...resto } = props ?? {};
+  const base = zodResolver(schema);
   return useForm<TIn, unknown, TOut>({
-    resolver: zodResolver(schema),
     mode: "onTouched",
-    ...props,
+    ...resto,
+    resolver: async (valores, contexto, opciones) => {
+      const resultado = await base(valores, contexto, opciones);
+      const extra = erroresExtra?.(valores) ?? {};
+      if (Object.keys(extra).length === 0) return resultado;
+      const errores = { ...resultado.errors } as FieldErrors<TIn>;
+      for (const [campo, message] of Object.entries(extra)) {
+        if (!get(errores, campo)) set(errores, campo, { type: "server", message });
+      }
+      return { values: {}, errors: errores };
+    },
   });
 }
 

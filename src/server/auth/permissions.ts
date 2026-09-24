@@ -48,6 +48,20 @@ export async function requirePermiso(modulo: Modulo, accion: Accion): Promise<Us
   return usuario;
 }
 
+/** Alcanza con poder `accion` en alguno de los módulos (ej: buscador de variantes). */
+export async function requirePermisoAlguno(
+  modulos: readonly Modulo[],
+  accion: Accion,
+): Promise<UsuarioConPermisos> {
+  const usuario = await requireUsuario();
+  if (!modulos.some((m) => puede(usuario, m, accion))) {
+    throw new ForbiddenError(
+      `No tenés permiso para ${ACCION_LABEL[accion].toLowerCase()} en ${modulos.map((m) => MODULO_LABEL[m]).join(" ni ")}.`,
+    );
+  }
+  return usuario;
+}
+
 export async function requireOwner(): Promise<UsuarioConPermisos> {
   const usuario = await requireUsuario();
   if (!esOwner(usuario)) throw new ForbiddenError("Solo los dueños pueden realizar esta acción.");

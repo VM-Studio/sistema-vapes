@@ -12,7 +12,10 @@
 // =============================================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // relationJoins: `include` se resuelve con JOINs en UNA query (buscarPorCodigo
+  // lo usa con relationLoadStrategy: "join"; sin esto Prisma hace 1 query por relación).
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -118,14 +121,15 @@ model Usuario {
   updatedAt           DateTime   @updatedAt
   deletedAt           DateTime?
 
-  permisos       PermisoUsuario[]
-  movimientos    MovimientoStock[]
-  compras        Compra[]
-  ventas         Venta[]           @relation("VentaUsuario")
-  ventasAnuladas Venta[]           @relation("VentaAnuladaPor")
-  transferencias Transferencia[]
-  gastos         Gasto[]
-  auditLogs      AuditLog[]
+  permisos         PermisoUsuario[]
+  movimientos      MovimientoStock[]
+  compras          Compra[]
+  ventas           Venta[]           @relation("VentaUsuario")
+  ventasAnuladas   Venta[]           @relation("VentaAnuladaPor")
+  transferencias   Transferencia[]
+  gastos           Gasto[]
+  auditLogs        AuditLog[]
+  historialPrecios HistorialPrecio[]
 }
 
 /// Registro de intentos de login para rate limit (persistente: sobrevive a
@@ -262,6 +266,8 @@ model Producto {
   @@unique([nombre, marcaId])
   @@index([categoriaId])
   @@index([marcaId])
+  /// Trigram (pg_trgm) para búsquedas ILIKE '%texto%'.
+  @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "producto_nombre_trgm")
 }
 
 model Variante {
@@ -288,8 +294,33 @@ model Variante {
   compraItems         CompraItem[]
   ventaItems          VentaItem[]
   transferenciaItems  TransferenciaItem[]
+  historialPrecios    HistorialPrecio[]
 
   @@unique([productoId, nombre])
+  /// Trigram (pg_trgm) para búsquedas ILIKE '%texto%'.
+  @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "variante_nombre_trgm")
+  @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin, map: "variante_sku_trgm")
+}
+
+/// INMUTABLE. Una fila por cada cambio de precio de una variante. La DB exige
+/// que todo cambio de precio de Variante venga con su fila acá (misma tx).
+model HistorialPrecio {
+  id                  String   @id @default(cuid())
+  varianteId          String
+  precioCostoAnterior Decimal  @db.Decimal(12, 2)
+  precioCostoNuevo    Decimal  @db.Decimal(12, 2)
+  precioVentaAnterior Decimal  @db.Decimal(12, 2)
+  precioVentaNuevo    Decimal  @db.Decimal(12, 2)
+  usuarioId           String
+  motivo              String?
+  createdAt           DateTime @default(now())
+
+  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([varianteId, createdAt])
+  @@index([createdAt])
+  @@index([usuarioId])
 }
 
 /// Un mismo producto puede venir con más de un código según lote/importador.

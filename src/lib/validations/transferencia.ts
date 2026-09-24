@@ -1,10 +1,11 @@
 import { z } from "zod";
 
-import { cantidad, id, sinDuplicados, textoOpcional } from "./common";
+import { enteroPositivo, id, sinDuplicados, textoOpcional } from "./common";
+import { motivoAjuste } from "./movimiento";
 
 export const transferenciaItemSchema = z.object({
   varianteId: id,
-  cantidad,
+  cantidad: enteroPositivo,
 });
 
 export const crearTransferenciaSchema = z
@@ -16,6 +17,7 @@ export const crearTransferenciaSchema = z
     items: z
       .array(transferenciaItemSchema)
       .min(1, "La transferencia debe tener al menos un ítem")
+      .max(500)
       .refine(
         (items) => sinDuplicados(items, (i) => i.varianteId),
         "Hay productos repetidos: sumá la cantidad",
@@ -25,6 +27,10 @@ export const crearTransferenciaSchema = z
     message: "El depósito de destino debe ser distinto al de origen",
     path: ["depositoDestinoId"],
   });
+
+export const completarTransferenciaSchema = z.object({ id });
+
+export const anularTransferenciaSchema = z.object({ id, motivo: motivoAjuste });
 
 export type CrearTransferenciaInput = z.input<typeof crearTransferenciaSchema>;
 export type CrearTransferencia = z.output<typeof crearTransferenciaSchema>;

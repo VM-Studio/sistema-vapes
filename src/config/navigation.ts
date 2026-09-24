@@ -40,7 +40,7 @@ export interface ItemNavegacion {
   icon: LucideIcon;
   /** null = fuera de grupos (arriba de todo en el sidebar). */
   grupo: GrupoNavegacion | null;
-  /** Aparece en la bottom navigation mobile (máximo 4 + "Más"). */
+  /** Aparece en la bottom navigation mobile (máximo 4 + "Más"): Inicio, Ventas, Inventario, Productos. */
   enBottomBar: boolean;
   /** Texto corto para los accesos rápidos del inicio. */
   descripcion: string;
@@ -75,12 +75,21 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     descripcion: "Stock por depósito",
   },
   {
+    modulo: Modulo.PRODUCTOS,
+    label: "Productos",
+    href: "/productos",
+    icon: Package,
+    grupo: "Catálogo",
+    enBottomBar: true,
+    descripcion: "Productos, sabores y precios",
+  },
+  {
     modulo: [Modulo.VENTAS, Modulo.INVENTARIO],
     label: "Escanear",
     href: "/escanear",
     icon: ScanBarcode,
     grupo: "Operación",
-    enBottomBar: true,
+    enBottomBar: false,
     descripcion: "Buscar productos por código de barras",
   },
   {
@@ -100,15 +109,6 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     grupo: "Operación",
     enBottomBar: false,
     descripcion: "Mercadería recibida de proveedores",
-  },
-  {
-    modulo: Modulo.PRODUCTOS,
-    label: "Productos",
-    href: "/productos",
-    icon: Package,
-    grupo: "Catálogo",
-    enBottomBar: false,
-    descripcion: "Productos, sabores y precios",
   },
   {
     modulo: Modulo.CLIENTES,

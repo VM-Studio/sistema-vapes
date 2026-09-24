@@ -112,9 +112,24 @@ async function main() {
   // trigger de unicidad cruzada; Prisma lo expone como P2002 "Unique constraint failed".
   // El mensaje amigable lo da assertCodigoBarrasDisponible() en el servicio.
   await rechaza(
-    "precioVenta negativo",
-    () => prisma.variante.update({ where: { id: va.id }, data: { precioVenta: "-1" } }),
+    "precioVenta negativo (alta de variante)",
+    () =>
+      prisma.variante.create({
+        data: {
+          productoId: va.productoId,
+          nombre: "Negativa",
+          sku: "TST-NEG",
+          precioCosto: 1,
+          precioVenta: "-1",
+        },
+      }),
     "Variante_precioVenta_chk",
+  );
+  // Un UPDATE de precio ni siquiera llega al CHECK: sin HistorialPrecio en la misma tx, el trigger lo frena antes.
+  await rechaza(
+    "cambio de precio directo (sin historial)",
+    () => prisma.variante.update({ where: { id: va.id }, data: { precioVenta: "-1" } }),
+    "sin HistorialPrecio",
   );
   await rechaza(
     "segundo depósito principal",
@@ -542,21 +557,25 @@ async function main() {
   );
   check(!v.codigoBarras.safeParse("ab").success, "código de barras de 2 caracteres es error");
   check(
+    v.codigoBarras.safeParse(" abc-123 ").data === "ABC-123",
+    "código alfanumérico → mayúsculas",
+  );
+  check(
     !v.cantidad.safeParse(1.5).success && !v.cantidad.safeParse(0).success,
     "cantidad no entera o 0 es error",
   );
-  const prod = v.crearProductoSchema.safeParse({
+  const prod = v.productoSchema.safeParse({
     nombre: " Cargador ",
     categoriaId: "c",
     tieneVariantes: false,
-    variante: { precioCosto: "10", precioVenta: 20 },
+    variantes: [{ nombre: "lo que sea", precioCosto: "10", precioVenta: 20 }],
   });
   check(
     prod.success && prod.data.variantes[0]?.nombre === "Único",
     'producto sin variantes → variante "Único"',
   );
   check(
-    !v.crearProductoSchema.safeParse({
+    !v.productoSchema.safeParse({
       nombre: "X",
       categoriaId: "c",
       tieneVariantes: true,

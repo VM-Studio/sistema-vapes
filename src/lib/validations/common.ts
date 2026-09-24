@@ -31,7 +31,8 @@ export const emailOpcional = z
   .pipe(z.email("Email inválido").optional());
 
 /** Un campo de formulario vacío ("" o espacios) es "sin valor", nunca 0. */
-const vacioAUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
+export const vacioAUndefined = (v: unknown) =>
+  typeof v === "string" && v.trim() === "" ? undefined : v;
 
 const montoBase = z.coerce
   .number({ error: (iss) => (iss.input === undefined ? "Ingresá un monto" : "Monto inválido") })
@@ -56,6 +57,30 @@ export const montoOpcional = z.preprocess(vacioAUndefined, montoBase.optional())
 export const montoOCero = z.preprocess(vacioAUndefined, montoBase.default(0));
 
 export const montoPositivo = monto.refine((v) => v > 0, "El monto debe ser mayor a 0");
+
+/**
+ * Enteros desde inputs de formulario ("12" -> 12). Vacío es error, no 0.
+ * Para datos que ya vienen como number usar `cantidad`.
+ */
+export const enteroPositivo = z.preprocess(
+  vacioAUndefined,
+  z.coerce
+    .number({
+      error: (iss) => (iss.input === undefined ? "Ingresá una cantidad" : "Cantidad inválida"),
+    })
+    .int("Tiene que ser un número entero")
+    .positive("Tiene que ser mayor a 0")
+    .max(1_000_000, "Cantidad demasiado grande"),
+);
+
+export const enteroNoNegativo = z.preprocess(
+  vacioAUndefined,
+  z.coerce
+    .number({ error: (iss) => (iss.input === undefined ? "Ingresá un número" : "Número inválido") })
+    .int("Tiene que ser un número entero")
+    .nonnegative("No puede ser negativo")
+    .max(1_000_000, "Número demasiado grande"),
+);
 
 /** Cantidades: siempre enteros positivos. */
 export const cantidad = z

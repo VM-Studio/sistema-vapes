@@ -8,15 +8,11 @@ import type {
   CrearUsuario,
 } from "@/lib/validations/usuario";
 import { generarPasswordTemporal, hashPassword } from "@/server/auth/password";
-import type { RequestMeta } from "@/server/auth/request-meta";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
+import type { Actor } from "@/server/services/actor";
 import { registrarAuditoria, snapshotUsuario } from "@/server/services/audit.service";
 
-/** Quién ejecuta la acción (siempre un OWNER: lo garantiza la capa de acciones). */
-export interface Actor {
-  id: string;
-  meta: RequestMeta;
-}
+export type { Actor };
 
 export interface UsuarioListado {
   id: string;
@@ -298,4 +294,19 @@ export async function actualizarPermisos(
 
     return obtenerPermisos(usuario.id, tx);
   });
+}
+
+/** Nombres de usuarios (incluye dados de baja: aparecen en el historial) para filtros. */
+export async function listarUsuariosBasico(): Promise<
+  { id: string; nombre: string; activo: boolean }[]
+> {
+  const filas = await prisma.usuario.findMany({
+    select: { id: true, nombre: true, activo: true, deletedAt: true },
+    orderBy: { nombre: "asc" },
+  });
+  return filas.map((u) => ({
+    id: u.id,
+    nombre: u.nombre,
+    activo: u.activo && u.deletedAt === null,
+  }));
 }

@@ -1,9 +1,13 @@
 /** Formato aceptado para códigos de barras (mismo regex que el CHECK en la DB). */
 export const CODIGO_BARRAS_REGEX = /^[0-9A-Za-z-]{4,64}$/;
 
-/** Normaliza lo que manda una pistola lectora o la cámara: trim y sin espacios internos. */
+/**
+ * Normaliza lo que manda una pistola lectora o la cámara: sin espacios y en
+ * mayúsculas (los alfanuméricos). La DB exige esta forma (CHECK), así que la
+ * búsqueda "case-insensitive" es una igualdad exacta que usa el índice.
+ */
 export function normalizarCodigoBarras(codigo: string): string {
-  return codigo.replace(/\s+/g, "");
+  return codigo.replace(/\s+/g, "").toUpperCase();
 }
 
 /** Dígito verificador EAN-13 a partir de los primeros 12 dígitos. */

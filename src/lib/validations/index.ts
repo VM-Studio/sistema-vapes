@@ -8,3 +8,4 @@ export * from "./movimiento";
 export * from "./venta";
 export * from "./compra";
 export * from "./transferencia";
+export * from "./clasificacion";

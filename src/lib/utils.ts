@@ -6,15 +6,29 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
-const fechaHora = new Intl.DateTimeFormat("es-AR", {
-  dateStyle: "short",
-  timeStyle: "short",
+const partesFecha = new Intl.DateTimeFormat("es-AR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
   timeZone: "America/Argentina/Buenos_Aires",
 });
 
+/**
+ * "24/09/26 15:24" (hora argentina). Se arma a mano desde formatToParts: el
+ * texto de Intl ("p. m.", separadores) varía entre el ICU de Node y el del
+ * navegador y rompería la hidratación de React.
+ */
 export function formatearFechaHora(fecha: Date | string | null | undefined): string {
   if (!fecha) return "—";
-  return fechaHora.format(typeof fecha === "string" ? new Date(fecha) : fecha);
+  const p = Object.fromEntries(
+    partesFecha
+      .formatToParts(typeof fecha === "string" ? new Date(fecha) : fecha)
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
 }
 
 /** "Juan Pérez" -> "JP" (para avatares). */

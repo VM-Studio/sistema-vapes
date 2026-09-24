@@ -1,0 +1,144 @@
+"use client";
+
+import { SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SearchInput } from "@/components/ui/search-input";
+import { Select } from "@/components/ui/select";
+import { Sheet } from "@/components/ui/sheet";
+import { useUrlParams } from "@/hooks/use-url-params";
+import { cn } from "@/lib/utils";
+
+export interface OpcionFiltro {
+  value: string;
+  label: string;
+}
+
+export type FiltroExtra =
+  | { tipo: "check"; param: string; label: string }
+  | {
+      tipo: "select";
+      param: string;
+      label: string;
+      opciones: OpcionFiltro[];
+      valorPorDefecto?: string;
+    };
+
+interface FiltrosCatalogoProps {
+  categorias: OpcionFiltro[];
+  marcas: OpcionFiltro[];
+  extras?: FiltroExtra[];
+  placeholder?: string;
+}
+
+/**
+ * Buscador + filtros con estado en la URL.
+ * Desktop: todo en línea. Mobile: buscador + botón "Filtros" que abre un Sheet.
+ */
+export function FiltrosCatalogo({
+  categorias,
+  marcas,
+  extras = [],
+  placeholder,
+}: FiltrosCatalogoProps) {
+  const { params, actualizar } = useUrlParams();
+  const [abierto, setAbierto] = useState(false);
+
+  const controles = (enSheet: boolean) => (
+    <>
+      <Select
+        label={enSheet ? "Categoría" : undefined}
+        aria-label="Categoría"
+        options={[{ value: "", label: "Todas las categorías" }, ...categorias]}
+        value={params.get("categoriaId") ?? ""}
+        onChange={(e) => actualizar({ categoriaId: e.target.value || null })}
+        containerClassName={cn(!enSheet && "w-48")}
+      />
+      <Select
+        label={enSheet ? "Marca" : undefined}
+        aria-label="Marca"
+        options={[{ value: "", label: "Todas las marcas" }, ...marcas]}
+        value={params.get("marcaId") ?? ""}
+        onChange={(e) => actualizar({ marcaId: e.target.value || null })}
+        containerClassName={cn(!enSheet && "w-44")}
+      />
+      {extras.map((f) =>
+        f.tipo === "check" ? (
+          <Checkbox
+            key={f.param}
+            label={f.label}
+            checked={params.get(f.param) === "1"}
+            onChange={(e) => actualizar({ [f.param]: e.target.checked })}
+            className={cn(!enSheet && "shrink-0")}
+          />
+        ) : (
+          <Select
+            key={f.param}
+            label={enSheet ? f.label : undefined}
+            aria-label={f.label}
+            options={f.opciones}
+            value={params.get(f.param) ?? f.valorPorDefecto ?? ""}
+            onChange={(e) =>
+              actualizar({
+                [f.param]: e.target.value === (f.valorPorDefecto ?? "") ? null : e.target.value,
+              })
+            }
+            containerClassName={cn(!enSheet && "w-40")}
+          />
+        ),
+      )}
+    </>
+  );
+
+  const activos = ["categoriaId", "marcaId", ...extras.map((e) => e.param)].filter((p) =>
+    params.get(p),
+  ).length;
+
+  return (
+    <div className="mb-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <SearchInput placeholder={placeholder} className="flex-1" />
+        <Button
+          variant="secondary"
+          className="md:hidden"
+          onClick={() => setAbierto(true)}
+          aria-label={`Filtros${activos ? ` (${activos} activos)` : ""}`}
+        >
+          <SlidersHorizontal />
+          {activos > 0 && (
+            <span className="bg-primary text-primary-foreground rounded-full px-1.5 text-xs tabular-nums">
+              {activos}
+            </span>
+          )}
+        </Button>
+        <div className="hidden items-center gap-2 md:flex">{controles(false)}</div>
+      </div>
+      <Sheet
+        open={abierto}
+        onOpenChange={setAbierto}
+        title="Filtros"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                actualizar(
+                  Object.fromEntries(
+                    ["categoriaId", "marcaId", ...extras.map((e) => e.param)].map((p) => [p, null]),
+                  ),
+                )
+              }
+            >
+              Limpiar
+            </Button>
+            <Button onClick={() => setAbierto(false)}>Ver resultados</Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">{controles(true)}</div>
+      </Sheet>
+    </div>
+  );
+}

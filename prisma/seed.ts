@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 
 import { generarEan13 } from "../src/lib/barcode";
 import { prisma, withTransaction } from "../src/lib/db";
-import { generarSku } from "../src/server/services/catalogo.service";
+import { generarSku } from "../src/server/services/producto.service";
 import { registrarMovimiento } from "../src/server/services/stock.service";
 
 const PASSWORD_INICIAL = "Cambiar123!";

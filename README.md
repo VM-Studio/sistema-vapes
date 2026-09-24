@@ -55,3 +55,15 @@ Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso
   3. UI: `<Puede>` / `usePuede()` con el usuario que manda el servidor (solo qué se muestra).
 - Server Actions envueltas en `actionHandler()`: siempre devuelven `{ ok, data } | { ok: false, error }`.
 - Navegación: una sola fuente, `src/config/navigation.ts`, filtrada por permisos.
+
+## Catálogo, inventario y movimientos
+
+- **Productos** (`/productos`): variantes (sabores) con SKU autogenerado (`{prefijoSku}-XXXXXX`), código de
+  barras principal + alternativos (únicos entre ambas tablas), importación/exportación CSV (todo o nada),
+  aumento masivo con historial. `buscarPorCodigo()` (lo usará el escáner) resuelve en **una** query.
+- **Precios**: todo cambio queda en `HistorialPrecio` (inmutable); la DB rechaza un cambio de precio sin historial.
+- **Inventario** (`/inventario`): consolidado por depósito desde `vw_stock_consolidado`; valorización solo para OWNER.
+- **Movimientos** (`/movimientos`): ledger, ingreso manual, ajuste simple / recuento y transferencias
+  (pendiente → completar/anular). El stock solo cambia vía `registrarMovimiento` / `transferirStock`.
+- **Configuración**: depósitos (principal único, no se desactivan con stock), categorías y marcas.
+- Búsqueda `ILIKE '%texto%'` acelerada con `pg_trgm` (índices GIN declarados en el schema).

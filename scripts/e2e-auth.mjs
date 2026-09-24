@@ -84,16 +84,29 @@ async function visible(page, selector) {
   });
 }
 
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function shot(page, nombre) {
   const file = path.join(SHOTS, `${nombre}.png`);
-  await new Promise((r) => setTimeout(r, 250)); // animaciones de sheets
-  const { scroll, ancho } = await page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    ancho: window.innerWidth,
-  }));
+  await esperar(300);
+  const ancho = page.viewport().width;
+  const { scroll, cortados } = await page.evaluate((w) => {
+    // Controles que se salen de la pantalla y NO están dentro de un contenedor con scroll propio.
+    const cortados = [...document.querySelectorAll("button, a, input, select, textarea")]
+      .filter((e) => {
+        const r = e.getBoundingClientRect();
+        if (r.width === 0 || r.right <= w + 1) return false;
+        for (let p = e.parentElement; p; p = p.parentElement) {
+          if (["auto", "scroll", "hidden"].includes(getComputedStyle(p).overflowX)) return false;
+        }
+        return true;
+      })
+      .map((e) => (e.getAttribute("aria-label") || e.textContent || e.tagName).trim().slice(0, 40));
+    return { scroll: document.documentElement.scrollWidth, cortados };
+  }, ancho);
   check(
-    scroll <= ancho,
-    `[${nombre}] sin scroll horizontal (${scroll}px de contenido en ${ancho}px)`,
+    scroll <= ancho && cortados.length === 0,
+    `[${nombre}] sin scroll horizontal ni controles cortados (${scroll}px en ${ancho}px${cortados.length ? `; cortados: ${cortados.join(", ")}` : ""})`,
   );
   await page.screenshot({ path: file });
   return file;
@@ -152,9 +165,8 @@ const bottomEmp = await emp.page.$$eval('nav[aria-label="Navegación inferior"] 
 );
 console.log(`     bottom bar (375px): ${bottomEmp.join(" · ")}`);
 check(
-  JSON.stringify(bottomEmp) ===
-    JSON.stringify(["Inicio", "Ventas", "Inventario", "Escanear", "Más"]),
-  "bottom bar: Inicio, Ventas, Inventario, Escanear (usa Ventas/Inventario), Más",
+  JSON.stringify(bottomEmp) === JSON.stringify(["Inicio", "Ventas", "Inventario", "Más"]),
+  "bottom bar: Inicio, Ventas, Inventario, Más (Productos no: no tiene permiso)",
 );
 await emp.page.click('nav[aria-label="Navegación inferior"] button');
 await emp.page.waitForSelector("dialog[open]");
@@ -162,8 +174,8 @@ const masEmp = await emp.page.$$eval("dialog[open] ul a", (as) =>
   as.map((a) => a.textContent.trim()),
 );
 check(
-  masEmp.length === 0,
-  `sheet "Más" sin módulos extra (solo Mi cuenta / Salir): [${masEmp.join(", ")}]`,
+  JSON.stringify(masEmp) === JSON.stringify(["Escanear"]),
+  `sheet "Más": solo Escanear (deriva de Ventas/Inventario): [${masEmp.join(", ")}]`,
 );
 await shot(emp.page, "03-mobile-empleado-mas-abierto");
 await emp.page.keyboard.press("Escape");

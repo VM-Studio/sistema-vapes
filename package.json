@@ -23,7 +23,9 @@
     "test:integridad": "PRISMA_LOG=silent tsx scripts/test-integridad.ts",
     "test": "pnpm test:stock && pnpm test:integridad && pnpm test:auth",
     "test:auth": "PRISMA_LOG=silent tsx --env-file=.env scripts/test-auth.ts",
-    "test:e2e": "node scripts/e2e-auth.mjs"
+    "test:e2e": "node scripts/e2e-auth.mjs",
+    "test:catalogo": "PRISMA_LOG=query tsx --env-file=.env scripts/test-catalogo.ts",
+    "test:e2e:catalogo": "node scripts/e2e-catalogo.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

@@ -7,17 +7,26 @@ import { Prisma, PrismaClient } from "@prisma/client";
  */
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma: PrismaClient =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    // PRISMA_LOG=silent: para scripts que provocan errores a propósito (tests).
+function crearCliente(): PrismaClient {
+  // PRISMA_LOG=silent: scripts que provocan errores a propósito (tests).
+  // PRISMA_LOG=query: emite cada SQL como evento ($on("query")) para inspeccionarlo.
+  const modo = process.env.PRISMA_LOG;
+  if (modo === "query") {
+    return new PrismaClient({
+      log: [{ emit: "event", level: "query" }],
+    }) as unknown as PrismaClient;
+  }
+  return new PrismaClient({
     log:
-      process.env.PRISMA_LOG === "silent"
+      modo === "silent"
         ? []
         : process.env.NODE_ENV === "development"
           ? ["warn", "error"]
           : ["error"],
   });
+}
+
+export const prisma: PrismaClient = globalForPrisma.prisma ?? crearCliente();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
