@@ -1,0 +1,580 @@
+// =============================================================================
+// Sistema de gestión — capa de datos
+//
+// Reglas de diseño (ver también prisma/migrations/*_constraints/migration.sql):
+// - Dinero: Decimal(12,2). Cantidades: Int. IDs: cuid().
+// - Soft delete (deletedAt) en entidades maestras. Nunca DELETE físico de negocio.
+// - Stock es un caché del ledger MovimientoStock: solo cambia en la misma
+//   transacción que inserta un movimiento (lo garantizan triggers en la DB).
+// - MovimientoStock y AuditLog son inmutables (triggers bloquean UPDATE/DELETE).
+// - Las restricciones que Prisma no sabe expresar (CHECK, índices únicos
+//   parciales, triggers, vistas) viven en la migración "constraints".
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum RolUsuario {
+  OWNER
+  EMPLEADO
+}
+
+enum Modulo {
+  DASHBOARD
+  PRODUCTOS
+  INVENTARIO
+  MOVIMIENTOS
+  VENTAS
+  COMPRAS
+  CLIENTES
+  PROVEEDORES
+  REPORTES
+  USUARIOS
+  CONFIGURACION
+}
+
+enum TipoMovimiento {
+  INGRESO_COMPRA
+  INGRESO_MANUAL
+  VENTA
+  DEVOLUCION_CLIENTE
+  DEVOLUCION_PROVEEDOR
+  AJUSTE_POSITIVO
+  AJUSTE_NEGATIVO
+  TRANSFERENCIA_SALIDA
+  TRANSFERENCIA_ENTRADA
+}
+
+enum EstadoVenta {
+  BORRADOR
+  CONFIRMADA
+  ANULADA
+}
+
+enum EstadoCompra {
+  BORRADOR
+  RECIBIDA
+  ANULADA
+}
+
+enum EstadoTransferencia {
+  PENDIENTE
+  COMPLETADA
+  ANULADA
+}
+
+enum MedioPago {
+  EFECTIVO
+  TRANSFERENCIA
+  DEBITO
+  CREDITO
+  MERCADOPAGO
+  OTRO
+}
+
+enum TipoComprobante {
+  TICKET
+  FACTURA_A
+  FACTURA_B
+  FACTURA_C
+  PRESUPUESTO
+}
+
+enum AccionAuditoria {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PERMISO_CAMBIADO
+}
+
+// -----------------------------------------------------------------------------
+// Usuarios y permisos
+// -----------------------------------------------------------------------------
+
+model Usuario {
+  id           String     @id @default(cuid())
+  nombre       String
+  /// Siempre en minúsculas (CHECK en DB + toLowerCase() en Zod).
+  email        String     @unique
+  passwordHash String
+  rol          RolUsuario
+  activo       Boolean    @default(true)
+  ultimoLogin  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  permisos       PermisoUsuario[]
+  movimientos    MovimientoStock[]
+  compras        Compra[]
+  ventas         Venta[]           @relation("VentaUsuario")
+  ventasAnuladas Venta[]           @relation("VentaAnuladaPor")
+  transferencias Transferencia[]
+  gastos         Gasto[]
+  auditLogs      AuditLog[]
+}
+
+/// Los OWNER tienen acceso total por rol y no necesitan filas acá.
+model PermisoUsuario {
+  id            String   @id @default(cuid())
+  usuarioId     String
+  modulo        Modulo
+  puedeVer      Boolean  @default(false)
+  puedeCrear    Boolean  @default(false)
+  puedeEditar   Boolean  @default(false)
+  puedeEliminar Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, modulo])
+}
+
+// -----------------------------------------------------------------------------
+// Maestros
+// -----------------------------------------------------------------------------
+
+model Deposito {
+  id          String   @id @default(cuid())
+  nombre      String   @unique
+  direccion   String?
+  activo      Boolean  @default(true)
+  /// Solo un depósito puede ser principal (índice único parcial en SQL).
+  esPrincipal Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stocks                Stock[]
+  movimientos           MovimientoStock[]
+  compras               Compra[]
+  ventas                Venta[]
+  transferenciasOrigen  Transferencia[]   @relation("TransferenciaOrigen")
+  transferenciasDestino Transferencia[]   @relation("TransferenciaDestino")
+}
+
+model Categoria {
+  id          String   @id @default(cuid())
+  nombre      String   @unique
+  descripcion String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  productos Producto[]
+}
+
+model Marca {
+  id        String   @id @default(cuid())
+  nombre    String   @unique
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  productos Producto[]
+}
+
+model Proveedor {
+  id        String    @id @default(cuid())
+  nombre    String
+  /// Único entre proveedores no borrados (índice único parcial en SQL).
+  cuit      String?
+  telefono  String?
+  email     String?
+  direccion String?
+  notas     String?
+  activo    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  compras Compra[]
+}
+
+model Cliente {
+  id        String    @id @default(cuid())
+  nombre    String
+  apellido  String?
+  /// Único entre clientes no borrados (índice único parcial en SQL).
+  documento String?
+  telefono  String?
+  email     String?
+  direccion String?
+  notas     String?
+  activo    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  ventas Venta[]
+}
+
+// -----------------------------------------------------------------------------
+// Catálogo
+// -----------------------------------------------------------------------------
+
+model Producto {
+  id             String    @id @default(cuid())
+  nombre         String
+  descripcion    String?
+  categoriaId    String
+  marcaId        String?
+  /// false => existe exactamente una variante "Único".
+  tieneVariantes Boolean   @default(false)
+  imagenUrl      String?
+  activo         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  categoria Categoria  @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  marca     Marca?     @relation(fields: [marcaId], references: [id], onDelete: Restrict)
+  variantes Variante[]
+
+  @@unique([nombre, marcaId])
+  @@index([categoriaId])
+  @@index([marcaId])
+}
+
+model Variante {
+  id           String    @id @default(cuid())
+  productoId   String
+  /// Ej: "Mango Ice". "Único" para productos sin variantes.
+  nombre       String
+  /// Formato PRD-XXXXXX si no se provee.
+  sku          String    @unique
+  /// Único (junto con CodigoBarrasAlternativo.codigo) entre variantes no borradas.
+  codigoBarras String?
+  precioCosto  Decimal   @db.Decimal(12, 2)
+  precioVenta  Decimal   @db.Decimal(12, 2)
+  stockMinimo  Int       @default(0)
+  activo       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  producto            Producto                  @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  codigosAlternativos CodigoBarrasAlternativo[]
+  stocks              Stock[]
+  movimientos         MovimientoStock[]
+  compraItems         CompraItem[]
+  ventaItems          VentaItem[]
+  transferenciaItems  TransferenciaItem[]
+
+  @@unique([productoId, nombre])
+}
+
+/// Un mismo producto puede venir con más de un código según lote/importador.
+model CodigoBarrasAlternativo {
+  id          String   @id @default(cuid())
+  varianteId  String
+  codigo      String   @unique
+  descripcion String?
+  createdAt   DateTime @default(now())
+
+  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@index([varianteId])
+}
+
+// -----------------------------------------------------------------------------
+// Inventario
+// -----------------------------------------------------------------------------
+
+/// Caché del ledger. NUNCA se actualiza directo: solo vía registrarMovimiento().
+/// Un trigger rechaza cualquier cambio de cantidad sin movimiento en la misma tx.
+model Stock {
+  id         String   @id @default(cuid())
+  varianteId String
+  depositoId String
+  cantidad   Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  deposito Deposito @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+
+  @@unique([varianteId, depositoId])
+  @@index([depositoId])
+}
+
+/// Ledger INMUTABLE. Sin updatedAt. Los errores se corrigen con AJUSTE inverso.
+model MovimientoStock {
+  id             String         @id @default(cuid())
+  tipo           TipoMovimiento
+  varianteId     String
+  depositoId     String
+  /// Siempre > 0: el signo lo define el tipo.
+  cantidad       Int
+  stockAnterior  Int
+  stockPosterior Int
+  costoUnitario  Decimal?       @db.Decimal(12, 2)
+  motivo         String?
+  /// "VENTA" | "COMPRA" | "TRANSFERENCIA" | "AJUSTE" (CHECK en DB).
+  referenciaTipo String?
+  referenciaId   String?
+  usuarioId      String
+  createdAt      DateTime       @default(now())
+
+  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  deposito Deposito @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([varianteId, depositoId, createdAt])
+  @@index([createdAt])
+  @@index([referenciaTipo, referenciaId])
+  @@index([depositoId])
+  @@index([usuarioId])
+}
+
+// -----------------------------------------------------------------------------
+// Compras
+// -----------------------------------------------------------------------------
+
+model Compra {
+  id          String       @id @default(cuid())
+  numero      Int          @unique @default(autoincrement())
+  proveedorId String?
+  /// Depósito donde ingresa la mercadería.
+  depositoId  String
+  fecha       DateTime     @default(now())
+  estado      EstadoCompra @default(BORRADOR)
+  subtotal    Decimal      @db.Decimal(12, 2)
+  descuento   Decimal      @default(0) @db.Decimal(12, 2)
+  total       Decimal      @db.Decimal(12, 2)
+  notas       String?
+  usuarioId   String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  proveedor Proveedor?   @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
+  deposito  Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  usuario   Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  items     CompraItem[]
+
+  @@index([fecha])
+  @@index([proveedorId])
+  @@index([depositoId])
+  @@index([usuarioId])
+}
+
+model CompraItem {
+  id            String   @id @default(cuid())
+  compraId      String
+  varianteId    String
+  cantidad      Int
+  costoUnitario Decimal  @db.Decimal(12, 2)
+  subtotal      Decimal  @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  compra   Compra   @relation(fields: [compraId], references: [id], onDelete: Cascade)
+  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@unique([compraId, varianteId])
+  @@index([varianteId])
+}
+
+// -----------------------------------------------------------------------------
+// Ventas y facturación interna
+// -----------------------------------------------------------------------------
+
+model Venta {
+  id              String      @id @default(cuid())
+  numero          Int         @unique @default(autoincrement())
+  fecha           DateTime    @default(now())
+  clienteId       String?
+  /// Depósito de donde sale la mercadería.
+  depositoId      String
+  estado          EstadoVenta @default(BORRADOR)
+  subtotal        Decimal     @db.Decimal(12, 2)
+  descuento       Decimal     @default(0) @db.Decimal(12, 2)
+  total           Decimal     @db.Decimal(12, 2)
+  /// Snapshot: suma de costoUnitario * cantidad de los ítems.
+  costoTotal      Decimal     @db.Decimal(12, 2)
+  /// total - costoTotal (CHECK en DB).
+  gananciaBruta   Decimal     @db.Decimal(12, 2)
+  medioPago       MedioPago
+  notas           String?
+  usuarioId       String
+  anuladaPorId    String?
+  motivoAnulacion String?
+  anuladaAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  cliente     Cliente?     @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  deposito    Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  usuario     Usuario      @relation("VentaUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  anuladaPor  Usuario?     @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+  items       VentaItem[]
+  comprobante Comprobante?
+
+  @@index([fecha])
+  @@index([estado, fecha])
+  @@index([clienteId])
+  @@index([depositoId])
+  @@index([usuarioId])
+}
+
+model VentaItem {
+  id             String   @id @default(cuid())
+  ventaId        String
+  varianteId     String
+  cantidad       Int
+  /// Snapshot del precio de venta al momento de la venta.
+  precioUnitario Decimal  @db.Decimal(12, 2)
+  /// Snapshot del costo al momento de la venta (ganancia histórica estable).
+  costoUnitario  Decimal  @db.Decimal(12, 2)
+  descuento      Decimal  @default(0) @db.Decimal(12, 2)
+  /// cantidad * precioUnitario - descuento (CHECK en DB).
+  subtotal       Decimal  @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@unique([ventaId, varianteId])
+  @@index([varianteId])
+}
+
+/// Facturación interna. Preparado para AFIP (cae, caeVencimiento).
+model Comprobante {
+  id             String          @id @default(cuid())
+  ventaId        String          @unique
+  tipo           TipoComprobante
+  puntoVenta     Int             @default(1)
+  numero         Int
+  fecha          DateTime        @default(now())
+  razonSocial    String?
+  cuit           String?
+  condicionIva   String?
+  total          Decimal         @db.Decimal(12, 2)
+  pdfUrl         String?
+  cae            String?
+  caeVencimiento DateTime?
+  createdAt      DateTime        @default(now())
+
+  venta Venta @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+
+  @@unique([tipo, puntoVenta, numero])
+}
+
+/// Numeración correlativa por (tipo, puntoVenta). Se toma con SELECT ... FOR UPDATE.
+model SecuenciaComprobante {
+  id           String          @id @default(cuid())
+  tipo         TipoComprobante
+  puntoVenta   Int             @default(1)
+  ultimoNumero Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([tipo, puntoVenta])
+}
+
+// -----------------------------------------------------------------------------
+// Transferencias entre depósitos
+// -----------------------------------------------------------------------------
+
+model Transferencia {
+  id                String              @id @default(cuid())
+  numero            Int                 @unique @default(autoincrement())
+  depositoOrigenId  String
+  depositoDestinoId String
+  estado            EstadoTransferencia @default(PENDIENTE)
+  fecha             DateTime            @default(now())
+  notas             String?
+  usuarioId         String
+  completadaAt      DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  depositoOrigen  Deposito            @relation("TransferenciaOrigen", fields: [depositoOrigenId], references: [id], onDelete: Restrict)
+  depositoDestino Deposito            @relation("TransferenciaDestino", fields: [depositoDestinoId], references: [id], onDelete: Restrict)
+  usuario         Usuario             @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  items           TransferenciaItem[]
+
+  @@index([fecha])
+  @@index([depositoOrigenId])
+  @@index([depositoDestinoId])
+  @@index([usuarioId])
+}
+
+model TransferenciaItem {
+  id              String   @id @default(cuid())
+  transferenciaId String
+  varianteId      String
+  cantidad        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  transferencia Transferencia @relation(fields: [transferenciaId], references: [id], onDelete: Cascade)
+  variante      Variante      @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@unique([transferenciaId, varianteId])
+  @@index([varianteId])
+}
+
+// -----------------------------------------------------------------------------
+// Gastos, configuración y auditoría
+// -----------------------------------------------------------------------------
+
+/// Para calcular ganancia neta.
+model Gasto {
+  id          String    @id @default(cuid())
+  fecha       DateTime  @default(now())
+  categoria   String
+  descripcion String
+  monto       Decimal   @db.Decimal(12, 2)
+  medioPago   MedioPago
+  usuarioId   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([fecha])
+  @@index([usuarioId])
+}
+
+/// Key-value. Claves: nombreNegocio, moneda, alertaStockMinimo, prefijoSku.
+model Configuracion {
+  id        String   @id @default(cuid())
+  clave     String   @unique
+  valor     Json
+  updatedAt DateTime @updatedAt
+}
+
+/// INMUTABLE (trigger bloquea UPDATE/DELETE).
+model AuditLog {
+  id           String          @id @default(cuid())
+  usuarioId    String?
+  accion       AccionAuditoria
+  /// Nombre de la tabla afectada.
+  entidad      String
+  entidadId    String?
+  datosAntes   Json?
+  datosDespues Json?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime        @default(now())
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([entidad, entidadId])
+  @@index([usuarioId, createdAt])
+  @@index([createdAt])
+}

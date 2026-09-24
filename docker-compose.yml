@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sistema_vapes_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: gestion
+      TZ: America/Argentina/Buenos_Aires
+    ports:
+      # Host 5433 → contenedor 5432: en esta máquina el 5432 ya está ocupado
+      # (Postgres de Homebrew + otro contenedor). Cambiar DB_PORT si hace falta.
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d gestion"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
