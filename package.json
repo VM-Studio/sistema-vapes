@@ -19,7 +19,9 @@
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
     "test:stock": "PRISMA_LOG=silent tsx scripts/test-stock.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:integridad": "PRISMA_LOG=silent tsx scripts/test-integridad.ts",
+    "test": "pnpm test:stock && pnpm test:integridad"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

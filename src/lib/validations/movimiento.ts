@@ -1,7 +1,7 @@
 import { TipoMovimiento } from "@prisma/client";
 import { z } from "zod";
 
-import { cantidad, id, monto, textoOpcional } from "./common";
+import { cantidad, id, montoOpcional, textoOpcional } from "./common";
 
 /**
  * Tipos que se pueden cargar a mano. VENTA, INGRESO_COMPRA y TRANSFERENCIA_*
@@ -28,7 +28,7 @@ export const movimientoManualSchema = z
     varianteId: id,
     depositoId: id,
     cantidad,
-    costoUnitario: monto.optional(),
+    costoUnitario: montoOpcional,
     motivo: textoOpcional(500),
   })
   .refine((m) => !TIPOS_CON_MOTIVO_OBLIGATORIO.has(m.tipo) || m.motivo !== undefined, {

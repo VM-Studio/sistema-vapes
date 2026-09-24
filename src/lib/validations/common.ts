@@ -30,17 +30,30 @@ export const emailOpcional = z
   .transform((v) => (v === "" ? undefined : v))
   .pipe(z.email("Email inválido").optional());
 
-/**
- * Monto de dinero: acepta number o string ("1500.5"), >= 0, máximo 2 decimales.
- * Sale como number redondeado a centavos; los servicios lo pasan a Decimal.
- */
-export const monto = z.coerce
-  .number({ error: "Monto inválido" })
+/** Un campo de formulario vacío ("" o espacios) es "sin valor", nunca 0. */
+const vacioAUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
+
+const montoBase = z.coerce
+  .number({ error: (iss) => (iss.input === undefined ? "Ingresá un monto" : "Monto inválido") })
   .finite("Monto inválido")
   .nonnegative("El monto no puede ser negativo")
   .max(MONTO_MAXIMO, "Monto demasiado grande")
   .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, "Máximo 2 decimales")
   .transform((v) => Math.round(v * 100) / 100);
+
+/**
+ * Monto de dinero obligatorio: acepta number o string ("1500.5"), >= 0,
+ * máximo 2 decimales. "" es error (z.coerce solo lo convertiría en 0: un
+ * precio sin cargar no puede transformarse en una venta a $0).
+ * Sale como number redondeado a centavos; los servicios lo pasan a Decimal.
+ */
+export const monto = z.preprocess(vacioAUndefined, montoBase);
+
+/** Monto opcional: vacío/ausente => undefined. */
+export const montoOpcional = z.preprocess(vacioAUndefined, montoBase.optional());
+
+/** Monto con default 0 (descuentos): vacío/ausente => 0. */
+export const montoOCero = z.preprocess(vacioAUndefined, montoBase.default(0));
 
 export const montoPositivo = monto.refine((v) => v > 0, "El monto debe ser mayor a 0");
 

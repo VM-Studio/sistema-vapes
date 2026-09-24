@@ -256,20 +256,22 @@ async function seedProductos(
     const marcaId = refs.marcas.get(p.marca);
     if (!categoriaId || !marcaId) throw new Error(`Referencias faltantes para ${p.nombre}`);
 
-    const producto = await prisma.producto.upsert({
-      where: { nombre_marcaId: { nombre: p.nombre, marcaId } },
-      update: {},
-      create: {
-        nombre: p.nombre,
-        descripcion: p.descripcion,
-        categoriaId,
-        marcaId,
-        tieneVariantes: p.tieneVariantes,
-      },
-    });
+    // Producto + variantes + stock inicial en UNA transacción: la DB verifica
+    // al COMMIT que todo producto tenga sus variantes (constraint diferida).
+    await withTransaction(async (tx) => {
+      const producto = await tx.producto.upsert({
+        where: { nombre_marcaId: { nombre: p.nombre, marcaId } },
+        update: {},
+        create: {
+          nombre: p.nombre,
+          descripcion: p.descripcion,
+          categoriaId,
+          marcaId,
+          tieneVariantes: p.tieneVariantes,
+        },
+      });
 
-    for (const v of p.variantes) {
-      await withTransaction(async (tx) => {
+      for (const v of p.variantes) {
         const existente = await tx.variante.findUnique({
           where: { productoId_nombre: { productoId: producto.id, nombre: v.nombre } },
         });
@@ -311,8 +313,8 @@ async function seedProductos(
             usuarioId,
           });
         }
-      });
-    }
+      }
+    });
   }
 
   for (const alt of CODIGOS_ALTERNATIVOS) {

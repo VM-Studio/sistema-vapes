@@ -1,14 +1,23 @@
 import { MedioPago, TipoComprobante } from "@prisma/client";
 import { z } from "zod";
 
-import { cantidad, cuitOpcional, id, monto, sinDuplicados, texto, textoOpcional } from "./common";
+import {
+  cantidad,
+  cuitOpcional,
+  id,
+  montoOCero,
+  montoOpcional,
+  sinDuplicados,
+  texto,
+  textoOpcional,
+} from "./common";
 
 export const ventaItemSchema = z.object({
   varianteId: id,
   cantidad,
   /** Si no se envía, se usa el precioVenta actual de la variante. */
-  precioUnitario: monto.optional(),
-  descuento: monto.default(0),
+  precioUnitario: montoOpcional,
+  descuento: montoOCero,
 });
 
 export const comprobanteVentaSchema = z.object({
@@ -25,7 +34,7 @@ export const crearVentaSchema = z
     depositoId: id,
     fecha: z.coerce.date().optional(),
     medioPago: z.enum(MedioPago),
-    descuento: monto.default(0),
+    descuento: montoOCero,
     notas: textoOpcional(2000),
     items: z
       .array(ventaItemSchema)

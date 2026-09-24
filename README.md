@@ -35,5 +35,9 @@ Usuarios de seed (password `Cambiar123!`): `dueno1@negocio.com`, `dueno2@negocio
   - `MovimientoStock` y `AuditLog` son inmutables.
   - Un movimiento debe partir del stock real y su aritmética debe cerrar.
   - Un `UPDATE` a `Stock` sin movimiento en la misma transacción es rechazado.
+- Documentos: una venta/compra/transferencia confirmada no se edita ni se borra, se anula;
+  sus totales tienen que cerrar con los ítems (verificado al COMMIT).
+- Sin DELETE físico en maestros (soft delete). Todo producto tiene ≥1 variante.
+- Comprobantes: numeración con `siguienteNumeroComprobante()` (`SELECT … FOR UPDATE`), inmutables.
 - Vistas: `vw_stock_consolidado` (una columna por depósito, se regenera sola al
   crear/renombrar depósitos, + `por_deposito` jsonb) y `vw_alertas_stock`.

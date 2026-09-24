@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { cantidad, id, monto, sinDuplicados, textoOpcional } from "./common";
+import { cantidad, id, monto, montoOCero, sinDuplicados, textoOpcional } from "./common";
 
 export const compraItemSchema = z.object({
   varianteId: id,
@@ -12,7 +12,7 @@ export const crearCompraSchema = z.object({
   proveedorId: id.optional(),
   depositoId: id,
   fecha: z.coerce.date().optional(),
-  descuento: monto.default(0),
+  descuento: montoOCero,
   notas: textoOpcional(2000),
   items: z
     .array(compraItemSchema)
