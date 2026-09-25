@@ -36,6 +36,15 @@
 
   --ring: #6366f1;
   --backdrop: rgb(10 10 15 / 0.5);
+
+  /* Gráficos: paleta categórica validada (orden fijo, nunca cíclico) + grilla. */
+  --serie-1: #2a78d6;
+  --serie-2: #eb6834;
+  --serie-3: #1baf7a;
+  --serie-4: #eda100;
+  --serie-5: #e87ba4;
+  --serie-6: #008300;
+  --grilla: #e6e6ec;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -68,6 +77,14 @@
 
     --ring: #8b93ff;
     --backdrop: rgb(0 0 0 / 0.65);
+
+    --serie-1: #3987e5;
+    --serie-2: #d95926;
+    --serie-3: #199e70;
+    --serie-4: #c98500;
+    --serie-5: #d55181;
+    --serie-6: #008300;
+    --grilla: #2a2a35;
   }
 }
 
@@ -95,6 +112,12 @@
   --color-warning-soft: var(--warning-soft);
   --color-warning-soft-foreground: var(--warning-soft-foreground);
   --color-ring: var(--ring);
+  --color-serie-1: var(--serie-1);
+  --color-serie-2: var(--serie-2);
+  --color-serie-3: var(--serie-3);
+  --color-serie-4: var(--serie-4);
+  --color-serie-5: var(--serie-5);
+  --color-serie-6: var(--serie-6);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }

@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Almacenamiento de archivos generados (PDF de comprobantes).
+ * Almacenamiento de archivos (PDF de comprobantes y cierres de caja, fotos de tickets de gastos).
  *
  * `StorageProvider` es la interfaz: en producción (Prompt 7) se reemplaza por
  * S3/R2 implementando lo mismo. La implementación local guarda en `.storage/`
@@ -24,8 +24,24 @@ export interface StorageProvider {
   leer(clave: string): Promise<{ datos: Uint8Array; tipo: string } | null>;
 }
 
-const CLAVE_VALIDA = /^[a-z0-9-]+(\/[a-z0-9-]+)*\.(pdf|png)$/;
-const TIPOS: Record<string, string> = { pdf: "application/pdf", png: "image/png" };
+const CLAVE_VALIDA = /^[a-z0-9-]+(\/[a-z0-9-]+)*\.(pdf|png|jpg|webp|xlsx)$/;
+const TIPOS: Record<string, string> = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+export type ExtensionArchivo = "pdf" | "png" | "jpg" | "webp" | "xlsx";
+
+/** Extensión según el MIME de una imagen subida (null = no admitida). */
+export function extensionDeImagen(tipo: string): "png" | "jpg" | "webp" | null {
+  if (tipo === "image/png") return "png";
+  if (tipo === "image/jpeg") return "jpg";
+  if (tipo === "image/webp") return "webp";
+  return null;
+}
 
 export function esClaveValida(clave: string): boolean {
   return CLAVE_VALIDA.test(clave) && !clave.includes("..");
@@ -64,7 +80,11 @@ export const storage: StorageProvider = new StorageLocal(
 );
 
 /** Clave nueva e inadivinable: `carpeta/<prefijo>-<48 hex>.<ext>`. */
-export function claveAleatoria(carpeta: string, prefijo: string, extension: "pdf" | "png"): string {
+export function claveAleatoria(
+  carpeta: string,
+  prefijo: string,
+  extension: ExtensionArchivo,
+): string {
   const limpio = prefijo.toLowerCase().replace(/[^a-z0-9-]/g, "-");
   return `${carpeta}/${limpio}-${randomBytes(24).toString("hex")}.${extension}`;
 }

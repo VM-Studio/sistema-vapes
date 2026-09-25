@@ -8,6 +8,7 @@ import { Modulo, Prisma, RolUsuario, TipoComprobante, TipoMovimiento } from "@pr
 import bcrypt from "bcryptjs";
 
 import { CONFIG_ESCANER_DEFAULT } from "../src/features/scanner/config";
+import { configFinanzasSchema } from "../src/lib/validations/finanzas";
 import { configVentasSchema } from "../src/lib/validations/venta";
 import { generarEan13 } from "../src/lib/barcode";
 import { prisma, withTransaction } from "../src/lib/db";
@@ -26,6 +27,8 @@ const CONFIGURACION: Record<string, Prisma.InputJsonValue> = {
   escaner: { ...CONFIG_ESCANER_DEFAULT, sufijos: [...CONFIG_ESCANER_DEFAULT.sufijos] },
   // Comprobante y cobro (editables en /configuracion/ventas).
   ventas: configVentasSchema.parse({}),
+  // Caja y reportes (editables en /configuracion/finanzas).
+  ...(configFinanzasSchema.parse({}) as Record<string, Prisma.InputJsonValue>),
 };
 
 /** Cliente de ejemplo con cuenta corriente habilitada. */
@@ -369,6 +372,24 @@ async function seedConfiguracion() {
   }
 }
 
+/** Mismas filas que inserta la migración (ids fijos): re-sembrar no duplica. */
+const CATEGORIAS_GASTO = [
+  ["cgasto_alquiler", "Alquiler"],
+  ["cgasto_servicios", "Servicios"],
+  ["cgasto_sueldos", "Sueldos"],
+  ["cgasto_envios", "Envíos"],
+  ["cgasto_insumos", "Insumos"],
+  ["cgasto_impuestos", "Impuestos"],
+  ["cgasto_marketing", "Marketing"],
+  ["cgasto_otros", "Otros"],
+] as const;
+
+async function seedCategoriasGasto() {
+  for (const [id, nombre] of CATEGORIAS_GASTO) {
+    await prisma.categoriaGasto.upsert({ where: { nombre }, update: {}, create: { id, nombre } });
+  }
+}
+
 async function seedClientes() {
   const existe = await prisma.cliente.findFirst({
     where: { documento: CLIENTE_EJEMPLO.documento, deletedAt: null },
@@ -392,6 +413,7 @@ async function main() {
   await seedProductos(refs, depositos, owner.id);
   await seedProveedores();
   await seedClientes();
+  await seedCategoriasGasto();
 
   const [usuarios, variantes, movimientos, stockTotal] = await Promise.all([
     prisma.usuario.count(),

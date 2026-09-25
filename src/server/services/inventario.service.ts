@@ -467,3 +467,25 @@ export async function exportarInventarioCSV(
     ]),
   ]);
 }
+
+/**
+ * Matriz completa producto × sabor × depósito (misma consulta que la
+ * pantalla de inventario, sin paginar), para el reporte de stock.
+ */
+export async function obtenerMatrizStockCompleta(
+  filtros: Pick<FiltrosInventario, "categoriaId" | "depositoId"> & { soloConStock?: boolean },
+  opciones: { incluirValorizacion: boolean },
+): Promise<{ depositos: DepositoBasico[]; filas: FilaInventario[] }> {
+  const depositos = await listarDepositosActivos();
+  const f = filtrosInventarioSchema.parse({
+    categoriaId: filtros.categoriaId,
+    depositoId: filtros.depositoId,
+    soloConStock: filtros.soloConStock ?? false,
+    agruparPorProducto: true,
+  });
+  const filas = await consultar(f, depositos, false);
+  return {
+    depositos,
+    filas: filas.map((r) => aFila(r, depositos, opciones.incluirValorizacion)),
+  };
+}

@@ -59,6 +59,8 @@ export async function middleware(req: NextRequest) {
   if (RUTAS_PUBLICAS.has(pathname)) return NextResponse.next();
   // Archivos compartidos por link (PDF del comprobante por WhatsApp): clave inadivinable.
   if (pathname.startsWith("/api/publico/")) return NextResponse.next();
+  // El cron no tiene sesión: se autentica con CRON_SECRET en su propia ruta.
+  if (pathname.startsWith("/api/cron/")) return NextResponse.next();
 
   if (!sesion || !estado) return sinSesion(req);
 

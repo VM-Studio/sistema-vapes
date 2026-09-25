@@ -31,7 +31,12 @@
     "test:e2e:escaner": "node scripts/e2e-escaner.mjs",
     "test:ventas": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas.ts",
     "test:ventas:concurrencia": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas-concurrentes.ts",
-    "test:e2e:ventas": "node scripts/e2e-ventas.mjs"
+    "test:e2e:ventas": "node scripts/e2e-ventas.mjs",
+    "db:seed-demo": "PRISMA_LOG=silent tsx --conditions=react-server prisma/seed-demo.ts",
+    "reportes:rebuild": "PRISMA_LOG=silent tsx --conditions=react-server scripts/reportes-rebuild.ts",
+    "test:reportes": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-reportes.ts",
+    "test:e2e:reportes": "node scripts/e2e-reportes.mjs",
+    "explain:reportes": "PRISMA_LOG=silent tsx --conditions=react-server scripts/explain-reportes.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -42,6 +47,9 @@
     "bwip-js": "^4.11.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
+    "date-fns-tz": "^3.2.0",
+    "exceljs": "^4.4.0",
     "jose": "^6.2.12",
     "lucide-react": "^1.48.0",
     "next": "15.5.26",
@@ -50,6 +58,8 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hook-form": "^7.88.0",
+    "recharts": "^3.10.1",
+    "rimraf": "^2.7.1",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.6.5"

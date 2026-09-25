@@ -28,3 +28,20 @@ export function formatearNumero(n: number): string {
 export function conSigno(n: number): string {
   return n > 0 ? `+${formatearNumero(n)}` : formatearNumero(n);
 }
+
+const compacto = new Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 1 });
+
+/** Ejes de gráficos: "$ 1,2 M" / "350". */
+export function formatearCompacto(n: number, moneda = false): string {
+  return `${moneda ? "$ " : ""}${compacto.format(n)}`;
+}
+
+/** "+6,0 %" / "-3,4 %" (null → "—"). */
+export function formatearDelta(delta: number | null | undefined): string {
+  if (delta === null || delta === undefined) return "—";
+  const t = new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Math.abs(delta));
+  return `${delta > 0 ? "+" : delta < 0 ? "−" : ""}${t} %`;
+}

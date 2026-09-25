@@ -124,6 +124,8 @@ export const pagoACuentaSchema = z.object({
   referencia: textoOpcional(100),
   /** Orden de imputación; si falta, las pendientes de la más vieja a la más nueva. */
   ventaIds: z.array(id).max(200).optional(),
+  /** Dónde se recibe el efectivo (su caja). Si falta: el depósito de la primera venta imputada. */
+  depositoId: z.preprocess(vacioAUndefined, id.optional()),
 });
 
 const fechaISO = z
@@ -182,6 +184,7 @@ export type PagoInput = Omit<z.output<typeof pagoSchema>, "referencia"> & {
 };
 export type Devolucion = z.output<typeof devolucionSchema>;
 export type FiltrosVentas = z.output<typeof listarVentasSchema>;
-export type PagoACuenta = Omit<z.output<typeof pagoACuentaSchema>, "referencia"> & {
+export type PagoACuenta = Omit<z.output<typeof pagoACuentaSchema>, "referencia" | "depositoId"> & {
   referencia?: string | undefined;
+  depositoId?: string | undefined;
 };

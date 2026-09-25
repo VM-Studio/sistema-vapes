@@ -18,6 +18,11 @@ export const SECCIONES_CONFIGURACION = [
     descripcion: "Datos del negocio, numeración y redondeo (solo dueño)",
   },
   {
+    href: "/configuracion/finanzas",
+    label: "Caja y reportes",
+    descripcion: "Zona horaria, arqueo, reposición y rotación (solo dueño)",
+  },
+  {
     href: "/configuracion/escaner",
     label: "Escáner",
     descripcion: "Pistola lectora: parámetros y prueba",

@@ -19,9 +19,15 @@ import type {
   PagoInput,
   RedondeoVenta,
 } from "@/lib/validations/venta";
+import { ahora } from "@/lib/reloj";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import type { Actor } from "@/server/services/actor";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import {
+  cajaParaEfectivo,
+  registrarMovimientoCaja,
+  verificarEfectivoDisponible,
+} from "@/server/services/caja.service";
 import {
   anularComprobanteDeVenta,
   emitirComprobante,
@@ -30,6 +36,7 @@ import {
 } from "@/server/services/comprobante.service";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { nombreCompleto } from "@/server/services/producto.service";
+import { recalcularResumenes } from "@/server/services/resumen-diario.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
@@ -44,6 +51,12 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  * - La DB verifica al COMMIT: montoPagado = Σ pagos vigentes,
  *   montoPagado + saldoPendiente = total, saldoDeudor = Σ saldos pendientes,
  *   devoluciones = Σ ítems y cantidadDevuelta = Σ devuelto ≤ vendido.
+ * - Caja: el efectivo que entra o sale (cobro, devolución, anulación) se
+ *   asocia a la caja ABIERTA del depósito y deja su MovimientoCaja en la misma
+ *   transacción. Sin caja abierta queda "fuera de caja" (cajaId null), salvo
+ *   que Configuracion.exigirCajaAbierta lo prohíba.
+ * - ResumenDiario: cada operación recalcula, al final de su transacción, los
+ *   días y depósitos que tocó.
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -51,6 +64,8 @@ const CERO = D(0);
 const r2 = (d: Prisma.Decimal) => d.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 const dec = (d: Prisma.Decimal) => d.toFixed(2);
 const $ = (d: Prisma.Decimal) => formatearPesos(d.toFixed(2));
+const efectivoDe = (pagos: { medioPago: MedioPago; monto: Prisma.Decimal }[]) =>
+  pagos.filter((p) => p.medioPago === MedioPago.EFECTIVO).reduce((a, p) => a.plus(p.monto), CERO);
 
 export interface PermisosVenta {
   /** VENTAS "editar": precio manual, descuento global, vender fiado. */
@@ -455,12 +470,16 @@ export async function confirmarEnTx(
 
   const principal = [...pagos].sort((a, b) => b.monto.comparedTo(a.monto))[0]?.medioPago ?? null;
   const estadoPago = estadoPagoDe(pagado, saldo);
+  // Efectivo: a la caja abierta del depósito (o "fuera de caja" si está permitido).
+  const efectivo = efectivoDe(pagos);
+  const caja = efectivo.greaterThan(0) ? await cajaParaEfectivo(tx, venta.depositoId) : null;
+  const momento = ahora();
   // 6. Confirmada, con la fecha de ahora (no la del borrador).
   await tx.venta.update({
     where: { id },
     data: {
       estado: EstadoVenta.CONFIRMADA,
-      fecha: new Date(),
+      fecha: momento,
       subtotal,
       redondeo,
       total,
@@ -480,7 +499,20 @@ export async function confirmarEnTx(
         monto: p.monto,
         referencia: p.referencia ?? null,
         usuarioId: actor.id,
+        fecha: momento,
+        cajaId: p.medioPago === MedioPago.EFECTIVO ? (caja?.id ?? null) : null,
       })),
+    });
+  }
+  if (caja) {
+    await registrarMovimientoCaja(tx, {
+      cajaId: caja.id,
+      tipo: "VENTA",
+      monto: efectivo,
+      referenciaTipo: "VENTA",
+      referenciaId: id,
+      descripcion: `Venta #${venta.numero}`,
+      usuarioId: actor.id,
     });
   }
   if (venta.cliente && (saldo.greaterThan(0) || usoSaldoAFavor.greaterThan(0))) {
@@ -511,9 +543,13 @@ export async function confirmarEnTx(
       pagos: pagos.map((p) => ({ medioPago: p.medioPago, monto: dec(p.monto) })),
       saldoPendiente: dec(saldo),
       comprobante: comprobante ? `${comprobante.tipo} ${comprobante.numero}` : null,
+      efectivo: efectivo.greaterThan(0) ? { monto: dec(efectivo), cajaId: caja?.id ?? null } : null,
     },
     meta: actor.meta,
   });
+
+  // 9. Agregados del día.
+  await recalcularResumenes(tx, [{ fecha: momento, depositoId: venta.depositoId }]);
 
   return {
     id,
@@ -612,6 +648,9 @@ export async function registrarPago(
       const montoPagado = venta.montoPagado.plus(monto);
       const saldo = venta.saldoPendiente.minus(monto);
       const estadoPago = estadoPagoDe(montoPagado, saldo);
+      const caja =
+        pago.medioPago === MedioPago.EFECTIVO ? await cajaParaEfectivo(tx, venta.depositoId) : null;
+      const momento = ahora();
       await tx.pagoVenta.create({
         data: {
           ventaId,
@@ -619,8 +658,21 @@ export async function registrarPago(
           monto,
           referencia: pago.referencia ?? null,
           usuarioId: actor.id,
+          fecha: momento,
+          cajaId: caja?.id ?? null,
         },
       });
+      if (caja) {
+        await registrarMovimientoCaja(tx, {
+          cajaId: caja.id,
+          tipo: "PAGO_CLIENTE",
+          monto,
+          referenciaTipo: "VENTA",
+          referenciaId: ventaId,
+          descripcion: `Cobro venta #${venta.numero}`,
+          usuarioId: actor.id,
+        });
+      }
       await tx.venta.update({
         where: { id: ventaId },
         data: { montoPagado, saldoPendiente: saldo, estadoPago },
@@ -644,9 +696,11 @@ export async function registrarPago(
           medioPago: pago.medioPago,
           monto: dec(monto),
           saldoPendiente: dec(saldo),
+          cajaId: caja?.id ?? null,
         },
         meta: actor.meta,
       });
+      await recalcularResumenes(tx, [{ fecha: momento, depositoId: venta.depositoId }]);
       return { montoPagado: dec(montoPagado), saldoPendiente: dec(saldo), estadoPago };
     },
     { maxRetries: 3 },
@@ -686,11 +740,12 @@ export async function pagarACuenta(
         {
           id: string;
           numero: number;
+          depositoId: string;
           montoPagado: Prisma.Decimal;
           saldoPendiente: Prisma.Decimal;
         }[]
       >`
-        SELECT "id", "numero", "montoPagado", "saldoPendiente" FROM "Venta"
+        SELECT "id", "numero", "depositoId", "montoPagado", "saldoPendiente" FROM "Venta"
         WHERE "clienteId" = ${cliente.id} AND "estado" = 'CONFIRMADA' AND "saldoPendiente" > 0
         ORDER BY "fecha", "numero"
         FOR UPDATE
@@ -701,6 +756,14 @@ export async function pagarACuenta(
             ...pendientes.filter((p) => !input.ventaIds!.includes(p.id)),
           ]
         : pendientes;
+      // El efectivo entra a la caja del depósito indicado o, si no, al de la primera venta imputada.
+      const depositoCobro = input.depositoId ?? orden[0]?.depositoId ?? null;
+      const caja =
+        input.medioPago === MedioPago.EFECTIVO && depositoCobro
+          ? await cajaParaEfectivo(tx, depositoCobro)
+          : null;
+      const momento = ahora();
+      const depositosTocados = new Set<string>();
       let resta = monto;
       const imputaciones: { ventaId: string; numero: number; monto: string }[] = [];
       for (const v of orden) {
@@ -715,8 +778,11 @@ export async function pagarACuenta(
             monto: parte,
             referencia: input.referencia ?? null,
             usuarioId: actor.id,
+            fecha: momento,
+            cajaId: caja?.id ?? null,
           },
         });
+        depositosTocados.add(v.depositoId);
         await tx.venta.update({
           where: { id: v.id },
           data: {
@@ -730,6 +796,21 @@ export async function pagarACuenta(
       }
       const saldoDeudor = cliente.saldoDeudor.minus(monto);
       await tx.cliente.update({ where: { id: cliente.id }, data: { saldoDeudor } });
+      if (caja) {
+        await registrarMovimientoCaja(tx, {
+          cajaId: caja.id,
+          tipo: "PAGO_CLIENTE",
+          monto,
+          referenciaTipo: "CLIENTE",
+          referenciaId: cliente.id,
+          descripcion: `Pago a cuenta de ${[cliente.nombre, cliente.apellido].filter(Boolean).join(" ")}`,
+          usuarioId: actor.id,
+        });
+      }
+      await recalcularResumenes(
+        tx,
+        [...depositosTocados].map((depositoId) => ({ fecha: momento, depositoId })),
+      );
       await registrarAuditoria(tx, {
         usuarioId: actor.id,
         accion: AccionAuditoria.CREATE,
@@ -760,10 +841,29 @@ export async function anularPago(pagoId: string, motivo: string, actor: Actor): 
         data: {
           anulado: true,
           anuladoPorId: actor.id,
-          anuladoAt: new Date(),
+          anuladoAt: ahora(),
           motivoAnulacion: motivo,
         },
       });
+      // Si entró a una caja que sigue abierta, sale de ella (si ya cerró, el arqueo lo reflejó).
+      if (pago.cajaId) {
+        const caja = await tx.caja.findUnique({
+          where: { id: pago.cajaId },
+          select: { estado: true },
+        });
+        if (caja?.estado === "ABIERTA") {
+          await tx.$queryRaw`SELECT "id" FROM "Caja" WHERE "id" = ${pago.cajaId} FOR SHARE`;
+          await registrarMovimientoCaja(tx, {
+            cajaId: pago.cajaId,
+            tipo: "DEVOLUCION",
+            monto: pago.monto.neg(),
+            referenciaTipo: "VENTA",
+            referenciaId: venta.id,
+            descripcion: `Pago anulado (venta #${venta.numero}): ${motivo}`,
+            usuarioId: actor.id,
+          });
+        }
+      }
       const montoPagado = venta.montoPagado.minus(pago.monto);
       const saldo = venta.saldoPendiente.plus(pago.monto);
       await tx.venta.update({
@@ -791,6 +891,7 @@ export async function anularPago(pagoId: string, motivo: string, actor: Actor): 
         datosDespues: { anulado: true, motivo, saldoPendiente: dec(saldo) },
         meta: actor.meta,
       });
+      await recalcularResumenes(tx, [{ fecha: pago.fecha, depositoId: venta.depositoId }]);
     },
     { maxRetries: 3 },
   );
@@ -834,13 +935,18 @@ export async function anularVenta(
         });
       }
       const pagos = await tx.pagoVenta.findMany({ where: { ventaId: id, anulado: false } });
-      const ahora = new Date();
+      // El efectivo cobrado se devuelve ahora, desde la caja abierta del depósito.
+      const efectivo = efectivoDe(pagos);
+      const caja = efectivo.greaterThan(0)
+        ? await cajaParaEfectivo(tx, venta.depositoId, "devolver el efectivo")
+        : null;
+      const momento = ahora();
       await tx.pagoVenta.updateMany({
         where: { ventaId: id, anulado: false },
         data: {
           anulado: true,
           anuladoPorId: actor.id,
-          anuladoAt: ahora,
+          anuladoAt: momento,
           motivoAnulacion: `Venta anulada: ${motivo}`,
         },
       });
@@ -852,7 +958,7 @@ export async function anularVenta(
         data: {
           estado: EstadoVenta.ANULADA,
           anuladaPorId: actor.id,
-          anuladaAt: ahora,
+          anuladaAt: momento,
           motivoAnulacion: motivo,
           montoPagado: 0,
           saldoPendiente: 0,
@@ -868,6 +974,18 @@ export async function anularVenta(
         });
       }
       await anularComprobanteDeVenta(tx, id, actor);
+      if (caja) {
+        await verificarEfectivoDisponible(tx, caja.id, efectivo, "devolver el efectivo cobrado");
+        await registrarMovimientoCaja(tx, {
+          cajaId: caja.id,
+          tipo: "DEVOLUCION",
+          monto: efectivo.neg(),
+          referenciaTipo: "VENTA",
+          referenciaId: id,
+          descripcion: `Anulación venta #${venta.numero}`,
+          usuarioId: actor.id,
+        });
+      }
       await registrarAuditoria(tx, {
         usuarioId: actor.id,
         accion: AccionAuditoria.UPDATE,
@@ -881,6 +999,11 @@ export async function anularVenta(
         datosDespues: { estado: "ANULADA", motivo, pagosAnulados: pagos.length },
         meta: actor.meta,
       });
+      // El día de la venta (deja de contar) y los días en que se cobró (esos cobros se anulan).
+      await recalcularResumenes(tx, [
+        { fecha: venta.fecha, depositoId: venta.depositoId },
+        ...pagos.map((p) => ({ fecha: p.fecha, depositoId: venta.depositoId })),
+      ]);
       return { numero: venta.numero };
     },
     { maxRetries: 3, timeout: 30_000 },
@@ -952,6 +1075,7 @@ export async function crearDevolucion(
 
       let reintegroMonto = CERO;
       let aCuentaCorriente = CERO;
+      const momento = ahora();
       if (input.reintegro.tipo === "dinero") {
         const yaReintegrado =
           (
@@ -973,10 +1097,16 @@ export async function crearDevolucion(
         aCuentaCorriente = total;
       }
 
+      // Reintegro en efectivo: sale de la caja del depósito donde vuelve la mercadería.
+      const caja =
+        input.reintegro.tipo === "dinero" && input.reintegro.medioPago === MedioPago.EFECTIVO
+          ? await cajaParaEfectivo(tx, input.depositoId, "devolver el efectivo")
+          : null;
       const devolucion = await tx.devolucion.create({
         data: {
           ventaId: venta.id,
           depositoId: input.depositoId,
+          fecha: momento,
           motivo: input.motivo,
           total,
           reintegroMedioPago: input.reintegro.tipo === "dinero" ? input.reintegro.medioPago : null,
@@ -1014,13 +1144,32 @@ export async function crearDevolucion(
         });
       }
 
+      if (caja && reintegroMonto.greaterThan(0)) {
+        await verificarEfectivoDisponible(tx, caja.id, reintegroMonto, "devolver en efectivo");
+        await registrarMovimientoCaja(tx, {
+          cajaId: caja.id,
+          tipo: "DEVOLUCION",
+          monto: reintegroMonto.neg(),
+          referenciaTipo: "VENTA",
+          referenciaId: venta.id,
+          descripcion: `Devolución #${devolucion.numero} (venta #${venta.numero})`,
+          usuarioId: actor.id,
+        });
+      }
+
       // A cuenta corriente: cancela deuda (esta venta primero) y el resto queda a favor.
       let saldoAFavor: Prisma.Decimal | null = null;
+      const depositosTocados = new Set([input.depositoId, venta.depositoId]);
       if (aCuentaCorriente.greaterThan(0) && venta.cliente) {
         const pendientes = await tx.$queryRaw<
-          { id: string; montoPagado: Prisma.Decimal; saldoPendiente: Prisma.Decimal }[]
+          {
+            id: string;
+            depositoId: string;
+            montoPagado: Prisma.Decimal;
+            saldoPendiente: Prisma.Decimal;
+          }[]
         >`
-          SELECT "id", "montoPagado", "saldoPendiente" FROM "Venta"
+          SELECT "id", "depositoId", "montoPagado", "saldoPendiente" FROM "Venta"
           WHERE "clienteId" = ${venta.cliente.id} AND "estado" = 'CONFIRMADA' AND "saldoPendiente" > 0
           ORDER BY ("id" = ${venta.id}) DESC, "fecha", "numero"
           FOR UPDATE
@@ -1038,8 +1187,10 @@ export async function crearDevolucion(
               monto: parte,
               referencia: `Devolución #${devolucion.numero}`,
               usuarioId: actor.id,
+              fecha: momento,
             },
           });
+          depositosTocados.add(v.depositoId);
           await tx.venta.update({
             where: { id: v.id },
             data: {
@@ -1074,9 +1225,14 @@ export async function crearDevolucion(
             cantidad: l.cantidad,
             precioUnitario: dec(l.precioUnitario),
           })),
+          cajaId: caja?.id ?? null,
         },
         meta: actor.meta,
       });
+      await recalcularResumenes(
+        tx,
+        [...depositosTocados].map((depositoId) => ({ fecha: momento, depositoId })),
+      );
       return {
         id: devolucion.id,
         numero: devolucion.numero,

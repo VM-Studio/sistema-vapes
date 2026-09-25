@@ -19,6 +19,7 @@ import {
 
 import { prisma, type Tx } from "@/lib/db";
 import { formatearPesos } from "@/lib/format";
+import { ahora } from "@/lib/reloj";
 import { formatearFechaHora } from "@/lib/utils";
 import { NotFoundError } from "@/server/errors";
 import { aWinAnsi, envolver, MM, recortar } from "@/server/pdf";
@@ -137,6 +138,7 @@ export async function emitirComprobante(
       total: venta.total,
       razonSocial,
       cuit: venta.cliente?.documento ?? null,
+      fecha: ahora(),
     },
   });
   await registrarAuditoria(tx, {
@@ -167,7 +169,7 @@ export async function anularComprobanteDeVenta(
   // pdfUrl en null: el próximo PDF se regenera con la marca "ANULADO".
   await tx.comprobante.update({
     where: { id: c.id },
-    data: { estado: EstadoComprobante.ANULADO, anuladoAt: new Date(), pdfUrl: null },
+    data: { estado: EstadoComprobante.ANULADO, anuladoAt: ahora(), pdfUrl: null },
   });
   await registrarAuditoria(tx, {
     usuarioId: actor.id,

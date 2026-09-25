@@ -12,6 +12,7 @@ import {
   parsearPrecioAR,
 } from "@/lib/csv";
 import { prisma, withTransaction, type Tx } from "@/lib/db";
+import { ahora } from "@/lib/reloj";
 import { monto } from "@/lib/validations/common";
 import {
   NOMBRE_VARIANTE_UNICA,
@@ -849,6 +850,7 @@ async function aplicarPrecio(
       precioVentaNuevo: ventaNuevo,
       usuarioId,
       motivo: motivo ?? null,
+      createdAt: ahora(),
     },
   });
   await tx.variante.update({

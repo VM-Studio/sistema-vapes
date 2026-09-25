@@ -9,6 +9,8 @@ import { useToast } from "@/components/ui/toast";
 import {
   ACCION_LABEL,
   ACCIONES,
+  accionesDe,
+  MODULO_AYUDA,
   MODULO_LABEL,
   normalizarPermiso,
   type Accion,
@@ -88,16 +90,27 @@ export function PermisosForm({
               <tr key={p.modulo}>
                 <th scope="row" className="px-4 py-1 text-left font-medium">
                   {MODULO_LABEL[p.modulo]}
+                  {MODULO_AYUDA[p.modulo] && (
+                    <span className="text-muted block text-xs font-normal">
+                      {MODULO_AYUDA[p.modulo]}
+                    </span>
+                  )}
                 </th>
                 {ACCIONES.map((a) => (
                   <td key={a} className="px-4 py-1">
                     <div className="flex justify-center">
-                      <Switch
-                        checked={p[CAMPO[a]]}
-                        onCheckedChange={(v) => cambiar(p.modulo, a, v)}
-                        label={`${ACCION_LABEL[a]} ${MODULO_LABEL[p.modulo]}`}
-                        labelOculto
-                      />
+                      {accionesDe(p.modulo).includes(a) ? (
+                        <Switch
+                          checked={p[CAMPO[a]]}
+                          onCheckedChange={(v) => cambiar(p.modulo, a, v)}
+                          label={`${ACCION_LABEL[a]} ${MODULO_LABEL[p.modulo]}`}
+                          labelOculto
+                        />
+                      ) : (
+                        <span className="text-muted" aria-hidden>
+                          —
+                        </span>
+                      )}
                     </div>
                   </td>
                 ))}
@@ -111,9 +124,12 @@ export function PermisosForm({
       <ul className="flex flex-col gap-2 md:hidden">
         {permisos.map((p) => (
           <li key={p.modulo} className="border-border bg-surface rounded-xl border px-4 py-3">
-            <p className="mb-1 font-medium">{MODULO_LABEL[p.modulo]}</p>
-            <div className="grid grid-cols-2 gap-x-6">
-              {ACCIONES.map((a) => (
+            <p className="font-medium">{MODULO_LABEL[p.modulo]}</p>
+            {MODULO_AYUDA[p.modulo] && (
+              <p className="text-muted text-xs">{MODULO_AYUDA[p.modulo]}</p>
+            )}
+            <div className="mt-1 grid grid-cols-2 gap-x-6">
+              {accionesDe(p.modulo).map((a) => (
                 <Switch
                   key={a}
                   checked={p[CAMPO[a]]}

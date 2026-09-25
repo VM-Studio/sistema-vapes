@@ -44,6 +44,10 @@ enum Modulo {
   REPORTES
   USUARIOS
   CONFIGURACION
+  /// Costos, ganancias, valorización (se suma a REPORTES / DASHBOARD).
+  FINANZAS
+  GASTOS
+  CAJA
 }
 
 enum TipoMovimiento {
@@ -106,6 +110,32 @@ enum TipoComprobante {
   PRESUPUESTO
 }
 
+enum EstadoCaja {
+  ABIERTA
+  CERRADA
+}
+
+/// Signo del monto: APERTURA ≥ 0, VENTA/PAGO_CLIENTE/INGRESO_EXTRA > 0,
+/// DEVOLUCION/GASTO/RETIRO < 0, CIERRE ≤ 0 (= −montoContado). CHECK en DB.
+enum TipoMovimientoCaja {
+  APERTURA
+  VENTA
+  PAGO_CLIENTE
+  DEVOLUCION
+  GASTO
+  RETIRO
+  INGRESO_EXTRA
+  CIERRE
+}
+
+enum TipoNotificacion {
+  STOCK_BAJO
+  SIN_STOCK
+  CAJA_DIFERENCIA
+  TRANSFERENCIA_PENDIENTE
+  DEUDA_CLIENTE
+}
+
 enum AccionAuditoria {
   CREATE
   UPDATE
@@ -146,6 +176,10 @@ model Usuario {
   pagosVenta       PagoVenta[]       @relation("PagoUsuario")
   pagosAnulados    PagoVenta[]       @relation("PagoAnuladoPor")
   devoluciones     Devolucion[]
+  cajasAbiertas    Caja[]            @relation("CajaAbiertaPor")
+  cajasCerradas    Caja[]            @relation("CajaCerradaPor")
+  movimientosCaja  MovimientoCaja[]
+  notificaciones   Notificacion[]
 }
 
 /// Registro de intentos de login para rate limit (persistente: sobrevive a
@@ -200,6 +234,9 @@ model Deposito {
   transferenciasOrigen  Transferencia[]   @relation("TransferenciaOrigen")
   transferenciasDestino Transferencia[]   @relation("TransferenciaDestino")
   devoluciones          Devolucion[]
+  gastos                Gasto[]
+  cajas                 Caja[]
+  resumenes             ResumenDiario[]
 }
 
 model Categoria {
@@ -510,7 +547,8 @@ model Venta {
   @@index([estado, fecha])
   @@index([clienteId, estado])
   @@index([depositoId, fecha])
-  @@index([usuarioId])
+  /// Dashboard de un empleado sin REPORTES: solo sus ventas del período.
+  @@index([usuarioId, fecha])
 }
 
 model VentaItem {
@@ -624,26 +662,161 @@ model TransferenciaItem {
 // Gastos, configuración y auditoría
 // -----------------------------------------------------------------------------
 
-/// Para calcular ganancia neta.
-model Gasto {
-  id          String    @id @default(cuid())
-  fecha       DateTime  @default(now())
-  categoria   String
-  descripcion String
-  monto       Decimal   @db.Decimal(12, 2)
-  medioPago   MedioPago
-  usuarioId   String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+model CategoriaGasto {
+  id     String  @id @default(cuid())
+  nombre String  @unique
+  activo Boolean @default(true)
 
-  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  gastos Gasto[]
+}
+
+/// Para calcular ganancia neta. Soft delete. Si se pagó en efectivo desde una
+/// caja abierta, `cajaId` apunta a ella (y hay un MovimientoCaja GASTO).
+model Gasto {
+  id               String    @id @default(cuid())
+  fecha            DateTime  @default(now())
+  categoriaGastoId String
+  descripcion      String
+  monto            Decimal   @db.Decimal(12, 2)
+  medioPago        MedioPago
+  /// Gasto atribuible a un galpón (null = general del negocio).
+  depositoId       String?
+  cajaId           String?
+  /// Foto del ticket (StorageProvider).
+  comprobanteUrl   String?
+  /// Solo recordatorio: aparece en "recurrentes sin cargar" el mes siguiente.
+  recurrente       Boolean   @default(false)
+  usuarioId        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  categoria CategoriaGasto @relation(fields: [categoriaGastoId], references: [id], onDelete: Restrict)
+  deposito  Deposito?      @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  caja      Caja?          @relation(fields: [cajaId], references: [id], onDelete: Restrict)
+  usuario   Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
   @@index([fecha])
   @@index([usuarioId])
+  @@index([categoriaGastoId, fecha])
+  @@index([depositoId, fecha])
+  @@index([cajaId])
 }
 
-/// Key-value. Claves: nombreNegocio, moneda, alertaStockMinimo, prefijoSku.
+// -----------------------------------------------------------------------------
+// Caja (efectivo físico por depósito)
+// -----------------------------------------------------------------------------
+
+/// Una sola ABIERTA por depósito (índice único parcial). Cerrada = inmutable.
+model Caja {
+  id               String     @id @default(cuid())
+  depositoId       String
+  estado           EstadoCaja @default(ABIERTA)
+  abiertaPorId     String
+  abiertaAt        DateTime   @default(now())
+  montoInicial     Decimal    @db.Decimal(12, 2)
+  cerradaPorId     String?
+  cerradaAt        DateTime?
+  /// Σ movimientos (sin el CIERRE) al momento de cerrar.
+  montoEsperado    Decimal?   @db.Decimal(12, 2)
+  /// Arqueo real.
+  montoContado     Decimal?   @db.Decimal(12, 2)
+  /// contado − esperado.
+  diferencia       Decimal?   @db.Decimal(12, 2)
+  observaciones    String?
+  /// |diferencia| > toleranciaArqueo.
+  requiereRevision Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  deposito    Deposito         @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  abiertaPor  Usuario          @relation("CajaAbiertaPor", fields: [abiertaPorId], references: [id], onDelete: Restrict)
+  cerradaPor  Usuario?         @relation("CajaCerradaPor", fields: [cerradaPorId], references: [id], onDelete: Restrict)
+  movimientos MovimientoCaja[]
+  pagos       PagoVenta[]
+  gastos      Gasto[]
+
+  @@index([depositoId, abiertaAt])
+  @@index([estado])
+  @@index([abiertaAt])
+}
+
+/// INMUTABLE. Solo efectivo: la caja es la caja física.
+model MovimientoCaja {
+  id             String             @id @default(cuid())
+  cajaId         String
+  tipo           TipoMovimientoCaja
+  /// Con signo (ver TipoMovimientoCaja).
+  monto          Decimal            @db.Decimal(12, 2)
+  /// "VENTA" | "PAGO" | "DEVOLUCION" | "GASTO".
+  referenciaTipo String?
+  referenciaId   String?
+  descripcion    String?
+  usuarioId      String
+  createdAt      DateTime           @default(now())
+
+  caja    Caja    @relation(fields: [cajaId], references: [id], onDelete: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([cajaId, createdAt])
+  @@index([referenciaTipo, referenciaId])
+}
+
+// -----------------------------------------------------------------------------
+// Reportes y notificaciones
+// -----------------------------------------------------------------------------
+
+/// Agregados por día (zona horaria configurada) para que el dashboard no
+/// recorra años de ventas. depositoId null = consolidado. Se recalcula
+/// (upsert) dentro de cada transacción que afecta un día; `pnpm reportes:rebuild`
+/// la reconstruye entera. UNIQUE (fecha, depositoId) NULLS NOT DISTINCT.
+model ResumenDiario {
+  id                String   @id @default(cuid())
+  fecha             DateTime @db.Date
+  depositoId        String?
+  cantidadVentas    Int      @default(0)
+  unidadesVendidas  Int      @default(0)
+  totalVentas       Decimal  @default(0) @db.Decimal(14, 2)
+  costoVentas       Decimal  @default(0) @db.Decimal(14, 2)
+  /// totalVentas − costoVentas.
+  gananciaBruta     Decimal  @default(0) @db.Decimal(14, 2)
+  totalGastos       Decimal  @default(0) @db.Decimal(14, 2)
+  /// gananciaBruta − (devoluciones − costoDevoluciones) − totalGastos.
+  gananciaNeta      Decimal  @default(0) @db.Decimal(14, 2)
+  /// Cobrado ese día por medio: { "EFECTIVO": "1000.00", ... }.
+  totalPorMedioPago Json     @default("{}")
+  /// Importe devuelto ese día.
+  devoluciones      Decimal  @default(0) @db.Decimal(14, 2)
+  /// Costo de la mercadería devuelta (vuelve al stock): la devolución solo resta su margen.
+  costoDevoluciones Decimal  @default(0) @db.Decimal(14, 2)
+  updatedAt         DateTime @updatedAt
+
+  deposito Deposito? @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+
+  @@unique([fecha, depositoId])
+  @@index([depositoId, fecha])
+}
+
+model Notificacion {
+  id        String           @id @default(cuid())
+  tipo      TipoNotificacion
+  titulo    String
+  mensaje   String
+  /// { clave, href, ... }. `clave` deduplica (no se repite mientras haya una sin leer).
+  datos     Json?
+  leida     Boolean          @default(false)
+  /// Destinatario (null = todos los dueños).
+  usuarioId String?
+  createdAt DateTime         @default(now())
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, leida, createdAt])
+  @@index([createdAt])
+}
+
+/// Key-value. Claves: nombreNegocio, moneda, alertaStockMinimo, prefijoSku, escaner, ventas,
+/// timezone, exigirCajaAbierta, toleranciaArqueo, diasCobertura, rotacion, ultimasAlertas.
 model Configuracion {
   id        String   @id @default(cuid())
   clave     String   @unique
@@ -687,14 +860,18 @@ model PagoVenta {
   anuladoPorId    String?
   anuladoAt       DateTime?
   motivoAnulacion String?
+  /// Efectivo cobrado con la caja del depósito abierta (null = fuera de caja o no efectivo).
+  cajaId          String?
   createdAt       DateTime  @default(now())
 
   venta      Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  caja       Caja?    @relation(fields: [cajaId], references: [id], onDelete: Restrict)
   usuario    Usuario  @relation("PagoUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
   anuladoPor Usuario? @relation("PagoAnuladoPor", fields: [anuladoPorId], references: [id], onDelete: Restrict)
 
   @@index([ventaId])
   @@index([fecha, medioPago])
+  @@index([cajaId])
 }
 
 /// Devolución (parcial o total) de productos de una venta confirmada.
@@ -721,6 +898,8 @@ model Devolucion {
 
   @@index([ventaId])
   @@index([fecha])
+  /// Recalcular ResumenDiario de un depósito y un día.
+  @@index([depositoId, fecha])
 }
 
 model DevolucionItem {

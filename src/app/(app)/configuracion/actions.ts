@@ -28,7 +28,12 @@ import {
   cambiarActivoDeposito,
   crearDeposito,
 } from "@/server/services/deposito.service";
-import { guardarConfigEscaner, guardarConfigVentas } from "@/server/services/configuracion.service";
+import {
+  guardarConfigEscaner,
+  guardarConfigFinanzas,
+  guardarConfigVentas,
+} from "@/server/services/configuracion.service";
+import { configFinanzasSchema } from "@/lib/validations/finanzas";
 import { configVentasSchema } from "@/lib/validations/venta";
 import { actualizarMarca, cambiarActivoMarca, crearMarca } from "@/server/services/marca.service";
 
@@ -119,6 +124,14 @@ export const guardarConfigEscanerAction = actionHandler(async (input: unknown) =
 export const guardarConfigVentasAction = actionHandler(async (input: unknown) => {
   const usuario = await requireOwner();
   const r = await guardarConfigVentas(configVentasSchema.parse(input), await actorDe(usuario));
+  revalidatePath("/", "layout");
+  return r;
+});
+
+// --- Caja y reportes (solo OWNER) ---
+export const guardarConfigFinanzasAction = actionHandler(async (input: unknown) => {
+  const usuario = await requireOwner();
+  const r = await guardarConfigFinanzas(configFinanzasSchema.parse(input), await actorDe(usuario));
   revalidatePath("/", "layout");
   return r;
 });

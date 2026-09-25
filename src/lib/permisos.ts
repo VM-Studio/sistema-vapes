@@ -63,6 +63,24 @@ export const MODULO_LABEL: Record<Modulo, string> = {
   REPORTES: "Reportes",
   USUARIOS: "Usuarios",
   CONFIGURACION: "Configuración",
+  FINANZAS: "Finanzas",
+  GASTOS: "Gastos",
+  CAJA: "Caja",
+};
+
+/** Módulos que son solo un "permiso de lectura" extra (no tienen nada que crear/editar). */
+export const MODULOS_SOLO_VER: ReadonlySet<Modulo> = new Set([Modulo.FINANZAS]);
+
+/** Acciones que tienen sentido para el módulo (la grilla muestra solo esas). */
+export function accionesDe(modulo: Modulo): readonly Accion[] {
+  return MODULOS_SOLO_VER.has(modulo) ? ["ver"] : ACCIONES;
+}
+
+/** Aclaración que se muestra en la grilla de permisos. */
+export const MODULO_AYUDA: Partial<Record<Modulo, string>> = {
+  FINANZAS: "Costos, ganancias, valorización y resumen mensual (solo «Ver»).",
+  REPORTES: "Reportes de ventas, stock y caja (sin costos ni ganancias).",
+  CAJA: "Crear: abrir y cerrar la caja. Retiros e histórico de diferencias: solo dueños.",
 };
 
 export const ACCION_LABEL: Record<Accion, string> = {
@@ -92,6 +110,11 @@ export function puede(usuario: SujetoPermisos, modulo: Modulo, accion: Accion): 
  */
 export function normalizarPermiso(permiso: PermisoModulo, cambio?: Accion): PermisoModulo {
   const p = { ...permiso };
+  if (MODULOS_SOLO_VER.has(p.modulo)) {
+    p.puedeCrear = false;
+    p.puedeEditar = false;
+    p.puedeEliminar = false;
+  }
   if (cambio === "ver" && !p.puedeVer) {
     return { ...p, puedeCrear: false, puedeEditar: false, puedeEliminar: false };
   }

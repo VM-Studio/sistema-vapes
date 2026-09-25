@@ -18,18 +18,24 @@ Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso
 
 ## Scripts
 
-| Script                          | Qué hace                                                                |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| `pnpm db:reset`                 | Borra la DB, re-aplica migraciones y corre el seed (¡solo dev!)         |
-| `pnpm db:seed`                  | Seed idempotente                                                        |
-| `pnpm test:stock`               | Prueba de humo del motor de stock contra la DB                          |
-| `pnpm typecheck`                | `tsc --noEmit`                                                          |
-| `pnpm test:unit`                | Vitest: detector de la pistola (`useBarcodeScanner`)                    |
-| `pnpm test:compras`             | Compras, proveedores, recuento, códigos internos y etiquetas (DB)       |
-| `pnpm test:ventas`              | Ventas: pago partido, fiado, devoluciones, anulación (DB)               |
-| `pnpm test:ventas:concurrencia` | 10 ventas simultáneas sobre stock 5: 5 confirman, numeración sin huecos |
-| `pnpm test:e2e:ventas`          | E2E del POS, cobro, clientes y comprobantes                             |
-| `pnpm test:e2e:escaner`         | E2E del escáner (pistola + cámara falsa), compras y etiquetas           |
+| Script                          | Qué hace                                                                     |
+| ------------------------------- | ---------------------------------------------------------------------------- |
+| `pnpm db:reset`                 | Borra la DB, re-aplica migraciones y corre el seed (¡solo dev!)              |
+| `pnpm db:seed`                  | Seed idempotente                                                             |
+| `pnpm test:stock`               | Prueba de humo del motor de stock contra la DB                               |
+| `pnpm typecheck`                | `tsc --noEmit`                                                               |
+| `pnpm test:unit`                | Vitest: detector de la pistola (`useBarcodeScanner`)                         |
+| `pnpm test:compras`             | Compras, proveedores, recuento, códigos internos y etiquetas (DB)            |
+| `pnpm test:ventas`              | Ventas: pago partido, fiado, devoluciones, anulación (DB)                    |
+| `pnpm test:ventas:concurrencia` | 10 ventas simultáneas sobre stock 5: 5 confirman, numeración sin huecos      |
+| `pnpm test:e2e:ventas`          | E2E del POS, cobro, clientes y comprobantes                                  |
+| `pnpm test:e2e:escaner`         | E2E del escáner (pistola + cámara falsa), compras y etiquetas                |
+| `pnpm db:seed-demo`             | 90 días de operación simulada (ventas, cajas, gastos, compras)               |
+| `pnpm reportes:rebuild`         | Reconstruye `ResumenDiario` entero desde el ledger (recuperación)            |
+| `pnpm test:reportes`            | ResumenDiario, KPIs, caja/arqueo, efectivo fuera de caja, reposición         |
+| `pnpm explain:reportes`         | `EXPLAIN ANALYZE` de la serie temporal y el ranking (con `PRISMA_LOG=query`) |
+| `pnpm test:e2e:reportes`        | E2E de dashboard, reportes, exportaciones, gastos, caja y permisos           |
+| `scripts/db-descartable.sh X`   | Recrea una base descartable X (migraciones + seed [+ `--demo`])              |
 
 ## Arquitectura de datos
 
@@ -111,3 +117,33 @@ Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso
   en `comprobante.service.ts` (no integrado).
 - Para el Prompt 6, `venta.service.ts` expone `resumenVentas`, `ventasPorDia`, `topVariantes` y
   `ventasPorVendedor` (SQL agregado, sin traer ventas a memoria).
+
+## Dashboard, reportes, gastos y caja
+
+- **Permisos nuevos**: `FINANZAS` (solo «ver»: costos, ganancias, valorización), `GASTOS`, `CAJA`.
+  Con `REPORTES` sin `FINANZAS` se ven los reportes 1, 3, 4, 6 y 10 **sin** columnas de costo ni
+  ganancia; los reportes de dinero (y sus exportaciones) devuelven 403. Sin `REPORTES`, un empleado
+  ve en el inicio solo **sus** ventas.
+- **Zona horaria**: `Configuracion.timezone` (default Buenos Aires). Todo rango es de días completos
+  en esa zona (`src/lib/zona-horaria.ts`, `date-fns-tz`); las columnas guardan UTC sin zona.
+- **`ResumenDiario`**: agregados por (día, depósito) + fila consolidada (`depositoId` NULL, único
+  `NULLS NOT DISTINCT`). Se **recalcula** (no delta) con una sola consulta set-based al final de
+  cada transacción que toca un día: confirmar/anular venta, cobrar/anular pago, devolver, gastos.
+  `pnpm reportes:rebuild` la reconstruye.
+- **`reporte.service.ts`**: todas las consultas agregan en PostgreSQL (o leen `ResumenDiario`), con
+  el resultado de `$queryRaw` validado con Zod. Reutiliza `ventasPorVendedor` y `topVariantes`.
+- **Reportes** (`/reportes`): cada uno arma un `DocumentoReporte` que se dibuja igual en pantalla,
+  PDF (pdf-lib, A4 vertical/apaisado) y Excel (exceljs en streaming). Resumen mensual con botón de
+  WhatsApp (PDF con URL privada).
+- **Caja** (`/caja`): una abierta por depósito (índice único parcial). Solo efectivo; cada cobro,
+  devolución, anulación o gasto en efectivo deja su `MovimientoCaja` (inmutable) en la misma
+  transacción. El esperado sale siempre de sumar movimientos; la DB verifica el cierre. No sale de
+  la caja más efectivo del que hay. Sin caja abierta, el efectivo queda «fuera de caja» (visible en
+  reportes) salvo `exigirCajaAbierta`. Arqueo con contador de billetes, PDF «Z» y WhatsApp.
+- **Gastos** (`/gastos`): categorías, foto del ticket (StorageProvider), depósito, recurrentes
+  (recordatorio, no se cargan solos).
+- **Alertas**: `GET /api/cron/alertas` con `Authorization: Bearer $CRON_SECRET` (ver `vercel.json`).
+  Crea `Notificacion` por destinatario (campana + `/notificaciones`). Canales en
+  `src/server/notificaciones/canales.ts`: in-app implementado; WhatsApp y email, stubs documentados.
+- **Reloj de negocio** (`src/lib/reloj.ts`): los servicios fechan con `ahora()`; el seed demo lo fija
+  para simular 90 días pasando por los servicios reales. En producción no se puede fijar.

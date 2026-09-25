@@ -12,6 +12,7 @@ import { esRutaActiva, tituloDeRuta, type ItemNavegacion } from "@/config/naviga
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 
+import { Campana } from "./campana";
 import { LogoutButton } from "./logout-button";
 import { useUsuario } from "./usuario-context";
 
@@ -25,7 +26,8 @@ export function TopBar({ restringido = false }: { restringido?: boolean }) {
     <header className="pt-safe pl-safe pr-safe border-border bg-surface/95 fixed inset-x-0 top-0 z-30 border-b backdrop-blur md:hidden">
       <div className="flex h-14 items-center justify-between gap-3 px-4">
         {/* No es <h1>: el encabezado de la página lo pone cada pantalla. */}
-        <p className="truncate text-lg font-semibold">{tituloDeRuta(pathname)}</p>
+        <p className="min-w-0 flex-1 truncate text-lg font-semibold">{tituloDeRuta(pathname)}</p>
+        {!restringido && <Campana />}
         <button
           type="button"
           onClick={() => setMenuAbierto(true)}

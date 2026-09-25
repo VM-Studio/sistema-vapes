@@ -1,6 +1,7 @@
 import { Prisma, TipoMovimiento, type MovimientoStock } from "@prisma/client";
 
 import type { Tx } from "@/lib/db";
+import { ahora } from "@/lib/reloj";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
 
 /**
@@ -180,6 +181,7 @@ export async function registrarMovimiento(
       referenciaTipo: input.referenciaTipo ?? null,
       referenciaId: input.referenciaId ?? null,
       usuarioId: input.usuarioId,
+      createdAt: ahora(),
     },
   });
 

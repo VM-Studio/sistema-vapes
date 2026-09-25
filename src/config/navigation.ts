@@ -6,12 +6,14 @@ import {
   Building2,
   Home,
   Package,
+  Receipt,
   ScanBarcode,
   Settings,
   ShoppingCart,
   Truck,
   UserCog,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -122,6 +124,15 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     descripcion: "Mercadería recibida de proveedores",
   },
   {
+    modulo: Modulo.CAJA,
+    label: "Caja",
+    href: "/caja",
+    icon: Wallet,
+    grupo: "Operación",
+    enBottomBar: false,
+    descripcion: "Apertura, movimientos y arqueo del efectivo",
+  },
+  {
     modulo: Modulo.CLIENTES,
     label: "Clientes",
     href: "/clientes",
@@ -149,6 +160,15 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     descripcion: "Ganancias, ventas y rotación",
   },
   {
+    modulo: Modulo.GASTOS,
+    label: "Gastos",
+    href: "/gastos",
+    icon: Receipt,
+    grupo: "Administración",
+    enBottomBar: false,
+    descripcion: "Alquiler, servicios, sueldos y otros gastos",
+  },
+  {
     modulo: Modulo.USUARIOS,
     label: "Usuarios",
     href: "/usuarios",
@@ -172,6 +192,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
 const TITULOS_EXTRA: Record<string, string> = {
   "/cuenta": "Mi cuenta",
   "/sin-acceso": "Sin acceso",
+  "/notificaciones": "Notificaciones",
 };
 
 export function puedeVerItem(usuario: SujetoPermisos, item: ItemNavegacion): boolean {

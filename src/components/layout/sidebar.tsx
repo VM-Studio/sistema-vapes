@@ -9,6 +9,7 @@ import { esRutaActiva, GRUPOS, type ItemNavegacion } from "@/config/navigation";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 
+import { Campana } from "./campana";
 import { LogoutButton } from "./logout-button";
 import { useUsuario } from "./usuario-context";
 
@@ -67,6 +68,7 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
             <span className="truncate">Gestión</span>
           </Link>
         )}
+        {!colapsado && <Campana />}
         <button
           type="button"
           onClick={onToggle}
