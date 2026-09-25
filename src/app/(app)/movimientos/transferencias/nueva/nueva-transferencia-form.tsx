@@ -13,6 +13,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { BotonCamara } from "@/features/scanner/BotonCamara";
+import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
 import { cn } from "@/lib/utils";
 
 import { crearTransferenciaAction, variantesPorIdAction } from "../../actions";
@@ -68,6 +70,25 @@ export function NuevaTransferenciaForm({
     );
   }
 
+  // Escanear = +1; solo productos con stock en el origen (el error se avisa con sonido).
+  const escaner = useEscanerVariantes({
+    onVariante: (v) => void agregarPorId(v.varianteId),
+    validar: (v) => {
+      const enOrigen = v.stock.find((s) => s.depositoId === origen)?.cantidad ?? 0;
+      const yaCargadas = Number(items.find((i) => i.variante.id === v.varianteId)?.cantidad) || 0;
+      if (enOrigen <= 0) return `Sin stock en ${depositos.find((d) => d.id === origen)?.nombre}`;
+      if (yaCargadas >= enOrigen)
+        return `Solo hay ${enOrigen} en ${depositos.find((d) => d.id === origen)?.nombre}`;
+      return null;
+    },
+    permitirRafaga: true,
+    tituloCamara: "Escanear para transferir",
+  });
+  async function agregarPorId(id: string) {
+    const r = await variantesPorIdAction({ ids: [id], depositoId: origen });
+    if (r.ok && r.data[0]) agregar(r.data[0]);
+  }
+
   async function crear() {
     setEnviando(true);
     setErrores({});
@@ -120,14 +141,18 @@ export function NuevaTransferenciaForm({
               <label htmlFor="picker-transf" className="text-sm font-medium">
                 Agregar producto (con stock en el origen)
               </label>
-              <VariantePicker
-                id="picker-transf"
-                depositoId={origen}
-                soloConStock
-                yaAgregadas={ids}
-                onSelect={agregar}
-                autoFocus={precargadas.length === 0}
-              />
+              <div className="flex gap-2">
+                <VariantePicker
+                  id="picker-transf"
+                  className="flex-1"
+                  depositoId={origen}
+                  soloConStock
+                  yaAgregadas={ids}
+                  onSelect={agregar}
+                  autoFocus={precargadas.length === 0}
+                />
+                <BotonCamara onClick={escaner.abrirCamara} />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -211,6 +236,7 @@ export function NuevaTransferenciaForm({
           </Button>
         </div>
       </div>
+      {escaner.ui}
     </>
   );
 }

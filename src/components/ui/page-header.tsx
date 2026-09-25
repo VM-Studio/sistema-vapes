@@ -22,7 +22,11 @@ export function PageHeader({ title, subtitle, actions, className }: PageHeaderPr
         <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{title}</h1>
         {subtitle && <p className="text-muted text-sm">{subtitle}</p>}
       </div>
-      {actions && <div className="flex gap-2 [&>*]:flex-1 md:[&>*]:flex-none">{actions}</div>}
+      {actions && (
+        <div className="flex flex-wrap gap-2 md:flex-nowrap [&>*]:flex-1 md:[&>*]:flex-none">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

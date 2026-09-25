@@ -3,7 +3,9 @@ import { cookies } from "next/headers";
 import { AppShell } from "@/components/layout/app-shell";
 import { UsuarioProvider } from "@/components/layout/usuario-context";
 import { COOKIE_SIDEBAR } from "@/config/ui";
+import { ScannerProvider } from "@/features/scanner/scanner-provider";
 import { requirePaginaUsuario } from "@/server/auth/permissions";
+import { obtenerConfigEscaner } from "@/server/services/configuracion.service";
 
 /**
  * Layout protegido: carga el usuario (DB, cada request) y se lo pasa a la UI
@@ -12,13 +14,17 @@ import { requirePaginaUsuario } from "@/server/auth/permissions";
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const usuario = await requirePaginaUsuario({ permitirCambioPendiente: true });
-  const colapsado = (await cookies()).get(COOKIE_SIDEBAR)?.value === "colapsado";
+  const [jar, configEscaner] = await Promise.all([cookies(), obtenerConfigEscaner()]);
+  const colapsado = jar.get(COOKIE_SIDEBAR)?.value === "colapsado";
 
   return (
     <UsuarioProvider usuario={usuario}>
-      <AppShell sidebarColapsadoInicial={colapsado} restringido={usuario.debeCambiarPassword}>
-        {children}
-      </AppShell>
+      {/* Un único listener global de teclado para la pistola lectora, para toda la app. */}
+      <ScannerProvider config={configEscaner}>
+        <AppShell sidebarColapsadoInicial={colapsado} restringido={usuario.debeCambiarPassword}>
+          {children}
+        </AppShell>
+      </ScannerProvider>
     </UsuarioProvider>
   );
 }

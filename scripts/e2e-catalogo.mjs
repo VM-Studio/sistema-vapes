@@ -118,6 +118,9 @@ async function escribir(page, selector, texto) {
   });
   await page.keyboard.press("Backspace");
   await page.type(selector, texto);
+  // page.type tipea a 0 ms entre teclas, como una pistola: el detector de escaneo retiene
+  // las teclas hasta 150 ms por si es una ráfaga. Una persona no lo nota; el test espera.
+  await esperar(200);
 }
 
 async function elegirOpcion(page, selector, textoOpcion) {
@@ -143,8 +146,16 @@ async function clickTexto(page, tag, texto) {
   }
   throw new Error(`No hay ${tag} visible con el texto "${texto}"`);
 }
-const esperarTexto = (page, texto, timeout = 15000) =>
-  page.waitForFunction((t) => document.body.innerText.includes(t), { timeout }, texto);
+async function esperarTexto(page, texto, timeout = 15000) {
+  try {
+    await page.waitForFunction((t) => document.body.innerText.includes(t), { timeout }, texto);
+  } catch (e) {
+    // Diagnóstico: qué había en pantalla en vez del texto esperado.
+    await page.screenshot({ path: path.join(SHOTS, "zz-fallo-esperarTexto.png") });
+    console.log(`  ✘ no apareció «${texto}». Toasts: ${JSON.stringify(await textoToast(page))}`);
+    throw e;
+  }
+}
 const textoToast = (page) =>
   page.$$eval('[role="status"], [role="alert"]', (els) =>
     els

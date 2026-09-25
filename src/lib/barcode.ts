@@ -26,3 +26,18 @@ export function esEan13Valido(codigo: string): boolean {
     /^\d{13}$/.test(codigo) && digitoVerificadorEan13(codigo.slice(0, 12)) === Number(codigo[12])
   );
 }
+
+/** Dígito verificador Luhn (mod 10) de una cadena de dígitos. */
+export function digitoLuhn(digitos: string): number {
+  if (!/^\d+$/.test(digitos)) throw new Error(`Luhn requiere dígitos: "${digitos}"`);
+  let suma = 0;
+  for (let i = 0; i < digitos.length; i++) {
+    let d = Number(digitos[digitos.length - 1 - i]);
+    if (i % 2 === 0) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    suma += d;
+  }
+  return (10 - (suma % 10)) % 10;
+}

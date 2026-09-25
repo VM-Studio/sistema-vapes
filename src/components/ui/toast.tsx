@@ -69,8 +69,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         aria-live="polite"
         className={cn(
           "pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4",
-          // mobile: arriba de la bottom bar; desktop: arriba a la derecha
-          "bottom-[calc(5rem+env(safe-area-inset-bottom))] md:top-4 md:right-4 md:bottom-auto md:left-auto md:items-end",
+          // mobile: arriba, debajo del header (abajo tapaban las barras fijas de acción:
+          // Guardar, Confirmar ingreso, Recibir…); desktop: arriba a la derecha
+          "top-[calc(4rem+env(safe-area-inset-top))] md:top-4 md:right-4 md:left-auto md:items-end",
         )}
       >
         {toasts.map((t) => {

@@ -40,10 +40,12 @@ export interface ItemNavegacion {
   icon: LucideIcon;
   /** null = fuera de grupos (arriba de todo en el sidebar). */
   grupo: GrupoNavegacion | null;
-  /** Aparece en la bottom navigation mobile (máximo 4 + "Más"): Inicio, Ventas, Inventario, Productos. */
+  /** Bottom navigation mobile (máx. 4 + "Más"): Inicio, Ventas, [Escanear], Inventario. */
   enBottomBar: boolean;
   /** Texto corto para los accesos rápidos del inicio. */
   descripcion: string;
+  /** Botón central elevado de la bottom bar (Escanear). */
+  destacado?: boolean;
 }
 
 export const NAVEGACION: readonly ItemNavegacion[] = [
@@ -67,6 +69,16 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
   },
   {
     modulo: Modulo.INVENTARIO,
+    label: "Escanear",
+    href: "/escanear",
+    icon: ScanBarcode,
+    grupo: "Operación",
+    enBottomBar: true,
+    destacado: true,
+    descripcion: "Consultar, ingresar, contar y transferir escaneando",
+  },
+  {
+    modulo: Modulo.INVENTARIO,
     label: "Inventario",
     href: "/inventario",
     icon: Boxes,
@@ -80,17 +92,8 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     href: "/productos",
     icon: Package,
     grupo: "Catálogo",
-    enBottomBar: true,
-    descripcion: "Productos, sabores y precios",
-  },
-  {
-    modulo: [Modulo.VENTAS, Modulo.INVENTARIO],
-    label: "Escanear",
-    href: "/escanear",
-    icon: ScanBarcode,
-    grupo: "Operación",
     enBottomBar: false,
-    descripcion: "Buscar productos por código de barras",
+    descripcion: "Productos, sabores y precios",
   },
   {
     modulo: Modulo.MOVIMIENTOS,
@@ -124,7 +127,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     label: "Proveedores",
     href: "/proveedores",
     icon: Building2,
-    grupo: "Catálogo",
+    grupo: "Operación",
     enBottomBar: false,
     descripcion: "Proveedores e importadores",
   },

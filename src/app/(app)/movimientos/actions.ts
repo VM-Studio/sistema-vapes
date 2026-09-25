@@ -105,14 +105,17 @@ const busquedaSchema = z.object({
 
 /** Buscador de variantes (nombre / sabor / SKU / código). Lo usan varias pantallas. */
 export const buscarVariantesAction = actionHandler(async (input: unknown) => {
-  await requirePermisoAlguno([Modulo.MOVIMIENTOS, Modulo.INVENTARIO, Modulo.PRODUCTOS], "ver");
+  await requirePermisoAlguno(
+    [Modulo.MOVIMIENTOS, Modulo.INVENTARIO, Modulo.PRODUCTOS, Modulo.COMPRAS],
+    "ver",
+  );
   const { q, depositoId, soloConStockEnDeposito } = busquedaSchema.parse(input);
   return buscarVariantes(q, { depositoId, soloConStockEnDeposito, limite: 15 });
 });
 
 /** Stock de variantes ya elegidas en otro depósito (al cambiar el depósito del formulario). */
 export const variantesPorIdAction = actionHandler(async (input: unknown) => {
-  await requirePermisoAlguno([Modulo.MOVIMIENTOS, Modulo.INVENTARIO], "ver");
+  await requirePermisoAlguno([Modulo.MOVIMIENTOS, Modulo.INVENTARIO, Modulo.COMPRAS], "ver");
   const { ids, depositoId } = z
     .object({ ids: z.array(id).max(500), depositoId: id.optional() })
     .parse(input);

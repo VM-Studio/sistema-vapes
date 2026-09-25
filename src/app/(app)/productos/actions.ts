@@ -15,15 +15,18 @@ import {
 } from "@/lib/validations/producto";
 import { actionHandler } from "@/server/action-handler";
 import { actorDe } from "@/server/auth/actor";
-import { requirePermiso } from "@/server/auth/permissions";
-import { ValidationError } from "@/server/errors";
+import { requirePermiso, requireUsuario } from "@/server/auth/permissions";
+import { puede } from "@/lib/permisos";
+import { ForbiddenError, ValidationError } from "@/server/errors";
 import {
   actualizarPrecios,
   actualizarProducto,
   agregarCodigoAlternativo,
   aplicarAumentoPorcentual,
+  asignarCodigosInternos,
   crearProducto,
   darDeBajaProducto,
+  generarCodigoInterno,
   importarProductosCSV,
   previsualizarAumento,
   previsualizarImportacion,
@@ -143,4 +146,28 @@ export const importarCSVAction = actionHandler(async (formData: FormData) => {
   const r = await importarProductosCSV(await leerArchivo(formData), await actorDe(usuario));
   if (r.importado) revalidar();
   return r;
+});
+
+/** Código interno libre ({prefijo}{7 dígitos}{verificador}) para completar el formulario (no lo reserva). */
+export const generarCodigoInternoAction = actionHandler(async () => {
+  // Crear un producto nuevo o editar uno existente: alcanza cualquiera de los dos.
+  const usuario = await requireUsuario();
+  if (!puede(usuario, Modulo.PRODUCTOS, "crear") && !puede(usuario, Modulo.PRODUCTOS, "editar")) {
+    throw new ForbiddenError("No tenés permiso para crear ni editar productos.");
+  }
+  return { codigo: await generarCodigoInterno() };
+});
+
+/** Asigna un código interno a una variante existente que no tiene código (para etiquetarla). */
+export const asignarCodigoInternoAction = actionHandler(async (input: unknown) => {
+  const usuario = await requirePermiso(Modulo.PRODUCTOS, "editar");
+  const { varianteId } = z.object({ varianteId: id }).parse(input);
+  const r = await asignarCodigosInternos([varianteId], await actorDe(usuario));
+  const asignado = r.asignados[0];
+  if (!asignado)
+    throw new ValidationError("La variante ya tiene código de barras", {
+      varianteId: ["Ya tiene código"],
+    });
+  revalidatePath("/productos", "layout");
+  return asignado;
 });

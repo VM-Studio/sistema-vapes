@@ -1,7 +1,7 @@
 "use client";
 
 import { ClipboardList } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,9 +13,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { BotonCamara } from "@/features/scanner/BotonCamara";
+import type { VarianteEscaneada } from "@/features/scanner/tipos";
+import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
 import { conSigno } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { StockParaRecuento } from "@/server/services/movimiento.service";
+import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 
 import { ajusteMasivoAction, stockParaRecuentoAction } from "../actions";
 
@@ -41,6 +45,39 @@ export function Recuento({
   const [confirmando, setConfirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [errorMotivo, setErrorMotivo] = useState<string>();
+  const [resaltada, setResaltada] = useState<string | null>(null);
+  const lista = useRef<HTMLUListElement>(null);
+
+  /** Escanear = +1 en lo contado de ese producto (si no estaba en la planilla, se agrega). */
+  function contarEscaneo(v: VarianteEscaneada) {
+    if (!planilla?.some((p) => p.varianteId === v.varianteId)) {
+      const enDeposito = v.stock.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
+      setPlanilla((pl) => [
+        {
+          varianteId: v.varianteId,
+          nombre: v.nombreCompleto,
+          sku: v.sku,
+          codigoBarras: v.codigoBarras,
+          stockSistema: enDeposito,
+        },
+        ...(pl ?? []),
+      ]);
+    }
+    setConteos((cs) => ({ ...cs, [v.varianteId]: String((Number(cs[v.varianteId]) || 0) + 1) }));
+    setFiltro("");
+    setResaltada(v.varianteId);
+    requestAnimationFrame(() =>
+      lista.current
+        ?.querySelector(`[data-variante="${v.varianteId}"]`)
+        ?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+    );
+  }
+  const escaner = useEscanerVariantes({
+    onVariante: contarEscaneo,
+    validar: () => (planilla === null ? "Primero cargá la planilla del depósito" : null),
+    permitirRafaga: true,
+    tituloCamara: "Recuento: escaneá cada unidad",
+  });
 
   async function cargar(dep = depositoId, sinStock = incluirSinStock) {
     setCargando(true);
@@ -85,6 +122,7 @@ export function Recuento({
       if (!r.error.fields?.motivo) toast.error("No se pudo aplicar el recuento", r.error.message);
       return;
     }
+    invalidarResoluciones();
     toast.success(
       `Recuento aplicado: ${r.data.ajustes.length} ajuste(s)`,
       `${r.data.sinCambios} producto(s) coincidían con el sistema.`,
@@ -136,24 +174,35 @@ export function Recuento({
         />
       ) : (
         <div className="flex flex-col gap-3 pb-28 md:pb-0">
-          <input
-            type="search"
-            className={cn(controlClass, "h-11")}
-            placeholder="Filtrar la planilla…"
-            aria-label="Filtrar la planilla"
-            value={filtro}
-            onChange={(e) => setFiltro(e.target.value)}
-          />
-          <ul className="divide-border border-border bg-surface flex flex-col divide-y rounded-xl border">
+          <div className="flex gap-2">
+            <input
+              type="search"
+              className={cn(controlClass, "h-11 flex-1")}
+              placeholder="Filtrar la planilla…"
+              aria-label="Filtrar la planilla"
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+            />
+            <BotonCamara onClick={escaner.abrirCamara} />
+          </div>
+          <p className="text-muted text-xs">
+            Cada escaneo (pistola o cámara) suma 1 a lo contado de ese producto.
+          </p>
+          <ul
+            ref={lista}
+            className="divide-border border-border bg-surface flex flex-col divide-y rounded-xl border"
+          >
             {visibles.map((p) => {
               const c = conteos[p.varianteId] ?? "";
               const dif = c === "" ? null : Number(c) - p.stockSistema;
               return (
                 <li
                   key={p.varianteId}
+                  data-variante={p.varianteId}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5",
                     dif !== null && dif !== 0 && "bg-warning-soft/40",
+                    resaltada === p.varianteId && "ring-primary ring-2 ring-inset",
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -215,6 +264,7 @@ export function Recuento({
         </div>
       )}
 
+      {escaner.ui}
       <Dialog
         open={confirmando}
         onOpenChange={setConfirmando}

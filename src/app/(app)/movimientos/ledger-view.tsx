@@ -65,6 +65,25 @@ export function LedgerView({
         subtitle={`${resultado.total} movimientos · el historial completo e inmutable del stock`}
       />
       <div className="mb-4 flex flex-col gap-3">
+        {params.referenciaId && (
+          <div
+            role="status"
+            className="border-primary bg-primary-soft text-primary-soft-foreground flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 text-sm"
+          >
+            <span>
+              Solo los movimientos de{" "}
+              <strong>{movimientos[0]?.referencia?.etiqueta ?? "la referencia elegida"}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => actualizar({ referenciaTipo: null, referenciaId: null })}
+              aria-label="Quitar filtro de referencia"
+              className="-mr-1 p-1"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
         <ChipRow ariaLabel="Rango de fechas">
           <ChipLink
             href={link({ rango: null, desde: null, hasta: null })}

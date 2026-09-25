@@ -21,6 +21,7 @@ import { SortHeader } from "@/components/ui/sort-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EscanearAbrirProducto } from "@/features/scanner/EscanearAbrirProducto";
 import type {
   FilaInventario,
   FiltrosInventario,
@@ -156,9 +157,12 @@ export function InventarioView({ resumen, datos, filtros, params, categorias, ma
         title="Inventario"
         subtitle="Stock por depósito y consolidado"
         actions={
-          <a href={exportarHref} className={buttonVariants({ variant: "secondary" })} download>
-            <Download /> Exportar CSV
-          </a>
+          <>
+            <EscanearAbrirProducto />
+            <a href={exportarHref} className={buttonVariants({ variant: "secondary" })} download>
+              <Download /> Exportar CSV
+            </a>
+          </>
         }
       />
 

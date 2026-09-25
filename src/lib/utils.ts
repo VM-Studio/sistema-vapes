@@ -31,6 +31,11 @@ export function formatearFechaHora(fecha: Date | string | null | undefined): str
   return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
 }
 
+/** "24/09/26" (solo el día, hora argentina). */
+export function formatearFecha(fecha: Date | string | null | undefined): string {
+  return fecha ? formatearFechaHora(fecha).slice(0, 8) : "—";
+}
+
 /** "Juan Pérez" -> "JP" (para avatares). */
 export function iniciales(nombre: string): string {
   const partes = nombre.trim().split(/\s+/).filter(Boolean);

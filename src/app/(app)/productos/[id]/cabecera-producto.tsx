@@ -1,7 +1,7 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { ImageOff, PackagePlus, Pencil, Percent, Trash2 } from "lucide-react";
+import { ImageOff, PackagePlus, Pencil, Percent, Tags, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -80,6 +80,12 @@ export function CabeceraProducto({
             <PackagePlus /> Cargar stock
           </Link>
         )}
+        <Link
+          href={`/productos/etiquetas?producto=${producto.id}`}
+          className={buttonVariants({ variant: "secondary" })}
+        >
+          <Tags /> Etiquetas
+        </Link>
         {puedeEditar && (
           <Button variant="secondary" onClick={() => setAumento(true)}>
             <Percent /> Precios

@@ -1,7 +1,16 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { ChevronDown, ChevronRight, Download, Package, Percent, Plus, Upload } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Package,
+  Percent,
+  Plus,
+  Tags,
+  Upload,
+} from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
 
@@ -17,6 +26,7 @@ import { formatearNumero, formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { DepositoBasico } from "@/server/services/deposito.service";
 import type { ProductoListado } from "@/server/services/producto.service";
+import { EscanearAbrirProducto } from "@/features/scanner/EscanearAbrirProducto";
 
 import { AumentoSheet } from "./aumento-sheet";
 
@@ -75,6 +85,10 @@ export function ProductosView({ resultado, depositos, params, categorias, marcas
             >
               <Download /> Exportar
             </a>
+            <EscanearAbrirProducto />
+            <Link href="/productos/etiquetas" className={buttonVariants({ variant: "secondary" })}>
+              <Tags /> Etiquetas
+            </Link>
             {puedeCrear && (
               <Link href="/productos/importar" className={buttonVariants({ variant: "secondary" })}>
                 <Upload /> Importar

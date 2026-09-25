@@ -66,6 +66,7 @@ function whereMovimientos(f: FiltrosMovimientos): Prisma.MovimientoStockWhereInp
   if (f.usuarioId) where.usuarioId = f.usuarioId;
   if (f.tipo) where.tipo = f.tipo;
   if (f.referenciaTipo) where.referenciaTipo = f.referenciaTipo;
+  if (f.referenciaId) where.referenciaId = f.referenciaId;
   if (f.desde || f.hasta) {
     where.createdAt = {
       ...(f.desde ? { gte: f.desde } : {}),
@@ -105,7 +106,7 @@ async function resolverReferencias(
       href: `/movimientos/transferencias/${t.id}`,
     });
   }
-  // Ventas y compras todavía no tienen pantalla: se muestran sin link.
+  // Ventas todavía no tienen pantalla (Prompt 5): se muestran sin link.
   for (const v of ventas)
     mapa.set(`VENTA:${v.id}`, {
       tipo: "VENTA",
@@ -118,7 +119,7 @@ async function resolverReferencias(
       tipo: "COMPRA",
       id: c.id,
       etiqueta: `Compra #${c.numero}`,
-      href: null,
+      href: `/compras/${c.id}`,
     });
   for (const m of movs) {
     if (m.referenciaTipo === "AJUSTE" && m.referenciaId) {

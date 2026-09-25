@@ -27,3 +27,9 @@ export const ESTADO_TRANSFERENCIA_UI = {
   COMPLETADA: { label: "Completada", variante: "success" },
   ANULADA: { label: "Anulada", variante: "neutral" },
 } as const;
+
+export const ESTADO_COMPRA_UI = {
+  BORRADOR: { label: "Borrador", variante: "warning" },
+  RECIBIDA: { label: "Recibida", variante: "success" },
+  ANULADA: { label: "Anulada", variante: "neutral" },
+} as const;

@@ -21,6 +21,7 @@ import type { ProductoDetalle, VarianteDetalle } from "@/server/services/product
 import {
   actualizarPreciosAction,
   agregarCodigoAlternativoAction,
+  asignarCodigoInternoAction,
   quitarCodigoAlternativoAction,
 } from "../actions";
 
@@ -73,6 +74,8 @@ export function VariantesProducto({
         {v.codigoBarras}
         <CopyButton valor={v.codigoBarras} etiqueta="Copiar código" />
       </span>
+    ) : puedeEditar ? (
+      <GenerarCodigo varianteId={v.id} nombre={titulo(v)} />
     ) : (
       <span className="text-muted">—</span>
     );
@@ -405,5 +408,31 @@ function CodigosDialog({
         />
       </div>
     </Dialog>
+  );
+}
+
+/** Variante sin código: le asigna un código interno (Code128) para poder etiquetarla. */
+function GenerarCodigo({ varianteId, nombre }: { varianteId: string; nombre: string }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [generando, setGenerando] = useState(false);
+  async function generar() {
+    setGenerando(true);
+    const r = await asignarCodigoInternoAction({ varianteId });
+    setGenerando(false);
+    if (!r.ok) return toast.error("No se pudo generar el código", r.error.message);
+    toast.success(`Código ${r.data.codigo} asignado`, nombre);
+    router.refresh();
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-primary -ml-2"
+      onClick={() => void generar()}
+      loading={generando}
+    >
+      <Barcode /> Generar
+    </Button>
   );
 }

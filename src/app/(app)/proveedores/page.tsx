@@ -1,12 +1,18 @@
 import { Modulo } from "@prisma/client";
 import type { Metadata } from "next";
 
-import { ModuloProximamente } from "@/components/layout/modulo-proximamente";
 import { requirePaginaPermiso } from "@/server/auth/permissions";
+import { listarProveedores } from "@/server/services/proveedor.service";
+
+import { ProveedoresView } from "./proveedores-view";
 
 export const metadata: Metadata = { title: "Proveedores" };
 
-export default async function Page() {
+type SP = Record<string, string | string[] | undefined>;
+
+export default async function ProveedoresPage({ searchParams }: { searchParams: Promise<SP> }) {
   await requirePaginaPermiso(Modulo.PROVEEDORES, "ver");
-  return <ModuloProximamente titulo="Proveedores" descripcion="Proveedores e importadores" />;
+  const { q } = await searchParams;
+  const proveedores = await listarProveedores(typeof q === "string" ? q.trim() : undefined);
+  return <ProveedoresView proveedores={proveedores} />;
 }

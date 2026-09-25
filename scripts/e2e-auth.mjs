@@ -165,8 +165,9 @@ const bottomEmp = await emp.page.$$eval('nav[aria-label="Navegación inferior"] 
 );
 console.log(`     bottom bar (375px): ${bottomEmp.join(" · ")}`);
 check(
-  JSON.stringify(bottomEmp) === JSON.stringify(["Inicio", "Ventas", "Inventario", "Más"]),
-  "bottom bar: Inicio, Ventas, Inventario, Más (Productos no: no tiene permiso)",
+  JSON.stringify(bottomEmp) ===
+    JSON.stringify(["Inicio", "Ventas", "Escanear", "Inventario", "Más"]),
+  "bottom bar: Inicio, Ventas, Escanear (botón central, deriva de Inventario), Inventario, Más",
 );
 await emp.page.click('nav[aria-label="Navegación inferior"] button');
 await emp.page.waitForSelector("dialog[open]");
@@ -174,8 +175,8 @@ const masEmp = await emp.page.$$eval("dialog[open] ul a", (as) =>
   as.map((a) => a.textContent.trim()),
 );
 check(
-  JSON.stringify(masEmp) === JSON.stringify(["Escanear"]),
-  `sheet "Más": solo Escanear (deriva de Ventas/Inventario): [${masEmp.join(", ")}]`,
+  JSON.stringify(masEmp) === JSON.stringify([]),
+  `sheet "Más": sin otros módulos, solo cuenta y salir: [${masEmp.join(", ")}]`,
 );
 await shot(emp.page, "03-mobile-empleado-mas-abierto");
 await emp.page.keyboard.press("Escape");

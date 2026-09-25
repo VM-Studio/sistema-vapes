@@ -7,6 +7,7 @@
 import { Modulo, Prisma, RolUsuario, TipoComprobante, TipoMovimiento } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+import { CONFIG_ESCANER_DEFAULT } from "../src/features/scanner/config";
 import { generarEan13 } from "../src/lib/barcode";
 import { prisma, withTransaction } from "../src/lib/db";
 import { generarSku } from "../src/server/services/producto.service";
@@ -20,6 +21,16 @@ const CONFIGURACION: Record<string, Prisma.InputJsonValue> = {
   moneda: "ARS",
   alertaStockMinimo: true,
   prefijoSku: "PRD",
+  // Parámetros de la pistola lectora (editables en /configuracion/escaner).
+  escaner: { ...CONFIG_ESCANER_DEFAULT, sufijos: [...CONFIG_ESCANER_DEFAULT.sufijos] },
+};
+
+/** Proveedor de ejemplo (CUIT válido) para probar compras. */
+const PROVEEDOR_EJEMPLO = {
+  nombre: "Distribuidora Ejemplo SRL",
+  cuit: "30712345671",
+  telefono: "11 5555-0000",
+  email: "ventas@distribuidora-ejemplo.com.ar",
 };
 
 interface VarianteSeed {
@@ -346,6 +357,13 @@ async function seedConfiguracion() {
   }
 }
 
+async function seedProveedores() {
+  const existe = await prisma.proveedor.findFirst({
+    where: { cuit: PROVEEDOR_EJEMPLO.cuit, deletedAt: null },
+  });
+  if (!existe) await prisma.proveedor.create({ data: PROVEEDOR_EJEMPLO });
+}
+
 async function main() {
   // La configuración va primero: generarSku() lee el prefijo de ahí.
   await seedConfiguracion();
@@ -353,6 +371,7 @@ async function main() {
   const depositos = await seedDepositos();
   const refs = await seedCatalogoBase();
   await seedProductos(refs, depositos, owner.id);
+  await seedProveedores();
 
   const [usuarios, variantes, movimientos, stockTotal] = await Promise.all([
     prisma.usuario.count(),

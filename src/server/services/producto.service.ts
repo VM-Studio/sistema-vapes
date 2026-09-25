@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 
 import { AccionAuditoria, Prisma, type Variante } from "@prisma/client";
 
-import { CODIGO_BARRAS_REGEX, normalizarCodigoBarras } from "@/lib/barcode";
+import { CODIGO_BARRAS_REGEX, digitoLuhn, normalizarCodigoBarras } from "@/lib/barcode";
 import {
   aCSV,
   decodificarTexto,
@@ -282,37 +282,54 @@ export async function buscarPorCodigo(codigo: string): Promise<VarianteEncontrad
       producto: { deletedAt: null },
       OR: [{ codigoBarras: c }, { codigosAlternativos: { some: { codigo: c } } }],
     },
+    select: selectEncontrada,
+  });
+  return v ? aEncontrada(v, c) : null;
+}
+
+/** Misma forma que buscarPorCodigo pero por id (ej: volver al escáner después de crear el producto). */
+export async function obtenerVarianteEncontrada(id: string): Promise<VarianteEncontrada | null> {
+  const v = await prisma.variante.findFirst({
+    relationLoadStrategy: "join",
+    where: { id, deletedAt: null, producto: { deletedAt: null } },
+    select: selectEncontrada,
+  });
+  return v ? aEncontrada(v, v.codigoBarras) : null;
+}
+
+const selectEncontrada = {
+  id: true,
+  nombre: true,
+  sku: true,
+  codigoBarras: true,
+  precioCosto: true,
+  precioVenta: true,
+  stockMinimo: true,
+  activo: true,
+  producto: {
     select: {
       id: true,
       nombre: true,
-      sku: true,
-      codigoBarras: true,
-      precioCosto: true,
-      precioVenta: true,
-      stockMinimo: true,
+      tieneVariantes: true,
+      imagenUrl: true,
       activo: true,
-      producto: {
-        select: {
-          id: true,
-          nombre: true,
-          tieneVariantes: true,
-          imagenUrl: true,
-          activo: true,
-          marca: { select: { nombre: true } },
-          categoria: { select: { nombre: true } },
-        },
-      },
-      stocks: {
-        where: { deposito: { activo: true } },
-        select: {
-          cantidad: true,
-          deposito: { select: { id: true, nombre: true, esPrincipal: true } },
-        },
-      },
+      marca: { select: { nombre: true } },
+      categoria: { select: { nombre: true } },
     },
-  });
-  if (!v) return null;
+  },
+  stocks: {
+    where: { deposito: { activo: true } },
+    select: {
+      cantidad: true,
+      deposito: { select: { id: true, nombre: true, esPrincipal: true } },
+    },
+  },
+} satisfies Prisma.VarianteSelect;
 
+function aEncontrada(
+  v: Prisma.VarianteGetPayload<{ select: typeof selectEncontrada }>,
+  codigoBuscado: string | null,
+): VarianteEncontrada {
   const stock = v.stocks
     .map((s) => ({
       depositoId: s.deposito.id,
@@ -333,7 +350,7 @@ export async function buscarPorCodigo(codigo: string): Promise<VarianteEncontrad
     nombreCompleto: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
     sku: v.sku,
     codigoBarras: v.codigoBarras,
-    porCodigoAlternativo: v.codigoBarras !== c,
+    porCodigoAlternativo: codigoBuscado !== null && v.codigoBarras !== codigoBuscado,
     marca: v.producto.marca?.nombre ?? null,
     categoria: v.producto.categoria.nombre,
     imagenUrl: v.producto.imagenUrl,
@@ -344,6 +361,71 @@ export async function buscarPorCodigo(codigo: string): Promise<VarianteEncontrad
     stock,
     stockTotal: stock.reduce((acc, s) => acc + s.cantidad, 0),
   };
+}
+
+// =============================================================================
+// Códigos internos (Code128) para productos sin código de fábrica
+// =============================================================================
+
+/** Prefijo de los códigos internos: el de los SKU, solo letras y números (Code128 lo acepta y es fácil de tipear). */
+export async function prefijoCodigoInterno(tx: Tx = prisma): Promise<string> {
+  return (await prefijoSku(tx)).replace(/[^A-Z0-9]/g, "") || "PRD";
+}
+
+/** Formato: {prefijo}{7 dígitos}{verificador Luhn} (8 dígitos en total) — ej: PRD12345674. */
+export async function generarCodigoInterno(
+  tx: Tx = prisma,
+  reservados: ReadonlySet<string> = new Set(),
+): Promise<string> {
+  const prefijo = await prefijoCodigoInterno(tx);
+  for (let intento = 0; intento < 20; intento++) {
+    const base = String(randomInt(0, 10_000_000)).padStart(7, "0");
+    const codigo = `${prefijo}${base}${digitoLuhn(base)}`;
+    if (reservados.has(codigo)) continue;
+    if (!(await duenioDeCodigo(tx, codigo))) return codigo;
+  }
+  throw new Error("No se pudo generar un código interno único tras 20 intentos.");
+}
+
+/** ¿Es un código generado por el sistema (y no uno de fábrica)? Puro: recibe el prefijo ya leído. */
+export function esCodigoInterno(codigo: string | null, prefijo: string): boolean {
+  if (!codigo || !codigo.startsWith(prefijo)) return false;
+  const m = /^(\d{7})(\d)$/.exec(codigo.slice(prefijo.length));
+  return m !== null && digitoLuhn(m[1]!) === Number(m[2]);
+}
+
+/**
+ * Asigna un código interno a las variantes que no tienen código de barras
+ * (las que ya tienen uno no se tocan). Devuelve cuántas se actualizaron.
+ */
+export async function asignarCodigosInternos(
+  varianteIds: string[],
+  actor: Actor,
+): Promise<{ asignados: { varianteId: string; codigo: string }[] }> {
+  return withTransaction(async (tx) => {
+    const sinCodigo = await tx.variante.findMany({
+      where: { id: { in: varianteIds }, deletedAt: null, codigoBarras: null },
+      select: { id: true },
+    });
+    const reservados = new Set<string>();
+    const asignados: { varianteId: string; codigo: string }[] = [];
+    for (const v of sinCodigo) {
+      const codigo = await generarCodigoInterno(tx, reservados);
+      reservados.add(codigo);
+      await tx.variante.update({ where: { id: v.id }, data: { codigoBarras: codigo } });
+      asignados.push({ varianteId: v.id, codigo });
+    }
+    if (asignados.length) {
+      await registrarAuditoria(tx, {
+        usuarioId: actor.id,
+        accion: AccionAuditoria.UPDATE,
+        entidad: "Variante",
+        datosDespues: { cambio: "codigo_interno", asignados },
+        meta: actor.meta,
+      });
+    }
+    return { asignados };
+  });
 }
 
 // =============================================================================
@@ -468,7 +550,10 @@ function snapshotProducto(p: {
 export async function crearProducto(
   input: Producto,
   actor: Actor,
-): Promise<{ id: string; variantes: { id: string; nombre: string }[] }> {
+): Promise<{
+  id: string;
+  variantes: { id: string; nombre: string; codigoBarras: string | null }[];
+}> {
   try {
     return await withTransaction(async (tx) => {
       await assertClasificacionActiva(tx, input.categoriaId, input.marcaId);
@@ -515,7 +600,11 @@ export async function crearProducto(
       });
       return {
         id: producto.id,
-        variantes: producto.variantes.map((v) => ({ id: v.id, nombre: v.nombre })),
+        variantes: producto.variantes.map((v) => ({
+          id: v.id,
+          nombre: v.nombre,
+          codigoBarras: v.codigoBarras,
+        })),
       };
     });
   } catch (error) {

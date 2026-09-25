@@ -18,12 +18,15 @@ Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso
 
 ## Scripts
 
-| Script            | Qué hace                                                        |
-| ----------------- | --------------------------------------------------------------- |
-| `pnpm db:reset`   | Borra la DB, re-aplica migraciones y corre el seed (¡solo dev!) |
-| `pnpm db:seed`    | Seed idempotente                                                |
-| `pnpm test:stock` | Prueba de humo del motor de stock contra la DB                  |
-| `pnpm typecheck`  | `tsc --noEmit`                                                  |
+| Script                  | Qué hace                                                          |
+| ----------------------- | ----------------------------------------------------------------- |
+| `pnpm db:reset`         | Borra la DB, re-aplica migraciones y corre el seed (¡solo dev!)   |
+| `pnpm db:seed`          | Seed idempotente                                                  |
+| `pnpm test:stock`       | Prueba de humo del motor de stock contra la DB                    |
+| `pnpm typecheck`        | `tsc --noEmit`                                                    |
+| `pnpm test:unit`        | Vitest: detector de la pistola (`useBarcodeScanner`)              |
+| `pnpm test:compras`     | Compras, proveedores, recuento, códigos internos y etiquetas (DB) |
+| `pnpm test:e2e:escaner` | E2E del escáner (pistola + cámara falsa), compras y etiquetas     |
 
 ## Arquitectura de datos
 
@@ -67,3 +70,20 @@ Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso
   (pendiente → completar/anular). El stock solo cambia vía `registrarMovimiento` / `transferirStock`.
 - **Configuración**: depósitos (principal único, no se desactivan con stock), categorías y marcas.
 - Búsqueda `ILIKE '%texto%'` acelerada con `pg_trgm` (índices GIN declarados en el schema).
+
+## Escáner, compras y etiquetas
+
+- **Pistola** (USB/Bluetooth en modo teclado): un solo listener global (`ScannerProvider`, fase de captura).
+  Detecta ráfagas por velocidad (≥ 4 caracteres a < 50 ms, con Enter/Tab; parámetros en
+  `/configuracion/escaner`, con «Probar pistola»). Mide con `KeyboardEvent.timeStamp` y, con la ráfaga ya
+  confirmada, tolera hipos de hasta 3×: no se parte el código aunque el celular esté ocupado. Si el foco
+  estaba en un input, el input queda como estaba; si era una persona tipeando, no se pierde nada.
+  Cada pantalla consume con `useBarcodeScanner` / `useEscanerVariantes` (el último montado gana).
+- **Cámara**: `BarcodeDetector` nativo o `@zxing/browser`; se libera al cerrar, al ocultar la pestaña y al desmontar.
+- **Hub `/escanear`** (botón central de la barra inferior): Consultar · Ingresar · Contar · Transferir
+  (Vender, en la próxima etapa). Carrito persistido; código desconocido → asociarlo o crear el producto y volver.
+- **Compras** (`/compras`): borrador → recibir (INGRESO_COMPRA por ítem, opcional actualizar costos con
+  historial) → anular (DEVOLUCION_PROVEEDOR). Totales calculados en el servidor. **Proveedores** con CUIT validado.
+- **Etiquetas** (`/productos/etiquetas`): Code128 en PDF (A4 65/hoja, 3×8, 2×7, rollo 50×30). A lo que no tiene
+  código se le asigna uno interno `{prefijo}{7 dígitos}{verificador}`.
+- Para probar sin pistola: pegar `scripts/simular-pistola.js` en la consola y llamar `simularPistola("7790001000019")`.

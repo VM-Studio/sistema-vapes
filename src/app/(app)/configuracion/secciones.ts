@@ -12,6 +12,11 @@ export const SECCIONES_CONFIGURACION = [
     descripcion: "Vapes, pods, líquidos, accesorios…",
   },
   { href: "/configuracion/marcas", label: "Marcas", descripcion: "Fabricantes de los productos" },
+  {
+    href: "/configuracion/escaner",
+    label: "Escáner",
+    descripcion: "Pistola lectora: parámetros y prueba",
+  },
 ] as const;
 
 export function tabsConfiguracion(actual: string): TabNavItem[] {

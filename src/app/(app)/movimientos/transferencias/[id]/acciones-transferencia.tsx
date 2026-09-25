@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 
 import { anularTransferenciaAction, completarTransferenciaAction } from "../../actions";
 
@@ -35,6 +36,7 @@ export function AccionesTransferencia({
     const r = await completarTransferenciaAction({ id });
     setCompletando(false);
     if (!r.ok) return toast.error("No se pudo completar", r.error.message);
+    invalidarResoluciones();
     toast.success(
       `Transferencia #${numero} completada`,
       `Se movieron ${r.data.unidades} unidades.`,

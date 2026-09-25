@@ -29,7 +29,12 @@ import {
 } from "@/lib/validations/producto";
 import type { ProductoDetalle } from "@/server/services/producto.service";
 
-import { actualizarProductoAction, crearProductoAction, verificarCodigoAction } from "./actions";
+import {
+  actualizarProductoAction,
+  crearProductoAction,
+  generarCodigoInternoAction,
+  verificarCodigoAction,
+} from "./actions";
 
 type FormProducto = UseFormReturn<ProductoInput, unknown, Producto>;
 
@@ -43,7 +48,7 @@ const varianteVacia = {
   activo: true,
 };
 
-function valoresIniciales(p: ProductoDetalle | null): ProductoInput {
+function valoresIniciales(p: ProductoDetalle | null, codigoInicial?: string): ProductoInput {
   if (!p) {
     return {
       nombre: "",
@@ -53,7 +58,7 @@ function valoresIniciales(p: ProductoDetalle | null): ProductoInput {
       imagenUrl: "",
       activo: true,
       tieneVariantes: true,
-      variantes: [{ ...varianteVacia }],
+      variantes: [{ ...varianteVacia, codigoBarras: codigoInicial ?? "" }],
     };
   }
   return {
@@ -135,7 +140,7 @@ const claveCodigo = (codigo: string, varianteId?: string) =>
  * cada validación: el error no se pierde al salir del campo.
  */
 function CeldaCodigo({ index, ocupados }: { index: number; ocupados: CodigosOcupados }) {
-  const { control, getValues, trigger } = useFormContext<ProductoInput>();
+  const { control, getValues, trigger, setValue } = useFormContext<ProductoInput>();
   const name = `variantes.${index}.codigoBarras` as const;
   const valor = useWatch({ control, name }) as string | undefined;
 
@@ -154,15 +159,36 @@ function CeldaCodigo({ index, ocupados }: { index: number; ocupados: CodigosOcup
     return () => clearTimeout(t);
   }, [valor, index, name, getValues, trigger, ocupados]);
 
+  const toast = useToast();
+  const [generando, setGenerando] = useState(false);
+  async function generar() {
+    setGenerando(true);
+    const r = await generarCodigoInternoAction();
+    setGenerando(false);
+    if (!r.ok) return toast.error("No se pudo generar el código", r.error.message);
+    setValue(name, r.data.codigo, { shouldDirty: true, shouldValidate: true });
+  }
+
   return (
-    <Celda
-      name={name}
-      label="Código de barras"
-      placeholder="Escaneá o escribí"
-      autoComplete="off"
-      spellCheck={false}
-      className="md:col-span-1"
-    />
+    <div className="flex flex-col gap-1 md:col-span-1">
+      <Celda
+        name={name}
+        label="Código de barras"
+        placeholder="Escaneá o escribí"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      {!(valor ?? "").trim() && (
+        <button
+          type="button"
+          onClick={() => void generar()}
+          disabled={generando}
+          className="text-primary self-start text-xs font-medium hover:underline disabled:opacity-60"
+        >
+          {generando ? "Generando…" : "Generar código interno"}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -170,7 +196,8 @@ function EditorVariantes({ form, ocupados }: { form: FormProducto; ocupados: Cod
   const { control, register, setFocus, getValues, setValue } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "variantes" });
   const tieneVariantes = useWatch({ control, name: "tieneVariantes" });
-  const [abiertas, setAbiertas] = useState<Set<string>>(() => new Set(fields.map((f) => f.id)));
+  // Se guardan las filas que el usuario cerró: las nuevas (agregar/duplicar) nacen abiertas.
+  const [cerradas, setCerradas] = useState<Set<string>>(() => new Set());
   const errorLista = get(form.formState.errors, "variantes") as
     { message?: string; root?: { message?: string } } | undefined;
 
@@ -194,7 +221,7 @@ function EditorVariantes({ form, ocupados }: { form: FormProducto; ocupados: Cod
   }
 
   const toggle = (id: string) =>
-    setAbiertas((s) => {
+    setCerradas((s) => {
       const n = new Set(s);
       if (n.has(id)) n.delete(id);
       else n.add(id);
@@ -228,7 +255,7 @@ function EditorVariantes({ form, ocupados }: { form: FormProducto; ocupados: Cod
         </div>
 
         {fields.map((field, i) => {
-          const abierta = abiertas.has(field.id) || !tieneVariantes;
+          const abierta = !cerradas.has(field.id) || !tieneVariantes;
           const nombre = form.getValues(`variantes.${i}.nombre`) as string;
           return (
             <div
@@ -351,16 +378,22 @@ export function ProductoForm({
   producto,
   categorias,
   marcas,
+  codigoInicial,
+  volver,
 }: {
   producto: ProductoDetalle | null;
   categorias: { value: string; label: string }[];
   marcas: { value: string; label: string }[];
+  /** Código escaneado que no existía: se precarga en la primera variante. */
+  codigoInicial?: string;
+  /** Ruta a la que volver al guardar (ej: /escanear), agregando la variante creada. */
+  volver?: string;
 }) {
   const router = useRouter();
   const toast = useToast();
   const ocupados = useRef<CodigosOcupados>(new Map()).current;
   const form = useZodForm(productoSchema, {
-    defaultValues: valoresIniciales(producto),
+    defaultValues: valoresIniciales(producto, codigoInicial),
     erroresExtra: (valores) => {
       const errores: Record<string, string> = {};
       (valores.variantes ?? []).forEach((v, i) => {
@@ -381,6 +414,14 @@ export function ProductoForm({
       const r = await crearProductoAction(datos);
       if (!r.ok) return mostrarError(r.error);
       toast.success("Producto creado");
+      if (volver) {
+        // Vuelve al escáner con la variante que tiene el código escaneado (o la primera).
+        const v =
+          r.data.variantes.find((x) => x.codigoBarras === codigoInicial?.toUpperCase()) ??
+          r.data.variantes[0];
+        router.push(`${volver}${volver.includes("?") ? "&" : "?"}agregar=${v?.id ?? ""}`);
+        return;
+      }
       router.push(
         cargarStock.current
           ? `/movimientos/ingreso?variantes=${r.data.variantes.map((v) => v.id).join(",")}`

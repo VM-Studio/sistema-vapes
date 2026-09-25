@@ -14,8 +14,11 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { BotonCamara } from "@/features/scanner/BotonCamara";
+import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 
 import { ingresoManualAction, variantesPorIdAction } from "../actions";
 
@@ -61,6 +64,17 @@ export function IngresoForm({
           )
         : [...its, { variante: v, cantidad: "1", costo: "" }],
     );
+  }
+
+  // Pistola (global), cámara o ?agregar=<id> al volver de crear un producto: +1 por escaneo.
+  const escaner = useEscanerVariantes({
+    onVariante: (v) => void agregarPorId(v.varianteId),
+    permitirRafaga: true,
+    tituloCamara: "Escanear ingreso",
+  });
+  async function agregarPorId(id: string) {
+    const r = await variantesPorIdAction({ ids: [id], depositoId });
+    if (r.ok && r.data[0]) agregar(r.data[0]);
   }
 
   async function cambiarDeposito(id: string) {
@@ -111,6 +125,7 @@ export function IngresoForm({
       if (!r.error.fields) toast.error("No se pudo registrar el ingreso", r.error.message);
       return;
     }
+    invalidarResoluciones(); // el stock cambió: el escáner no debe mostrar el viejo
     const deposito = depositos.find((d) => d.id === depositoId)?.nombre ?? "";
     toast.success(
       `Ingresaron ${formatearNumero(r.data.unidades)} unidades a ${deposito}`,
@@ -158,13 +173,17 @@ export function IngresoForm({
               <label htmlFor="picker-ingreso" className="text-sm font-medium">
                 Agregar producto
               </label>
-              <VariantePicker
-                id="picker-ingreso"
-                depositoId={depositoId}
-                yaAgregadas={ids}
-                onSelect={agregar}
-                autoFocus={precargadas.length === 0}
-              />
+              <div className="flex gap-2">
+                <VariantePicker
+                  id="picker-ingreso"
+                  className="flex-1"
+                  depositoId={depositoId}
+                  yaAgregadas={ids}
+                  onSelect={agregar}
+                  autoFocus={precargadas.length === 0}
+                />
+                <BotonCamara onClick={escaner.abrirCamara} />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -265,6 +284,7 @@ export function IngresoForm({
         </div>
       </div>
 
+      {escaner.ui}
       <Dialog
         open={preguntarCosto !== null}
         onOpenChange={(o) => !o && setPreguntarCosto(null)}

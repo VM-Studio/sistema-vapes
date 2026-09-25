@@ -22,6 +22,7 @@ interface VariantePickerProps {
   autoFocus?: boolean;
   disabled?: boolean;
   id?: string;
+  className?: string;
 }
 
 const pareceCodigo = (q: string) => /^[0-9A-Za-z-]{4,64}$/.test(q) && /\d/.test(q);
@@ -41,6 +42,7 @@ export function VariantePicker({
   autoFocus,
   disabled,
   id,
+  className,
 }: VariantePickerProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
@@ -126,7 +128,7 @@ export function VariantePicker({
   const stockDe = (v: VarianteBuscada) => (depositoId ? v.stockDeposito : v.stockTotal) ?? 0;
 
   return (
-    <div className="relative">
+    <div className={cn("relative", className)}>
       <Search
         className="text-muted pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
         aria-hidden

@@ -93,6 +93,28 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
           {principales.map((item) => {
             const activo = esRutaActiva(item.href, pathname);
             const Icono = item.icon;
+            if (item.destacado) {
+              // Botón central elevado (Escanear): la acción más usada en el galpón.
+              return (
+                <li key={item.href} className="flex flex-1 justify-center">
+                  <Link
+                    href={item.href}
+                    aria-current={activo ? "page" : undefined}
+                    className="text-primary -mt-5 flex flex-col items-center gap-0.5 text-[11px] font-semibold"
+                  >
+                    <span
+                      className={cn(
+                        "border-background bg-primary text-primary-foreground flex size-14 items-center justify-center rounded-full border-4 shadow-lg",
+                        activo && "ring-primary/40 ring-2",
+                      )}
+                    >
+                      <Icono className="size-7" aria-hidden />
+                    </span>
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            }
             return (
               <li key={item.href} className="flex flex-1">
                 <Link

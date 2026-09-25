@@ -12,7 +12,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { BotonCamara } from "@/features/scanner/BotonCamara";
+import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
 import { conSigno } from "@/lib/format";
+import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 
 import { ajusteAction, variantesPorIdAction } from "../actions";
 
@@ -43,6 +46,16 @@ export function AjusteSimple({
     if (r.ok && r.data[0]) setVariante(r.data[0]);
   }
 
+  // Escanear elige el producto a ajustar (con el stock del depósito elegido).
+  const escaner = useEscanerVariantes({
+    onVariante: (v) => {
+      setReal("");
+      void refrescar(v.varianteId, depositoId);
+    },
+    habilitado: !confirmando,
+    tituloCamara: "Escaneá el producto a ajustar",
+  });
+
   async function aplicar() {
     if (!variante) return;
     setEnviando(true);
@@ -61,6 +74,7 @@ export function AjusteSimple({
       if (!r.error.fields) toast.error("No se pudo ajustar", r.error.message);
       return;
     }
+    invalidarResoluciones();
     toast.success(
       "Stock ajustado",
       `${r.data.nombre} en ${deposito}: ${r.data.stockAnterior} → ${r.data.cantidadReal} (${conSigno(r.data.diferencia)})`,
@@ -109,12 +123,16 @@ export function AjusteSimple({
               <label htmlFor="picker-ajuste" className="text-sm font-medium">
                 Producto
               </label>
-              <VariantePicker
-                id="picker-ajuste"
-                depositoId={depositoId}
-                onSelect={setVariante}
-                autoFocus
-              />
+              <div className="flex gap-2">
+                <VariantePicker
+                  id="picker-ajuste"
+                  className="flex-1"
+                  depositoId={depositoId}
+                  onSelect={setVariante}
+                  autoFocus
+                />
+                <BotonCamara onClick={escaner.abrirCamara} />
+              </div>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -181,6 +199,7 @@ export function AjusteSimple({
         )}
         <p className="text-muted text-sm">Motivo: {motivo || "—"}</p>
       </Dialog>
+      {escaner.ui}
     </>
   );
 }

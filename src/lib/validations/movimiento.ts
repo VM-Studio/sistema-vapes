@@ -102,6 +102,7 @@ export const listarMovimientosSchema = z.object({
   referenciaTipo: z
     .preprocess(vacioAUndefined, z.enum(["VENTA", "COMPRA", "TRANSFERENCIA", "AJUSTE"]).optional())
     .catch(undefined),
+  referenciaId: z.preprocess(vacioAUndefined, z.string().max(64).optional()).catch(undefined),
   desde: z.preprocess(vacioAUndefined, z.coerce.date().optional()).catch(undefined),
   hasta: z.preprocess(vacioAUndefined, z.coerce.date().optional()).catch(undefined),
   page: z.coerce.number().int().min(1).catch(1),
