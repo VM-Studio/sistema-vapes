@@ -1,5 +1,5 @@
 import { Modulo } from "@prisma/client";
-import { Boxes, ChevronRight, ScanBarcode, Tag, Warehouse } from "lucide-react";
+import { Boxes, ChevronRight, Receipt, ScanBarcode, Tag, Warehouse } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -10,7 +10,7 @@ import { SECCIONES_CONFIGURACION } from "./secciones";
 
 export const metadata: Metadata = { title: "Configuración" };
 
-const ICONOS = [Warehouse, Boxes, Tag, ScanBarcode];
+const ICONOS = [Warehouse, Boxes, Tag, Receipt, ScanBarcode];
 
 export default async function ConfiguracionPage() {
   await requirePaginaPermiso(Modulo.CONFIGURACION, "ver");

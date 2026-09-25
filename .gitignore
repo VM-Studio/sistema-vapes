@@ -45,3 +45,6 @@ next-env.d.ts
 .vscode/*
 !.vscode/extensions.json
 verificacion/
+
+# archivos generados (PDF de comprobantes) en desarrollo
+.storage/

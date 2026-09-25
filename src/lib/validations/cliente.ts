@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { emailOpcional, id, texto, textoOpcional } from "./common";
+import { emailOpcional, id, montoOpcional, texto, textoOpcional } from "./common";
 
 /** DNI/CUIT/pasaporte: se guarda sin puntos, guiones ni espacios, en mayúsculas. */
 const documentoOpcional = z
@@ -19,9 +19,11 @@ export const crearClienteSchema = z.object({
   direccion: textoOpcional(300),
   notas: textoOpcional(2000),
   activo: z.boolean().default(true),
+  /** Solo lo puede fijar el OWNER (lo valida la acción). Vacío = no se le vende fiado. */
+  limiteCredito: montoOpcional,
 });
 
-export const actualizarClienteSchema = crearClienteSchema.partial().extend({ id });
+export const actualizarClienteSchema = crearClienteSchema.extend({ id });
 
 export type CrearCliente = z.output<typeof crearClienteSchema>;
 export type ActualizarCliente = z.output<typeof actualizarClienteSchema>;

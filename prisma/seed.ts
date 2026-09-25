@@ -8,6 +8,7 @@ import { Modulo, Prisma, RolUsuario, TipoComprobante, TipoMovimiento } from "@pr
 import bcrypt from "bcryptjs";
 
 import { CONFIG_ESCANER_DEFAULT } from "../src/features/scanner/config";
+import { configVentasSchema } from "../src/lib/validations/venta";
 import { generarEan13 } from "../src/lib/barcode";
 import { prisma, withTransaction } from "../src/lib/db";
 import { generarSku } from "../src/server/services/producto.service";
@@ -23,6 +24,17 @@ const CONFIGURACION: Record<string, Prisma.InputJsonValue> = {
   prefijoSku: "PRD",
   // Parámetros de la pistola lectora (editables en /configuracion/escaner).
   escaner: { ...CONFIG_ESCANER_DEFAULT, sufijos: [...CONFIG_ESCANER_DEFAULT.sufijos] },
+  // Comprobante y cobro (editables en /configuracion/ventas).
+  ventas: configVentasSchema.parse({}),
+};
+
+/** Cliente de ejemplo con cuenta corriente habilitada. */
+const CLIENTE_EJEMPLO = {
+  nombre: "Martín",
+  apellido: "Gómez",
+  documento: "30111222",
+  telefono: "11 5555-0101",
+  limiteCredito: "50000.00",
 };
 
 /** Proveedor de ejemplo (CUIT válido) para probar compras. */
@@ -357,6 +369,13 @@ async function seedConfiguracion() {
   }
 }
 
+async function seedClientes() {
+  const existe = await prisma.cliente.findFirst({
+    where: { documento: CLIENTE_EJEMPLO.documento, deletedAt: null },
+  });
+  if (!existe) await prisma.cliente.create({ data: CLIENTE_EJEMPLO });
+}
+
 async function seedProveedores() {
   const existe = await prisma.proveedor.findFirst({
     where: { cuit: PROVEEDOR_EJEMPLO.cuit, deletedAt: null },
@@ -372,6 +391,7 @@ async function main() {
   const refs = await seedCatalogoBase();
   await seedProductos(refs, depositos, owner.id);
   await seedProveedores();
+  await seedClientes();
 
   const [usuarios, variantes, movimientos, stockTotal] = await Promise.all([
     prisma.usuario.count(),

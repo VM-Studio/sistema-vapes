@@ -111,6 +111,7 @@ export function EscanearHub({
   const puedeCompra = usePuede(Modulo.COMPRAS, "crear");
   const puedeContar = usePuede(Modulo.MOVIMIENTOS, "editar");
   const puedeTransferir = usePuede(Modulo.MOVIMIENTOS, "crear");
+  const puedeVender = usePuede(Modulo.VENTAS, "crear");
   const puedeCompletar = usePuede(Modulo.MOVIMIENTOS, "editar");
   const puedeVerProductos = usePuede(Modulo.PRODUCTOS, "ver");
   const habilitado: Record<Modo, string | null> = {
@@ -163,7 +164,13 @@ export function EscanearHub({
   }
 
   function elegirModo(m: Modo | "vender") {
-    if (m === "vender") return;
+    if (m === "vender") {
+      // Vender es el punto de venta, con el mismo depósito y el escáner activo.
+      if (!puedeVender)
+        return toast.error("Modo Vender bloqueado", "Necesitás permiso para crear en Ventas.");
+      router.push(`/ventas/nueva?deposito=${depositoId}`);
+      return;
+    }
     const bloqueo = habilitado[m];
     if (bloqueo) {
       toast.error(`Modo ${MODOS.find((x) => x.id === m)?.label} bloqueado`, bloqueo);
@@ -382,7 +389,11 @@ export function EscanearHub({
         {MODOS.map((m) => {
           const Icono = m.icono;
           const bloqueo =
-            m.id === "vender" ? "Disponible en la próxima etapa (Ventas)." : habilitado[m.id];
+            m.id === "vender"
+              ? puedeVender
+                ? null
+                : "Necesitás permiso para crear en Ventas."
+              : habilitado[m.id];
           const activo = m.id === modo;
           return (
             <button

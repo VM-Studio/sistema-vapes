@@ -1016,7 +1016,7 @@ const modos = await emp.$$eval('[role="tab"]', (ts) =>
   ts.map((t) => `${t.textContent.trim()}${t.getAttribute("aria-disabled") ? "🔒" : ""}`),
 );
 check(
-  modos.join() === "Consultar,Ingresar🔒,Contar🔒,Transferir🔒,Vender🔒",
+  modos.join() === "Consultar,Ingresar🔒,Contar🔒,Transferir🔒,Vender", // Vender: puede crear ventas
   `modos: ${modos.join(" · ")}`,
 );
 await clickTexto(emp, "button", "Contar");

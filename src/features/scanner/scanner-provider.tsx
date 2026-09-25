@@ -70,7 +70,11 @@ export function ScannerProvider({
     window.addEventListener("keydown", capturador.onKeyDown, { capture: true });
     window.addEventListener("pointerdown", capturador.onInterrupcion, { capture: true });
     window.addEventListener("focusout", capturador.onInterrupcion, { capture: true });
+    // Texto que entra sin keydown (autocompletar, IME, "í" pegada) mientras hay teclas retenidas:
+    // primero vuelven las retenidas, así no se desordena lo tipeado.
+    window.addEventListener("beforeinput", capturador.onTextoExterno, { capture: true });
     return () => {
+      window.removeEventListener("beforeinput", capturador.onTextoExterno, { capture: true });
       window.removeEventListener("keydown", capturador.onKeyDown, { capture: true });
       window.removeEventListener("pointerdown", capturador.onInterrupcion, { capture: true });
       window.removeEventListener("focusout", capturador.onInterrupcion, { capture: true });

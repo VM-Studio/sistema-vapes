@@ -18,15 +18,18 @@ Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso
 
 ## Scripts
 
-| Script                  | Qué hace                                                          |
-| ----------------------- | ----------------------------------------------------------------- |
-| `pnpm db:reset`         | Borra la DB, re-aplica migraciones y corre el seed (¡solo dev!)   |
-| `pnpm db:seed`          | Seed idempotente                                                  |
-| `pnpm test:stock`       | Prueba de humo del motor de stock contra la DB                    |
-| `pnpm typecheck`        | `tsc --noEmit`                                                    |
-| `pnpm test:unit`        | Vitest: detector de la pistola (`useBarcodeScanner`)              |
-| `pnpm test:compras`     | Compras, proveedores, recuento, códigos internos y etiquetas (DB) |
-| `pnpm test:e2e:escaner` | E2E del escáner (pistola + cámara falsa), compras y etiquetas     |
+| Script                          | Qué hace                                                                |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `pnpm db:reset`                 | Borra la DB, re-aplica migraciones y corre el seed (¡solo dev!)         |
+| `pnpm db:seed`                  | Seed idempotente                                                        |
+| `pnpm test:stock`               | Prueba de humo del motor de stock contra la DB                          |
+| `pnpm typecheck`                | `tsc --noEmit`                                                          |
+| `pnpm test:unit`                | Vitest: detector de la pistola (`useBarcodeScanner`)                    |
+| `pnpm test:compras`             | Compras, proveedores, recuento, códigos internos y etiquetas (DB)       |
+| `pnpm test:ventas`              | Ventas: pago partido, fiado, devoluciones, anulación (DB)               |
+| `pnpm test:ventas:concurrencia` | 10 ventas simultáneas sobre stock 5: 5 confirman, numeración sin huecos |
+| `pnpm test:e2e:ventas`          | E2E del POS, cobro, clientes y comprobantes                             |
+| `pnpm test:e2e:escaner`         | E2E del escáner (pistola + cámara falsa), compras y etiquetas           |
 
 ## Arquitectura de datos
 
@@ -87,3 +90,24 @@ Usuarios de seed (password `Cambiar123!`, se pide cambiarla en el primer ingreso
 - **Etiquetas** (`/productos/etiquetas`): Code128 en PDF (A4 65/hoja, 3×8, 2×7, rollo 50×30). A lo que no tiene
   código se le asigna uno interno `{prefijo}{7 dígitos}{verificador}`.
 - Para probar sin pistola: pegar `scripts/simular-pistola.js` en la consola y llamar `simularPistola("7790001000019")`.
+
+## Ventas, clientes y comprobantes
+
+- **POS** (`/ventas/nueva`, el botón «Ventas» de la barra inferior): pistola siempre activa, cámara,
+  buscador, grilla de los 12 más vendidos, carrito persistido y cobro con pagos partidos, vuelto,
+  redondeo (siempre a favor del cliente), descuento y fiado (con permiso «editar»). Escritorio: cobro
+  inline, `F2` buscar, `F9` cobrar.
+- **Confirmar una venta** es una transacción Serializable: descuenta stock (VENTA por ítem), congela el
+  costo, registra los pagos, actualiza la cuenta corriente y numera el comprobante con la secuencia
+  bloqueada (`FOR UPDATE`): sin huecos ni duplicados aunque cobren varias cajas a la vez.
+- **Invariantes verificadas por la DB al COMMIT**: `montoPagado = Σ pagos vigentes`,
+  `montoPagado + saldoPendiente = total`, `Cliente.saldoDeudor = Σ saldos pendientes`,
+  `cantidadDevuelta = Σ devuelto ≤ vendido`. Los pagos no se borran: se anulan (solo el dueño).
+- **Devoluciones** parciales con reintegro en dinero o a la cuenta del cliente (cancela deuda; el resto
+  queda como saldo a favor, usable como medio de pago). **Anular** revierte stock, pagos y comprobante.
+- **Comprobantes**: ticket 80 mm y A4 (pdf-lib). El ticket se guarda con una URL pública inadivinable
+  (`/api/publico/archivos/...`) para mandarlo por WhatsApp. `StorageProvider` (`src/server/storage.ts`)
+  es local en desarrollo (`.storage/`) y se reemplaza por S3/R2 en producción. AFIP: ver el comentario
+  en `comprobante.service.ts` (no integrado).
+- Para el Prompt 6, `venta.service.ts` expone `resumenVentas`, `ventasPorDia`, `topVariantes` y
+  `ventasPorVendedor` (SQL agregado, sin traer ventas a memoria).

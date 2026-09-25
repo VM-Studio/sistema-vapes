@@ -11,6 +11,7 @@ import {
 } from "pdf-lib";
 
 import { prisma } from "@/lib/db";
+import { aWinAnsi, MM, recortar } from "@/server/pdf";
 import { formatearPesos } from "@/lib/format";
 import type { FormatoEtiqueta, PedidoEtiquetas } from "@/lib/validations/etiquetas";
 import { DomainError } from "@/server/errors";
@@ -28,7 +29,6 @@ import {
  * arma el PDF en el formato elegido. Todo del lado del servidor.
  */
 
-const MM = 72 / 25.4; // puntos por milímetro
 const MAX_ETIQUETAS = 2000;
 
 interface Plantilla {
@@ -155,27 +155,6 @@ export async function renderizarCode128(codigo: string): Promise<Uint8Array> {
     paddingheight: 2,
     backgroundcolor: "FFFFFF",
   });
-}
-
-/** pdf-lib con fuentes estándar solo dibuja WinAnsi: reemplaza lo que no se pueda. */
-function aWinAnsi(texto: string, fuente: PDFFont): string {
-  return [...texto]
-    .map((ch) => {
-      try {
-        fuente.encodeText(ch);
-        return ch;
-      } catch {
-        return "?";
-      }
-    })
-    .join("");
-}
-
-function recortar(texto: string, fuente: PDFFont, tamanio: number, anchoMax: number): string {
-  if (fuente.widthOfTextAtSize(texto, tamanio) <= anchoMax) return texto;
-  let t = texto;
-  while (t.length > 1 && fuente.widthOfTextAtSize(`${t}…`, tamanio) > anchoMax) t = t.slice(0, -1);
-  return `${t.trimEnd()}…`;
 }
 
 function dibujarEtiqueta(

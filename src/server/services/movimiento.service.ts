@@ -83,7 +83,7 @@ async function resolverReferencias(
   const ids = (tipo: string) => [
     ...new Set(movs.filter((m) => m.referenciaTipo === tipo).map((m) => m.referenciaId!)),
   ];
-  const [transf, ventas, compras] = await Promise.all([
+  const [transf, ventas, compras, devoluciones] = await Promise.all([
     prisma.transferencia.findMany({
       where: { id: { in: ids("TRANSFERENCIA") } },
       select: { id: true, numero: true },
@@ -96,6 +96,10 @@ async function resolverReferencias(
       where: { id: { in: ids("COMPRA") } },
       select: { id: true, numero: true },
     }),
+    prisma.devolucion.findMany({
+      where: { id: { in: ids("DEVOLUCION") } },
+      select: { id: true, numero: true, ventaId: true, venta: { select: { numero: true } } },
+    }),
   ]);
   const mapa = new Map<string, ReferenciaMovimiento>();
   for (const t of transf) {
@@ -106,13 +110,19 @@ async function resolverReferencias(
       href: `/movimientos/transferencias/${t.id}`,
     });
   }
-  // Ventas todavía no tienen pantalla (Prompt 5): se muestran sin link.
   for (const v of ventas)
     mapa.set(`VENTA:${v.id}`, {
       tipo: "VENTA",
       id: v.id,
       etiqueta: `Venta #${v.numero}`,
-      href: null,
+      href: `/ventas/${v.id}`,
+    });
+  for (const d of devoluciones)
+    mapa.set(`DEVOLUCION:${d.id}`, {
+      tipo: "DEVOLUCION",
+      id: d.id,
+      etiqueta: `Devolución #${d.numero} (venta #${d.venta.numero})`,
+      href: `/ventas/${d.ventaId}`,
     });
   for (const c of compras)
     mapa.set(`COMPRA:${c.id}`, {

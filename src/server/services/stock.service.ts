@@ -16,7 +16,7 @@ import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/err
  * transacción es rechazado, y el movimiento debe partir del stock real.
  */
 
-export type ReferenciaTipo = "VENTA" | "COMPRA" | "TRANSFERENCIA" | "AJUSTE";
+export type ReferenciaTipo = "VENTA" | "COMPRA" | "TRANSFERENCIA" | "AJUSTE" | "DEVOLUCION";
 
 const TIPOS_ENTRADA: ReadonlySet<TipoMovimiento> = new Set([
   TipoMovimiento.INGRESO_COMPRA,

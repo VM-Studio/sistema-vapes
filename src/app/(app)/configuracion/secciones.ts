@@ -13,6 +13,11 @@ export const SECCIONES_CONFIGURACION = [
   },
   { href: "/configuracion/marcas", label: "Marcas", descripcion: "Fabricantes de los productos" },
   {
+    href: "/configuracion/ventas",
+    label: "Ventas y comprobante",
+    descripcion: "Datos del negocio, numeración y redondeo (solo dueño)",
+  },
+  {
     href: "/configuracion/escaner",
     label: "Escáner",
     descripcion: "Pistola lectora: parámetros y prueba",

@@ -25,7 +25,7 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
   const sueltos = items.filter((i) => i.grupo === null);
 
   const renderItem = (item: ItemNavegacion) => {
-    const activo = esRutaActiva(item.href, pathname);
+    const activo = esRutaActiva(item.base ?? item.href, pathname);
     const Icono = item.icon;
     return (
       <li key={item.href}>

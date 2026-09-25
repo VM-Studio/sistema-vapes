@@ -17,7 +17,7 @@ import {
 import { configEscanerSchema } from "@/features/scanner/config";
 import { actionHandler } from "@/server/action-handler";
 import { actorDe } from "@/server/auth/actor";
-import { requirePermiso } from "@/server/auth/permissions";
+import { requireOwner, requirePermiso } from "@/server/auth/permissions";
 import {
   actualizarCategoria,
   cambiarActivoCategoria,
@@ -28,7 +28,8 @@ import {
   cambiarActivoDeposito,
   crearDeposito,
 } from "@/server/services/deposito.service";
-import { guardarConfigEscaner } from "@/server/services/configuracion.service";
+import { guardarConfigEscaner, guardarConfigVentas } from "@/server/services/configuracion.service";
+import { configVentasSchema } from "@/lib/validations/venta";
 import { actualizarMarca, cambiarActivoMarca, crearMarca } from "@/server/services/marca.service";
 
 /** CONFIGURACION: crear → alta · editar → modificar y activar/desactivar. */
@@ -110,6 +111,14 @@ export const guardarConfigEscanerAction = actionHandler(async (input: unknown) =
   const usuario = await requirePermiso(Modulo.CONFIGURACION, "editar");
   const r = await guardarConfigEscaner(configEscanerSchema.parse(input), await actorDe(usuario));
   // El layout lee la configuración: todas las pantallas toman los nuevos valores.
+  revalidatePath("/", "layout");
+  return r;
+});
+
+// --- Ventas y comprobante (solo OWNER) ---
+export const guardarConfigVentasAction = actionHandler(async (input: unknown) => {
+  const usuario = await requireOwner();
+  const r = await guardarConfigVentas(configVentasSchema.parse(input), await actorDe(usuario));
   revalidatePath("/", "layout");
   return r;
 });

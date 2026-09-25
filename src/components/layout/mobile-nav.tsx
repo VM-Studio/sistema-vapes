@@ -75,7 +75,8 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
   const principales = items.filter((i) => i.enBottomBar).slice(0, 4);
   const resto = items.filter((i) => !principales.includes(i));
   const masActivo =
-    resto.some((i) => esRutaActiva(i.href, pathname)) || esRutaActiva("/cuenta", pathname);
+    resto.some((i) => esRutaActiva(i.base ?? i.href, pathname)) ||
+    esRutaActiva("/cuenta", pathname);
 
   const claseItem = (activo: boolean) =>
     cn(
@@ -91,7 +92,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
       >
         <ul className="flex">
           {principales.map((item) => {
-            const activo = esRutaActiva(item.href, pathname);
+            const activo = esRutaActiva(item.base ?? item.href, pathname);
             const Icono = item.icon;
             if (item.destacado) {
               // Botón central elevado (Escanear): la acción más usada en el galpón.
@@ -147,7 +148,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
         {resto.length > 0 && (
           <ul className="grid grid-cols-3 gap-2">
             {resto.map((item) => {
-              const activo = esRutaActiva(item.href, pathname);
+              const activo = esRutaActiva(item.base ?? item.href, pathname);
               const Icono = item.icon;
               return (
                 <li key={item.href}>

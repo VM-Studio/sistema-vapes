@@ -57,6 +57,8 @@ export async function middleware(req: NextRequest) {
     return res;
   }
   if (RUTAS_PUBLICAS.has(pathname)) return NextResponse.next();
+  // Archivos compartidos por link (PDF del comprobante por WhatsApp): clave inadivinable.
+  if (pathname.startsWith("/api/publico/")) return NextResponse.next();
 
   if (!sesion || !estado) return sinSesion(req);
 

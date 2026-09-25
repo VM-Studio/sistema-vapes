@@ -269,6 +269,63 @@ describe("useBarcodeScanner", () => {
     expect(onScan).not.toHaveBeenCalled();
   });
 
+  it("texto que entra sin keydown (autocompletar / IME) mientras hay teclas retenidas: no se desordena", () => {
+    function Pantalla() {
+      const [v, setV] = useState("");
+      useBarcodeScanner({ onScan: () => {} });
+      return <input aria-label="campo" value={v} onChange={(e) => setV(e.target.value)} />;
+    }
+    render(<Pantalla />, { wrapper: Envoltorio });
+    const input = screen.getByLabelText<HTMLInputElement>("campo");
+    input.focus();
+    escribir("Mart", 20); // "M" entra, "art" quedan retenidas (podría ser una pistola)
+    act(() => {
+      // "í" llega por beforeinput + input, sin keydown (como un IME o puppeteer con no-ASCII).
+      input.dispatchEvent(
+        new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: "í",
+        }),
+      );
+      input.setRangeText("í", input.selectionStart ?? 0, input.selectionEnd ?? 0, "end");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    escribir("n", 200);
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(input.value).toBe("Martín");
+  });
+
+  it("con foco en un input, el 1er carácter de la ráfaga (que sí entra) no la corta", () => {
+    const onScan = vi.fn();
+    function Pantalla() {
+      const [v, setV] = useState("");
+      useBarcodeScanner({ onScan });
+      return <input aria-label="campo" value={v} onChange={(e) => setV(e.target.value)} />;
+    }
+    render(<Pantalla />, { wrapper: Envoltorio });
+    const input = screen.getByLabelText<HTMLInputElement>("campo");
+    input.focus();
+    // El navegador dispara beforeinput por cada tecla que no se canceló (acá, solo la 1ª).
+    input.addEventListener("keydown", (e) => {
+      if (!e.defaultPrevented)
+        input.dispatchEvent(
+          new InputEvent("beforeinput", {
+            bubbles: true,
+            cancelable: true,
+            inputType: "insertText",
+            data: e.key,
+          }),
+        );
+    });
+    escribir("7790001000019", 10, "Enter");
+    expect(onScan).toHaveBeenCalledWith("7790001000019", { fuente: "pistola" });
+    expect(input.value).toBe("");
+  });
+
   it("menos de minLength caracteres → no es un escaneo", () => {
     const { onScan } = montar();
     const enter = escribir("123", 5, "Enter");

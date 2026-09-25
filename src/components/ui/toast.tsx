@@ -32,6 +32,7 @@ interface ToastApi {
   toast: (t: ToastInput) => void;
   success: (title: string, description?: string) => void;
   error: (title: string, description?: string) => void;
+  info: (title: string, description?: string) => void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -58,6 +59,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       toast,
       success: (title, description) => toast({ title, description, variant: "success" }),
       error: (title, description) => toast({ title, description, variant: "error" }),
+      info: (title, description) => toast({ title, description, variant: "info" }),
     }),
     [toast],
   );

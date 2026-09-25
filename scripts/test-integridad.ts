@@ -88,6 +88,11 @@ async function main() {
         total: "32000.00",
         costoTotal: "19000.00",
         gananciaBruta: "13000.00",
+        montoPagado: "32000.00",
+        estadoPago: "PAGADA",
+        pagos: {
+          create: [{ medioPago: MedioPago.EFECTIVO, monto: "32000.00", usuarioId: owner.id }],
+        },
         items: {
           create: [
             {
@@ -367,6 +372,11 @@ async function main() {
             total: "99999.00",
             costoTotal: "9500.00",
             gananciaBruta: "90499.00",
+            montoPagado: "99999.00",
+            estadoPago: "PAGADA",
+            pagos: {
+              create: [{ medioPago: MedioPago.EFECTIVO, monto: "99999.00", usuarioId: owner.id }],
+            },
             items: {
               create: [
                 {
@@ -418,9 +428,20 @@ async function main() {
   );
   const anulada = await enRollback(async (tx) => {
     const venta = await ventaConfirmada(tx);
+    // Anular = también anular sus pagos (lo verifica el trigger diferido de pagos).
+    await tx.pagoVenta.updateMany({
+      where: { ventaId: venta.id },
+      data: {
+        anulado: true,
+        anuladoAt: new Date(),
+        anuladoPorId: owner.id,
+        motivoAnulacion: "test",
+      },
+    });
     return tx.venta.update({
       where: { id: venta.id },
       data: {
+        montoPagado: 0,
         estado: EstadoVenta.ANULADA,
         anuladaAt: new Date(),
         anuladaPorId: owner.id,
@@ -587,9 +608,8 @@ async function main() {
     "variantes repetidas es error",
   );
   check(
-    !v.crearVentaSchema.safeParse({
+    !v.borradorVentaSchema.safeParse({
       depositoId: "d",
-      medioPago: "EFECTIVO",
       items: [
         { varianteId: "a", cantidad: 1, precioUnitario: "" },
         { varianteId: "a", cantidad: 1 },
@@ -598,9 +618,8 @@ async function main() {
     "venta con ítem repetido es error",
   );
   check(
-    v.crearVentaSchema.safeParse({
+    v.borradorVentaSchema.safeParse({
       depositoId: "d",
-      medioPago: "EFECTIVO",
       items: [{ varianteId: "a", cantidad: 1, precioUnitario: "" }],
     }).data?.items[0]?.precioUnitario === undefined,
     'precio de ítem "" → undefined (se usa el de lista, no $0)',

@@ -100,7 +100,10 @@ export const listarMovimientosSchema = z.object({
   usuarioId: z.preprocess(vacioAUndefined, id.optional()),
   tipo: z.preprocess(vacioAUndefined, z.enum(TipoMovimiento).optional()).catch(undefined),
   referenciaTipo: z
-    .preprocess(vacioAUndefined, z.enum(["VENTA", "COMPRA", "TRANSFERENCIA", "AJUSTE"]).optional())
+    .preprocess(
+      vacioAUndefined,
+      z.enum(["VENTA", "COMPRA", "TRANSFERENCIA", "AJUSTE", "DEVOLUCION"]).optional(),
+    )
     .catch(undefined),
   referenciaId: z.preprocess(vacioAUndefined, z.string().max(64).optional()).catch(undefined),
   desde: z.preprocess(vacioAUndefined, z.coerce.date().optional()).catch(undefined),

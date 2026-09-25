@@ -46,6 +46,13 @@ export interface ItemNavegacion {
   descripcion: string;
   /** Botón central elevado de la bottom bar (Escanear). */
   destacado?: boolean;
+  /**
+   * Destino directo si el usuario puede hacer `accion` en el módulo (Ventas abre el POS);
+   * si no, `href`. El ítem queda activo en todo `href/*` igual.
+   */
+  accionPrincipal?: { href: string; accion: "crear" };
+  /** Prefijo de ruta para marcar el ítem activo (lo completa navegacionPermitida). */
+  base?: string;
 }
 
 export const NAVEGACION: readonly ItemNavegacion[] = [
@@ -62,10 +69,11 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     modulo: Modulo.VENTAS,
     label: "Ventas",
     href: "/ventas",
+    accionPrincipal: { href: "/ventas/nueva", accion: "crear" },
     icon: ShoppingCart,
     grupo: "Operación",
     enBottomBar: true,
-    descripcion: "Registrar y consultar ventas",
+    descripcion: "Cobrar (punto de venta) y consultar ventas",
   },
   {
     modulo: Modulo.INVENTARIO,
@@ -118,9 +126,9 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     label: "Clientes",
     href: "/clientes",
     icon: Users,
-    grupo: "Catálogo",
+    grupo: "Operación",
     enBottomBar: false,
-    descripcion: "Datos y compras de clientes",
+    descripcion: "Cuenta corriente, compras y saldos",
   },
   {
     modulo: Modulo.PROVEEDORES,
@@ -176,7 +184,13 @@ export function puedeVerItem(usuario: SujetoPermisos, item: ItemNavegacion): boo
 
 /** Ítems que el usuario puede ver, en el orden declarado. */
 export function navegacionPermitida(usuario: SujetoPermisos): ItemNavegacion[] {
-  return NAVEGACION.filter((item) => puedeVerItem(usuario, item));
+  return NAVEGACION.filter((item) => puedeVerItem(usuario, item)).map((item) => {
+    const principal = item.accionPrincipal;
+    const modulo = Array.isArray(item.modulo) ? null : (item.modulo as Modulo | null);
+    return principal && modulo && puede(usuario, modulo, principal.accion)
+      ? { ...item, href: principal.href, base: item.href }
+      : { ...item, base: item.href };
+  });
 }
 
 /** ¿`href` corresponde a la ruta actual? ("/" solo exacto; el resto por prefijo). */

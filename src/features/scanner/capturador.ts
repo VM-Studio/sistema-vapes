@@ -171,6 +171,16 @@ export class CapturadorEscaneos {
     if (this.buffer) this.abortar();
   };
 
+  /**
+   * beforeinput (fase de captura): las teclas retenidas NO generan beforeinput
+   * (su keydown se canceló), así que si llega uno con teclas retenidas es texto
+   * que entra por otro lado (autocompletar, IME, un carácter sin keydown):
+   * primero vuelven las retenidas y el orden de lo tipeado se respeta.
+   */
+  readonly onTextoExterno = (): void => {
+    if (this.tragadas) this.abortar();
+  };
+
   /** Libera timers (al desmontar). */
   destruir(): void {
     this.abortar();
