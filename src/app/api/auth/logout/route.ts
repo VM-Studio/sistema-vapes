@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { esMismoOrigen, origenInvalido } from "@/server/auth/http";
 import { metaDesdeHeaders } from "@/server/auth/request-meta";
 import { COOKIE_SESION, verificarToken } from "@/server/auth/session";
+import { revocarSesion } from "@/server/auth/sesiones";
 import { registrarLogout } from "@/server/services/auth.service";
 
 export const runtime = "nodejs";
@@ -18,7 +19,10 @@ export async function POST(req: Request) {
     .get("cookie")
     ?.match(new RegExp(`(?:^|;\\s*)${COOKIE_SESION}=([^;]+)`))?.[1];
   const sesion = await verificarToken(cookie);
-  if (sesion) await registrarLogout(sesion.sub, metaDesdeHeaders(req.headers));
+  if (sesion) {
+    await revocarSesion(sesion.sid, sesion.sub);
+    await registrarLogout(sesion.sub, metaDesdeHeaders(req.headers));
+  }
 
   const quiereJson = req.headers.get("accept")?.includes("application/json");
   const res = quiereJson

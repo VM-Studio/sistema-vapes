@@ -22,7 +22,8 @@ import {
   registrarRetiro,
 } from "@/server/services/caja.service";
 import { avisarCajaConDiferencia } from "@/server/services/notificacion.service";
-import { claveAleatoria, storage } from "@/server/storage";
+import { claveAleatoria, storage, urlCompartible } from "@/server/storage";
+import { log } from "@/server/log";
 
 /** CAJA: crear → abrir, cerrar, ingreso extra. Retiros: solo dueños. */
 
@@ -61,7 +62,9 @@ export const cerrarCajaAction = actionHandler(async (input: unknown) => {
   const r = await cerrarCaja(datos.cajaId, datos, await actorDe(usuario));
   // Después del COMMIT: si el aviso falla, la caja igual quedó cerrada.
   if (r.requiereRevision)
-    await avisarCajaConDiferencia(r.id).catch((e) => console.error("[caja] aviso", e));
+    await avisarCajaConDiferencia(r.id).catch((e: unknown) =>
+      log.error({ err: e }, "no se pudo avisar la diferencia de caja"),
+    );
   revalidar();
   return r;
 });
@@ -71,7 +74,10 @@ export const compartirCierreAction = actionHandler(async (input: unknown) => {
   const { cajaId } = z.object({ cajaId: id }).parse(input);
   const usuario = await requireAccesoCaja(cajaId);
   const pdf = await pdfCierreCaja(cajaId, usuario.nombre);
-  return {
-    url: await storage.guardar(claveAleatoria("cajas", "cierre", "pdf"), pdf, "application/pdf"),
-  };
+  const ref = await storage.guardar(
+    claveAleatoria("cajas", "cierre", "pdf"),
+    pdf,
+    "application/pdf",
+  );
+  return { url: await urlCompartible(ref) };
 });

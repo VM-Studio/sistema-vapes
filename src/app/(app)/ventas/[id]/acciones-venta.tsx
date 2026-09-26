@@ -465,7 +465,7 @@ export function WhatsAppComprobante({
       ventaNumero,
       total,
       comprobante,
-      urlPdf: pdfUrl ? `${origen}${pdfUrl}` : null,
+      urlPdf: pdfUrl ? (/^https?:\/\//.test(pdfUrl) ? pdfUrl : `${origen}${pdfUrl}`) : null,
       saldoPendiente,
     }),
   );

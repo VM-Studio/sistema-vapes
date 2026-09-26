@@ -7,7 +7,12 @@ import type {
   ActualizarUsuario,
   CrearUsuario,
 } from "@/lib/validations/usuario";
-import { generarPasswordTemporal, hashPassword } from "@/server/auth/password";
+import {
+  assertPasswordNoComun,
+  generarPasswordTemporal,
+  hashPassword,
+} from "@/server/auth/password";
+import { invalidarCacheSesiones, revocarSesionesDeUsuario } from "@/server/auth/sesiones";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
 import type { Actor } from "@/server/services/actor";
 import { registrarAuditoria, snapshotUsuario } from "@/server/services/audit.service";
@@ -89,6 +94,7 @@ function conflictoEmail(error: unknown): never | void {
 // -----------------------------------------------------------------------------
 
 export async function crearUsuario(actor: Actor, input: CrearUsuario): Promise<UsuarioListado> {
+  await assertPasswordNoComun(input.password, "password");
   const passwordHash = await hashPassword(input.password);
   try {
     return await withTransaction(async (tx) => {
@@ -128,7 +134,7 @@ export async function actualizarUsuario(
   }
 
   try {
-    return await withTransaction(async (tx) => {
+    const r = await withTransaction(async (tx) => {
       const antes = await tx.usuario.findFirst({ where: { id: input.id, deletedAt: null } });
       if (!antes) throw new NotFoundError("El usuario no existe o fue dado de baja");
 
@@ -153,6 +159,9 @@ export async function actualizarUsuario(
       });
       return despues;
     });
+    // Rol o "activo" cambiaron: el middleware no puede seguir con lo cacheado.
+    invalidarCacheSesiones(input.id);
+    return r;
   } catch (error) {
     conflictoEmail(error);
     throw error;
@@ -190,6 +199,8 @@ export async function resetearPassword(
       meta: actor.meta,
     });
   });
+  // Con la contraseña reseteada, las sesiones abiertas con la anterior se cierran.
+  await revocarSesionesDeUsuario(usuarioId, actor);
 
   return { passwordTemporal };
 }
@@ -223,6 +234,7 @@ export async function darDeBajaUsuario(actor: Actor, usuarioId: string): Promise
       meta: actor.meta,
     });
   });
+  await revocarSesionesDeUsuario(usuarioId, actor);
 }
 
 // -----------------------------------------------------------------------------

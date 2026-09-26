@@ -431,7 +431,7 @@ function ArqueoSheet({
     window.open(
       linkWhatsApp(
         null,
-        `Cierre de caja · ${caja.deposito.nombre}\nDiferencia: ${formatearPesos(cerrada?.diferencia ?? diferencia)}\n${location.origin}${r.data.url}`,
+        `Cierre de caja · ${caja.deposito.nombre}\nDiferencia: ${formatearPesos(cerrada?.diferencia ?? diferencia)}\n${r.data.url}`,
       ),
       "_blank",
       "noopener",

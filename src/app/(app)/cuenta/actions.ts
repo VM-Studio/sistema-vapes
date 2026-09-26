@@ -4,6 +4,7 @@ import { cambiarPasswordSchema } from "@/lib/validations/usuario";
 import { actionHandler } from "@/server/action-handler";
 import { requireUsuario } from "@/server/auth/permissions";
 import { getRequestMeta } from "@/server/auth/request-meta";
+import { revocarSesionesDeUsuario } from "@/server/auth/sesiones";
 import { cambiarPasswordPropia } from "@/server/services/auth.service";
 
 /** Cualquier usuario cambia SU contraseña (incluso con el cambio pendiente). */
@@ -13,4 +14,15 @@ export const cambiarPasswordAction = actionHandler(async (input: unknown) => {
   await cambiarPasswordPropia(usuario.id, datos, await getRequestMeta());
   // Si era el cambio obligatorio, recién ahora puede entrar al resto del sistema.
   return { habilitado: usuario.debeCambiarPassword };
+});
+
+/** "Cerrar sesión en todos los dispositivos" (incluido este: se vuelve al login). */
+export const cerrarTodasLasSesionesAction = actionHandler(async () => {
+  const usuario = await requireUsuario({ permitirCambioPendiente: true });
+  return {
+    revocadas: await revocarSesionesDeUsuario(usuario.id, {
+      id: usuario.id,
+      meta: await getRequestMeta(),
+    }),
+  };
 });

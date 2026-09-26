@@ -28,8 +28,14 @@ export function VentaExitosa({
   const numeroComprobante = c
     ? `Ticket ${String(c.puntoVenta).padStart(5, "0")}-${String(c.numero).padStart(8, "0")}`
     : null;
-  const urlPdf =
-    c?.pdfUrl && typeof window !== "undefined" ? `${window.location.origin}${c.pdfUrl}` : null;
+  // El servidor manda un link listo para compartir (URL firmada de 7 días con R2).
+  const urlPdf = !c?.pdfUrl
+    ? null
+    : /^https?:\/\//.test(c.pdfUrl)
+      ? c.pdfUrl
+      : typeof window !== "undefined"
+        ? `${window.location.origin}${c.pdfUrl}`
+        : null;
   const whatsapp = linkWhatsApp(
     cliente?.telefono,
     textoComprobante({

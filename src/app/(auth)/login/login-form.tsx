@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { aplicarErroresServidor, Form, FormInput, useZodForm } from "@/components/ui/form";
 import type { ActionResult } from "@/lib/action-result";
+import { registrarLogin } from "@/components/pwa/banner-instalar";
 import { loginSchema } from "@/lib/validations/usuario";
 
 export function LoginForm({ next }: { next?: string }) {
@@ -30,6 +31,7 @@ export function LoginForm({ next }: { next?: string }) {
 
     if (resultado.ok) {
       // Navegación completa: el layout protegido se carga con la sesión nueva.
+      registrarLogin(); // el banner de "Instalá la app" aparece desde el segundo ingreso
       window.location.assign(resultado.data.redirectTo);
       return;
     }

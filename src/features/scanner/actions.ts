@@ -8,6 +8,7 @@ import { esOwner, puede, type UsuarioSesion } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
 import { actionHandler } from "@/server/action-handler";
 import { requirePermisoAlguno } from "@/server/auth/permissions";
+import { medir } from "@/server/log";
 import {
   buscarPorCodigo,
   obtenerVarianteEncontrada,
@@ -36,7 +37,7 @@ export const resolverCodigoAction = actionHandler(
   async (input: unknown): Promise<ResultadoResolucion> => {
     const usuario = await requirePermisoAlguno(MODULOS_ESCANEO, "ver");
     const { codigo } = z.object({ codigo: z.string().trim().min(1).max(80) }).parse(input);
-    const v = await buscarPorCodigo(codigo);
+    const v = await medir("resolverCodigo", () => buscarPorCodigo(codigo));
     return v
       ? { encontrado: true, variante: ocultarCosto(v, usuario) }
       : { encontrado: false, codigo: normalizarCodigoBarras(codigo) };

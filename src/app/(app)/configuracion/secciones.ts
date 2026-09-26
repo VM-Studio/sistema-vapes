@@ -23,6 +23,26 @@ export const SECCIONES_CONFIGURACION = [
     descripcion: "Zona horaria, arqueo, reposición y rotación (solo dueño)",
   },
   {
+    href: "/configuracion/negocio",
+    label: "Negocio y app",
+    descripcion: "Ícono de la app instalada (solo dueño)",
+  },
+  {
+    href: "/configuracion/backups",
+    label: "Backups",
+    descripcion: "Copias de seguridad automáticas y descarga (solo dueño)",
+  },
+  {
+    href: "/configuracion/auditoria",
+    label: "Auditoría",
+    descripcion: "Quién hizo qué y cuándo (solo dueño)",
+  },
+  {
+    href: "/configuracion/exportar-todo",
+    label: "Exportar todo",
+    descripcion: "Todos los datos del negocio en Excel",
+  },
+  {
     href: "/configuracion/escaner",
     label: "Escáner",
     descripcion: "Pistola lectora: parámetros y prueba",

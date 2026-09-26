@@ -1,8 +1,16 @@
+"use client";
+
 import { LogOut } from "lucide-react";
 
+import { borrarCatalogo } from "@/features/offline/catalogo";
 import { cn } from "@/lib/utils";
 
-/** POST nativo a /api/auth/logout (funciona aun sin JS). */
+/**
+ * POST nativo a /api/auth/logout (funciona aun sin JS). Antes, borra el
+ * catálogo offline: precios y stock no quedan en el celular. La cola de
+ * operaciones pendientes NO se borra: es de ese usuario y se sincroniza
+ * cuando vuelva a entrar.
+ */
 export function LogoutButton({
   className,
   compacto = false,
@@ -11,7 +19,15 @@ export function LogoutButton({
   compacto?: boolean;
 }) {
   return (
-    <form action="/api/auth/logout" method="post">
+    <form
+      action="/api/auth/logout"
+      method="post"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        void borrarCatalogo().finally(() => form.submit());
+      }}
+    >
       <button
         type="submit"
         title="Cerrar sesión"

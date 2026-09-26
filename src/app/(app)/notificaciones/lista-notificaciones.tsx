@@ -1,7 +1,15 @@
 "use client";
 
 import type { TipoNotificacion } from "@prisma/client";
-import { AlertTriangle, CheckCheck, PackageX, Truck, Users, Wallet } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCheck,
+  DatabaseBackup,
+  PackageX,
+  Truck,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -17,6 +25,7 @@ const ICONO: Record<TipoNotificacion, typeof Truck> = {
   CAJA_DIFERENCIA: Wallet,
   TRANSFERENCIA_PENDIENTE: Truck,
   DEUDA_CLIENTE: Users,
+  BACKUP_FALLIDO: DatabaseBackup,
 };
 
 interface Notificacion {
@@ -75,7 +84,9 @@ export function ListaNotificaciones({ notificaciones }: { notificaciones: Notifi
                 <Icono
                   className={cn(
                     "mt-0.5 size-5 shrink-0",
-                    n.tipo === "SIN_STOCK" || n.tipo === "CAJA_DIFERENCIA"
+                    n.tipo === "SIN_STOCK" ||
+                      n.tipo === "CAJA_DIFERENCIA" ||
+                      n.tipo === "BACKUP_FALLIDO"
                       ? "text-danger"
                       : "text-muted",
                   )}

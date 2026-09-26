@@ -12,6 +12,7 @@ import { formatearPesos } from "@/lib/format";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import { ESTADO_PAGO_UI, ESTADO_VENTA_UI } from "@/lib/ventas-ui";
+import { urlCompartible } from "@/server/storage";
 import { requirePaginaPermiso } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import {
@@ -37,12 +38,14 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
   });
   const [depositos, config] = await Promise.all([listarDepositosActivos(), obtenerConfigVentas()]);
   // El link de WhatsApp necesita la URL pública del ticket: si todavía no se generó, se genera ahora.
-  const pdfUrl =
+  const referenciaPdf =
     v.comprobante?.estado === "EMITIDO"
       ? (v.comprobante.pdfUrl ??
         (await obtenerPdfComprobante(v.comprobante.id).catch(() => null))?.url ??
         null)
       : null;
+  // Para WhatsApp: con R2, URL firmada de 7 días; en local, la de la app.
+  const pdfUrl = referenciaPdf ? await urlCompartible(referenciaPdf) : null;
   const owner = esOwner(usuario);
   const confirmada = v.estado === "CONFIRMADA";
   const devueltas = v.items.reduce((a, i) => a + i.cantidadDevuelta, 0);

@@ -87,3 +87,16 @@ export async function withTransaction<T>(
     }
   }
 }
+
+/**
+ * Usa la transacción que recibe (si la hay) o abre una propia. Para servicios
+ * que a veces se componen dentro de otra operación atómica (ej. /api/sync:
+ * registrar la operación offline y aplicarla en la MISMA transacción).
+ */
+export function enTransaccion<T>(
+  tx: Tx | undefined,
+  fn: (tx: Tx) => Promise<T>,
+  options?: TransactionOptions,
+): Promise<T> {
+  return tx ? fn(tx) : withTransaction(fn, options);
+}

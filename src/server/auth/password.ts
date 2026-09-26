@@ -47,3 +47,46 @@ export function generarPasswordTemporal(largo = 12): string {
   }
   return chars.join("");
 }
+
+// -----------------------------------------------------------------------------
+// Contraseñas comunes (top 10.000 de SecLists, en passwords-comunes.txt)
+// -----------------------------------------------------------------------------
+
+let comunes: Set<string> | null = null;
+
+function cargarComunes(): Set<string> {
+  if (comunes) return comunes;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("node:path") as typeof import("node:path");
+  const texto = readFileSync(
+    path.join(process.cwd(), "src/server/auth/passwords-comunes.txt"),
+    "utf8",
+  );
+  comunes = new Set(
+    texto
+      .split(/\r?\n/)
+      .map((l) => l.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return comunes;
+}
+
+/** ¿Está en la lista de las 10.000 más usadas (sin distinguir mayúsculas)? */
+export function esPasswordComun(plano: string): boolean {
+  return cargarComunes().has(plano.trim().toLowerCase());
+}
+
+/** Lanza ValidationError en el campo indicado si la contraseña es de las más comunes. */
+export async function assertPasswordNoComun(plano: string, campo: string): Promise<void> {
+  if (esPasswordComun(plano)) {
+    const { ValidationError } = await import("@/server/errors");
+    throw new ValidationError(
+      "Esa contraseña es de las más usadas y se adivina fácil: elegí otra.",
+      {
+        [campo]: ["Contraseña demasiado común"],
+      },
+    );
+  }
+}

@@ -37,6 +37,8 @@ import {
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { nombreCompleto } from "@/server/services/producto.service";
 import { recalcularResumenes } from "@/server/services/resumen-diario.service";
+import { log, medir } from "@/server/log";
+import { urlCompartible } from "@/server/storage";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
@@ -332,19 +334,19 @@ export async function confirmarVenta(
   actor: Actor,
   permisos: PermisosVenta,
 ): Promise<VentaConfirmada> {
-  const confirmada = await withTransaction(
-    (tx) => confirmarEnTx(tx, id, opciones, actor, permisos),
-    {
+  const confirmada = await medir("confirmarVenta", () =>
+    withTransaction((tx) => confirmarEnTx(tx, id, opciones, actor, permisos), {
       maxRetries: 10, // 10 cajas cobrando a la vez el mismo sabor: cada conflicto se reintenta
       timeout: 30_000,
-    },
+    }),
   );
   // El PDF (archivo) se genera después del COMMIT: si falla, la venta igual quedó bien.
   if (confirmada.comprobante) {
     try {
-      confirmada.comprobante.pdfUrl = (await obtenerPdfComprobante(confirmada.comprobante.id)).url;
+      const url = (await obtenerPdfComprobante(confirmada.comprobante.id)).url;
+      confirmada.comprobante.pdfUrl = url ? await urlCompartible(url) : null;
     } catch (e) {
-      console.error("[ventas] no se pudo generar el PDF del comprobante", e);
+      log.error({ err: e, ventaId: confirmada.id }, "no se pudo generar el PDF del comprobante");
     }
   }
   return confirmada;
@@ -568,26 +570,29 @@ export async function vender(
   actor: Actor,
   permisos: PermisosVenta,
 ): Promise<VentaConfirmada> {
-  const confirmada = await withTransaction(
-    async (tx) => {
-      const { id } = datos.borradorId
-        ? await actualizarBorrador(datos.borradorId, datos.venta, actor, permisos, tx)
-        : await crearBorrador(datos.venta, actor, permisos, tx);
-      return confirmarEnTx(
-        tx,
-        id,
-        { pagos: datos.pagos, redondearA: datos.redondearA },
-        actor,
-        permisos,
-      );
-    },
-    { maxRetries: 10, timeout: 30_000 },
+  const confirmada = await medir("confirmarVenta", () =>
+    withTransaction(
+      async (tx) => {
+        const { id } = datos.borradorId
+          ? await actualizarBorrador(datos.borradorId, datos.venta, actor, permisos, tx)
+          : await crearBorrador(datos.venta, actor, permisos, tx);
+        return confirmarEnTx(
+          tx,
+          id,
+          { pagos: datos.pagos, redondearA: datos.redondearA },
+          actor,
+          permisos,
+        );
+      },
+      { maxRetries: 10, timeout: 30_000 },
+    ),
   );
   if (confirmada.comprobante) {
     try {
-      confirmada.comprobante.pdfUrl = (await obtenerPdfComprobante(confirmada.comprobante.id)).url;
+      const url = (await obtenerPdfComprobante(confirmada.comprobante.id)).url;
+      confirmada.comprobante.pdfUrl = url ? await urlCompartible(url) : null;
     } catch (e) {
-      console.error("[ventas] no se pudo generar el PDF del comprobante", e);
+      log.error({ err: e, ventaId: confirmada.id }, "no se pudo generar el PDF del comprobante");
     }
   }
   return confirmada;

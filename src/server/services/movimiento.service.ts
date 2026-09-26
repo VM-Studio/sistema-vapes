@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { AccionAuditoria, EstadoTransferencia, Prisma, TipoMovimiento } from "@prisma/client";
 
-import { prisma, withTransaction, type Tx } from "@/lib/db";
+import { prisma, enTransaccion, withTransaction, type Tx } from "@/lib/db";
 import type {
   AjusteMasivo,
   Ajuste,
@@ -255,8 +255,10 @@ const porVariante = <T extends { varianteId: string }>(items: T[]) =>
 export async function registrarIngresoManual(
   input: IngresoManual,
   actor: Actor,
+  txExterna?: Tx,
 ): Promise<{ movimientos: number; unidades: number; costosActualizados: number }> {
-  return withTransaction(
+  return enTransaccion(
+    txExterna,
     async (tx) => {
       await depositoActivo(tx, input.depositoId);
       const variantes = await variantesVivas(
@@ -410,8 +412,10 @@ export async function registrarAjuste(input: Ajuste, actor: Actor): Promise<Resu
 export async function registrarAjusteMasivo(
   input: AjusteMasivo,
   actor: Actor,
+  txExterna?: Tx,
 ): Promise<{ referenciaId: string; ajustes: ResultadoAjuste[]; sinCambios: number }> {
-  return withTransaction(
+  return enTransaccion(
+    txExterna,
     async (tx) => {
       await depositoActivo(tx, input.depositoId);
       const variantes = await variantesVivas(
@@ -535,8 +539,9 @@ async function faltantes(
 export async function crearTransferencia(
   input: CrearTransferencia,
   actor: Actor,
+  txExterna?: Tx,
 ): Promise<{ id: string; numero: number }> {
-  return withTransaction(async (tx) => {
+  return enTransaccion(txExterna, async (tx) => {
     const origen = await depositoActivo(tx, input.depositoOrigenId, "El depósito de origen");
     await depositoActivo(tx, input.depositoDestinoId, "El depósito de destino");
     const variantes = await variantesVivas(
@@ -589,8 +594,10 @@ export async function crearTransferencia(
 export async function completarTransferencia(
   id: string,
   actor: Actor,
+  txExterna?: Tx,
 ): Promise<{ numero: number; unidades: number }> {
-  return withTransaction(
+  return enTransaccion(
+    txExterna,
     async (tx) => {
       // Bloquea la transferencia: dos "Completar" simultáneos no la aplican dos veces.
       await tx.$queryRaw`SELECT "id" FROM "Transferencia" WHERE "id" = ${id} FOR UPDATE`;

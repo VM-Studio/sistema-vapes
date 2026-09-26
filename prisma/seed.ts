@@ -15,6 +15,17 @@ import { prisma, withTransaction } from "../src/lib/db";
 import { generarSku } from "../src/server/services/producto.service";
 import { registrarMovimiento } from "../src/server/services/stock.service";
 
+/**
+ * En producción el seed NO corre (crea usuarios con contraseñas conocidas):
+ * solo con ALLOW_SEED=true. El primer dueño se crea con `pnpm crear-owner`.
+ */
+if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "true") {
+  console.error(
+    "✘ seed base bloqueado en producción (definí ALLOW_SEED=true si de verdad es una base de prueba).",
+  );
+  process.exit(1);
+}
+
 const PASSWORD_INICIAL = "Cambiar123!";
 const MOTIVO_STOCK_INICIAL = "Stock inicial (seed)";
 

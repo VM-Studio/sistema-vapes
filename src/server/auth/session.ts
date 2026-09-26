@@ -3,8 +3,10 @@ import { RolUsuario } from "@prisma/client";
 
 /**
  * Sesión = JWT HS256 en una cookie httpOnly.
- * El token solo identifica (sub, rol, iat, exp). Los permisos NO van en el
- * token: se leen de la DB en cada request, así un cambio aplica al instante.
+ * El token identifica (sub, rol, sid, tok, iat, exp). `sid` es la fila de la
+ * tabla Sesion (se puede revocar) y `tok` un secreto aleatorio cuyo hash está
+ * en esa fila. Los permisos NO van en el token: se leen de la DB en cada
+ * request, así un cambio aplica al instante.
  *
  * Este módulo no importa next/headers: lo usan el middleware (con
  * request/response explícitos) y el resto del servidor por igual.
@@ -19,6 +21,8 @@ const PLACEHOLDER_SECRET = "cambiar-por-un-secreto-largo-y-aleatorio-de-al-menos
 export interface PayloadSesion {
   sub: string;
   rol: RolUsuario;
+  sid: string;
+  tok: string;
   iat: number;
   exp: number;
 }
@@ -40,8 +44,13 @@ function secret(): Uint8Array {
   return secretCache;
 }
 
-export async function crearToken(usuario: { id: string; rol: RolUsuario }): Promise<string> {
-  return new SignJWT({ rol: usuario.rol })
+export async function crearToken(usuario: {
+  id: string;
+  rol: RolUsuario;
+  sid: string;
+  tok: string;
+}): Promise<string> {
+  return new SignJWT({ rol: usuario.rol, sid: usuario.sid, tok: usuario.tok })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(usuario.id)
     .setIssuedAt()
@@ -59,13 +68,22 @@ export async function verificarToken(
     const rol = payload.rol;
     if (
       typeof payload.sub !== "string" ||
+      typeof payload.sid !== "string" ||
+      typeof payload.tok !== "string" ||
       typeof payload.iat !== "number" ||
       typeof payload.exp !== "number" ||
       (rol !== RolUsuario.OWNER && rol !== RolUsuario.EMPLEADO)
     ) {
       return null;
     }
-    return { sub: payload.sub, rol, iat: payload.iat, exp: payload.exp };
+    return {
+      sub: payload.sub,
+      rol,
+      sid: payload.sid,
+      tok: payload.tok,
+      iat: payload.iat,
+      exp: payload.exp,
+    };
   } catch {
     return null;
   }
@@ -82,7 +100,8 @@ export function debeRenovar(
 export function opcionesCookieSesion() {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // En producción siempre https (NEXT_PUBLIC_APP_URL); COOKIE_INSEGURA=1 solo para probar el build en http local.
+    secure: process.env.NODE_ENV === "production" && process.env.COOKIE_INSEGURA !== "1",
     sameSite: "lax" as const,
     path: "/",
     maxAge: DURACION_SESION_S,

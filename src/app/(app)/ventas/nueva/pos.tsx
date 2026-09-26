@@ -326,8 +326,15 @@ export function Pos({
   }
 
   async function confirmar(pagos: PagoAEnviar[], meta: { fiado: boolean; vuelto: number }) {
-    setEnviando(true);
     setErrorVenta(null);
+    // Nada de ventas sin red: el stock y el cobro se validan en el servidor en el momento.
+    if (!navigator.onLine) {
+      const msg = "Las ventas necesitan conexión para validar stock y registrar el pago.";
+      setErrorVenta(msg);
+      toast.error("Sin conexión", msg);
+      return;
+    }
+    setEnviando(true);
     const r = await venderAction({
       borradorId: carrito.borradorId ?? undefined,
       venta: datosVenta(),

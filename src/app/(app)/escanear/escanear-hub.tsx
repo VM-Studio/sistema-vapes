@@ -37,6 +37,10 @@ import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { ScanInput } from "@/features/scanner/ScanInput";
 import type { VarianteEscaneada } from "@/features/scanner/tipos";
 import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
+import { haceCuantoTexto } from "@/features/offline/catalogo";
+import { encolar } from "@/features/offline/cola";
+import { PendientesSincronizacion } from "@/features/offline/pendientes-sincronizacion";
+import { useEstadoOffline } from "@/components/pwa/sincronizacion-offline";
 import { conSigno, formatearNumero, formatearPesos } from "@/lib/format";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
@@ -105,6 +109,7 @@ export function EscanearHub({
   const params = useSearchParams();
   const toast = useToast();
   const usuario = useUsuario();
+  const offline = useEstadoOffline();
 
   // --- Permisos por modo ---
   const puedeIngresoManual = usePuede(Modulo.MOVIMIENTOS, "crear");
@@ -151,9 +156,11 @@ export function EscanearHub({
         if (v) sp.set(k, v);
         else sp.delete(k);
       }
-      router.replace(`${pathname}?${sp}`, { scroll: false });
+      // history.replaceState (no router.replace): cambiar de modo o de depósito no
+      // pide nada al servidor, así el escáner sigue andando sin señal.
+      window.history.replaceState(null, "", `${pathname}?${sp}`);
     },
-    [params, pathname, router],
+    [params, pathname],
   );
 
   function elegirDeposito(id: string) {
@@ -165,6 +172,12 @@ export function EscanearHub({
 
   function elegirModo(m: Modo | "vender") {
     if (m === "vender") {
+      // Nada de ventas sin conexión: hay que validar stock y registrar el pago en el momento.
+      if (!offline.online)
+        return toast.error(
+          "Sin conexión",
+          "Las ventas necesitan conexión para validar stock y registrar el pago.",
+        );
       // Vender es el punto de venta, con el mismo depósito y el escáner activo.
       if (!puedeVender)
         return toast.error("Modo Vender bloqueado", "Necesitás permiso para crear en Ventas.");
@@ -222,8 +235,19 @@ export function EscanearHub({
     );
   }, []);
 
+  // Consultar: lo del catálogo offline aparece al instante; con red se completa
+  // con el servidor (stock al segundo y costo para quien puede verlo).
+  const consultar = useCallback((v: VarianteEscaneada) => {
+    setConsulta(v);
+    if (!navigator.onLine) return;
+    void resolverVarianteAction({ varianteId: v.varianteId }).then((r) => {
+      if (r.ok && r.data)
+        setConsulta((actual) => (actual?.varianteId === r.data!.varianteId ? r.data : actual));
+    });
+  }, []);
+
   const escaner = useEscanerVariantes({
-    onVariante: (v) => (modo === "consultar" ? setConsulta(v) : agregar(v)),
+    onVariante: (v) => (modo === "consultar" ? consultar(v) : agregar(v)),
     permitirRafaga: modo !== "consultar",
     tituloCamara: `Escanear · ${MODOS.find((m) => m.id === modo)?.label}`,
   });
@@ -263,7 +287,7 @@ export function EscanearHub({
     setMotivo(
       modo === "ingresar" ? "Ingreso por escaneo" : modo === "contar" ? "Recuento por escaneo" : "",
     );
-    if (modo === "contar") {
+    if (modo === "contar" && navigator.onLine) {
       // El stock del sistema puede haber cambiado desde el primer escaneo (caché de 5 min):
       // las diferencias que se confirman salen del stock actual.
       setRefrescando(true);
@@ -289,9 +313,78 @@ export function EscanearHub({
     router.refresh();
   }
 
+  /**
+   * Sin señal: la operación se guarda en la cola (IndexedDB) con su
+   * idOperacion y se sincroniza sola al volver la red, por los mismos
+   * servicios que la versión online (/api/sync es idempotente).
+   */
+  async function confirmarSinConexion() {
+    const dep = depositos.find((d) => d.id === depositoId)?.nombre ?? "";
+    const unidadesTxt = `${unidades} u.`;
+    if (modo === "ingresar") {
+      if (motivo.trim().length < 1) return toast.error("Falta el motivo");
+      const op = await encolar(
+        "INGRESO",
+        {
+          depositoId,
+          motivo,
+          actualizarCosto: false,
+          items: items.map((i) => ({ varianteId: i.variante.varianteId, cantidad: i.cantidad })),
+        },
+        usuario.id,
+        `Ingreso · ${unidadesTxt} · ${dep}`,
+      );
+      return terminarOffline(op.idOperacion);
+    }
+    if (modo === "contar") {
+      if (motivo.trim().length < 5) return toast.error("Contá el motivo", "Mínimo 5 caracteres.");
+      const op = await encolar(
+        "RECUENTO",
+        {
+          depositoId,
+          motivo,
+          items: items.map((i) => ({
+            varianteId: i.variante.varianteId,
+            cantidadReal: i.cantidad,
+          })),
+        },
+        usuario.id,
+        `Recuento · ${items.length} sabor(es) · ${dep}`,
+      );
+      return terminarOffline(op.idOperacion);
+    }
+    const destino = depositos.find((d) => d.id === destinoId)?.nombre ?? "";
+    const op = await encolar(
+      "TRANSFERENCIA",
+      {
+        transferencia: {
+          depositoOrigenId: depositoId,
+          depositoDestinoId: destinoId,
+          notas: motivo || undefined,
+          items: items.map((i) => ({ varianteId: i.variante.varianteId, cantidad: i.cantidad })),
+        },
+        completar: puedeCompletar,
+      },
+      usuario.id,
+      `Transferencia · ${unidadesTxt} · ${dep} → ${destino}`,
+    );
+    return terminarOffline(op.idOperacion);
+  }
+
+  function terminarOffline(idOperacion: string) {
+    toast.success(
+      "Guardado sin conexión",
+      `Se sincroniza al volver la señal (operación ${idOperacion.slice(0, 8)}).`,
+    );
+    setItems([]);
+    setConfirmando(false);
+    void offline.refrescar();
+  }
+
   async function confirmar() {
     setEnviando(true);
     try {
+      if (!navigator.onLine) return await confirmarSinConexion();
       if (modo === "ingresar") {
         const r = await ingresoManualAction({
           depositoId,
@@ -422,6 +515,26 @@ export function EscanearHub({
           );
         })}
       </div>
+
+      {/* Estado del catálogo offline */}
+      <p
+        className="text-muted -mt-2 flex flex-wrap items-center gap-x-2 text-xs"
+        data-testid="version-catalogo"
+      >
+        <span
+          className={cn("size-2 rounded-full", offline.online ? "bg-success" : "bg-muted")}
+          aria-hidden
+        />
+        {offline.online ? "Con conexión" : "Sin conexión: el escáner usa el catálogo guardado"}
+        {offline.catalogo && (
+          <span>
+            · Catálogo actualizado {haceCuantoTexto(offline.catalogo.sincronizadoEn)} (
+            {offline.catalogo.cantidad} productos)
+          </span>
+        )}
+      </p>
+
+      <PendientesSincronizacion onCambio={() => void offline.refrescar()} />
 
       {pendiente && (
         <div

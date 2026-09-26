@@ -11,7 +11,7 @@ import {
   type DiaISO,
   type Rango,
 } from "@/lib/zona-horaria";
-import { DomainError, NotFoundError, ValidationError } from "@/server/errors";
+import { DomainError, NotFoundError } from "@/server/errors";
 import type { Actor } from "@/server/services/actor";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import {
@@ -21,7 +21,8 @@ import {
 } from "@/server/services/caja.service";
 import { obtenerZonaHoraria } from "@/server/services/configuracion.service";
 import { recalcularResumenes } from "@/server/services/resumen-diario.service";
-import { claveAleatoria, extensionDeImagen, storage } from "@/server/storage";
+import { procesarImagenSubida } from "@/server/seguridad/archivos";
+import { claveAleatoria, storage } from "@/server/storage";
 
 /**
  * GASTOS (soft delete). Si se pagan en EFECTIVO, con depósito y con fecha de
@@ -34,23 +35,21 @@ const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 const dec = (d: Prisma.Decimal) => d.toFixed(2);
 const utc = (d: Date) => Prisma.sql`(${d}::timestamptz AT TIME ZONE 'UTC')`;
 
-export const FOTO_MAX_BYTES = 5 * 1024 * 1024;
+export { MAX_IMAGEN_BYTES as FOTO_MAX_BYTES } from "@/server/seguridad/archivos";
 
 export interface FotoComprobante {
   datos: Uint8Array;
   tipo: string;
 }
 
-/** Guarda la foto del ticket (antes de la transacción: si la tx falla queda un archivo huérfano, no un gasto sin foto). */
+/**
+ * Guarda la foto del ticket (antes de la transacción: si la tx falla queda un
+ * archivo huérfano, no un gasto sin foto). Tipo real por magic bytes y
+ * re-codificada con sharp (sin EXIF ni payloads).
+ */
 async function guardarFoto(foto: FotoComprobante): Promise<string> {
-  const ext = extensionDeImagen(foto.tipo);
-  if (!ext)
-    throw new ValidationError("La foto tiene que ser JPG, PNG o WebP", {
-      comprobante: ["Formato no admitido"],
-    });
-  if (foto.datos.byteLength > FOTO_MAX_BYTES)
-    throw new ValidationError("La foto supera los 5 MB", { comprobante: ["Máximo 5 MB"] });
-  return storage.guardar(claveAleatoria("gastos", "ticket", ext), foto.datos, foto.tipo);
+  const limpia = await procesarImagenSubida(foto.datos, { campo: "comprobante" });
+  return storage.guardar(claveAleatoria("gastos", "ticket", "jpg"), limpia.datos, limpia.tipo);
 }
 
 /** Día elegido → instante: hoy = ahora mismo; otro día = mediodía de ese día (bien adentro del día). */

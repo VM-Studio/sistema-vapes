@@ -1,5 +1,7 @@
 "use server";
 
+import { revocarSesionesDeUsuario } from "@/server/auth/sesiones";
+
 import { revalidatePath } from "next/cache";
 
 import {
@@ -66,4 +68,13 @@ export const actualizarPermisosAction = actionHandler(async (input: unknown) => 
   const permisos = await actualizarPermisos(actor, datos);
   revalidatePath(`/usuarios/${datos.usuarioId}/permisos`);
   return permisos;
+});
+
+/** Cierra todas las sesiones abiertas de un usuario (su próximo request va al login). */
+export const revocarSesionesAction = actionHandler(async (input: unknown) => {
+  const actor = await actorOwner();
+  const { id } = usuarioIdSchema.parse(input);
+  const n = await revocarSesionesDeUsuario(id, actor);
+  revalidatePath("/usuarios");
+  return { revocadas: n };
 });

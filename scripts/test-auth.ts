@@ -68,15 +68,20 @@ async function main() {
   const actor = { id: owner.id, meta: { ip: "127.0.0.1", userAgent: "test-auth" } };
 
   console.log("\nA) Sesión (JWT HS256)");
-  const token = await crearToken({ id: owner.id, rol: RolUsuario.OWNER });
+  const token = await crearToken({
+    id: owner.id,
+    rol: RolUsuario.OWNER,
+    sid: "sid-test",
+    tok: "tok-test",
+  });
   const payload = await verificarToken(token);
   check(payload?.sub === owner.id && payload.rol === "OWNER", "token válido: sub + rol");
   check(
     payload !== null &&
       Object.keys(JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()))
         .sort()
-        .join() === "exp,iat,rol,sub",
-    "payload solo trae sub, rol, iat, exp (sin permisos)",
+        .join() === "exp,iat,rol,sid,sub,tok",
+    "payload solo trae sub, rol, sid, tok, iat, exp (sin permisos)",
   );
   check(payload !== null && payload.exp - payload.iat === DURACION_SESION_S, "vence a los 7 días");
   const [h, p, firma] = token.split(".");
@@ -109,11 +114,18 @@ async function main() {
   check((await verificarToken(vencido)) === null, "vencido → inválido");
   const ahora = Math.floor(Date.now() / 1000);
   check(
-    !debeRenovar({ sub: "x", rol: "OWNER", iat: ahora, exp: ahora + 5 * 86400 }),
+    !debeRenovar({
+      sub: "x",
+      rol: "OWNER",
+      sid: "s",
+      tok: "t",
+      iat: ahora,
+      exp: ahora + 5 * 86400,
+    }),
     "faltan 5 días → no renueva",
   );
   check(
-    debeRenovar({ sub: "x", rol: "OWNER", iat: ahora, exp: ahora + 2 * 86400 }),
+    debeRenovar({ sub: "x", rol: "OWNER", sid: "s", tok: "t", iat: ahora, exp: ahora + 2 * 86400 }),
     "faltan 2 días (<3) → renueva",
   );
 

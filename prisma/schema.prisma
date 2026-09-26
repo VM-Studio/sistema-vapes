@@ -19,8 +19,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  /// App: en producción, el pooler (PgBouncer / Neon pooler, modo transaction) con connection_limit.
+  url       = env("DATABASE_URL")
+  /// Migraciones: conexión directa (sin pooler) con el usuario de migraciones.
+  directUrl = env("DIRECT_URL")
 }
 
 // -----------------------------------------------------------------------------
@@ -134,6 +137,8 @@ enum TipoNotificacion {
   CAJA_DIFERENCIA
   TRANSFERENCIA_PENDIENTE
   DEUDA_CLIENTE
+  /// El backup diario falló o no corrió en 36 h.
+  BACKUP_FALLIDO
 }
 
 enum AccionAuditoria {
@@ -143,6 +148,15 @@ enum AccionAuditoria {
   LOGIN
   LOGOUT
   PERMISO_CAMBIADO
+  /// Intento de hacer algo sin permiso (Forbidden).
+  ACCESO_DENEGADO
+  SESION_REVOCADA
+}
+
+enum EstadoOperacionSync {
+  PROCESANDO
+  APLICADA
+  RECHAZADA
 }
 
 // -----------------------------------------------------------------------------
@@ -164,22 +178,96 @@ model Usuario {
   updatedAt           DateTime   @updatedAt
   deletedAt           DateTime?
 
-  permisos         PermisoUsuario[]
-  movimientos      MovimientoStock[]
-  compras          Compra[]
-  ventas           Venta[]           @relation("VentaUsuario")
-  ventasAnuladas   Venta[]           @relation("VentaAnuladaPor")
-  transferencias   Transferencia[]
-  gastos           Gasto[]
-  auditLogs        AuditLog[]
-  historialPrecios HistorialPrecio[]
-  pagosVenta       PagoVenta[]       @relation("PagoUsuario")
-  pagosAnulados    PagoVenta[]       @relation("PagoAnuladoPor")
-  devoluciones     Devolucion[]
-  cajasAbiertas    Caja[]            @relation("CajaAbiertaPor")
-  cajasCerradas    Caja[]            @relation("CajaCerradaPor")
-  movimientosCaja  MovimientoCaja[]
-  notificaciones   Notificacion[]
+  permisos          PermisoUsuario[]
+  movimientos       MovimientoStock[]
+  compras           Compra[]
+  ventas            Venta[]                 @relation("VentaUsuario")
+  ventasAnuladas    Venta[]                 @relation("VentaAnuladaPor")
+  transferencias    Transferencia[]
+  gastos            Gasto[]
+  auditLogs         AuditLog[]
+  historialPrecios  HistorialPrecio[]
+  pagosVenta        PagoVenta[]             @relation("PagoUsuario")
+  pagosAnulados     PagoVenta[]             @relation("PagoAnuladoPor")
+  devoluciones      Devolucion[]
+  cajasAbiertas     Caja[]                  @relation("CajaAbiertaPor")
+  cajasCerradas     Caja[]                  @relation("CajaCerradaPor")
+  movimientosCaja   MovimientoCaja[]
+  notificaciones    Notificacion[]
+  sesiones          Sesion[]                @relation("SesionUsuario")
+  sesionesRevocadas Sesion[]                @relation("SesionRevocadaPor")
+  operacionesSync   OperacionSincronizada[]
+}
+
+/// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
+/// en el próximo request (el middleware la consulta con caché de 60 s).
+model Sesion {
+  id            String    @id @default(cuid())
+  usuarioId     String
+  /// sha256 del secreto aleatorio que viaja en el JWT (`tok`): un sid solo no alcanza.
+  tokenHash     String
+  userAgent     String?
+  ip            String?
+  createdAt     DateTime  @default(now())
+  ultimoUso     DateTime  @default(now())
+  expiraAt      DateTime
+  revocadaAt    DateTime?
+  revocadaPorId String?
+
+  usuario     Usuario  @relation("SesionUsuario", fields: [usuarioId], references: [id], onDelete: Cascade)
+  revocadaPor Usuario? @relation("SesionRevocadaPor", fields: [revocadaPorId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioId, revocadaAt])
+  @@index([expiraAt])
+}
+
+/// Operaciones hechas sin conexión (escáner) y sincronizadas después. El
+/// `idOperacion` (UUID del cliente) es único: reenviarla devuelve el resultado
+/// guardado sin repetir movimientos.
+model OperacionSincronizada {
+  id              String              @id @default(cuid())
+  idOperacion     String              @unique
+  /// "INGRESO" | "RECUENTO" | "TRANSFERENCIA"
+  tipo            String
+  usuarioId       String
+  estado          EstadoOperacionSync
+  payload         Json
+  resultado       Json?
+  motivo          String?
+  /// Cuándo se hizo en el celular (sin red).
+  creadaEnCliente DateTime
+  createdAt       DateTime            @default(now())
+  procesadaAt     DateTime?
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([usuarioId, estado])
+}
+
+/// Registro de cada backup (pg_dump) y su verificación.
+model Backup {
+  id         String   @id @default(cuid())
+  /// Clave en el bucket de backups (backups/backup-YYYY-MM-DD-HHmm.dump).
+  archivo    String
+  tamanio    BigInt?
+  duracionMs Int
+  ok         Boolean
+  error      String?
+  /// "cron" | "manual" | "release"
+  origen     String   @default("cron")
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Rate limit con ventana deslizante aproximada (ventanas de 1 minuto).
+model RateLimit {
+  clave    String
+  ventana  DateTime
+  contador Int      @default(0)
+
+  @@id([clave, ventana])
+  @@index([ventana])
 }
 
 /// Registro de intentos de login para rate limit (persistente: sobrevive a

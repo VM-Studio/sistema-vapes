@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelLeftClose, PanelLeftOpen, Store } from "lucide-react";
+import { CircleHelp, PanelLeftClose, PanelLeftOpen, Store } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -8,6 +8,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { esRutaActiva, GRUPOS, type ItemNavegacion } from "@/config/navigation";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
+
+import { IndicadorRed } from "@/components/pwa/sincronizacion-offline";
 
 import { Campana } from "./campana";
 import { LogoutButton } from "./logout-button";
@@ -68,6 +70,7 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
             <span className="truncate">Gestión</span>
           </Link>
         )}
+        {!colapsado && <IndicadorRed className="px-1" />}
         {!colapsado && <Campana />}
         <button
           type="button"
@@ -120,6 +123,17 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
               </span>
             </span>
           )}
+        </Link>
+        <Link
+          href="/ayuda"
+          title={colapsado ? "Ayuda" : undefined}
+          className={cn(
+            "hover:bg-surface-2 text-muted flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm font-medium",
+            colapsado && "justify-center px-0",
+          )}
+        >
+          <CircleHelp className="size-5 shrink-0" aria-hidden />
+          <span className={cn(colapsado && "sr-only")}>Ayuda</span>
         </Link>
         <LogoutButton compacto={colapsado} />
       </div>

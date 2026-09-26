@@ -42,6 +42,17 @@ import {
   vender,
 } from "../src/server/services/venta.service";
 
+/**
+ * En producción el seed NO corre (crea usuarios con contraseñas conocidas):
+ * solo con ALLOW_SEED=true. El primer dueño se crea con `pnpm crear-owner`.
+ */
+if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "true") {
+  console.error(
+    "✘ seed demo bloqueado en producción (definí ALLOW_SEED=true si de verdad es una base de prueba).",
+  );
+  process.exit(1);
+}
+
 const DIAS = 90;
 const DUENO = { puedeEditar: true };
 

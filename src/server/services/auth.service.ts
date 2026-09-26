@@ -1,9 +1,10 @@
 import { AccionAuditoria, Prisma, type RolUsuario } from "@prisma/client";
 
 import { prisma, withTransaction } from "@/lib/db";
-import { hashPassword, verifyPassword } from "@/server/auth/password";
+import { assertPasswordNoComun, hashPassword, verifyPassword } from "@/server/auth/password";
 import type { RequestMeta } from "@/server/auth/request-meta";
 import { NotFoundError, RateLimitError, UnauthorizedError, ValidationError } from "@/server/errors";
+import { invalidarCacheSesiones } from "@/server/auth/sesiones";
 import { registrarAuditoria } from "@/server/services/audit.service";
 
 /** Máximo de intentos fallidos por email dentro de la ventana. */
@@ -138,6 +139,7 @@ export async function cambiarPasswordPropia(
     });
   }
 
+  await assertPasswordNoComun(input.passwordNueva, "passwordNueva");
   const passwordHash = await hashPassword(input.passwordNueva);
   await withTransaction(
     async (tx) => {
@@ -156,4 +158,6 @@ export async function cambiarPasswordPropia(
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
   );
+  // El middleware tiene cacheado "debe cambiar la contraseña": que lo vea ya.
+  invalidarCacheSesiones(usuarioId);
 }

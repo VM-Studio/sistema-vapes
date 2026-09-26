@@ -7,12 +7,42 @@ import { PageHeader } from "@/components/ui/page-header";
 import { esOwner } from "@/lib/permisos";
 import { requirePaginaUsuario } from "@/server/auth/permissions";
 
+import { formatearFechaHora } from "@/lib/utils";
+import { listarSesionesActivas } from "@/server/auth/sesiones";
+
 import { CambiarPasswordForm } from "./cambiar-password-form";
+import { CerrarTodas } from "./cerrar-todas";
 
 export const metadata: Metadata = { title: "Mi cuenta" };
 
+function dispositivo(ua: string | null): string {
+  if (!ua) return "Dispositivo desconocido";
+  const so = /android/i.test(ua)
+    ? "Android"
+    : /iphone|ipad/i.test(ua)
+      ? "iPhone / iPad"
+      : /windows/i.test(ua)
+        ? "Windows"
+        : /mac os/i.test(ua)
+          ? "Mac"
+          : /linux/i.test(ua)
+            ? "Linux"
+            : "Otro";
+  const nav = /edg\//i.test(ua)
+    ? "Edge"
+    : /chrome|crios/i.test(ua)
+      ? "Chrome"
+      : /firefox|fxios/i.test(ua)
+        ? "Firefox"
+        : /safari/i.test(ua)
+          ? "Safari"
+          : "Navegador";
+  return `${nav} en ${so}`;
+}
+
 export default async function CuentaPage() {
   const usuario = await requirePaginaUsuario({ permitirCambioPendiente: true });
+  const sesiones = await listarSesionesActivas(usuario.id);
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
@@ -45,6 +75,26 @@ export default async function CuentaPage() {
               {esOwner(usuario) ? "Dueño" : "Empleado"}
             </Badge>
           </span>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sesiones abiertas</CardTitle>
+          <CardDescription>Dispositivos donde tu usuario está ingresado.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <ul className="divide-border flex flex-col divide-y text-sm">
+            {sesiones.map((s) => (
+              <li key={s.id} className="flex flex-wrap justify-between gap-2 py-2">
+                <span className="min-w-0 truncate">{dispositivo(s.userAgent)}</span>
+                <span className="text-muted text-xs">
+                  {s.ip ?? "IP desconocida"} · último uso {formatearFechaHora(s.ultimoUso)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <CerrarTodas />
         </CardContent>
       </Card>
 

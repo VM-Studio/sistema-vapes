@@ -1,7 +1,17 @@
 "use client";
 
 import { RolUsuario } from "@prisma/client";
-import { Check, Copy, KeyRound, Pencil, Plus, ShieldCheck, UserX, Users } from "lucide-react";
+import {
+  Check,
+  Copy,
+  KeyRound,
+  LogOut,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  UserX,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -17,11 +27,11 @@ import { useToast } from "@/components/ui/toast";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { UsuarioListado } from "@/server/services/usuario.service";
 
-import { darDeBajaUsuarioAction, resetearPasswordAction } from "./actions";
+import { darDeBajaUsuarioAction, resetearPasswordAction, revocarSesionesAction } from "./actions";
 import { CrearUsuarioForm, EditarUsuarioForm, FORM_USUARIO_ID } from "./usuario-form";
 
 type Editor = { modo: "crear" } | { modo: "editar"; usuario: UsuarioListado } | null;
-type Confirmacion = { tipo: "reset" | "baja"; usuario: UsuarioListado } | null;
+type Confirmacion = { tipo: "reset" | "baja" | "sesiones"; usuario: UsuarioListado } | null;
 
 function BadgesEstado({ u }: { u: UsuarioListado }) {
   return (
@@ -62,7 +72,15 @@ export function UsuariosView({
   async function confirmar() {
     if (!confirmacion) return;
     const { tipo, usuario } = confirmacion;
-    if (tipo === "reset") {
+    if (tipo === "sesiones") {
+      const r = await revocarSesionesAction({ id: usuario.id });
+      if (!r.ok) return toast.error("No se pudieron cerrar las sesiones", r.error.message);
+      setConfirmacion(null);
+      toast.success(
+        `Sesiones de ${usuario.nombre} cerradas`,
+        `${r.data.revocadas} dispositivo(s): tiene que volver a ingresar.`,
+      );
+    } else if (tipo === "reset") {
       const r = await resetearPasswordAction({ id: usuario.id });
       if (!r.ok) return toast.error("No se pudo resetear", r.error.message);
       setConfirmacion(null);
@@ -132,6 +150,17 @@ export function UsuariosView({
             >
               <KeyRound />
               {compacto && "Resetear"}
+            </Button>
+            <Button
+              variant="ghost"
+              size={compacto ? "sm" : "icon"}
+              className={clase}
+              onClick={() => setConfirmacion({ tipo: "sesiones", usuario: u })}
+              aria-label={`Cerrar sesiones de ${u.nombre}`}
+              title="Cerrar sus sesiones"
+            >
+              <LogOut />
+              {compacto && "Sesiones"}
             </Button>
             <Button
               variant="ghost"
@@ -255,14 +284,24 @@ export function UsuariosView({
         title={
           confirmacion?.tipo === "baja"
             ? `¿Dar de baja a ${confirmacion.usuario.nombre}?`
-            : `¿Resetear la contraseña de ${confirmacion?.usuario.nombre}?`
+            : confirmacion?.tipo === "sesiones"
+              ? `¿Cerrar las sesiones de ${confirmacion.usuario.nombre}?`
+              : `¿Resetear la contraseña de ${confirmacion?.usuario.nombre}?`
         }
         description={
           confirmacion?.tipo === "baja"
             ? "No va a poder ingresar más y su sesión se corta de inmediato. Su historial (ventas, movimientos) se conserva."
-            : "Se genera una contraseña temporal que vas a ver una sola vez. Va a tener que cambiarla al ingresar."
+            : confirmacion?.tipo === "sesiones"
+              ? "Se cierra en todos sus dispositivos (celular, computadora). Puede volver a ingresar con su contraseña."
+              : "Se genera una contraseña temporal que vas a ver una sola vez. Va a tener que cambiarla al ingresar."
         }
-        confirmLabel={confirmacion?.tipo === "baja" ? "Dar de baja" : "Resetear"}
+        confirmLabel={
+          confirmacion?.tipo === "baja"
+            ? "Dar de baja"
+            : confirmacion?.tipo === "sesiones"
+              ? "Cerrar sesiones"
+              : "Resetear"
+        }
         danger={confirmacion?.tipo === "baja"}
         onConfirm={confirmar}
       />

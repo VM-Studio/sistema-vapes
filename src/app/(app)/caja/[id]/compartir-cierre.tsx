@@ -29,7 +29,7 @@ export function CompartirCierre({
     const texto = [
       `Caja · ${deposito}`,
       diferencia !== null ? `Diferencia: ${formatearPesos(diferencia)}` : null,
-      `${location.origin}${r.data.url}`,
+      `${r.data.url}`,
     ]
       .filter(Boolean)
       .join("\n");

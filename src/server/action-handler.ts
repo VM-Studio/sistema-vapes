@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 
 import type { ActionError, ActionResult } from "@/lib/action-result";
 import { AppError, type CamposConError } from "@/server/errors";
+import { loggerRequest } from "@/server/log";
 
 export type { ActionError, ActionResult };
 
@@ -36,7 +37,7 @@ export function mapearError(error: unknown): ActionError {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
     return { code: "CONFLICT", message: "Ya existe un registro con esos datos" };
   }
-  console.error("[action] error inesperado:", error);
+  void loggerRequest().then((l) => l.error({ err: error }, "error inesperado"));
   return { code: "INTERNAL_ERROR", message: "Ocurrió un error inesperado. Probá de nuevo." };
 }
 

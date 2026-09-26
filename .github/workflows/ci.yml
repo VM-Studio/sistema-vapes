@@ -1,0 +1,183 @@
+# CI/CD: cada push y PR pasa por calidad + tests + build + E2E + Lighthouse.
+# En main, además: release (backup + prisma migrate deploy) y deploy a producción.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.22.0"
+  # Base de test del service de Postgres (se borra y recrea en cada corrida).
+  DATABASE_URL: postgresql://app:app@localhost:5432/gestion_ci?schema=public
+  DIRECT_URL: postgresql://app:app@localhost:5432/gestion_ci?schema=public
+  DATABASE_URL_TEST: postgresql://app:app@localhost:5432/gestion_e2e?schema=public
+  DATABASE_URL_TEST_VITEST: postgresql://app:app@localhost:5432/gestion_test_vitest?schema=public
+  AUTH_SECRET: ci-secreto-de-prueba-de-al-menos-32-caracteres-xx
+  CRON_SECRET: ci-cron-secret-0123456789
+  NEXT_PUBLIC_APP_URL: http://localhost:3100
+  PRISMA_LOG: silent
+
+jobs:
+  calidad:
+    name: Typecheck · lint · unit · drift · build · E2E · Lighthouse
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: gestion_ci
+          TZ: America/Argentina/Buenos_Aires
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app -d gestion_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Cliente de Postgres 16 (pg_dump/pg_restore para el test de restauración)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-16
+          echo "PG_DUMP_PATH=/usr/lib/postgresql/16/bin/pg_dump" >> "$GITHUB_ENV"
+          echo "PG_RESTORE_PATH=/usr/lib/postgresql/16/bin/pg_restore" >> "$GITHUB_ENV"
+
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Formato
+        run: pnpm format:check
+
+      - name: Migraciones sobre base vacía
+        run: pnpm prisma migrate deploy
+
+      # El schema.prisma y las migraciones tienen que coincidir: si alguien
+      # cambió el schema sin generar la migración, falla acá.
+      - name: Drift de migraciones
+        run: |
+          PGPASSWORD=app createdb -h localhost -U app gestion_shadow
+          pnpm prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "postgresql://app:app@localhost:5432/gestion_shadow" \
+            --exit-code
+
+      - name: Tests unitarios e integración (vitest)
+        run: pnpm test
+
+      - name: Test de restauración de backup
+        run: |
+          pnpm db:seed
+          pnpm test:restore
+        env:
+          STORAGE_DIR: .storage-ci
+
+      - name: Build
+        run: pnpm build
+
+      - name: Instalar Chromium de Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E (Playwright, escritorio + celular)
+        run: pnpm test:e2e
+        env:
+          CI: "true"
+
+      - name: Lighthouse CI (Performance ≥ 80, Accesibilidad ≥ 90)
+        run: |
+          export CHROME_PATH="$(node -e 'console.log(require("playwright").chromium.executablePath())')"
+          pnpm lighthouse
+          node scripts/verificar-instalable.mjs || true
+
+      - name: Reportes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+            lighthouse/reportes/
+          retention-days: 14
+
+  # Producción: primero el paso de release (backup + migrate deploy) contra la
+  # base real y recién después el deploy. Si el release falla, no se publica.
+  deploy:
+    name: Release y deploy a producción
+    needs: calidad
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+      STORAGE_PROVIDER: s3
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_BACKUP_BUCKET: ${{ secrets.S3_BACKUP_BUCKET }}
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cliente de Postgres 16
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-16
+          echo "PG_DUMP_PATH=/usr/lib/postgresql/16/bin/pg_dump" >> "$GITHUB_ENV"
+          echo "PG_RESTORE_PATH=/usr/lib/postgresql/16/bin/pg_restore" >> "$GITHUB_ENV"
+      - name: Release (backup previo + prisma migrate deploy)
+        run: pnpm release
+      - name: Deploy a Vercel (producción)
+        run: |
+          pnpm dlx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          pnpm dlx vercel@latest build --prod --token="$VERCEL_TOKEN"
+          pnpm dlx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Smoke test de /api/health
+        run: |
+          for i in 1 2 3 4 5 6; do
+            curl -fsS "$NEXT_PUBLIC_APP_URL/api/health" && exit 0
+            sleep 10
+          done
+          exit 1

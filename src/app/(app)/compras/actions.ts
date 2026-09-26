@@ -18,6 +18,7 @@ import {
   crearCompra,
   recibirCompra,
 } from "@/server/services/compra.service";
+import { log } from "@/server/log";
 
 /**
  * Permisos de COMPRAS: crear → nueva (borrador) · editar → modificar el borrador
@@ -46,7 +47,7 @@ export const guardarCompraAction = actionHandler(async (input: unknown) => {
       recibida = await recibirCompra(guardada.id, actor, { actualizarCostos });
     } catch (e) {
       // El borrador ya quedó guardado: se informa sin perderlo (reintentar no debe duplicarlo).
-      if (!(e instanceof AppError)) console.error("[compras] error al recibir", e);
+      if (!(e instanceof AppError)) log.error({ err: e }, "error al recibir la compra");
       errorAlRecibir =
         e instanceof AppError
           ? e.message

@@ -1,6 +1,6 @@
 "use client";
 
-import { Ellipsis, UserRound } from "lucide-react";
+import { CircleHelp, Ellipsis, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -11,6 +11,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { esRutaActiva, tituloDeRuta, type ItemNavegacion } from "@/config/navigation";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
+
+import { IndicadorRed } from "@/components/pwa/sincronizacion-offline";
 
 import { Campana } from "./campana";
 import { LogoutButton } from "./logout-button";
@@ -27,6 +29,7 @@ export function TopBar({ restringido = false }: { restringido?: boolean }) {
       <div className="flex h-14 items-center justify-between gap-3 px-4">
         {/* No es <h1>: el encabezado de la página lo pone cada pantalla. */}
         <p className="min-w-0 flex-1 truncate text-lg font-semibold">{tituloDeRuta(pathname)}</p>
+        {!restringido && <IndicadorRed />}
         {!restringido && <Campana />}
         <button
           type="button"
@@ -59,6 +62,14 @@ export function TopBar({ restringido = false }: { restringido?: boolean }) {
               Mi cuenta
             </Link>
           )}
+          <Link
+            href="/ayuda"
+            onClick={() => setMenuAbierto(false)}
+            className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
+          >
+            <CircleHelp className="text-muted size-5" aria-hidden />
+            Ayuda
+          </Link>
           <LogoutButton className="min-h-12" />
         </div>
       </Sheet>
@@ -181,6 +192,14 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
           >
             <UserRound className="text-muted size-5" aria-hidden />
             Mi cuenta
+          </Link>
+          <Link
+            href="/ayuda"
+            onClick={() => setMasAbierto(false)}
+            className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
+          >
+            <CircleHelp className="text-muted size-5" aria-hidden />
+            Ayuda
           </Link>
           <LogoutButton className="min-h-12" />
         </div>

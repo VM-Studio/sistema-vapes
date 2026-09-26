@@ -13,6 +13,7 @@ import {
 } from "@/server/notificaciones/canales";
 import { obtenerUsuarioSesion } from "@/server/services/sesion.service";
 import { alertasStock, cuentasPorCobrar } from "@/server/services/reporte.service";
+import { log } from "@/server/log";
 
 /**
  * NOTIFICACIONES: quién recibe qué y el job diario de alertas.
@@ -27,6 +28,7 @@ const MODULO_DE: Record<TipoNotificacion, Modulo | null> = {
   TRANSFERENCIA_PENDIENTE: Modulo.MOVIMIENTOS,
   DEUDA_CLIENTE: Modulo.CLIENTES,
   CAJA_DIFERENCIA: null, // solo dueños
+  BACKUP_FALLIDO: null, // solo dueños
 };
 
 async function destinatariosDe(tipo: TipoNotificacion): Promise<Destinatario[]> {
@@ -57,7 +59,7 @@ export async function notificar(n: NotificacionNueva): Promise<number> {
       if (canal.nombre === "in-app") creadas = k;
     } catch (e) {
       // Un canal caído no frena a los demás ni a la operación que avisó.
-      console.error(`[notificaciones] falló el canal ${canal.nombre}`, e);
+      log.error({ err: e, canal: canal.nombre }, "falló un canal de notificaciones");
     }
   }
   return creadas;

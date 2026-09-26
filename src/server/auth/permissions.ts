@@ -1,12 +1,15 @@
 import "server-only";
 
-import type { Modulo } from "@prisma/client";
+import { AccionAuditoria, type Modulo } from "@prisma/client";
 import { redirect } from "next/navigation";
 
 import { ACCION_LABEL, MODULO_LABEL, esOwner, puede, type Accion } from "@/lib/permisos";
+import { prisma } from "@/lib/db";
 import { ForbiddenError, UnauthorizedError } from "@/server/errors";
+import { logger } from "@/server/log";
 
 import { getCurrentUser, type UsuarioConPermisos } from "./current-user";
+import { metaDesdeHeaders } from "./request-meta";
 
 /**
  * AUTORIZACIÓN EN SERVIDOR — la única que cuenta.
@@ -38,12 +41,43 @@ export async function requireUsuario(
   return usuario;
 }
 
+/**
+ * Deja constancia en AuditLog de cada acceso denegado (ruta, usuario, IP y
+ * qué se intentó). Nunca frena la respuesta: si falla, solo se loguea.
+ */
+async function registrarDenegado(
+  usuario: UsuarioConPermisos | null,
+  detalle: string,
+): Promise<void> {
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    await prisma.auditLog.create({
+      data: {
+        usuarioId: usuario?.id ?? null,
+        accion: AccionAuditoria.ACCESO_DENEGADO,
+        entidad: "Acceso",
+        entidadId: null,
+        datosDespues: {
+          ruta: h.get("x-pathname") ?? null,
+          accion: h.get("next-action") ? "server-action" : "pagina/api",
+          detalle,
+        },
+        ip: metaDesdeHeaders(h).ip,
+        userAgent: metaDesdeHeaders(h).userAgent,
+      },
+    });
+  } catch (e) {
+    logger().warn({ err: e }, "no se pudo auditar un acceso denegado");
+  }
+}
+
 export async function requirePermiso(modulo: Modulo, accion: Accion): Promise<UsuarioConPermisos> {
   const usuario = await requireUsuario();
   if (!puede(usuario, modulo, accion)) {
-    throw new ForbiddenError(
-      `No tenés permiso para ${ACCION_LABEL[accion].toLowerCase()} en ${MODULO_LABEL[modulo]}.`,
-    );
+    const mensaje = `No tenés permiso para ${ACCION_LABEL[accion].toLowerCase()} en ${MODULO_LABEL[modulo]}.`;
+    await registrarDenegado(usuario, `${modulo}:${accion}`);
+    throw new ForbiddenError(mensaje);
   }
   return usuario;
 }
@@ -55,6 +89,7 @@ export async function requirePermisoAlguno(
 ): Promise<UsuarioConPermisos> {
   const usuario = await requireUsuario();
   if (!modulos.some((m) => puede(usuario, m, accion))) {
+    await registrarDenegado(usuario, `${modulos.join("|")}:${accion}`);
     throw new ForbiddenError(
       `No tenés permiso para ${ACCION_LABEL[accion].toLowerCase()} en ${modulos.map((m) => MODULO_LABEL[m]).join(" ni ")}.`,
     );
@@ -64,7 +99,10 @@ export async function requirePermisoAlguno(
 
 export async function requireOwner(): Promise<UsuarioConPermisos> {
   const usuario = await requireUsuario();
-  if (!esOwner(usuario)) throw new ForbiddenError("Solo los dueños pueden realizar esta acción.");
+  if (!esOwner(usuario)) {
+    await registrarDenegado(usuario, "solo-owner");
+    throw new ForbiddenError("Solo los dueños pueden realizar esta acción.");
+  }
   return usuario;
 }
 
@@ -92,7 +130,10 @@ export function requirePaginaPermiso(modulo: Modulo, accion: Accion = "ver") {
 export function requirePaginaPermisoAlguno(modulos: readonly Modulo[], accion: Accion = "ver") {
   return paraPagina(async () => {
     const usuario = await requireUsuario();
-    if (!modulos.some((m) => puede(usuario, m, accion))) throw new ForbiddenError();
+    if (!modulos.some((m) => puede(usuario, m, accion))) {
+      await registrarDenegado(usuario, `${modulos.join("|")}:${accion}`);
+      throw new ForbiddenError();
+    }
     return usuario;
   });
 }

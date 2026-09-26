@@ -18,11 +18,7 @@ export function CompartirReporte({ slug, query }: { slug: string; query: string 
     const r = await compartirReporteAction({ slug, query });
     setCargando(false);
     if (!r.ok) return toast.error("No se pudo generar el PDF", r.error.message);
-    window.open(
-      linkWhatsApp(null, `${r.data.texto}\n${location.origin}${r.data.url}`),
-      "_blank",
-      "noopener",
-    );
+    window.open(linkWhatsApp(null, `${r.data.texto}\n${r.data.url}`), "_blank", "noopener");
   }
   return (
     <Button onClick={compartir} loading={cargando}>
