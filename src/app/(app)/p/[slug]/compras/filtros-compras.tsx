@@ -10,7 +10,7 @@ export function FiltrosCompras({
   proveedores,
 }: {
   params: Record<string, string>;
-  proveedores: { id: string; nombre: string }[];
+  proveedores: { id: string; nombre: string; nombreTienda: string }[];
 }) {
   const { actualizar } = useUrlParams();
   return (
@@ -19,7 +19,7 @@ export function FiltrosCompras({
         aria-label="Proveedor"
         options={[
           { value: "", label: "Todos los proveedores" },
-          ...proveedores.map((p) => ({ value: p.id, label: p.nombre })),
+          ...proveedores.map((p) => ({ value: p.id, label: `${p.nombre} (${p.nombreTienda})` })),
         ]}
         value={params.proveedorId ?? ""}
         onChange={(e) => actualizar({ proveedorId: e.target.value || null })}

@@ -73,7 +73,7 @@ async function main() {
     where: { nombre: "Mango Ice" },
     include: { producto: true },
   });
-  const nombre = `${variante.producto.nombre} - ${variante.nombre}`;
+  const nombre = `${variante.producto.nombreCompleto} — ${variante.nombre}`;
   const base = { varianteId: variante.id, usuarioId: usuario.id, motivo: MOTIVO };
 
   console.log(`\nVariante: ${nombre} | ${g1.nombre} y ${g2.nombre}`);

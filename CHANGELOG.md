@@ -5,6 +5,85 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.1.0] - 2026-09-29
+
+**Reforma R2: catálogo simplificado, proveedores con precios y compras por sabor.** Un producto pasa a ser
+marca + modelo + especificación con un precio para todos sus sabores; el stock se carga escaneando en un
+galpón elegido a propósito; cada proveedor tiene su lista de precios y las compras sugieren el costo.
+
+La migración `20260929090000_catalogo_proveedores_compras` convierte los datos existentes y borra columnas
+(`Producto.descripcion`, `Producto.tieneVariantes`, `Proveedor.cuit`, `Proveedor.email`,
+`Proveedor.direccion`): hacer y descargar un backup antes de migrar.
+
+### Added
+
+- **Carga de stock escaneando** en `/p/{slug}/productos/cargar` (desde Productos, Escanear o la ficha del
+  producto; permiso crear en Productos o en Stock): paso 1, el galpón (obligatorio, con el último usado
+  preseleccionado pero sin confirmarse solo; `SelectorGalpon`); paso 2, escaneo con pistola, cámara o
+  búsqueda manual (un código existente suma +1; uno desconocido abre el alta rápida); lista guardada en el
+  dispositivo con «Retomar» / «Descartar»; confirmación «Cargar N unidades en {galpón}», todo en una
+  transacción, con un `INGRESO_MANUAL` por sabor y el stock resultante por galpón.
+- `cargarStockPorEscaneo()` rechaza una carga sin depósito activo (`SIN_GALPON`) también a nivel servicio.
+- **Alta rápida** (`AltaRapidaSheet`) para códigos desconocidos en la carga de stock, en Compras y en
+  Escanear: marca con autocompletar (se crea si no existe), modelo, especificación con la etiqueta del panel,
+  sabor y precio. Si marca + modelo + especificación ya existe, le agrega el sabor (o el código al sabor
+  existente) en vez de duplicar el producto.
+- **Precios por proveedor** (`ProveedorProducto`, enum `Moneda` `ARS`/`USD`): un precio por proveedor y
+  producto, editable desde la ficha del proveedor («Agregar producto que vende»), con fecha y usuario de la
+  última actualización.
+- Ficha del producto: **«Proveedores que lo venden»**, del más barato al más caro, con la marca «Más barato»
+  (dueños y quien ve Compras).
+- Compras: **costo sugerido** por sabor (precio en pesos del proveedor → último costo del sabor), escáner y
+  alta rápida en la carga, y al **«Recibir mercadería»** el Dialog de precios que cambian («de $X a $Y») para
+  actualizar o no el precio del proveedor.
+- ID de compra visible **`VAP-C-000001`** (`formatearIdCompra`).
+- Proveedores: tarjetas con WhatsApp y acordeón de productos, búsqueda por nombre, tienda o producto, y
+  «Nueva compra a este proveedor».
+- `src/lib/precios.ts` (`precioVentaEfectivo`, `tienePrecioPropio`, `costoParaVenta`), con tests unitarios.
+- Triggers `trg_producto_derivados` (calcula `nombreCompleto` y `especificacionNorm`), `trg_marca_renombrada`
+  (renombrar una marca actualiza el nombre de sus productos) y `trg_compra_item_producto`
+  (`CompraItem.productoId` = producto de la variante).
+- Seed: catálogo de Vapes con marca + modelo + pitadas, un sabor con precio propio y dos proveedores con su
+  lista de precios (uno en dólares).
+- Exportar todo: hoja «Precios de proveedores».
+- E2E de carga de stock, proveedores, compras y catálogo de la empleada (sin costos, sin carga de stock ni
+  Compras); `test:catalogo`, `test:compras` y `test:ventas` reescritos para el modelo actual.
+
+### Changed
+
+- **Producto = marca (obligatoria) + modelo + especificación** (la etiqueta del panel: «Pitadas» en Vapes).
+  `nombreCompleto` («Elf Bar BC 5000») y `especificacionNorm` los mantiene la base; la marca «Sin marca» no
+  aparece en el nombre. Unicidad por (panel, marca, modelo, especificación normalizada). Categoría opcional.
+  Búsqueda trigram sobre `nombreCompleto`.
+- **Precio de venta único por producto** para todos sus sabores; `Variante.precioVenta` pasa a ser un precio
+  propio opcional (`null` = el del producto). La UI habla de **sabores** en lugar de variantes.
+- `Variante.precioCosto` pasa a ser **`ultimoCosto`** (opcional): lo actualiza recibir una compra, no se carga
+  a mano, y cada venta guarda un snapshot en `VentaItem.costoUnitario` (0 si el sabor no tuvo compras).
+- **Proveedores**: nombre (contacto), nombre de la tienda (obligatorio), teléfono normalizado `+54` y único por
+  panel, notas.
+- **Compras**: proveedor y galpón obligatorios (en tres pasos: proveedor, galpón, ítems), ítems por sabor con
+  `productoId` desnormalizado, recibir actualiza el último costo de cada sabor. Costos y totales solo para
+  dueños o quien tiene `ver` en Compras.
+- Escanear: el modo «Ingresar» pasa a ser **«Cargar stock»** y lleva a `/productos/cargar`; «Consultar»
+  muestra el sabor y, a los dueños, el último costo. Un código desconocido ofrece asociarlo a un sabor
+  existente o darlo de alta con el alta rápida sin salir de la pantalla.
+- Vistas `vw_stock_consolidado` y `vw_alertas_stock` con el nombre completo del producto.
+- Migración de datos: productos sin marca → marca «Sin marca» de su panel; el modelo pierde el prefijo repetido
+  de la marca («Elf Bar BC5000» → «BC5000»); precio del producto = el precio de sabor más frecuente (empate:
+  el mayor) y los sabores con ese precio quedan sin precio propio; `precioCosto` → `ultimoCosto`; proveedores:
+  el nombre también pasa a nombre de la tienda, CUIT, email y dirección pasan a las notas y los teléfonos se
+  normalizan (los repetidos también van a las notas); precios de proveedor iniciales = último costo pagado en
+  compras recibidas.
+
+### Removed
+
+- `Producto.descripcion` y `Producto.tieneVariantes` (la regla «sin variantes = exactamente una Único»:
+  ahora todo producto tiene al menos un sabor).
+- `Proveedor.cuit`, `Proveedor.email` y `Proveedor.direccion` (y el índice único de CUIT).
+- El ingreso por escaneo dentro de Escanear y su «Registrar como compra»: la carga va por
+  `/productos/cargar` y las compras por Compras.
+- La matriz de stock y el listado de variantes de la ficha del producto, reemplazados por la tabla de sabores.
+
 ## [2.0.0] - 2026-09-28
 
 **Reforma R1: multipanel, limpieza y rediseño.** La app pasa a ser un conjunto de sistemas independientes

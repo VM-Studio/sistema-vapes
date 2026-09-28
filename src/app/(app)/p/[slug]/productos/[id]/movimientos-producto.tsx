@@ -4,19 +4,21 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { conSigno } from "@/lib/format";
+import { conSigno, formatearPesos } from "@/lib/format";
 import { TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { MovimientoListado } from "@/server/services/movimiento.service";
 
-/** Últimos 50 movimientos de todas las variantes del producto. */
+/** Últimos movimientos de todos los sabores del producto (costos: solo dueños). */
 export function MovimientosProducto({
   movimientos,
   total,
+  verCostos,
   hrefTodos,
 }: {
   movimientos: MovimientoListado[];
   total: number;
+  verCostos: boolean;
   /** Historial completo del producto en Stock → Movimientos. */
   hrefTodos: string;
 }) {
@@ -44,7 +46,7 @@ export function MovimientosProducto({
               </Badge>
             ),
           },
-          { key: "variante", header: "Variante", cell: (m) => m.nombre },
+          { key: "sabor", header: "Sabor", cell: (m) => m.nombre },
           { key: "deposito", header: "Depósito", cell: (m) => m.deposito },
           {
             key: "cantidad",
@@ -71,6 +73,18 @@ export function MovimientosProducto({
               </span>
             ),
           },
+          ...(verCostos
+            ? [
+                {
+                  key: "costo",
+                  header: "Costo",
+                  className: "text-right",
+                  cell: (m: MovimientoListado) =>
+                    m.costoUnitario === null ? "—" : formatearPesos(m.costoUnitario),
+                  ocultarEnMobile: true,
+                },
+              ]
+            : []),
           { key: "usuario", header: "Usuario", cell: (m) => m.usuario, ocultarEnMobile: true },
           {
             key: "motivo",

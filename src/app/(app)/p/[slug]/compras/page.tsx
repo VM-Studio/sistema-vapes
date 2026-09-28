@@ -12,13 +12,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { formatearPesos } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
-import { rutaPanel } from "@/lib/paneles";
+import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
 import { listarComprasSchema } from "@/lib/validations/compra";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { listarCompras, type CompraListada } from "@/server/services/compra.service";
-import { listarProveedoresActivos } from "@/server/services/proveedor.service";
+import { listarProveedoresActivos, veCostosCompras } from "@/server/services/proveedor.service";
 
 import { FiltrosCompras } from "./filtros-compras";
 
@@ -38,6 +38,8 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
     listarProveedoresActivos(ctx),
   ]);
 
+  const verCostos = veCostosCompras(ctx);
+  const idDe = (c: CompraListada) => formatearIdCompra(ctx.panel.slug, c.numero);
   const estadoBadge = (c: CompraListada) => (
     <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>{ESTADO_COMPRA_UI[c.estado].label}</Badge>
   );
@@ -50,7 +52,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         actions={
           puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "crear") && (
             <Link href={`${PATH}/nueva`} className={buttonVariants()}>
-              <Plus /> Nueva compra
+              <Plus strokeWidth={1.75} /> Nueva compra
             </Link>
           )
         }
@@ -89,10 +91,10 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         columns={[
           {
             key: "numero",
-            header: "N.º",
+            header: "ID",
             cell: (c) => (
               <Link href={`${PATH}/${c.id}`} className="text-primary font-semibold hover:underline">
-                #{c.numero}
+                {idDe(c)}
               </Link>
             ),
           },
@@ -106,19 +108,23 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
             header: "Proveedor",
             cell: (c) => c.proveedor ?? <span className="text-muted">—</span>,
           },
-          { key: "deposito", header: "Depósito", cell: (c) => c.deposito },
+          { key: "deposito", header: "Galpón", cell: (c) => c.deposito },
           {
             key: "items",
             header: "Productos",
             className: "text-right tabular-nums",
             cell: (c) => `${c.items} (${c.unidades} u.)`,
           },
-          {
-            key: "total",
-            header: "Total",
-            className: "text-right tabular-nums font-medium",
-            cell: (c) => formatearPesos(c.total),
-          },
+          ...(verCostos
+            ? [
+                {
+                  key: "total",
+                  header: "Total",
+                  className: "text-right tabular-nums font-medium",
+                  cell: (c: CompraListada) => formatearPesos(c.total),
+                },
+              ]
+            : []),
           { key: "estado", header: "Estado", cell: estadoBadge },
         ]}
         renderMobile={(c) => (
@@ -128,7 +134,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold">
-                #{c.numero} · {c.proveedor ?? "Sin proveedor"}
+                {idDe(c)} · {c.proveedor ?? "Sin proveedor"}
               </span>
               {estadoBadge(c)}
             </div>
@@ -136,7 +142,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
               <p className="text-muted text-xs">
                 {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
               </p>
-              <p className="font-semibold tabular-nums">{formatearPesos(c.total)}</p>
+              {verCostos && <p className="font-semibold tabular-nums">{formatearPesos(c.total)}</p>}
             </div>
           </Link>
         )}

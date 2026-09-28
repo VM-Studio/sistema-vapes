@@ -4,24 +4,25 @@
  * Separado del seed base (que sigue siendo el mínimo para arrancar). Los
  * paneles Cosmetic y Especiales no se tocan.
  *
- * No inserta filas "a mano": fija el reloj de negocio (src/lib/reloj.ts) en
- * cada momento simulado y llama a los MISMOS servicios que la app (vender,
- * anular, compras, transferencias, ajustes) con `ctx = { panelId: Vapes, usuarioId }`.
- * Así los triggers, la numeración por panel y el ledger se ejercitan de verdad.
+ * La operación no inserta filas "a mano": fija el reloj de negocio
+ * (src/lib/reloj.ts) en cada momento simulado y llama a los MISMOS servicios
+ * que la app (vender, anular, compras, transferencias, ajustes) con
+ * `ctx = { panelId: Vapes, usuarioId }`. Así los triggers, la numeración por
+ * panel, el último costo de cada sabor y el ledger se ejercitan de verdad.
+ * El catálogo extra y los proveedores demo se crean con el cliente del panel.
  *
  * Uso (sobre una DB con el seed base): pnpm db:seed-demo
  * Si la demo ya está cargada (existe su catálogo en Vapes), no hace nada.
  * Determinístico: PRNG con semilla fija.
  */
-import { MedioPago, Modulo, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
+import { MedioPago, Modulo, Moneda, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { generarEan13 } from "../src/lib/barcode";
 import { prisma } from "../src/lib/db";
 import { normalizarPermiso } from "../src/lib/permisos";
 import { ahora, fijarReloj } from "../src/lib/reloj";
-import { crearClienteSchema } from "../src/lib/validations/cliente";
-import { crearProveedorSchema } from "../src/lib/validations/proveedor";
+import { crearClienteSchema, normalizarTelefono } from "../src/lib/validations/cliente";
 import { borradorVentaSchema, venderSchema } from "../src/lib/validations/venta";
 import { diaEn, inicioDia, sumarDias, type DiaISO } from "../src/lib/zona-horaria";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
@@ -34,8 +35,7 @@ import {
   crearTransferencia,
   registrarAjuste,
 } from "../src/server/services/movimiento.service";
-import { actualizarPrecios, generarSku } from "../src/server/services/producto.service";
-import { crearProveedor } from "../src/server/services/proveedor.service";
+import { generarSku } from "../src/server/services/producto.service";
 import { registrarMovimiento } from "../src/server/services/stock.service";
 import { anularVenta, crearBorrador, vender } from "../src/server/services/venta.service";
 
@@ -81,28 +81,45 @@ function ponderado<T>(xs: readonly { valor: T; peso: number }[]): T {
 // Catálogo extra (con un sabor que nunca se vende: "sabor muerto")
 // -----------------------------------------------------------------------------
 interface ProductoDemo {
-  nombre: string;
-  categoria: string;
   marca: string;
-  tieneVariantes: boolean;
+  modelo: string;
+  /** Pitadas (o lo que corresponda); "" si no aplica. */
+  especificacion: string;
+  /** El nombre completo que arma la DB (marca + modelo + especificación). */
+  nombreCompleto: string;
+  categoria: string;
   costo: string;
+  /** Precio de todos los sabores (salvo los que tienen `precioPropio`). */
   venta: string;
   minimo: number;
   /** stock: [Ayres Plaza, Mercedes]. */
-  sabores: { nombre: string; ean12: string; peso: number; stock: [number, number] }[];
+  sabores: {
+    nombre: string;
+    ean12: string;
+    peso: number;
+    stock: [number, number];
+    precioPropio?: string;
+  }[];
 }
 
 const PRODUCTOS_DEMO: ProductoDemo[] = [
   {
-    nombre: "Lost Mary MO5000",
-    categoria: "Vapes",
     marca: "Lost Mary",
-    tieneVariantes: true,
+    modelo: "MO",
+    especificacion: "5000",
+    nombreCompleto: "Lost Mary MO 5000",
+    categoria: "Vapes",
     costo: "8800.00",
     venta: "15500.00",
     minimo: 8,
     sabores: [
-      { nombre: "Blue Razz", ean12: "779000400001", peso: 9, stock: [20, 10] },
+      {
+        nombre: "Blue Razz",
+        ean12: "779000400001",
+        peso: 9,
+        stock: [20, 10],
+        precioPropio: "16000.00",
+      },
       { nombre: "Watermelon", ean12: "779000400002", peso: 7, stock: [18, 8] },
       { nombre: "Grape", ean12: "779000400003", peso: 4, stock: [12, 6] },
       { nombre: "Peach Ice", ean12: "779000400004", peso: 3, stock: [10, 4] },
@@ -111,10 +128,11 @@ const PRODUCTOS_DEMO: ProductoDemo[] = [
     ],
   },
   {
-    nombre: "Nasty Salt 30ml",
-    categoria: "Líquidos",
     marca: "Nasty Juice",
-    tieneVariantes: true,
+    modelo: "Salt",
+    especificacion: "30ml",
+    nombreCompleto: "Nasty Juice Salt 30ml",
+    categoria: "Líquidos",
     costo: "5200.00",
     venta: "9500.00",
     minimo: 5,
@@ -125,10 +143,11 @@ const PRODUCTOS_DEMO: ProductoDemo[] = [
     ],
   },
   {
-    nombre: "Vaporesso XROS 3",
-    categoria: "Pods",
     marca: "Vaporesso",
-    tieneVariantes: false,
+    modelo: "XROS 3",
+    especificacion: "",
+    nombreCompleto: "Vaporesso XROS 3",
+    categoria: "Pods",
     costo: "18000.00",
     venta: "32000.00",
     minimo: 2,
@@ -138,20 +157,27 @@ const PRODUCTOS_DEMO: ProductoDemo[] = [
 
 /** Popularidad de las variantes del seed base. */
 const PESOS_BASE: Record<string, number> = {
-  "Ignite V80|Mango Ice": 10,
-  "Ignite V80|Strawberry Watermelon": 7,
-  "Ignite V80|Blue Razz Ice": 8,
-  "Ignite V80|Grape Ice": 4,
-  "Elf Bar BC5000|Watermelon Ice": 7,
-  "Elf Bar BC5000|Peach Mango": 5,
-  "Elf Bar BC5000|Cool Mint": 4,
-  "Elf Bar BC5000|Lemon Mint": 2,
-  "Cargador USB-C 20W|Único": 3,
-  "Parlante Bluetooth Mini|Único": 1,
+  "Ignite V80 8000|Mango Ice": 10,
+  "Ignite V80 8000|Strawberry Watermelon": 7,
+  "Ignite V80 8000|Blue Razz Ice": 8,
+  "Ignite V80 8000|Grape Ice": 4,
+  "Elf Bar BC 5000|Watermelon Ice": 7,
+  "Elf Bar BC 5000|Peach Mango": 5,
+  "Elf Bar BC 5000|Cool Mint": 4,
+  "Elf Bar BC 5000|Lemon Mint": 2,
+  "Elf Bar BC 10000|Watermelon Ice": 3,
+  "Elf Bar BC 10000|Blue Razz Ice": 2,
+  "TechPro Cargador USB-C 20W|Único": 3,
+  "TechPro Parlante Bluetooth Mini|Único": 1,
 };
+
+/** Costo de reposición si un sabor todavía no tiene último costo. */
+const COSTO_POR_DEFECTO = 9000;
 
 interface VarianteDemo {
   id: string;
+  productoId: string;
+  /** "Nombre completo|Sabor". */
   nombre: string;
   peso: number;
 }
@@ -171,11 +197,11 @@ async function crearCatalogoDemo(ctx: Ctx, g1: string, g2: string) {
       async (tx) => {
         const producto = await tx.producto.create({
           data: {
-            nombre: p.nombre,
-            categoriaId: categoria.id,
             marcaId: marca.id,
-            tieneVariantes: p.tieneVariantes,
-            descripcion: `${p.nombre} (demo)`,
+            nombre: p.modelo,
+            especificacion: p.especificacion,
+            categoriaId: categoria.id,
+            precioVenta: p.venta,
           },
         });
         for (const s of p.sabores) {
@@ -183,10 +209,10 @@ async function crearCatalogoDemo(ctx: Ctx, g1: string, g2: string) {
             data: {
               productoId: producto.id,
               nombre: s.nombre,
-              sku: await generarSku(tx, PANEL),
+              sku: await generarSku(tx),
               codigoBarras: generarEan13(s.ean12),
-              precioCosto: p.costo,
-              precioVenta: p.venta,
+              precioVenta: s.precioPropio ?? null,
+              ultimoCosto: p.costo,
               stockMinimo: p.minimo,
             },
           });
@@ -266,9 +292,28 @@ const CLIENTES_DEMO = [
   { nombre: "Valentina", apellido: "Sosa", documento: "39555666", telefono: "11 5555-0206" },
 ];
 
+/** Proveedores demo, con su lista de precios por producto (nombre completo). */
 const PROVEEDORES_DEMO = [
-  { nombre: "Importadora Vapor Sur SA", cuit: "30716543214", telefono: "+541144440001" },
-  { nombre: "TechPro Mayorista", cuit: "30709876542", telefono: "+541144440002" },
+  {
+    nombre: "Martina Vega",
+    nombreTienda: "Importadora Vapor Sur",
+    telefono: "11 4444-0001",
+    precios: [
+      { producto: "Lost Mary MO 5000", precio: "8800.00", moneda: Moneda.ARS },
+      { producto: "Nasty Juice Salt 30ml", precio: "5200.00", moneda: Moneda.ARS },
+      { producto: "Ignite V80 8000", precio: "9600.00", moneda: Moneda.ARS },
+    ],
+  },
+  {
+    nombre: "Diego Paz",
+    nombreTienda: "TechPro Mayorista",
+    telefono: "11 4444-0002",
+    notas: "Accesorios y pods",
+    precios: [
+      { producto: "Vaporesso XROS 3", precio: "15.00", moneda: Moneda.USD },
+      { producto: "TechPro Cargador USB-C 20W", precio: "4300.00", moneda: Moneda.ARS },
+    ],
+  },
 ];
 
 const MEDIOS = [
@@ -286,7 +331,9 @@ const MEDIOS = [
 type Evento = { momento: Date; orden: number; hacer: () => Promise<void> };
 
 async function main() {
-  if (await db.producto.findFirst({ where: { nombre: PRODUCTOS_DEMO[0]!.nombre } })) {
+  if (
+    await db.producto.findFirst({ where: { nombreCompleto: PRODUCTOS_DEMO[0]!.nombreCompleto } })
+  ) {
     console.log(
       "seed-demo ya se corrió en esta base (el catálogo demo existe en Vapes): no hago nada.",
     );
@@ -336,22 +383,59 @@ async function main() {
     await db.proveedor.findFirstOrThrow({ where: { deletedAt: null } }),
   ];
   for (const p of PROVEEDORES_DEMO) {
-    const datos = crearProveedorSchema.parse(p);
-    const existe = await db.proveedor.findFirst({ where: { cuit: datos.cuit, deletedAt: null } });
-    proveedores.push(existe ?? (await crearProveedor(ctxOwner, datos)));
+    const telefono = normalizarTelefono(p.telefono);
+    const proveedor =
+      (await db.proveedor.findFirst({ where: { telefono, deletedAt: null } })) ??
+      (await db.proveedor.create({
+        data: {
+          nombre: p.nombre,
+          nombreTienda: p.nombreTienda,
+          telefono,
+          notas: p.notas ?? null,
+        },
+      }));
+    for (const pr of p.precios) {
+      const producto = await db.producto.findFirstOrThrow({
+        where: { nombreCompleto: pr.producto, deletedAt: null },
+        select: { id: true },
+      });
+      await db.proveedorProducto.upsert({
+        where: {
+          panelId_proveedorId_productoId: {
+            panelId: PANEL,
+            proveedorId: proveedor.id,
+            productoId: producto.id,
+          },
+        },
+        update: {},
+        create: {
+          proveedorId: proveedor.id,
+          productoId: producto.id,
+          precio: pr.precio,
+          moneda: pr.moneda,
+          usuarioId: owner.id,
+        },
+      });
+    }
+    proveedores.push(proveedor);
   }
 
   const variantes: VarianteDemo[] = (
     await db.variante.findMany({
       where: { deletedAt: null },
-      include: { producto: { select: { nombre: true } } },
+      include: { producto: { select: { id: true, nombreCompleto: true } } },
     })
   ).map((v) => {
-    const clave = `${v.producto.nombre}|${v.nombre}`;
-    const demo = PRODUCTOS_DEMO.find((p) => p.nombre === v.producto.nombre)?.sabores.find(
-      (s) => s.nombre === v.nombre,
-    );
-    return { id: v.id, nombre: clave, peso: demo?.peso ?? PESOS_BASE[clave] ?? 1 };
+    const clave = `${v.producto.nombreCompleto}|${v.nombre}`;
+    const demo = PRODUCTOS_DEMO.find(
+      (p) => p.nombreCompleto === v.producto.nombreCompleto,
+    )?.sabores.find((s) => s.nombre === v.nombre);
+    return {
+      id: v.id,
+      productoId: v.producto.id,
+      nombre: clave,
+      peso: demo?.peso ?? PESOS_BASE[clave] ?? 1,
+    };
   });
   const vendibles = variantes.filter((v) => v.peso > 0);
 
@@ -431,7 +515,7 @@ async function main() {
   async function unaCompra(depositoId: string) {
     const objetivo = depositoId === g1!.id ? 30 : 15;
     // Estos dos el importador no los trae más: van a quedar bajo mínimo / sin stock.
-    const discontinuados = ["Ignite V80|Grape Ice", "Elf Bar BC5000|Lemon Mint"];
+    const discontinuados = ["Ignite V80 8000|Grape Ice", "Elf Bar BC 5000|Lemon Mint"];
     const stocks = await Promise.all(
       vendibles
         .filter((v) => !discontinuados.includes(v.nombre))
@@ -442,26 +526,33 @@ async function main() {
     if (reponer.length === 0) reponer = stocks.sort((a, b) => a.s - b.s).slice(0, 3);
     const items = [];
     for (const { v, s } of reponer) {
-      const costo = (await db.variante.findUniqueOrThrow({ where: { id: v.id } })).precioCosto;
+      const { ultimoCosto } = await db.variante.findUniqueOrThrow({ where: { id: v.id } });
+      // El importador aumentó la lista de Ignite a mitad del período.
+      const costo =
+        precioActualizado && v.nombre.startsWith("Ignite V80 8000|")
+          ? COSTO_IGNITE_NUEVO
+          : (ultimoCosto?.toNumber() ?? COSTO_POR_DEFECTO);
       items.push({
         varianteId: v.id,
         cantidad: Math.max(objetivo - s, 6),
-        costoUnitario: costo.toNumber(),
+        costoUnitario: costo,
       });
     }
     const c = await crearCompra(ctxOwner, {
       proveedorId: elegir(proveedores).id,
       depositoId,
       fecha: ahora(),
-      descuento: 0,
-      notas: undefined,
       items,
+      notas: undefined,
     });
-    await recibirCompra(ctxOwner, c.id, { actualizarCostos: false });
+    // Recibir actualiza el último costo de cada sabor; la mitad de las veces
+    // también la lista de precios del proveedor.
+    await recibirCompra(ctxOwner, c.id, { actualizarPrecioProveedor: azar() < 0.5 });
     stats.compras++;
   }
 
   let precioActualizado = false;
+  const COSTO_IGNITE_NUEVO = 10200;
 
   for (let i = 0; i < DIAS; i++) {
     const dia = sumarDias(primerDia, i);
@@ -469,16 +560,18 @@ async function main() {
     const dow = new Date(`${dia}T12:00:00Z`).getUTCDay(); // 0 domingo
     const abierto = dow !== 0 || esHoy; // los domingos está cerrado
 
-    // Aumento de lista del importador a mitad del período.
+    // Aumento de lista del importador a mitad del período: sube el precio de
+    // venta del producto (todos sus sabores sin precio propio) y, desde ahí,
+    // las compras de Ignite entran al costo nuevo.
     if (!precioActualizado && i >= DIAS / 2) {
       fijarReloj(() => en(dia, 8, 30));
-      const ignite = variantes.filter((v) => v.nombre.startsWith("Ignite V80|")).map((v) => v.id);
-      await actualizarPrecios(
-        ctxOwner,
-        ignite,
-        { precioCosto: 10200, precioVenta: 17500 },
-        "Aumento del importador",
-      );
+      const ignite = variantes.find((v) => v.nombre.startsWith("Ignite V80 8000|"));
+      if (ignite) {
+        await db.producto.update({
+          where: { id: ignite.productoId },
+          data: { precioVenta: "17500.00" },
+        });
+      }
       precioActualizado = true;
     }
 
@@ -522,7 +615,7 @@ async function main() {
         dia,
         en(dia, 9, 45),
         async () => {
-          const v = vendibles.find((x) => x.nombre === "Ignite V80|Mango Ice")!;
+          const v = vendibles.find((x) => x.nombre === "Ignite V80 8000|Mango Ice")!;
           if ((await stockEn(v.id, g1.id)) < 6) return;
           const t = await crearTransferencia(ctxOwner, {
             depositoOrigenId: g1.id,
@@ -565,8 +658,8 @@ async function main() {
   await crearCompra(ctxOwner, {
     proveedorId: proveedores[1]!.id,
     depositoId: g1.id,
-    descuento: 0,
-    items: [{ varianteId: vendibles[0]!.id, cantidad: 10, costoUnitario: 9000 }],
+    fecha: ahora(),
+    items: [{ varianteId: vendibles[0]!.id, cantidad: 10, costoUnitario: COSTO_POR_DEFECTO }],
     notas: "Pedido a confirmar (demo)",
   });
   fijarReloj(null);

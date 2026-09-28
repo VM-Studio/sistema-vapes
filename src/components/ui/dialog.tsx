@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -28,11 +28,13 @@ export function Dialog({
   className,
 }: DialogProps) {
   const { ref, onBackdropClick } = useDialogElement(open, onOpenChange);
+  // Id único por instancia: con varios diálogos en la página, un id fijo apuntaría al título de otro.
+  const idTitulo = useId();
   return (
     <dialog
       ref={ref}
       onClick={onBackdropClick}
-      aria-labelledby="dialog-title"
+      aria-labelledby={idTitulo}
       className={cn(
         "anim-dialog bg-surface text-foreground shadow-sheet m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl p-0",
         "mb-[calc(1rem+env(safe-area-inset-bottom))] md:mb-auto",
@@ -42,7 +44,7 @@ export function Dialog({
       {open && (
         <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
-            <h2 id="dialog-title" className="text-xl leading-tight font-semibold tracking-tight">
+            <h2 id={idTitulo} className="text-xl leading-tight font-semibold tracking-tight">
               {title}
             </h2>
             {description && <div className="text-muted text-sm">{description}</div>}

@@ -2,6 +2,7 @@ import { Prisma, TipoMovimiento, type MovimientoStock } from "@prisma/client";
 
 import type { Tx } from "@/server/db/panel-scoped";
 import { ahora } from "@/lib/reloj";
+import { nombreConSabor } from "@/lib/ventas-ui";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
 
 /**
@@ -133,7 +134,7 @@ async function describir(tx: Tx, varianteId: string, depositoId: string) {
       select: {
         panelId: true,
         nombre: true,
-        producto: { select: { nombre: true, tieneVariantes: true } },
+        producto: { select: { nombreCompleto: true } },
       },
     }),
     tx.deposito.findUnique({ where: { id: depositoId }, select: { nombre: true, activo: true } }),
@@ -141,9 +142,7 @@ async function describir(tx: Tx, varianteId: string, depositoId: string) {
   if (!variante) throw new NotFoundError(`No existe la variante ${varianteId}.`);
   if (!deposito) throw new NotFoundError(`No existe el depósito ${depositoId}.`);
 
-  const nombreVariante = variante.producto.tieneVariantes
-    ? `${variante.producto.nombre} - ${variante.nombre}`
-    : variante.producto.nombre;
+  const nombreVariante = nombreConSabor(variante.producto.nombreCompleto, variante.nombre);
   return { panelId: variante.panelId, nombreVariante, nombreDeposito: deposito.nombre };
 }
 

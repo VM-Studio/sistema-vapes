@@ -16,6 +16,7 @@ import {
 } from "@prisma/client";
 
 import { prisma, type Tx } from "../src/lib/db";
+import { costoParaVenta, precioVentaEfectivo } from "../src/lib/precios";
 import * as v from "../src/lib/validations";
 import { dbPara, PanelAislamientoError, transaccion } from "../src/server/db/panel-scoped";
 import { siguienteNumero } from "../src/server/db/secuencia";
@@ -103,12 +104,22 @@ async function main() {
   const g2 = await db.deposito.findUniqueOrThrow({
     where: { panelId_nombre: { panelId: VAPES, nombre: "Mercedes" } },
   });
-  const [va, vb] = await db.variante.findMany({
-    where: { producto: { nombre: "Ignite V80" } },
-    orderBy: { nombre: "asc" },
+  // Un producto del seed con al menos dos sabores con código de barras.
+  const conSabores = await db.producto.findMany({
+    where: { deletedAt: null },
+    orderBy: { nombreCompleto: "asc" },
+    include: {
+      variantes: {
+        where: { deletedAt: null, codigoBarras: { not: null } },
+        orderBy: { nombre: "asc" },
+      },
+    },
   });
-  if (!va || !vb) throw new Error("Faltan variantes de seed");
+  const [va0, vb0] = conSabores.find((p) => p.variantes.length >= 2)?.variantes ?? [];
+  if (!va0 || !vb0) throw new Error("Faltan variantes de seed");
+  const [va, vb] = [va0, vb0];
   const categoria = await db.categoria.findFirstOrThrow();
+  const marca = await db.marca.findFirstOrThrow({ where: { nombre: { not: "Sin marca" } } });
   const altMango = await db.codigoBarrasAlternativo.findFirstOrThrow();
   const depCosmetic = await dbPara(COSMETIC).deposito.findFirstOrThrow({
     where: { esPrincipal: true },
@@ -159,7 +170,7 @@ async function main() {
           productoId: va.productoId,
           nombre: "Negativa",
           sku: "TST-NEG",
-          precioCosto: 1,
+          ultimoCosto: 1,
           precioVenta: "-1",
         },
       }),
@@ -170,11 +181,21 @@ async function main() {
     () => db.variante.update({ where: { id: va.id }, data: { precioVenta: "-1" } }),
     "Variante_precioVenta_chk",
   );
+  await rechaza(
+    "ultimoCosto negativo",
+    () => db.variante.update({ where: { id: va.id }, data: { ultimoCosto: "-1" } }),
+    "Variante_ultimoCosto_chk",
+  );
+  await rechaza(
+    "precioVenta negativo del producto",
+    () => db.producto.update({ where: { id: va.productoId }, data: { precioVenta: "-1" } }),
+    "Producto_precioVenta_chk",
+  );
   const precioCambiado = await enRollback((tx) =>
     tx.variante.update({ where: { id: va.id }, data: { precioVenta: "17000.00" } }),
   );
   check(
-    precioCambiado?.precioVenta.toString() === "17000",
+    precioCambiado?.precioVenta?.toString() === "17000",
     "cambiar el precio no requiere historial (UPDATE directo OK)",
   );
   await rechaza(
@@ -218,17 +239,12 @@ async function main() {
     const p = await tx.producto.create({
       data: {
         nombre: "Reuso de código",
+        marcaId: marca.id,
         categoriaId: categoria.id,
-        tieneVariantes: false,
+        precioVenta: 2,
         variantes: {
           create: [
-            {
-              nombre: "Único",
-              sku: "TST-REUSO",
-              codigoBarras: va.codigoBarras,
-              precioCosto: 1,
-              precioVenta: 2,
-            },
+            { nombre: "Único", sku: "TST-REUSO", codigoBarras: va.codigoBarras, ultimoCosto: 1 },
           ],
         },
       },
@@ -239,20 +255,16 @@ async function main() {
   await permite("el mismo EAN y el mismo SKU en otro panel (Cosmetic)", () =>
     enRollback(async (tx) => {
       const cat = await tx.categoria.create({ data: { nombre: "Test EAN" } });
+      const m = await tx.marca.create({ data: { nombre: "Test EAN" } });
       await tx.producto.create({
         data: {
           nombre: "Mismo código",
+          marcaId: m.id,
           categoriaId: cat.id,
-          tieneVariantes: false,
+          precioVenta: 2,
           variantes: {
             create: [
-              {
-                nombre: "Único",
-                sku: va.sku,
-                codigoBarras: va.codigoBarras,
-                precioCosto: 1,
-                precioVenta: 2,
-              },
+              { nombre: "Único", sku: va.sku, codigoBarras: va.codigoBarras, ultimoCosto: 1 },
             ],
           },
         },
@@ -374,61 +386,75 @@ async function main() {
     "desactivalo",
   );
 
-  console.log("D) Producto ↔ variantes (verificado al COMMIT)");
+  console.log("D) Producto ↔ sabores (verificado al COMMIT)");
   await rechaza(
-    "producto sin variantes",
+    "producto sin sabores",
     () =>
       transaccion(ctxVapes, (tx) =>
         tx.producto.create({
-          data: { nombre: "Huérfano", categoriaId: categoria.id, tieneVariantes: true },
+          data: { nombre: "Huérfano", marcaId: marca.id, precioVenta: 1 },
         }),
       ),
-    "debe tener al menos una variante",
+    "debe tener al menos un sabor",
   );
   await rechaza(
-    "producto 'sin variantes' con dos variantes",
+    "dos sabores con el mismo nombre en un producto",
     () =>
       transaccion(ctxVapes, (tx) =>
         tx.producto.create({
           data: {
-            nombre: "Mal cargado",
-            categoriaId: categoria.id,
-            tieneVariantes: false,
+            nombre: "Repetido",
+            marcaId: marca.id,
+            precioVenta: 2,
             variantes: {
               create: [
-                { nombre: "Único", sku: "TST-A", precioCosto: 1, precioVenta: 2 },
-                { nombre: "Otro", sku: "TST-B", precioCosto: 1, precioVenta: 2 },
+                { nombre: "Mango", sku: "TST-A" },
+                { nombre: "Mango", sku: "TST-B" },
               ],
             },
           },
         }),
       ),
-    'exactamente una variante "Único"',
+    "Unique constraint failed",
   );
   await rechaza(
-    "dar de baja la única variante de un producto vivo",
+    "dar de baja el único sabor de un producto vivo",
     () =>
       transaccion(ctxVapes, async (tx) => {
-        const unico = await tx.variante.findFirstOrThrow({
-          where: { producto: { tieneVariantes: false } },
+        const p = await tx.producto.create({
+          data: {
+            nombre: "Un sabor",
+            marcaId: marca.id,
+            precioVenta: 2,
+            variantes: { create: [{ nombre: "Único", sku: "TST-UNO" }] },
+          },
+          include: { variantes: true },
         });
-        await tx.variante.update({ where: { id: unico.id }, data: { deletedAt: new Date() } });
+        await tx.variante.update({
+          where: { id: p.variantes[0]!.id },
+          data: { deletedAt: new Date() },
+        });
       }),
-    "debe tener al menos una variante",
+    "debe tener al menos un sabor",
   );
   const creado = await enRollback((tx) =>
     tx.producto.create({
       data: {
         nombre: "Bien cargado",
-        categoriaId: categoria.id,
-        tieneVariantes: false,
-        variantes: { create: [{ nombre: "Único", sku: "TST-OK", precioCosto: 1, precioVenta: 2 }] },
+        marcaId: marca.id,
+        precioVenta: 2,
+        variantes: { create: [{ nombre: "Único", sku: "TST-OK" }] },
       },
+      include: { variantes: true },
     }),
   );
   check(
-    creado?.nombre === "Bien cargado" && creado.panelId === VAPES,
-    "producto + variante 'Único' en la misma tx: OK",
+    creado?.nombre === "Bien cargado" &&
+      creado.panelId === VAPES &&
+      creado.categoriaId === null &&
+      creado.variantes[0]?.precioVenta === null &&
+      creado.variantes[0]?.ultimoCosto === null,
+    "producto sin categoría + sabor sin precio propio ni costo en la misma tx: OK",
   );
 
   console.log("E) Ventas confirmadas: se anulan, no se editan");
@@ -698,14 +724,26 @@ async function main() {
   await rechaza(
     "producto de Cosmetic con categoría de Vapes",
     () =>
-      enRollbackCrudo((tx) =>
-        tx.producto.create({
+      enRollbackCrudo(async (tx) => {
+        const m = await tx.marca.create({ data: { panelId: COSMETIC, nombre: "Cruzada" } });
+        await tx.producto.create({
           data: {
             panelId: COSMETIC,
             nombre: "Cruzado",
+            marcaId: m.id,
             categoriaId: categoria.id,
-            tieneVariantes: true,
+            precioVenta: 1,
           },
+        });
+      }),
+    "de otro panel",
+  );
+  await rechaza(
+    "producto de Cosmetic con marca de Vapes",
+    () =>
+      enRollbackCrudo((tx) =>
+        tx.producto.create({
+          data: { panelId: COSMETIC, nombre: "Cruzado", marcaId: marca.id, precioVenta: 1 },
         }),
       ),
     "de otro panel",
@@ -828,6 +866,268 @@ async function main() {
     }),
   );
 
+  console.log("K) Catálogo: nombre completo, especificación, precios de proveedor, compras");
+  const derivados = await enRollback(async (tx) => {
+    const mk = await tx.marca.create({ data: { nombre: "Marca Trigger" } });
+    const p = await tx.producto.create({
+      data: {
+        nombre: "  BC   Pro ",
+        especificacion: " 5 000 ",
+        marcaId: mk.id,
+        precioVenta: 100,
+        nombreCompleto: "escrito a mano",
+        especificacionNorm: "escrito a mano",
+        variantes: { create: [{ nombre: "Único", sku: "TST-TRG" }] },
+      },
+    });
+    const pisado = await tx.producto.update({
+      where: { id: p.id },
+      data: { nombreCompleto: "otra vez a mano" },
+    });
+    await tx.marca.update({ where: { id: mk.id }, data: { nombre: "Marca Renombrada" } });
+    const renombrado = await tx.producto.findUniqueOrThrow({ where: { id: p.id } });
+    const sinMarca = await tx.marca.upsert({
+      where: { panelId_nombre: { panelId: VAPES, nombre: "Sin marca" } },
+      update: {},
+      create: { nombre: "Sin marca" },
+    });
+    const generico = await tx.producto.create({
+      data: {
+        nombre: "Genérico",
+        marcaId: sinMarca.id,
+        precioVenta: 1,
+        variantes: { create: [{ nombre: "Único", sku: "TST-GEN" }] },
+      },
+    });
+    return { p, pisado, renombrado, generico };
+  });
+  check(
+    derivados.p.nombre === "BC Pro" &&
+      derivados.p.especificacion === "5 000" &&
+      derivados.p.especificacionNorm === "5000",
+    `trigger normaliza modelo/especificación ("${derivados.p.nombre}", "${derivados.p.especificacion}" → norm "${derivados.p.especificacionNorm}")`,
+  );
+  check(
+    derivados.p.nombreCompleto === "Marca Trigger BC Pro 5 000" &&
+      derivados.pisado.nombreCompleto === "Marca Trigger BC Pro 5 000",
+    `nombreCompleto lo calcula la DB e ignora lo que escriba la app ("${derivados.p.nombreCompleto}")`,
+  );
+  check(
+    derivados.renombrado.nombreCompleto === "Marca Renombrada BC Pro 5 000",
+    `renombrar la marca actualiza el nombre completo de sus productos ("${derivados.renombrado.nombreCompleto}")`,
+  );
+  check(
+    derivados.generico.nombreCompleto === "Genérico",
+    'la marca "Sin marca" no aparece en el nombre completo',
+  );
+  await rechaza(
+    "mismo marca + modelo + especificación (normalizada) en el panel",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const mk = await tx.marca.create({ data: { nombre: "Marca Dup" } });
+        for (const [i, esp] of ["5000", " 50 00 "].entries()) {
+          await tx.producto.create({
+            data: {
+              nombre: "BC",
+              especificacion: esp,
+              marcaId: mk.id,
+              precioVenta: 1,
+              variantes: { create: [{ nombre: "Único", sku: `TST-DUP${i}` }] },
+            },
+          });
+        }
+      }),
+    "Unique constraint failed",
+  );
+  await permite("mismo modelo con otra especificación (BC 5000 y BC 3000)", () =>
+    enRollback(async (tx) => {
+      const mk = await tx.marca.create({ data: { nombre: "Marca Esp" } });
+      for (const [i, esp] of ["5000", "3000"].entries()) {
+        await tx.producto.create({
+          data: {
+            nombre: "BC",
+            especificacion: esp,
+            marcaId: mk.id,
+            precioVenta: 1,
+            variantes: { create: [{ nombre: "Único", sku: `TST-ESP${i}` }] },
+          },
+        });
+      }
+    }),
+  );
+
+  const otroProducto = await db.producto.findFirstOrThrow({
+    where: { id: { not: va.productoId }, deletedAt: null },
+  });
+  async function compraConItem(tx: Tx, productoId: string) {
+    const compra = await tx.compra.create({
+      data: {
+        numero: await siguienteNumero(tx, VAPES, "COMPRA"),
+        depositoId: g1.id,
+        usuarioId: owner.id,
+        subtotal: "10.00",
+        total: "10.00",
+      },
+    });
+    return tx.compraItem.create({
+      data: {
+        compraId: compra.id,
+        varianteId: va.id,
+        productoId,
+        cantidad: 1,
+        costoUnitario: "10.00",
+        subtotal: "10.00",
+      },
+    });
+  }
+  await rechaza(
+    "ítem de compra con productoId que no es el de la variante",
+    () => transaccion(ctxVapes, (tx) => compraConItem(tx, otroProducto.id)),
+    "no corresponde a la variante",
+  );
+  const itemOk = await enRollback((tx) => compraConItem(tx, va.productoId));
+  check(itemOk?.productoId === va.productoId, "ítem de compra con el producto de su variante: OK");
+  await rechaza(
+    "cambiar la variante de un ítem de compra a la de otro producto",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const item = await compraConItem(tx, va.productoId);
+        const ajena = await tx.variante.findFirstOrThrow({
+          where: { productoId: otroProducto.id },
+        });
+        await tx.compraItem.update({ where: { id: item.id }, data: { varianteId: ajena.id } });
+      }),
+    "no corresponde a la variante",
+  );
+
+  const proveedorVapes = async (tx: Tx) =>
+    tx.proveedor.create({ data: { nombre: "Contacto", nombreTienda: "Tienda Test" } });
+  await rechaza(
+    "precio de proveedor de Vapes para un producto de Cosmetic",
+    () =>
+      enRollbackCrudo(async (tx) => {
+        const prov = await tx.proveedor.create({
+          data: { panelId: VAPES, nombre: "Contacto", nombreTienda: "Tienda Vapes" },
+        });
+        const mk = await tx.marca.create({ data: { panelId: COSMETIC, nombre: "Marca PP" } });
+        const prodCos = await tx.producto.create({
+          data: {
+            panelId: COSMETIC,
+            nombre: "Crema",
+            marcaId: mk.id,
+            precioVenta: 1,
+            variantes: { create: [{ panelId: COSMETIC, nombre: "Único", sku: "TST-PP" }] },
+          },
+        });
+        await tx.proveedorProducto.create({
+          data: {
+            panelId: VAPES,
+            proveedorId: prov.id,
+            productoId: prodCos.id,
+            precio: "10.00",
+            usuarioId: owner.id,
+          },
+        });
+      }),
+    "de otro panel",
+  );
+  await rechaza(
+    "precio de proveedor de Cosmetic con proveedor y producto de Vapes",
+    () =>
+      enRollbackCrudo(async (tx) => {
+        const prov = await tx.proveedor.create({
+          data: { panelId: VAPES, nombre: "Contacto", nombreTienda: "Tienda Vapes" },
+        });
+        await tx.proveedorProducto.create({
+          data: {
+            panelId: COSMETIC,
+            proveedorId: prov.id,
+            productoId: va.productoId,
+            precio: "10.00",
+            usuarioId: owner.id,
+          },
+        });
+      }),
+    "de otro panel",
+  );
+  await rechaza(
+    "dos precios del mismo proveedor para el mismo producto",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const prov = await proveedorVapes(tx);
+        for (const precio of ["10.00", "11.00"]) {
+          await tx.proveedorProducto.create({
+            data: { proveedorId: prov.id, productoId: va.productoId, precio, usuarioId: owner.id },
+          });
+        }
+      }),
+    "Unique constraint failed",
+  );
+  await rechaza(
+    "precio de proveedor negativo",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const prov = await proveedorVapes(tx);
+        await tx.proveedorProducto.create({
+          data: {
+            proveedorId: prov.id,
+            productoId: va.productoId,
+            precio: "-1",
+            usuarioId: owner.id,
+          },
+        });
+      }),
+    "ProveedorProducto_precio_chk",
+  );
+  const pp = await enRollback(async (tx) => {
+    const prov = await proveedorVapes(tx);
+    return tx.proveedorProducto.create({
+      data: {
+        proveedorId: prov.id,
+        productoId: va.productoId,
+        precio: "12.50",
+        moneda: "USD",
+        usuarioId: owner.id,
+      },
+    });
+  });
+  check(
+    pp?.panelId === VAPES && pp.moneda === "USD",
+    "precio de proveedor en USD dentro del panel: OK",
+  );
+  await rechaza(
+    "proveedor sin nombre de tienda",
+    () => db.proveedor.create({ data: { nombre: "Contacto", nombreTienda: "  " } }),
+    "Proveedor_nombreTienda_chk",
+  );
+  await rechaza(
+    "teléfono de proveedor sin normalizar",
+    () =>
+      db.proveedor.create({
+        data: { nombre: "Contacto", nombreTienda: "Tienda", telefono: "11 5555-0101" },
+      }),
+    "Proveedor_telefono_chk",
+  );
+  await rechaza(
+    "teléfono de proveedor repetido en el panel",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        for (const t of ["Una", "Otra"]) {
+          await tx.proveedor.create({
+            data: { nombre: "Contacto", nombreTienda: t, telefono: "+541155550199" },
+          });
+        }
+      }),
+    "Unique constraint failed",
+  );
+  check(
+    precioVentaEfectivo({ precioVenta: null }, { precioVenta: "15000.00" }) === "15000.00" &&
+      precioVentaEfectivo({ precioVenta: "17000.00" }, { precioVenta: "15000.00" }) ===
+        "17000.00" &&
+      costoParaVenta({ ultimoCosto: null }) === "0.00",
+    "sabor sin precio propio usa el del producto; sin costo → snapshot 0",
+  );
+
   console.log("J) Validaciones Zod");
   check(!v.monto.safeParse("").success, 'monto "" es error (no 0)');
   check(v.montoOCero.safeParse("").data === 0, 'descuento "" → 0');
@@ -850,26 +1150,41 @@ async function main() {
     "cantidad no entera o 0 es error",
   );
   const prod = v.productoSchema.safeParse({
-    nombre: " Cargador ",
-    categoriaId: "c",
-    tieneVariantes: false,
-    variantes: [{ nombre: "lo que sea", precioCosto: "10", precioVenta: 20 }],
+    marca: " Elf Bar ",
+    modelo: "  BC ",
+    especificacion: " 5  000 ",
+    precioVenta: "15000",
+    sabores: [{ sabor: "" }],
   });
   check(
-    prod.success && prod.data.variantes[0]?.nombre === "Único",
-    'producto sin variantes → variante "Único"',
+    prod.success &&
+      prod.data.sabores[0]?.nombre === "Único" &&
+      prod.data.sabores[0]?.precioVenta === undefined &&
+      prod.data.especificacion === "5 000" &&
+      prod.data.categoriaId === undefined,
+    'producto sin sabor → variante "Único" que usa el precio del producto; categoría opcional',
   );
   check(
     !v.productoSchema.safeParse({
-      nombre: "X",
-      categoriaId: "c",
-      tieneVariantes: true,
-      variantes: [
-        { nombre: "Mango", precioCosto: 1, precioVenta: 2 },
-        { nombre: "mango", precioCosto: 1, precioVenta: 2 },
-      ],
+      marca: "X",
+      modelo: "Y",
+      precioVenta: 2,
+      sabores: [{ sabor: "Mango" }, { sabor: "mango" }],
     }).success,
-    "variantes repetidas es error",
+    "sabores repetidos es error",
+  );
+  check(
+    !v.productoSchema.safeParse({
+      marca: "",
+      modelo: "Y",
+      precioVenta: 2,
+      sabores: [{ sabor: "" }],
+    }).success,
+    "producto sin marca es error",
+  );
+  check(
+    !v.productoSchema.safeParse({ marca: "X", modelo: "Y", sabores: [{ sabor: "" }] }).success,
+    "producto sin precio de venta es error",
   );
   check(
     !v.borradorVentaSchema.safeParse({
@@ -896,14 +1211,29 @@ async function main() {
     }).success,
     "transferencia al mismo depósito es error",
   );
+  const prov = v.crearProveedorSchema.safeParse({
+    nombre: "Juan",
+    nombreTienda: "Vapes Once",
+    telefono: "011 5555-0101",
+  });
   check(
-    v.crearProveedorSchema.safeParse({ nombre: "P", cuit: "20-12345678-6" }).data?.cuit ===
-      "20123456786",
-    "CUIT válido normalizado",
+    prov.data?.telefono === "+541155550101" && prov.data.productos.length === 0,
+    "proveedor: teléfono → +54 + dígitos; productos opcionales",
   );
   check(
-    !v.crearProveedorSchema.safeParse({ nombre: "P", cuit: "20-12345678-0" }).success,
-    "CUIT con dígito verificador inválido es error",
+    !v.crearProveedorSchema.safeParse({ nombre: "Juan", nombreTienda: "" }).success,
+    "proveedor sin nombre de tienda es error",
+  );
+  check(
+    !v.crearProveedorSchema.safeParse({
+      nombre: "Juan",
+      nombreTienda: "T",
+      productos: [
+        { productoId: "p", precio: 1 },
+        { productoId: "p", precio: 2, moneda: "USD" },
+      ],
+    }).success,
+    "proveedor con el mismo producto dos veces es error",
   );
   check(
     v.crearClienteSchema.safeParse({ nombre: "C", telefono: "011 5555-0101" }).data?.telefono ===

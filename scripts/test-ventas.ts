@@ -1,25 +1,26 @@
 /**
  * Ventas a nivel servicios + DB (panel Vapes): venta con un único medio de
  * pago, totales/costos/ganancia, ID de venta por panel, redondeo y precio
- * manual, anulación, snapshot de precios, permisos del empleado, costos solo
- * para dueños y aislamiento entre paneles.
+ * manual, anulación, snapshot de precios y costos (último costo de compra),
+ * precio del producto vs. precio propio del sabor, permisos del empleado,
+ * costos solo para dueños y aislamiento entre paneles.
  * Uso: pnpm test:ventas — pensado para una DB recién sembrada (crea datos).
  */
 import { EstadoVenta, MedioPago, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
 
 import { prisma } from "../src/lib/db";
 import { formatearIdVenta } from "../src/lib/paneles";
+import { costoParaVenta, precioVentaEfectivo } from "../src/lib/precios";
 import { crearClienteSchema } from "../src/lib/validations/cliente";
 import {
   borradorVentaSchema,
   listarVentasSchema,
   venderSchema,
 } from "../src/lib/validations/venta";
-import { dbPara, type Ctx } from "../src/server/db/panel-scoped";
+import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { ConflictError, DomainError, ForbiddenError, NotFoundError } from "../src/server/errors";
 import { crearCliente } from "../src/server/services/cliente.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
-import { actualizarPrecios } from "../src/server/services/producto.service";
 import {
   anularVenta,
   confirmarVenta,
@@ -69,21 +70,71 @@ async function main() {
   const SIN_COSTOS = { verCostos: false };
 
   const g1 = await db.deposito.findFirstOrThrow({ where: { esPrincipal: true } });
-  const variante = (producto: string, nombre: string) =>
-    db.variante.findFirstOrThrow({ where: { nombre, producto: { nombre: producto } } });
   const stock = async (varianteId: string) =>
     (
       await db.stock.findUnique({
         where: { panelId_varianteId_depositoId: { panelId: VAPES, varianteId, depositoId: g1.id } },
       })
     )?.cantidad ?? 0;
-  const [mango, frutilla, cargador] = await Promise.all([
-    variante("Ignite V80", "Mango Ice"),
-    variante("Ignite V80", "Strawberry Watermelon"),
-    variante("Cargador USB-C 20W", "Único"),
-  ]);
+  // Catálogo propio (no depende del seed): un pod con 3 sabores —uno usa el
+  // precio del producto, otro tiene precio propio y otro todavía no tiene
+  // costo— y un cargador sin sabor (variante "Único").
+  const suf = String(Date.now()).slice(-7);
+  const catalogo = await transaccion(ctx, async (tx) => {
+    const marca = await tx.marca.upsert({
+      where: { panelId_nombre: { panelId: VAPES, nombre: "Test Ventas" } },
+      update: {},
+      create: { nombre: "Test Ventas" },
+    });
+    const pod = await tx.producto.create({
+      data: {
+        marcaId: marca.id,
+        nombre: `Pod ${suf}`,
+        especificacion: "5000",
+        precioVenta: "16000.00",
+        variantes: {
+          create: [
+            { nombre: "Mango Ice", sku: `TV-M-${suf}`, ultimoCosto: "9500.00" },
+            {
+              nombre: "Strawberry Watermelon",
+              sku: `TV-F-${suf}`,
+              precioVenta: "17000.00",
+              ultimoCosto: "9800.00",
+            },
+            { nombre: "Sin compras", sku: `TV-S-${suf}` },
+          ],
+        },
+      },
+      include: { variantes: { orderBy: { nombre: "asc" } } },
+    });
+    const cargador = await tx.producto.create({
+      data: {
+        marcaId: marca.id,
+        nombre: `Cargador ${suf}`,
+        precioVenta: "8900.00",
+        variantes: { create: [{ nombre: "Único", sku: `TV-C-${suf}`, ultimoCosto: "4000.00" }] },
+      },
+      include: { variantes: true },
+    });
+    return { pod, cargador };
+  });
+  const { pod } = catalogo;
+  const deVariante = (v: (typeof pod.variantes)[number], p: { precioVenta: Prisma.Decimal }) => ({
+    ...v,
+    precio: new Prisma.Decimal(precioVentaEfectivo(v, p)),
+    costo: new Prisma.Decimal(costoParaVenta(v)),
+  });
+  const porNombre = (n: string) =>
+    deVariante(
+      pod.variantes.find((v) => v.nombre === n)!,
+      pod,
+    );
+  const mango = porNombre("Mango Ice");
+  const frutilla = porNombre("Strawberry Watermelon");
+  const sinCosto = porNombre("Sin compras");
+  const cargador = deVariante(catalogo.cargador.variantes[0]!, catalogo.cargador);
   // Stock holgado para no depender de lo que haya dejado otra prueba.
-  for (const v of [mango, frutilla, cargador]) {
+  for (const v of [mango, frutilla, sinCosto, cargador]) {
     if ((await stock(v.id)) < 10) {
       await registrarAjuste(ctx, {
         depositoId: g1.id,
@@ -116,16 +167,34 @@ async function main() {
   );
   const v1 = await confirmarVenta(ctx, b1.id, { medioPago: MedioPago.TRANSFERENCIA });
   const d1 = await obtenerVenta(ctx, v1.id, CON_COSTOS);
-  const total1 = mango.precioVenta.plus(frutilla.precioVenta).plus(cargador.precioVenta);
+  const total1 = mango.precio.plus(frutilla.precio).plus(cargador.precio);
   check(
     d1.estado === EstadoVenta.CONFIRMADA && d1.medioPago === MedioPago.TRANSFERENCIA,
     `venta ${d1.idVenta}: ${d1.estado} · ${d1.medioPago}`,
   );
   check(
     d1.total === $(total1),
-    `total ${d1.total} = ${$(mango.precioVenta)} + ${$(frutilla.precioVenta)} + ${$(cargador.precioVenta)}`,
+    `total ${d1.total} = ${$(mango.precio)} + ${$(frutilla.precio)} + ${$(cargador.precio)}`,
   );
-  const costoEsperado = mango.precioCosto.plus(frutilla.precioCosto).plus(cargador.precioCosto);
+  const item = (d: typeof d1, varianteId: string) =>
+    d.items.find((i) => i.varianteId === varianteId);
+  check(
+    item(d1, mango.id)?.precioUnitario === "16000.00" &&
+      item(d1, frutilla.id)?.precioUnitario === "17000.00",
+    "sabor sin precio propio cobra el del producto (16000); con precio propio, el suyo (17000)",
+  );
+  check(
+    item(d1, mango.id)?.costoUnitario === "9500.00" &&
+      item(d1, cargador.id)?.costoUnitario === "4000.00",
+    "costoUnitario de cada ítem = snapshot del último costo del sabor",
+  );
+  check(
+    item(d1, mango.id)?.nombre.includes(pod.nombreCompleto) === true &&
+      item(d1, mango.id)?.nombre.includes("Mango Ice") === true &&
+      item(d1, cargador.id)?.nombre === catalogo.cargador.nombreCompleto,
+    `nombres: «${item(d1, mango.id)?.nombre}» · «${item(d1, cargador.id)?.nombre}» (sin "Único")`,
+  );
+  const costoEsperado = mango.costo.plus(frutilla.costo).plus(cargador.costo);
   check(
     d1.costoTotal === $(costoEsperado) && d1.gananciaBruta === $(total1.minus(costoEsperado)),
     `costoTotal ${d1.costoTotal} · gananciaBruta ${d1.gananciaBruta} = ${d1.total} − ${d1.costoTotal}`,
@@ -212,34 +281,48 @@ async function main() {
   check(reAnular instanceof DomainError, `anular dos veces → «${msg(reAnular)}»`);
 
   // ---------------------------------------------------------------------------
-  console.log("\n5) Cambiar precios después de vender no toca la venta vieja");
-  await actualizarPrecios(
-    ctx,
-    mango.id,
-    { precioVenta: 17500, precioCosto: 10200 },
-    "Aumento de lista (test)",
-  );
-  const itemViejo = (await obtenerVenta(ctx, v1.id, CON_COSTOS)).items.find(
-    (i) => i.varianteId === mango.id,
-  )!;
+  console.log("\n5) Cambiar precios y costos después de vender no toca la venta vieja");
+  await transaccion(ctx, async (tx) => {
+    await tx.producto.update({ where: { id: pod.id }, data: { precioVenta: "17500.00" } });
+    await tx.variante.update({ where: { id: mango.id }, data: { ultimoCosto: "10200.00" } });
+  });
+  const itemViejo = item(await obtenerVenta(ctx, v1.id, CON_COSTOS), mango.id)!;
   check(
-    itemViejo.precioUnitario === $(mango.precioVenta) &&
-      itemViejo.costoUnitario === $(mango.precioCosto),
+    itemViejo.precioUnitario === $(mango.precio) && itemViejo.costoUnitario === $(mango.costo),
     `venta ${d1.idVenta} conserva precio ${itemViejo.precioUnitario} y costo ${itemViejo.costoUnitario} (lista nueva: 17500 / 10200)`,
   );
   const bNuevo = await crearBorrador(ctx, borrador([{ varianteId: mango.id, cantidad: 1 }]), DUENO);
-  await actualizarPrecios(ctx, mango.id, { precioVenta: 18000 }, "Otro aumento (test)");
+  await transaccion(ctx, async (tx) => {
+    await tx.producto.update({ where: { id: pod.id }, data: { precioVenta: "18000.00" } });
+    await tx.variante.update({ where: { id: mango.id }, data: { ultimoCosto: "10300.00" } });
+  });
   const vNuevo = await confirmarVenta(ctx, bNuevo.id, { medioPago: MedioPago.EFECTIVO });
   const dNuevo = await obtenerVenta(ctx, vNuevo.id, CON_COSTOS);
   check(
-    vNuevo.total === "17500.00" && dNuevo.costoTotal === "10200.00",
+    vNuevo.total === "17500.00" && dNuevo.costoTotal === "10300.00",
     `borrador armado a 17500 y confirmado después del aumento a 18000 → cobra ${vNuevo.total}, costo del momento ${dNuevo.costoTotal}`,
   );
-  await actualizarPrecios(
+  const vSinCosto = await vender(
     ctx,
-    mango.id,
-    { precioVenta: mango.precioVenta.toNumber(), precioCosto: mango.precioCosto.toNumber() },
-    "Restaurar (test)",
+    venderSchema.parse({
+      venta: borrador([{ varianteId: sinCosto.id, cantidad: 2 }]),
+      medioPago: MedioPago.EFECTIVO,
+    }),
+    DUENO,
+  );
+  const dSinCosto = await obtenerVenta(ctx, vSinCosto.id, CON_COSTOS);
+  check(
+    dSinCosto.total === "36000.00" &&
+      dSinCosto.items[0]?.costoUnitario === "0.00" &&
+      dSinCosto.gananciaBruta === "36000.00",
+    `sabor sin compras (ultimoCosto null): precio del producto 18000 ×2, costo snapshot ${dSinCosto.items[0]?.costoUnitario}`,
+  );
+  await transaccion(ctx, (tx) =>
+    tx.variante.update({ where: { id: sinCosto.id }, data: { ultimoCosto: "9000.00" } }),
+  );
+  check(
+    item(await obtenerVenta(ctx, vSinCosto.id, CON_COSTOS), sinCosto.id)?.costoUnitario === "0.00",
+    "cargar el costo después no cambia la ganancia de esa venta",
   );
 
   // ---------------------------------------------------------------------------
@@ -273,7 +356,7 @@ async function main() {
     EMPLEADO,
   );
   check(
-    vEmp.total === $(cargador.precioVenta),
+    vEmp.total === $(cargador.precio),
     `el empleado sí vende al precio de lista: ${vEmp.idVenta} ${vEmp.total}`,
   );
 
@@ -368,7 +451,7 @@ async function main() {
     "el listado de Cosmetic no muestra ventas de Vapes",
   );
 
-  console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} verificación(es) fallaron`);
+  console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);
   process.exitCode = fallos === 0 ? 0 : 1;
 }
 

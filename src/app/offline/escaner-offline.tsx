@@ -90,7 +90,7 @@ export function EscanerOffline() {
 
   const dep = (id: string) => meta.depositos.find((d) => d.id === id)?.nombre ?? "";
   const stockEn = (v: VarianteEscaneada) =>
-    v.stock.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
+    v.stockPorDeposito.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -145,7 +145,7 @@ export function EscanerOffline() {
       )}
       {ultima && (
         <section aria-label="Producto" className="border-border bg-surface rounded-2xl border p-4">
-          <p className="text-lg font-semibold">{ultima.nombreCompleto}</p>
+          <p className="text-lg font-semibold">{ultima.titulo}</p>
           <p className="text-muted text-sm">
             {formatearPesos(ultima.precioVenta)} · En {dep(depositoId)}:{" "}
             <strong className="text-foreground">{stockEn(ultima)}</strong> · Total{" "}

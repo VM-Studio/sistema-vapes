@@ -2,80 +2,101 @@
 
 import { Modulo } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
-import { esOwner, puede } from "@/lib/permisos";
+import { formatearIdCompra } from "@/lib/paneles";
+import { id } from "@/lib/validations/common";
 import {
   anularCompraSchema,
+  costoSugeridoSchema,
   guardarCompraSchema,
   recibirCompraSchema,
 } from "@/lib/validations/compra";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx } from "@/server/auth/permissions";
-import { AppError, ForbiddenError } from "@/server/errors";
-import { log } from "@/server/log";
 import {
   actualizarCompra,
   anularCompra,
+  costoSugerido,
   crearCompra,
+  preciosQueCambian,
   recibirCompra,
 } from "@/server/services/compra.service";
+import { buscarVariantes } from "@/server/services/producto.service";
 
 /**
- * Permisos de COMPRAS: crear → nueva (borrador) · editar → modificar el borrador
- * y recibir la mercadería (mueve stock) · eliminar → anular. Actualizar el
- * precio de costo de las variantes al recibir: solo dueños.
+ * Permisos de COMPRAS: crear → nueva (borrador) · editar → modificar el
+ * borrador y recibir la mercadería (mueve stock y, si se elige, actualiza el
+ * precio del proveedor) · eliminar → anular.
  */
 
 function revalidar() {
   revalidatePath("/p/[slug]/compras", "layout");
   revalidatePath("/p/[slug]/stock", "layout");
   revalidatePath("/p/[slug]/proveedores", "layout");
+  revalidatePath("/p/[slug]/productos", "layout");
 }
 
-/** Crea o actualiza el borrador y, si se pide, lo recibe en el mismo paso. */
+/** Crea o actualiza el borrador. */
 export const guardarCompraAction = actionHandler(async (input: unknown) => {
-  const { id, datos, recibir, actualizarCostos } = guardarCompraSchema.parse(input);
-  const ctx = await requireCtx(Modulo.COMPRAS, id ? "editar" : "crear");
-  if (recibir && !puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "editar")) {
-    throw new ForbiddenError("No tenés permiso para recibir compras.");
-  }
-  const guardada = id ? await actualizarCompra(ctx, id, datos) : await crearCompra(ctx, datos);
-  let recibida: Awaited<ReturnType<typeof recibirCompra>> | null = null;
-  let errorAlRecibir: string | null = null;
-  if (recibir) {
-    try {
-      recibida = await recibirCompra(ctx, guardada.id, {
-        actualizarCostos: actualizarCostos && esOwner(ctx.usuario),
-      });
-    } catch (e) {
-      // El borrador ya quedó guardado: se informa sin perderlo (reintentar no debe duplicarlo).
-      if (!(e instanceof AppError)) log.error({ err: e }, "error al recibir la compra");
-      errorAlRecibir =
-        e instanceof AppError
-          ? e.message
-          : "Error inesperado al recibir. Reintentá desde el detalle de la compra.";
-    }
-  }
+  const { id: compraId, datos } = guardarCompraSchema.parse(input);
+  const ctx = await requireCtx(Modulo.COMPRAS, compraId ? "editar" : "crear");
+  const r = compraId ? await actualizarCompra(ctx, compraId, datos) : await crearCompra(ctx, datos);
   revalidar();
-  if (recibida?.costosActualizados) revalidatePath("/p/[slug]/productos", "layout");
-  return { ...guardada, recibida, errorAlRecibir };
+  return { ...r, idVisible: formatearIdCompra(ctx.panel.slug, r.numero) };
+});
+
+export const preciosQueCambianAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "editar");
+  const { id: compraId } = z.object({ id }).parse(input);
+  return preciosQueCambian(ctx, compraId);
 });
 
 export const recibirCompraAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.COMPRAS, "editar");
-  const { id, actualizarCostos } = recibirCompraSchema.parse(input);
-  const r = await recibirCompra(ctx, id, {
-    actualizarCostos: actualizarCostos && esOwner(ctx.usuario),
-  });
+  const { id: compraId, actualizarPrecioProveedor } = recibirCompraSchema.parse(input);
+  const r = await recibirCompra(ctx, compraId, { actualizarPrecioProveedor });
   revalidar();
-  if (r.costosActualizados) revalidatePath("/p/[slug]/productos", "layout");
-  return r;
+  return { ...r, idVisible: formatearIdCompra(ctx.panel.slug, r.numero) };
 });
 
 export const anularCompraAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.COMPRAS, "eliminar");
-  const { id, motivo } = anularCompraSchema.parse(input);
-  const r = await anularCompra(ctx, id, motivo);
+  const { id: compraId, motivo } = anularCompraSchema.parse(input);
+  const r = await anularCompra(ctx, compraId, motivo);
   revalidar();
-  return r;
+  return { ...r, idVisible: formatearIdCompra(ctx.panel.slug, r.numero) };
 });
+
+export const costoSugeridoAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const { proveedorId, varianteIds } = costoSugeridoSchema.parse(input);
+  return costoSugerido(ctx, proveedorId, varianteIds);
+});
+
+export interface SaborBuscado {
+  varianteId: string;
+  productoId: string;
+  nombreCompleto: string;
+  sabor: string | null;
+  sku: string;
+  codigoBarras: string | null;
+}
+
+/** Buscador manual de la compra (por nombre completo, sabor, SKU o código). */
+export const buscarSaboresCompraAction = actionHandler(
+  async (input: unknown): Promise<SaborBuscado[]> => {
+    const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+    const { q } = z.object({ q: z.string().trim().max(100) }).parse(input);
+    if (!q) return [];
+    const variantes = await buscarVariantes(ctx, q);
+    return variantes.map((v) => ({
+      varianteId: v.varianteId,
+      productoId: v.productoId,
+      nombreCompleto: v.nombreCompleto,
+      sabor: v.sabor,
+      sku: v.sku,
+      codigoBarras: v.codigoBarras,
+    }));
+  },
+);

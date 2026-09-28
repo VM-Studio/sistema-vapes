@@ -39,7 +39,7 @@ export const ingresoManualSchema = z.object({
     }),
   ),
   motivo: texto(500),
-  /** Solo dueños: si un costo ingresado difiere del precioCosto actual, actualizarlo. */
+  /** Solo dueños: si un costo ingresado difiere del último costo de la variante, actualizarlo. */
   actualizarCosto: z.boolean().default(false),
 });
 

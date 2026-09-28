@@ -8,9 +8,13 @@ import { EstadoTransferencia, Prisma, RolUsuario, TipoMovimiento } from "@prisma
 import { generarEan13 } from "../src/lib/barcode";
 import { prisma } from "../src/lib/db";
 import { listarMovimientosSchema } from "../src/lib/validations/movimiento";
-import { listarProductosSchema, productoSchema } from "../src/lib/validations/producto";
-import { dbPara, type Ctx } from "../src/server/db/panel-scoped";
-import { DomainError } from "../src/server/errors";
+import {
+  altaRapidaSchema,
+  listarProductosSchema,
+  productoSchema,
+} from "../src/lib/validations/producto";
+import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
+import { ConflictError, DomainError } from "../src/server/errors";
 import { cambiarActivoClasificacion } from "../src/server/services/clasificacion.service";
 import { cambiarActivoDeposito } from "../src/server/services/deposito.service";
 import {
@@ -28,10 +32,12 @@ import {
   registrarIngresoManual,
 } from "../src/server/services/movimiento.service";
 import {
-  actualizarProducto,
+  actualizar as actualizarProducto,
   agregarCodigoAlternativo,
+  altaRapida,
   buscarPorCodigo,
-  crearProducto,
+  cargarStockPorEscaneo,
+  crear as crearProducto,
   listarProductos,
   obtenerProducto,
 } from "../src/server/services/producto.service";
@@ -79,88 +85,188 @@ async function main() {
   });
   if (!g1 || !g2) throw new Error("Faltan depósitos");
   const vapes = await db.categoria.findFirstOrThrow({ where: { nombre: "Vapes" } });
-  const marca = await db.marca.findFirstOrThrow({ where: { nombre: "Elf Bar" } });
   const sufijo = String(Date.now()).slice(-6);
+  const MARCA = `Lost Mary ${sufijo}`;
 
   // ---------------------------------------------------------------------------
   console.log("\n1) Vape con 5 sabores y EAN-13; repetir un código de otro sabor → error claro");
   const sabores = ["Mango Ice", "Blueberry", "Cola", "Menta", "Sandía"];
   const codigos = sabores.map((_, i) => generarEan13(`7798${sufijo}${String(i).padStart(2, "0")}`));
   const input = productoSchema.parse({
-    nombre: `Lost Mary ${sufijo}`,
+    marca: ` ${MARCA} `,
+    modelo: " MO  ",
+    especificacion: "5000",
     categoriaId: vapes.id,
-    marcaId: marca.id,
-    tieneVariantes: true,
-    variantes: sabores.map((nombre, i) => ({
-      nombre,
+    precioVenta: "13000",
+    sabores: sabores.map((sabor, i) => ({
+      sabor,
       codigoBarras: codigos[i],
-      precioCosto: "7000",
-      precioVenta: "13000",
+      // Menta tiene precio propio; Cola lo repite (= el del producto: queda sin precio propio).
+      precioVenta: sabor === "Menta" ? "14000" : sabor === "Cola" ? "13000" : undefined,
       stockMinimo: "10",
     })),
   });
   const creado = await crearProducto(actor, input);
   const detalle = await obtenerProducto(actor, creado.id);
+  const sabor = (n: string) => detalle.sabores.find((v) => v.nombre === n)!;
   check(
-    detalle.variantes.length === 5,
-    `producto creado con 5 variantes: ${detalle.variantes.map((v) => v.nombre).join(", ")}`,
+    detalle.sabores.length === 5,
+    `producto creado con 5 sabores: ${detalle.sabores.map((v) => v.nombre).join(", ")}`,
   );
   check(
-    detalle.variantes.every((v) => /^PRD-[A-Z2-9]{6}$/.test(v.sku)),
-    `SKUs autogenerados con prefijo del panel: ${detalle.variantes.map((v) => v.sku).join(", ")}`,
+    detalle.nombreCompleto === `${MARCA} MO 5000` &&
+      detalle.marca === MARCA &&
+      detalle.modelo === "MO" &&
+      detalle.especificacion === "5000",
+    `nombre completo lo arma la DB: «${detalle.nombreCompleto}» (marca creada al vuelo)`,
   );
   check(
-    detalle.variantes.every((v) => v.precioCosto === "7000.00" && v.margen !== null),
-    "el dueño ve costo y margen",
+    detalle.sabores.every((v) => /^PRD-[A-Z2-9]{6}$/.test(v.sku)),
+    `SKUs autogenerados con prefijo del panel: ${detalle.sabores.map((v) => v.sku).join(", ")}`,
   );
-  const vistaEmp = await obtenerProducto(vistaEmpleado, creado.id);
   check(
-    vistaEmp.variantes.every((v) => v.precioCosto === null && v.margen === null),
-    "un empleado no recibe costo ni margen",
+    sabor("Menta").precioVenta === "14000.00" &&
+      sabor("Menta").tienePrecioPropio &&
+      sabor("Menta").precioPropio === "14000.00" &&
+      sabor("Cola").precioPropio === null &&
+      sabor("Mango Ice").precioVenta === "13000.00" &&
+      !sabor("Mango Ice").tienePrecioPropio,
+    "precio: Menta con precio propio 14000; el resto (incluida Cola con 13000 = producto) usa el del producto",
+  );
+  check(
+    detalle.sabores.every((v) => v.ultimoCosto === null),
+    "sabores recién creados: sin último costo (todavía no hubo compras)",
   );
   const repetido = productoSchema.safeParse({
     ...input,
-    variantes: [
-      { nombre: "Uva", codigoBarras: codigos[0], precioCosto: 1, precioVenta: 2 },
-      { nombre: "Frutilla", codigoBarras: codigos[0], precioCosto: 1, precioVenta: 2 },
+    sabores: [
+      { sabor: "Uva", codigoBarras: codigos[0] },
+      { sabor: "Frutilla", codigoBarras: codigos[0] },
     ],
   });
   check(
     !repetido.success &&
-      repetido.error.issues.some((i) => i.path.join(".") === "variantes.1.codigoBarras"),
+      repetido.error.issues.some((i) => i.path.join(".") === "sabores.1.codigoBarras"),
     `mismo código en dos sabores del formulario → Zod: "${repetido.error?.issues[0]?.message}"`,
   );
   const eDb = await error(() =>
     crearProducto(
       actor,
       productoSchema.parse({
-        nombre: `Otro vape ${sufijo}`,
-        categoriaId: vapes.id,
-        tieneVariantes: true,
-        variantes: [{ nombre: "Uva", codigoBarras: codigos[1], precioCosto: 1, precioVenta: 2 }],
+        marca: MARCA,
+        modelo: `Otro ${sufijo}`,
+        precioVenta: 2,
+        sabores: [{ sabor: "Uva", codigoBarras: codigos[1] }],
       }),
     ),
   );
   check(
     eDb instanceof DomainError &&
-      JSON.stringify(eDb.fields ?? {}).includes("variantes.0.codigoBarras"),
-    `código de otro producto (DB) → "${mensaje(eDb)}" (en el campo variantes.0.codigoBarras)`,
+      JSON.stringify(eDb.fields ?? {}).includes("sabores.0.codigoBarras"),
+    `código de otro producto (DB) → "${mensaje(eDb)}" (en el campo sabores.0.codigoBarras)`,
   );
-  const eAlt = await error(() =>
-    agregarCodigoAlternativo(actor, detalle.variantes[1]!.id, codigos[0]!, undefined),
+  const eClave = await error(() =>
+    crearProducto(
+      actor,
+      productoSchema.parse({
+        marca: MARCA.toUpperCase(),
+        modelo: "mo",
+        especificacion: " 50 00 ",
+        precioVenta: 2,
+        sabores: [{ sabor: "" }],
+      }),
+    ),
   );
   check(
-    mensaje(eAlt).includes(
-      `El código ${codigos[0]} ya pertenece a Lost Mary ${sufijo} — Mango Ice`,
-    ),
+    eClave instanceof ConflictError && mensaje(eClave).includes(detalle.nombreCompleto),
+    `misma marca + modelo + especificación (normalizada) → "${mensaje(eClave)}"`,
+  );
+  const eAlt = await error(() =>
+    agregarCodigoAlternativo(actor, detalle.sabores[1]!.id, codigos[0]!, undefined),
+  );
+  check(
+    mensaje(eAlt).includes(`El código ${codigos[0]} ya pertenece a ${MARCA} MO 5000 — Mango Ice`),
     `alternativo repetido → "${mensaje(eAlt)}"`,
+  );
+
+  console.log("\n1b) Alta rápida desde el escáner");
+  const codUva = generarEan13(`7798${sufijo}90`);
+  const uva = await altaRapida(
+    actor,
+    altaRapidaSchema.parse({
+      codigoBarras: codUva,
+      marca: MARCA.toLowerCase(),
+      modelo: "MO",
+      especificacion: "5000",
+      sabor: "Uva",
+    }),
+  );
+  check(
+    uva.productoId === creado.id &&
+      uva.sabor === "Uva" &&
+      uva.precioVenta === "13000.00" &&
+      !uva.tienePrecioPropio &&
+      uva.titulo === `${MARCA} MO 5000 — Uva`,
+    `producto existente (marca sin distinguir mayúsculas): agrega el sabor «${uva.titulo}» con el precio del producto`,
+  );
+  const cargadorRapido = await altaRapida(
+    actor,
+    altaRapidaSchema.parse({
+      codigoBarras: generarEan13(`7798${sufijo}91`),
+      marca: `Marca Rápida ${sufijo}`,
+      modelo: "Cargador",
+      precioVenta: "2000",
+    }),
+  );
+  check(
+    cargadorRapido.sabor === null &&
+      cargadorRapido.titulo === `Marca Rápida ${sufijo} Cargador` &&
+      cargadorRapido.precioVenta === "2000.00",
+    `producto nuevo sin sabor: «${cargadorRapido.titulo}» (sabor "Único" oculto)`,
+  );
+  const eRapida = await error(() =>
+    altaRapida(
+      actor,
+      altaRapidaSchema.parse({ codigoBarras: codUva, marca: "X", modelo: "Y", precioVenta: 1 }),
+    ),
+  );
+  check(
+    eRapida instanceof DomainError && mensaje(eRapida).includes("ya pertenece"),
+    `alta rápida con un código en uso → "${mensaje(eRapida)}"`,
+  );
+
+  const eSinGalpon = await error(() =>
+    cargarStockPorEscaneo(actor, {
+      depositoId: "",
+      motivo: undefined,
+      items: [{ varianteId: uva.varianteId, cantidad: 3 }],
+    }),
+  );
+  check(
+    eSinGalpon instanceof DomainError && eSinGalpon.code === "SIN_GALPON",
+    `cargar lo escaneado sin elegir galpón → "${mensaje(eSinGalpon)}"`,
+  );
+  const carga = await cargarStockPorEscaneo(actor, {
+    depositoId: g1.id,
+    motivo: undefined,
+    items: [
+      { varianteId: uva.varianteId, cantidad: 2 },
+      { varianteId: uva.varianteId, cantidad: 1 },
+    ],
+  });
+  check(
+    carga.unidades === 3 &&
+      carga.items.length === 1 &&
+      carga.items[0]?.stockPosterior === 3 &&
+      carga.porDeposito.find((d) => d.depositoId === g1.id)?.unidades === 3,
+    `carga por escaneo en ${carga.deposito.nombre}: ${carga.items[0]?.titulo} ${carga.items[0]?.stockAnterior} → ${carga.items[0]?.stockPosterior} (dos tandas = un movimiento)`,
   );
 
   // ---------------------------------------------------------------------------
   console.log(
     `\n2) Ingreso manual: 30 Mango Ice a ${g1.nombre} y 20 a ${g2.nombre} → 30 | 20 | 50`,
   );
-  const mango = detalle.variantes.find((v) => v.nombre === "Mango Ice")!;
+  const mango = sabor("Mango Ice");
   await registrarIngresoManual(actor, {
     depositoId: g1.id,
     items: [{ varianteId: mango.id, cantidad: 30, costoUnitario: undefined }],
@@ -188,10 +294,18 @@ async function main() {
     fm.porDeposito[g1.id] === 30 && fm.porDeposito[g2.id] === 20 && fm.total === 50,
     "la matriz de la ficha coincide (30 | 20 | 50)",
   );
-  const costoMango = (await db.variante.findUniqueOrThrow({ where: { id: mango.id } })).precioCosto;
+  const costoMango = (await db.variante.findUniqueOrThrow({ where: { id: mango.id } })).ultimoCosto;
   check(
-    costoMango.toFixed(2) === "7200.00",
-    `actualizarCosto: el costo pasó a ${costoMango.toFixed(2)}`,
+    costoMango?.toFixed(2) === "7200.00",
+    `actualizarCosto: el último costo pasó a ${costoMango?.toFixed(2)}`,
+  );
+  check(
+    (await obtenerProducto(actor, creado.id)).sabores.find((v) => v.id === mango.id)
+      ?.ultimoCosto === "7200.00" &&
+      (await obtenerProducto(vistaEmpleado, creado.id)).sabores.every(
+        (v) => v.ultimoCosto === null,
+      ),
+    "el dueño ve el último costo; un empleado no lo recibe",
   );
 
   // ---------------------------------------------------------------------------
@@ -282,7 +396,7 @@ async function main() {
     depositoId: g1.id,
     items: [
       { varianteId: mango.id, cantidadReal: 18 },
-      { varianteId: detalle.variantes.find((v) => v.nombre === "Cola")!.id, cantidadReal: 0 },
+      { varianteId: sabor("Cola").id, cantidadReal: 0 },
     ],
     motivo: "Recuento mensual",
   });
@@ -344,18 +458,32 @@ async function main() {
   }
   check(
     encontrado?.varianteId === mango.id && encontrado.stockTotal === 48,
-    `encontró "${encontrado?.nombreCompleto}" · stock: ${encontrado?.stock.map((s) => `${s.deposito} ${s.cantidad}`).join(" | ")} | total ${encontrado?.stockTotal}`,
+    `encontró "${encontrado?.titulo}" · stock: ${encontrado?.stockPorDeposito.map((s) => `${s.nombre} ${s.cantidad}`).join(" | ")} | total ${encontrado?.stockTotal}`,
   );
-  check(encontrado?.precioCosto === "7200.00", "con ctx de dueño trae el costo");
+  check(
+    encontrado?.nombreCompleto === detalle.nombreCompleto &&
+      encontrado.sabor === "Mango Ice" &&
+      encontrado.precioVenta === "13000.00" &&
+      encontrado.precioVentaProducto === "13000.00",
+    "nombre completo, sabor y precio efectivo (el del producto)",
+  );
+  check(encontrado?.ultimoCosto === "7200.00", "con ctx de dueño trae el último costo");
   const sinCosto = await buscarPorCodigo(vistaEmpleado, mango.codigoBarras!);
   check(
-    sinCosto?.varianteId === mango.id && sinCosto.precioCosto === null,
+    sinCosto?.varianteId === mango.id && sinCosto.ultimoCosto === null,
     "con ctx de empleado, sin costo",
+  );
+  const menta = await buscarPorCodigo(actor, sabor("Menta").codigoBarras!);
+  check(
+    menta?.precioVenta === "14000.00" &&
+      menta.precioVentaProducto === "13000.00" &&
+      menta.tienePrecioPropio,
+    "un sabor con precio propio: precio efectivo 14000 (producto 13000)",
   );
   const alt = await agregarCodigoAlternativo(actor, mango.id, `alt-${sufijo}`, "Lote importador B");
   const porAlt = await buscarPorCodigo(actor, `ALT-${sufijo}`.toLowerCase());
   check(
-    porAlt?.varianteId === mango.id && porAlt.porCodigoAlternativo,
+    porAlt?.varianteId === mango.id && porAlt?.porCodigoAlternativo === true,
     `por código alternativo en minúsculas ("${alt.codigo}") también la encuentra`,
   );
   check((await buscarPorCodigo(actor, "0000000000000")) === null, "código inexistente → null");
@@ -376,18 +504,12 @@ async function main() {
   const enCosmetic = await crearProducto(
     ctxCosmetic,
     productoSchema.parse({
-      nombre: `Lost Mary ${sufijo}`,
+      marca: MARCA,
+      modelo: "MO",
+      especificacion: "5000",
       categoriaId: catCosmetic.id,
-      tieneVariantes: false,
-      variantes: [
-        {
-          nombre: "Único",
-          codigoBarras: mango.codigoBarras,
-          sku: mango.sku,
-          precioCosto: 1,
-          precioVenta: 2,
-        },
-      ],
+      precioVenta: 2,
+      sabores: [{ sabor: "", codigoBarras: mango.codigoBarras }],
     }),
   );
   const desdeCosmetic = await buscarPorCodigo(ctxCosmetic, mango.codigoBarras!);
@@ -400,10 +522,11 @@ async function main() {
     crearProducto(
       actor,
       productoSchema.parse({
-        nombre: `Cruzado ${sufijo}`,
+        marca: MARCA,
+        modelo: `Cruzado ${sufijo}`,
         categoriaId: catCosmetic.id,
-        tieneVariantes: false,
-        variantes: [{ nombre: "Único", precioCosto: 1, precioVenta: 2 }],
+        precioVenta: 2,
+        sabores: [{ sabor: "" }],
       }),
     ),
   );
@@ -424,30 +547,34 @@ async function main() {
     eCat instanceof DomainError && mensaje(eCat).includes("productos activos"),
     `desactivar categoría con productos → "${mensaje(eCat)}"`,
   );
-  const aForm = (v: (typeof detalle.variantes)[number]) => ({
+  const actual = await obtenerProducto(actor, creado.id);
+  const aForm = (v: (typeof actual.sabores)[number]) => ({
     id: v.id,
-    nombre: v.nombre,
-    sku: v.sku,
+    sabor: v.nombre,
     codigoBarras: v.codigoBarras ?? undefined,
-    precioCosto: v.precioCosto ?? undefined,
-    precioVenta: v.precioVenta,
+    precioVenta: v.precioPropio ?? undefined,
     stockMinimo: v.stockMinimo,
   });
-  const sinMango = productoSchema.parse({
-    nombre: detalle.nombre,
+  const base = {
+    marca: MARCA,
+    modelo: actual.modelo,
+    especificacion: actual.especificacion,
     categoriaId: vapes.id,
-    marcaId: marca.id,
-    tieneVariantes: true,
-    variantes: detalle.variantes.filter((v) => v.nombre !== "Mango Ice").map(aForm),
+    precioVenta: actual.precioVenta,
+  };
+  const sinMango = productoSchema.parse({
+    ...base,
+    sabores: actual.sabores.filter((v) => v.nombre !== "Mango Ice").map(aForm),
   });
   const eQuitar = await error(() => actualizarProducto(actor, creado.id, sinMango));
   check(
     mensaje(eQuitar).includes("tiene 48 unidades en stock"),
-    `quitar una variante con stock → "${mensaje(eQuitar)}"`,
+    `quitar un sabor con stock → "${mensaje(eQuitar)}"`,
   );
   const sinSandia = productoSchema.parse({
-    ...sinMango,
-    variantes: detalle.variantes.filter((v) => v.nombre !== "Sandía").map(aForm),
+    ...base,
+    especificacion: "6000",
+    sabores: actual.sabores.filter((v) => v.nombre !== "Sandía").map(aForm),
   });
   await actualizarProducto(actor, creado.id, sinSandia);
   const sandia = await db.variante.findFirstOrThrow({
@@ -455,7 +582,21 @@ async function main() {
   });
   check(
     sandia.deletedAt !== null && !sandia.activo,
-    "quitar una variante sin stock → soft delete (deletedAt + inactiva), nunca DELETE",
+    "quitar un sabor sin stock → soft delete (deletedAt + inactiva), nunca DELETE",
+  );
+  const tras = await obtenerProducto(actor, creado.id);
+  check(
+    tras.nombreCompleto === `${MARCA} MO 6000` &&
+      tras.sabores.find((v) => v.nombre === "Menta")?.precioVenta === "14000.00",
+    `cambiar la especificación actualiza el nombre completo («${tras.nombreCompleto}») y conserva el precio propio`,
+  );
+  await transaccion(actor, async (tx) => {
+    const { marcaId } = await tx.producto.findUniqueOrThrow({ where: { id: creado.id } });
+    await tx.marca.update({ where: { id: marcaId }, data: { nombre: `${MARCA} Renombrada` } });
+  });
+  check(
+    (await obtenerProducto(actor, creado.id)).nombreCompleto === `${MARCA} Renombrada MO 6000`,
+    "renombrar la marca actualiza el nombre completo del producto",
   );
   const listado = await listarProductos(actor, listarProductosSchema.parse({ q: codigos[3] }));
   check(
@@ -464,7 +605,7 @@ async function main() {
   );
   const bajo = await listarProductos(
     actor,
-    listarProductosSchema.parse({ conStockBajo: true, pageSize: 100 }),
+    listarProductosSchema.parse({ soloBajoMinimo: true, pageSize: 100 }),
   );
   check(
     bajo.productos.some((p) => p.id === creado.id),

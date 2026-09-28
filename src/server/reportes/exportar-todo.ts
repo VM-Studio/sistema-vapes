@@ -5,11 +5,13 @@ import { PassThrough, Readable } from "node:stream";
 import ExcelJS from "exceljs";
 
 import { prisma } from "@/lib/db";
-import { formatearIdVenta } from "@/lib/paneles";
+import { formatearIdCompra, formatearIdVenta } from "@/lib/paneles";
+import { precioVentaEfectivo } from "@/lib/precios";
+import { saborVisible } from "@/lib/ventas-ui";
 import { formatearFechaHora } from "@/lib/utils";
 
 /**
- * Exportación COMPLETA de los datos del negocio a Excel, de TODOS los
+ * Exportación COMPLETA de los datos del negocio a Excel, de todos los
  * sistemas (paneles): cada hoja tiene la columna "Sistema". Es un servicio
  * global de dueños (por eso usa el cliente crudo). Streaming: cada hoja se
  * escribe de a 1.000 filas (paginado por id) y se libera.
@@ -71,7 +73,7 @@ export function streamExportarTodo(meta: {
     info.addRow([`${meta.negocio} — exportación completa`]).font = { bold: true, size: 14 };
     info.addRow([`Generada ${formatearFechaHora(new Date())} por ${meta.usuario}`]);
     info.addRow([
-      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Compras, Ítems de compras, Clientes, Proveedores. Cada fila indica su sistema.",
+      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Compras, Ítems de compras, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
     ]);
     info.commit();
     const sistemas = new Map(
@@ -88,15 +90,18 @@ export function streamExportarTodo(meta: {
       "Productos",
       [
         SISTEMA,
-        { header: "Producto", key: "p", width: 30 },
-        { header: "Sabor / variante", key: "v", width: 24 },
+        { header: "Marca", key: "m", width: 14 },
+        { header: "Modelo", key: "mod", width: 16 },
+        { header: "Especificación", key: "esp", width: 14 },
+        { header: "Nombre completo", key: "p", width: 30 },
+        { header: "Sabor", key: "v", width: 24 },
         { header: "SKU", key: "sku", width: 14 },
         { header: "Código de barras", key: "cb", width: 16 },
         { header: "Códigos alternativos", key: "alt", width: 22 },
         { header: "Categoría", key: "c", width: 14 },
-        { header: "Marca", key: "m", width: 14 },
-        { header: "Costo", key: "costo", width: 12, numFmt: MONEDA },
-        { header: "Precio", key: "precio", width: 12, numFmt: MONEDA },
+        { header: "Precio efectivo", key: "precio", width: 13, numFmt: MONEDA },
+        { header: "Precio propio del sabor", key: "propio", width: 13, numFmt: MONEDA },
+        { header: "Último costo", key: "costo", width: 12, numFmt: MONEDA },
         { header: "Stock mínimo", key: "min", width: 10 },
         { header: "Activo", key: "act", width: 8 },
         { header: "Baja", key: "baja", width: 16 },
@@ -111,15 +116,18 @@ export function streamExportarTodo(meta: {
         }),
       (v) => ({
         sis: sistema(v.panelId),
-        p: v.producto.nombre,
-        v: v.nombre,
+        m: v.producto.marca.nombre,
+        mod: v.producto.nombre,
+        esp: v.producto.especificacion,
+        p: v.producto.nombreCompleto,
+        v: saborVisible(v.nombre) ?? "",
         sku: v.sku,
         cb: v.codigoBarras,
         alt: v.codigosAlternativos.map((a) => a.codigo).join(", "),
-        c: v.producto.categoria.nombre,
-        m: v.producto.marca?.nombre ?? "",
-        costo: num(v.precioCosto),
-        precio: num(v.precioVenta),
+        c: v.producto.categoria?.nombre ?? "",
+        precio: num(precioVentaEfectivo(v, v.producto)),
+        propio: num(v.precioVenta),
+        costo: num(v.ultimoCosto),
         min: v.stockMinimo,
         act: v.activo && v.producto.activo ? "Sí" : "No",
         baja: v.deletedAt ? formatearFechaHora(v.deletedAt) : "",
@@ -132,7 +140,7 @@ export function streamExportarTodo(meta: {
       [
         SISTEMA,
         { header: "Producto", key: "p", width: 30 },
-        { header: "Variante", key: "v", width: 24 },
+        { header: "Sabor", key: "v", width: 24 },
         { header: "Depósito", key: "d", width: 16 },
         { header: "Cantidad", key: "n", width: 10 },
       ],
@@ -143,8 +151,8 @@ export function streamExportarTodo(meta: {
         }),
       (s) => ({
         sis: sistema(s.panelId),
-        p: s.variante.producto.nombre,
-        v: s.variante.nombre,
+        p: s.variante.producto.nombreCompleto,
+        v: saborVisible(s.variante.nombre) ?? "",
         d: s.deposito.nombre,
         n: s.cantidad,
       }),
@@ -158,7 +166,7 @@ export function streamExportarTodo(meta: {
         { header: "Fecha", key: "f", width: 17 },
         { header: "Tipo", key: "t", width: 22 },
         { header: "Producto", key: "p", width: 30 },
-        { header: "Variante", key: "v", width: 20 },
+        { header: "Sabor", key: "v", width: 20 },
         { header: "Depósito", key: "d", width: 14 },
         { header: "Cantidad", key: "n", width: 9 },
         { header: "Stock antes", key: "a", width: 10 },
@@ -180,8 +188,8 @@ export function streamExportarTodo(meta: {
         sis: sistema(m.panelId),
         f: formatearFechaHora(m.createdAt),
         t: m.tipo,
-        p: m.variante.producto.nombre,
-        v: m.variante.nombre,
+        p: m.variante.producto.nombreCompleto,
+        v: saborVisible(m.variante.nombre) ?? "",
         d: m.deposito.nombre,
         n: m.cantidad,
         a: m.stockAnterior,
@@ -235,7 +243,7 @@ export function streamExportarTodo(meta: {
         SISTEMA,
         { header: "ID de venta", key: "n", width: 12 },
         { header: "Producto", key: "p", width: 30 },
-        { header: "Variante", key: "v", width: 20 },
+        { header: "Sabor", key: "v", width: 20 },
         { header: "Cantidad", key: "c", width: 9 },
         { header: "Precio", key: "pr", width: 12, numFmt: MONEDA },
         { header: "Costo", key: "co", width: 12, numFmt: MONEDA },
@@ -252,8 +260,8 @@ export function streamExportarTodo(meta: {
       (i) => ({
         sis: sistema(i.panelId),
         n: formatearIdVenta(sistemas.get(i.panelId)?.slug ?? "", i.venta.numero),
-        p: i.variante.producto.nombre,
-        v: i.variante.nombre,
+        p: i.variante.producto.nombreCompleto,
+        v: saborVisible(i.variante.nombre) ?? "",
         c: i.cantidad,
         pr: num(i.precioUnitario),
         co: num(i.costoUnitario),
@@ -266,7 +274,7 @@ export function streamExportarTodo(meta: {
       "Compras",
       [
         SISTEMA,
-        { header: "N.º", key: "n", width: 8 },
+        { header: "ID de compra", key: "n", width: 14 },
         { header: "Fecha", key: "f", width: 17 },
         { header: "Estado", key: "e", width: 11 },
         { header: "Proveedor", key: "p", width: 26 },
@@ -276,10 +284,10 @@ export function streamExportarTodo(meta: {
       (c) => prisma.compra.findMany({ ...pag(c), include: { proveedor: true, deposito: true } }),
       (x) => ({
         sis: sistema(x.panelId),
-        n: x.numero,
+        n: formatearIdCompra(sistemas.get(x.panelId)?.slug ?? "", x.numero),
         f: formatearFechaHora(x.fecha),
         e: x.estado,
-        p: x.proveedor?.nombre ?? "",
+        p: x.proveedor ? `${x.proveedor.nombreTienda} (${x.proveedor.nombre})` : "",
         d: x.deposito.nombre,
         t: num(x.total),
       }),
@@ -290,9 +298,9 @@ export function streamExportarTodo(meta: {
       "Ítems de compras",
       [
         SISTEMA,
-        { header: "Compra", key: "n", width: 8 },
+        { header: "ID de compra", key: "n", width: 14 },
         { header: "Producto", key: "p", width: 30 },
-        { header: "Variante", key: "v", width: 20 },
+        { header: "Sabor", key: "v", width: 20 },
         { header: "Cantidad", key: "c", width: 9 },
         { header: "Costo unitario", key: "co", width: 12, numFmt: MONEDA },
         { header: "Subtotal", key: "s", width: 12, numFmt: MONEDA },
@@ -307,9 +315,9 @@ export function streamExportarTodo(meta: {
         }),
       (i) => ({
         sis: sistema(i.panelId),
-        n: i.compra.numero,
-        p: i.variante.producto.nombre,
-        v: i.variante.nombre,
+        n: formatearIdCompra(sistemas.get(i.panelId)?.slug ?? "", i.compra.numero),
+        p: i.variante.producto.nombreCompleto,
+        v: saborVisible(i.variante.nombre) ?? "",
         c: i.cantidad,
         co: num(i.costoUnitario),
         s: num(i.subtotal),
@@ -343,13 +351,57 @@ export function streamExportarTodo(meta: {
       "Proveedores",
       [
         SISTEMA,
-        { header: "Nombre", key: "n", width: 26 },
-        { header: "CUIT", key: "c", width: 14 },
+        { header: "Tienda", key: "tie", width: 24 },
+        { header: "Contacto", key: "n", width: 22 },
         { header: "Teléfono", key: "t", width: 16 },
-        { header: "Email", key: "e", width: 24 },
+        { header: "Notas", key: "no", width: 30 },
+        { header: "Activo", key: "act", width: 8 },
+        { header: "Baja", key: "baja", width: 16 },
       ],
       (c) => prisma.proveedor.findMany(pag(c)),
-      (x) => ({ sis: sistema(x.panelId), n: x.nombre, c: x.cuit, t: x.telefono, e: x.email }),
+      (x) => ({
+        sis: sistema(x.panelId),
+        tie: x.nombreTienda,
+        n: x.nombre,
+        t: x.telefono,
+        no: x.notas,
+        act: x.activo ? "Sí" : "No",
+        baja: x.deletedAt ? formatearFechaHora(x.deletedAt) : "",
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Precios de proveedores",
+      [
+        SISTEMA,
+        { header: "Tienda", key: "tie", width: 24 },
+        { header: "Contacto", key: "con", width: 20 },
+        { header: "Producto", key: "p", width: 30 },
+        { header: "Precio", key: "pr", width: 13, numFmt: "#,##0.00" },
+        { header: "Moneda", key: "mo", width: 8 },
+        { header: "Actualizado", key: "f", width: 17 },
+        { header: "Por", key: "u", width: 14 },
+      ],
+      (c) =>
+        prisma.proveedorProducto.findMany({
+          ...pag(c),
+          include: {
+            proveedor: { select: { nombre: true, nombreTienda: true } },
+            producto: { select: { nombreCompleto: true } },
+            usuario: { select: { nombre: true } },
+          },
+        }),
+      (x) => ({
+        sis: sistema(x.panelId),
+        tie: x.proveedor.nombreTienda,
+        con: x.proveedor.nombre,
+        p: x.producto.nombreCompleto,
+        pr: num(x.precio),
+        mo: x.moneda,
+        f: formatearFechaHora(x.actualizadoAt),
+        u: x.usuario.nombre,
+      }),
     );
 
     await wb.commit();

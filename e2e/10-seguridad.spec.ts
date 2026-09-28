@@ -46,6 +46,6 @@ test("la ayuda (manual de usuario) está disponible para cualquier usuario", asy
   await expect(
     page
       .getByRole("navigation", { name: "Índice del manual" })
-      .getByRole("link", { name: /pistola/i }),
+      .getByRole("link", { name: "Configurar la pistola lectora" }),
   ).toBeVisible();
 });

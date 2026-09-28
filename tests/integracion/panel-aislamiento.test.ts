@@ -30,23 +30,25 @@ let usuarioId: string;
 let productoVapesId: string;
 let varianteVapesId: string;
 
-/** Crea categoría + producto + variante (con EAN) en un panel, como lo haría el servicio. */
+/** Crea marca + categoría + producto + sabor (con EAN) en un panel, como lo haría el servicio. */
 async function crearProducto(panelId: string, nombre: string) {
   const ctx = { panelId, usuarioId };
   return m.scoped.transaccion(ctx, async (tx) => {
     const categoria = await tx.categoria.create({ data: { nombre: `Cat ${nombre}` } });
+    const marca = await tx.marca.create({ data: { nombre: `Marca ${nombre}` } });
     const producto = await tx.producto.create({
       data: {
         nombre,
+        marcaId: marca.id,
         categoriaId: categoria.id,
+        precioVenta: "150.00",
         variantes: {
           create: [
             {
               nombre: "Único",
               sku: `SKU-${nombre}`,
               codigoBarras: EAN,
-              precioCosto: "100.00",
-              precioVenta: "150.00",
+              ultimoCosto: "100.00",
             },
           ],
         },
@@ -98,16 +100,16 @@ describe("dbPara: aislamiento en la capa de datos", () => {
     await expect(
       cosmetic.producto.update({
         where: { id: productoVapesId },
-        data: { descripcion: "hackeado" },
+        data: { imagenUrl: "hackeado" },
       }),
     ).rejects.toThrow();
     const r = await cosmetic.producto.updateMany({
       where: { id: productoVapesId },
-      data: { descripcion: "hackeado" },
+      data: { imagenUrl: "hackeado" },
     });
     expect(r.count).toBe(0);
     const p = await m.db.prisma.producto.findUniqueOrThrow({ where: { id: productoVapesId } });
-    expect(p.descripcion).not.toBe("hackeado");
+    expect(p.imagenUrl).not.toBe("hackeado");
   });
 
   it("una query con OTRO panelId lanza PanelAislamientoError", async () => {
@@ -147,6 +149,23 @@ describe("DB: segunda red, aunque se use el cliente crudo", () => {
       m.db.prisma
         .$executeRaw`INSERT INTO "Marca" ("id", "nombre", "updatedAt") VALUES ('marca_sin_panel', 'Sin panel', now())`,
     ).rejects.toThrow(/panelId|null/i);
+  });
+
+  it("un precio de proveedor de Cosmetic no puede apuntar a un producto de Vapes", async () => {
+    const proveedor = await m.db.prisma.proveedor.create({
+      data: { panelId: COSMETIC, nombre: "Contacto", nombreTienda: "Tienda Cosmetic" },
+    });
+    await expect(
+      m.db.prisma.proveedorProducto.create({
+        data: {
+          panelId: COSMETIC,
+          proveedorId: proveedor.id,
+          productoId: productoVapesId,
+          precio: "10.00",
+          usuarioId,
+        },
+      }),
+    ).rejects.toThrow(/otro panel/);
   });
 
   it("panelId no se puede cambiar", async () => {

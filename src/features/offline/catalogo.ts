@@ -116,28 +116,34 @@ export async function buscarEnCatalogo(
     return {
       varianteId: v.varianteId,
       productoId: v.productoId,
-      producto: v.producto,
-      variante: v.variante,
       nombreCompleto: v.nombreCompleto,
-      sku: v.sku,
-      codigoBarras: v.codigoBarras,
-      porCodigoAlternativo: v.alternativos.includes(c),
+      sabor: v.sabor,
+      titulo: v.titulo,
       marca: v.marca,
+      marcaId: v.marcaId,
+      modelo: v.modelo,
+      especificacion: v.especificacion,
       categoria: v.categoria,
       imagenUrl: v.imagenUrl,
-      activo: true,
-      precioCosto: null, // el catálogo offline no lleva costos
+      sku: v.sku,
+      codigoBarras: v.codigoBarras,
       precioVenta: v.precioVenta,
+      precioVentaProducto: v.precioVentaProducto,
+      tienePrecioPropio: v.tienePrecioPropio,
+      ultimoCosto: null, // el catálogo offline no lleva costos
       stockMinimo: v.stockMinimo,
-      stock: v.stock,
+      stockPorDeposito: v.stockPorDeposito,
       stockTotal: v.stockTotal,
+      stockEnDeposito: null,
+      activo: v.activo,
+      porCodigoAlternativo: v.alternativos.includes(c),
     };
   } catch {
     return null;
   }
 }
 
-/** Al cerrar sesión: nada del negocio queda en el celular (catálogos de TODOS los paneles). */
+/** Al cerrar sesión: nada del negocio queda en el celular (catálogos de todos los paneles). */
 export async function borrarCatalogo(): Promise<void> {
   try {
     const db = await abrirDb();

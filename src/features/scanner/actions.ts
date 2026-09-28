@@ -5,12 +5,17 @@ import { z } from "zod";
 
 import { normalizarCodigoBarras } from "@/lib/barcode";
 import { id } from "@/lib/validations/common";
+import { buscarVariantesSchema } from "@/lib/validations/producto";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtxAlguno } from "@/server/auth/permissions";
 import { medir } from "@/server/log";
-import { buscarPorCodigo, obtenerVarianteEncontrada } from "@/server/services/producto.service";
+import {
+  buscarPorCodigo,
+  buscarVariantes,
+  obtenerVarianteEncontrada,
+} from "@/server/services/producto.service";
 
-import type { ResultadoResolucion, VarianteEscaneada } from "./tipos";
+import type { ResultadoResolucion, VarianteEncontrada, VarianteEscaneada } from "./tipos";
 
 /** Módulos desde los que se escanea (cualquiera con "ver" en el panel alcanza para resolver un código). */
 const MODULOS_ESCANEO = [Modulo.STOCK, Modulo.COMPRAS, Modulo.PRODUCTOS, Modulo.VENTAS];
@@ -30,11 +35,20 @@ export const resolverCodigoAction = actionHandler(
   },
 );
 
-/** Igual pero por id (al volver de "crear producto" con el código escaneado). */
+/** Igual pero por id (ej: después de asociar un código o de un alta rápida). */
 export const resolverVarianteAction = actionHandler(
   async (input: unknown): Promise<VarianteEscaneada | null> => {
     const ctx = await requireCtxAlguno(MODULOS_ESCANEO, "ver");
     const { varianteId } = z.object({ varianteId: id }).parse(input);
     return obtenerVarianteEncontrada(ctx, varianteId);
+  },
+);
+
+/** Buscador manual de sabores del panel (VariantePicker). */
+export const buscarVariantesCatalogoAction = actionHandler(
+  async (input: unknown): Promise<VarianteEncontrada[]> => {
+    const ctx = await requireCtxAlguno(MODULOS_ESCANEO, "ver");
+    const { q, depositoId, soloConStockEnDeposito } = buscarVariantesSchema.parse(input);
+    return buscarVariantes(ctx, q, { depositoId, soloConStockEnDeposito });
   },
 );

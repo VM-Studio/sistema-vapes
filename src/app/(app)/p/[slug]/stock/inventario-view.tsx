@@ -155,9 +155,9 @@ export function InventarioView({
     >
       <td className={cn("px-4 py-2.5", anidada && "pl-10")}>
         <Link href={ruta(`/productos/${f.productoId}`)} className="font-medium hover:underline">
-          {anidada ? f.variante : f.producto}
+          {anidada ? (f.sabor ?? f.producto) : f.producto}
         </Link>
-        {!anidada && f.tieneVariantes && <span className="text-muted block">{f.variante}</span>}
+        {!anidada && f.sabor && <span className="text-muted block">{f.sabor}</span>}
       </td>
       <td className="text-muted px-4 py-2.5 font-mono text-xs whitespace-nowrap">{f.sku}</td>
       {columnas.map((c) => (
@@ -426,7 +426,7 @@ export function InventarioView({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <Link href={ruta(`/productos/${f.productoId}`)} className="font-medium">
-                          {grupos ? f.variante : f.nombreCompleto}
+                          {grupos ? (f.sabor ?? f.producto) : f.nombreCompleto}
                         </Link>
                         <p className="text-muted truncate font-mono text-xs">{f.sku}</p>
                       </div>

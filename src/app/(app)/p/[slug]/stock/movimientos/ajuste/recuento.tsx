@@ -51,11 +51,11 @@ export function Recuento({
   /** Escanear = +1 en lo contado de ese producto (si no estaba en la planilla, se agrega). */
   function contarEscaneo(v: VarianteEscaneada) {
     if (!planilla?.some((p) => p.varianteId === v.varianteId)) {
-      const enDeposito = v.stock.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
+      const enDeposito = v.stockPorDeposito.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
       setPlanilla((pl) => [
         {
           varianteId: v.varianteId,
-          nombre: v.nombreCompleto,
+          nombre: v.titulo,
           sku: v.sku,
           codigoBarras: v.codigoBarras,
           stockSistema: enDeposito,

@@ -92,18 +92,25 @@ export async function pistola(page: Page, codigo: string) {
   await page.waitForTimeout(400);
 }
 
-export async function codigoDe(producto: string, variante: string): Promise<string> {
+/** Productos del seed base (nombre completo = marca + modelo + pitadas, lo arma la DB). */
+export const IGNITE_V80 = "Ignite V80 8000";
+export const ELF_BAR_BC5000 = "Elf Bar BC 5000";
+export const ELF_BAR_BC10000 = "Elf Bar BC 10000";
+export const CARGADOR = "TechPro Cargador USB-C 20W";
+
+/** Código de barras de un sabor. `producto`: nombre completo; `sabor`: "Único" si no tiene. */
+export async function codigoDe(producto: string, sabor: string): Promise<string> {
   const v = await db.variante.findFirstOrThrow({
-    where: { panelId: PANEL_VAPES, nombre: variante, producto: { nombre: producto } },
+    where: { panelId: PANEL_VAPES, nombre: sabor, producto: { nombreCompleto: producto } },
   });
   return v.codigoBarras!;
 }
 
-export async function stock(producto: string, variante: string, deposito: string): Promise<number> {
+export async function stock(producto: string, sabor: string, deposito: string): Promise<number> {
   const s = await db.stock.findFirst({
     where: {
       panelId: PANEL_VAPES,
-      variante: { nombre: variante, producto: { nombre: producto } },
+      variante: { nombre: sabor, producto: { nombreCompleto: producto } },
       deposito: { nombre: deposito },
     },
   });

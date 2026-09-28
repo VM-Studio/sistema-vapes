@@ -4,6 +4,7 @@ import { Modulo } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { puede } from "@/lib/permisos";
 import { crearClienteSchema } from "@/lib/validations/cliente";
 import { id } from "@/lib/validations/common";
@@ -85,11 +86,25 @@ export const anularVentaAction = actionHandler(async (input: unknown) => {
 
 export interface VariantePos {
   varianteId: string;
+  /** Producto + sabor ("Elf Bar BC 5000 — Mango Ice"). */
   nombreCompleto: string;
   sku: string;
   codigoBarras: string | null;
+  /** Precio efectivo del sabor. */
   precioVenta: string;
+  /** Stock en el depósito elegido. */
   stock: number;
+}
+
+function aPos(v: VarianteEncontrada, depositoId: string): VariantePos {
+  return {
+    varianteId: v.varianteId,
+    nombreCompleto: v.titulo,
+    sku: v.sku,
+    codigoBarras: v.codigoBarras,
+    precioVenta: v.precioVenta,
+    stock: v.stockPorDeposito.find((s) => s.depositoId === depositoId)?.cantidad ?? 0,
+  };
 }
 
 export const buscarProductosPosAction = actionHandler(
@@ -97,14 +112,7 @@ export const buscarProductosPosAction = actionHandler(
     const ctx = await requireCtx(Modulo.VENTAS, "crear");
     const { q, depositoId } = z.object({ q: z.string().max(100), depositoId: id }).parse(input);
     const r = await buscarVariantes(ctx, q, { depositoId, limite: 15 });
-    return r.map((v) => ({
-      varianteId: v.id,
-      nombreCompleto: v.nombreCompleto,
-      sku: v.sku,
-      codigoBarras: v.codigoBarras,
-      precioVenta: v.precioVenta,
-      stock: v.stockDeposito ?? 0,
-    }));
+    return r.map((v) => aPos(v, depositoId));
   },
 );
 
@@ -113,14 +121,7 @@ export const variantesPosAction = actionHandler(async (input: unknown): Promise<
   const ctx = await requireCtx(Modulo.VENTAS, "crear");
   const { ids, depositoId } = z.object({ ids: z.array(id).max(300), depositoId: id }).parse(input);
   const r = await obtenerVariantesPorId(ctx, ids, depositoId);
-  return r.map((v) => ({
-    varianteId: v.id,
-    nombreCompleto: v.nombreCompleto,
-    sku: v.sku,
-    codigoBarras: v.codigoBarras,
-    precioVenta: v.precioVenta,
-    stock: v.stockDeposito ?? 0,
-  }));
+  return r.map((v) => aPos(v, depositoId));
 });
 
 export const productosRapidosAction = actionHandler(async (input: unknown) => {

@@ -120,7 +120,7 @@ export function EtiquetasView({
             ? { ...s, cantidad: Math.min(500, s.cantidad + 1) }
             : {
                 varianteId: v.varianteId,
-                nombreCompleto: v.nombreCompleto,
+                nombreCompleto: v.titulo,
                 tieneCodigo: v.codigoBarras !== null,
                 cantidad: 1,
               },

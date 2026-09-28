@@ -22,7 +22,6 @@ import {
   ajusteMasivoAction,
   completarTransferenciaAction,
   crearTransferenciaAction,
-  ingresoManualAction,
 } from "@/app/(app)/p/[slug]/stock/movimientos/actions";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede, useUsuario } from "@/components/layout/usuario-context";
@@ -40,15 +39,16 @@ import type { VarianteEscaneada } from "@/features/scanner/tipos";
 import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
 import { haceCuantoTexto } from "@/features/offline/catalogo";
 import { useEstadoOffline } from "@/components/pwa/sincronizacion-offline";
-import { conSigno, formatearNumero, formatearPesos } from "@/lib/format";
+import { conSigno, formatearPesos } from "@/lib/format";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 
-type Modo = "consultar" | "ingresar" | "contar" | "transferir";
+type Modo = "consultar" | "contar" | "transferir";
 
-const MODOS: { id: Modo | "vender"; label: string; icono: typeof ScanSearch }[] = [
+/** "ingresar" y "vender" no son modos del hub: llevan a la carga de stock y al punto de venta. */
+const MODOS: { id: Modo | "ingresar" | "vender"; label: string; icono: typeof ScanSearch }[] = [
   { id: "consultar", label: "Consultar", icono: ScanSearch },
-  { id: "ingresar", label: "Ingresar", icono: PackagePlus },
+  { id: "ingresar", label: "Cargar stock", icono: PackagePlus },
   { id: "contar", label: "Contar", icono: ClipboardCheck },
   { id: "transferir", label: "Transferir", icono: ArrowLeftRight },
   { id: "vender", label: "Vender", icono: ShoppingCart },
@@ -89,7 +89,7 @@ function escribirLocal(clave: string, valor: unknown) {
 }
 
 const stockEn = (v: VarianteEscaneada, depositoId: string) =>
-  v.stock.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
+  v.stockPorDeposito.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
 
 function haceCuanto(ts: number): string {
   const min = Math.max(1, Math.round((Date.now() - ts) / 60000));
@@ -116,8 +116,9 @@ export function EscanearHub({
   const CLAVE_DEPOSITO = `escanear.deposito.${panel.id}`;
 
   // --- Permisos por modo ---
-  const puedeIngresoManual = usePuede(Modulo.STOCK, "crear");
-  const puedeCompra = usePuede(Modulo.COMPRAS, "crear");
+  const puedeCargaStock = usePuede(Modulo.STOCK, "crear");
+  const puedeCargaProductos = usePuede(Modulo.PRODUCTOS, "crear");
+  const puedeCargar = puedeCargaStock || puedeCargaProductos;
   const puedeContar = usePuede(Modulo.STOCK, "editar");
   const puedeTransferir = usePuede(Modulo.STOCK, "crear");
   const puedeVender = usePuede(Modulo.VENTAS, "crear");
@@ -125,10 +126,6 @@ export function EscanearHub({
   const puedeVerProductos = usePuede(Modulo.PRODUCTOS, "ver");
   const habilitado: Record<Modo, string | null> = {
     consultar: null,
-    ingresar:
-      puedeIngresoManual || puedeCompra
-        ? null
-        : "Necesitás permiso para crear en Stock o en Compras.",
     contar: puedeContar ? null : "Necesitás permiso para editar en Stock (ajustes).",
     transferir: puedeTransferir ? null : "Necesitás permiso para crear en Stock.",
   };
@@ -177,7 +174,17 @@ export function EscanearHub({
     actualizarUrl({ deposito: id });
   }
 
-  function elegirModo(m: Modo | "vender") {
+  function elegirModo(m: Modo | "ingresar" | "vender") {
+    if (m === "ingresar") {
+      if (!offline.online) return toast.error("Sin conexión", SIN_SENAL);
+      if (!puedeCargar)
+        return toast.error(
+          "Carga de stock bloqueada",
+          "Necesitás permiso para crear en Productos o en Stock.",
+        );
+      router.push(ruta("/productos/cargar"));
+      return;
+    }
     if (m === "vender") {
       // Nada de ventas sin conexión: hay que validar stock y registrar el pago en el momento.
       if (!offline.online)
@@ -291,9 +298,7 @@ export function EscanearHub({
 
   const [refrescando, setRefrescando] = useState(false);
   async function abrirConfirmacion() {
-    setMotivo(
-      modo === "ingresar" ? "Ingreso por escaneo" : modo === "contar" ? "Recuento por escaneo" : "",
-    );
+    setMotivo(modo === "contar" ? "Recuento por escaneo" : "");
     if (modo === "contar" && navigator.onLine) {
       // El stock del sistema puede haber cambiado desde el primer escaneo (caché de 5 min):
       // las diferencias que se confirman salen del stock actual.
@@ -324,23 +329,7 @@ export function EscanearHub({
     setEnviando(true);
     try {
       if (!navigator.onLine) return toast.error("Sin conexión", SIN_SENAL);
-      if (modo === "ingresar") {
-        const r = await ingresoManualAction({
-          depositoId,
-          motivo,
-          actualizarCosto: false,
-          items: items.map((i) => ({ varianteId: i.variante.varianteId, cantidad: i.cantidad })),
-        });
-        if (!r.ok)
-          return toast.error(
-            "No se pudo registrar el ingreso",
-            r.error.fields?.motivo?.[0] ?? r.error.message,
-          );
-        terminar(
-          `Ingresaron ${formatearNumero(r.data.unidades)} unidades`,
-          depositos.find((d) => d.id === depositoId)?.nombre,
-        );
-      } else if (modo === "contar") {
+      if (modo === "contar") {
         const conDif = diferencias.filter((d) => d.dif !== 0);
         if (conDif.length === 0)
           return terminar("Todo coincide con el sistema", "No hubo que ajustar nada.");
@@ -391,19 +380,10 @@ export function EscanearHub({
     );
   }
 
-  function comoCompra() {
-    const lista = items.map((i) => `${i.variante.varianteId}:${i.cantidad}`).join(",");
-    setItems([]);
-    setConfirmando(false);
-    router.push(ruta(`/compras/nueva?deposito=${depositoId}&items=${lista}`));
-  }
-
   const etiquetaBoton =
-    modo === "ingresar"
-      ? `Confirmar ingreso (${unidades} u.)`
-      : modo === "contar"
-        ? `Aplicar recuento (${items.length})`
-        : `Crear transferencia (${unidades} u.)`;
+    modo === "contar"
+      ? `Aplicar recuento (${items.length})`
+      : `Crear transferencia (${unidades} u.)`;
 
   return (
     <div
@@ -425,7 +405,13 @@ export function EscanearHub({
               ? puedeVender
                 ? null
                 : "Necesitás permiso para crear en Ventas."
-              : bloqueoDe(m.id);
+              : m.id === "ingresar"
+                ? !puedeCargar
+                  ? "Necesitás permiso para crear en Productos o en Stock."
+                  : offline.online
+                    ? null
+                    : SIN_SENAL
+                : bloqueoDe(m.id);
           const activo = m.id === modo;
           return (
             <button
@@ -543,9 +529,7 @@ export function EscanearHub({
           <div className="min-w-0 flex-1" aria-live="polite">
             {ultima ? (
               <>
-                <p className="truncate text-lg leading-tight font-semibold">
-                  {ultima.nombreCompleto}
-                </p>
+                <p className="truncate text-lg leading-tight font-semibold">{ultima.titulo}</p>
                 <p className="text-muted text-sm">
                   En {depositos.find((d) => d.id === depositoId)?.nombre}:{" "}
                   <strong className="text-foreground">{stockEn(ultima, depositoId)}</strong> ·
@@ -594,6 +578,7 @@ export function EscanearHub({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-xl font-semibold">{consulta.nombreCompleto}</h2>
+              {consulta.sabor && <p className="text-lg font-medium">{consulta.sabor}</p>}
               <p className="text-muted font-mono text-xs">
                 {consulta.sku} · {consulta.codigoBarras ?? "sin código"}
                 {consulta.porCodigoAlternativo && " (leído por código alternativo)"}
@@ -612,11 +597,11 @@ export function EscanearHub({
                 {formatearPesos(consulta.precioVenta)}
               </dd>
             </div>
-            {esOwner(usuario) && consulta.precioCosto && (
+            {esOwner(usuario) && consulta.ultimoCosto && (
               <div className="bg-surface-2 rounded-lg p-3">
-                <dt className="text-muted text-xs">Costo</dt>
+                <dt className="text-muted text-xs">Último costo</dt>
                 <dd className="text-lg font-semibold tabular-nums">
-                  {formatearPesos(consulta.precioCosto)}
+                  {formatearPesos(consulta.ultimoCosto)}
                 </dd>
               </div>
             )}
@@ -665,16 +650,11 @@ export function EscanearHub({
               >
                 <div className="min-w-0 flex-1">
                   {/* El sabor es lo que distingue una fila de otra: va primero y no se corta. */}
-                  <p
-                    className="leading-tight font-semibold break-words"
-                    title={i.variante.nombreCompleto}
-                  >
-                    {i.variante.nombreCompleto === i.variante.producto
-                      ? i.variante.producto
-                      : i.variante.variante}
+                  <p className="leading-tight font-semibold break-words" title={i.variante.titulo}>
+                    {i.variante.sabor ?? i.variante.nombreCompleto}
                   </p>
-                  {i.variante.nombreCompleto !== i.variante.producto && (
-                    <p className="text-muted truncate text-xs">{i.variante.producto}</p>
+                  {i.variante.sabor && (
+                    <p className="text-muted truncate text-xs">{i.variante.nombreCompleto}</p>
                   )}
                   <p className="text-muted text-xs">
                     {modo === "contar" ? (
@@ -706,12 +686,12 @@ export function EscanearHub({
                     size="icon"
                     className="size-10"
                     onClick={() => cambiarCantidad(i.variante.varianteId, i.cantidad - 1)}
-                    aria-label={`Restar uno de ${i.variante.nombreCompleto}`}
+                    aria-label={`Restar uno de ${i.variante.titulo}`}
                   >
                     <Minus />
                   </Button>
                   <CantidadInput
-                    etiqueta={`Cantidad de ${i.variante.nombreCompleto}`}
+                    etiqueta={`Cantidad de ${i.variante.titulo}`}
                     valor={i.cantidad}
                     min={modo === "contar" ? 0 : 1}
                     onCambio={(n) => cambiarCantidad(i.variante.varianteId, n)}
@@ -722,7 +702,7 @@ export function EscanearHub({
                     size="icon"
                     className="size-10"
                     onClick={() => cambiarCantidad(i.variante.varianteId, i.cantidad + 1)}
-                    aria-label={`Sumar uno de ${i.variante.nombreCompleto}`}
+                    aria-label={`Sumar uno de ${i.variante.titulo}`}
                   >
                     <Plus />
                   </Button>
@@ -731,7 +711,7 @@ export function EscanearHub({
                     size="icon"
                     className="text-danger size-10"
                     onClick={() => quitar(i.variante.varianteId)}
-                    aria-label={`Quitar ${i.variante.nombreCompleto}`}
+                    aria-label={`Quitar ${i.variante.titulo}`}
                   >
                     <Trash2 />
                   </Button>
@@ -762,13 +742,7 @@ export function EscanearHub({
       <Dialog
         open={confirmando}
         onOpenChange={setConfirmando}
-        title={
-          modo === "ingresar"
-            ? "Confirmar ingreso"
-            : modo === "contar"
-              ? "Aplicar recuento"
-              : "Crear transferencia"
-        }
+        title={modo === "contar" ? "Aplicar recuento" : "Crear transferencia"}
         description={
           modo === "transferir"
             ? `${depositos.find((d) => d.id === depositoId)?.nombre} → ${depositos.find((d) => d.id === destinoId)?.nombre}`
@@ -779,27 +753,16 @@ export function EscanearHub({
             <Button variant="secondary" onClick={() => setConfirmando(false)} disabled={enviando}>
               Volver
             </Button>
-            {modo === "ingresar" && puedeCompra && (
-              <Button variant="secondary" onClick={comoCompra} disabled={enviando}>
-                Registrar como compra
-              </Button>
-            )}
-            {!(modo === "ingresar" && !puedeIngresoManual) && (
-              <Button onClick={confirmar} loading={enviando} disabled={!offline.online}>
-                {modo === "ingresar"
-                  ? "Confirmar ingreso"
-                  : modo === "contar"
-                    ? "Aplicar"
-                    : "Crear"}
-              </Button>
-            )}
+            <Button onClick={confirmar} loading={enviando} disabled={!offline.online}>
+              {modo === "contar" ? "Aplicar" : "Crear"}
+            </Button>
           </>
         }
       >
         <ul className="flex max-h-64 flex-col gap-1.5 overflow-y-auto text-sm">
           {diferencias.map((i) => (
             <li key={i.variante.varianteId} className="flex justify-between gap-3">
-              <span className="truncate">{i.variante.nombreCompleto}</span>
+              <span className="truncate">{i.variante.titulo}</span>
               <span className="shrink-0 tabular-nums">
                 {modo === "contar" ? (
                   <>

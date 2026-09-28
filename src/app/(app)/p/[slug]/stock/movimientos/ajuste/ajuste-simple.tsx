@@ -3,7 +3,8 @@
 import { X } from "lucide-react";
 import { useState } from "react";
 
-import { VariantePicker, type VarianteBuscada } from "@/components/catalogo/variante-picker";
+import { VariantePicker } from "@/components/catalogo/variante-picker";
+import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -26,18 +27,18 @@ export function AjusteSimple({
 }: {
   depositos: { id: string; nombre: string }[];
   depositoInicial: string;
-  precargada: VarianteBuscada | null;
+  precargada: VarianteEncontrada | null;
 }) {
   const toast = useToast();
   const [depositoId, setDepositoId] = useState(depositoInicial);
-  const [variante, setVariante] = useState<VarianteBuscada | null>(precargada);
+  const [variante, setVariante] = useState<VarianteEncontrada | null>(precargada);
   const [real, setReal] = useState("");
   const [motivo, setMotivo] = useState("");
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [confirmando, setConfirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
 
-  const sistema = variante?.stockDeposito ?? 0;
+  const sistema = variante?.stockEnDeposito ?? 0;
   const diferencia = real === "" ? null : Number(real) - sistema;
   const deposito = depositos.find((d) => d.id === depositoId)?.nombre;
 
@@ -61,7 +62,7 @@ export function AjusteSimple({
     setEnviando(true);
     const r = await ajusteAction({
       depositoId,
-      varianteId: variante.id,
+      varianteId: variante.varianteId,
       cantidadReal: real,
       motivo,
     });
@@ -81,7 +82,7 @@ export function AjusteSimple({
     );
     setReal("");
     setMotivo("");
-    await refrescar(variante.id, depositoId);
+    await refrescar(variante.varianteId, depositoId);
   }
 
   return (
@@ -98,15 +99,13 @@ export function AjusteSimple({
             value={depositoId}
             onChange={(e) => {
               setDepositoId(e.target.value);
-              if (variante) void refrescar(variante.id, e.target.value);
+              if (variante) void refrescar(variante.varianteId, e.target.value);
             }}
           />
           {variante ? (
             <div className="border-primary bg-primary-soft flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-primary-soft-foreground font-medium">
-                  {variante.nombreCompleto}
-                </p>
+                <p className="text-primary-soft-foreground font-medium">{variante.titulo}</p>
                 <p className="text-muted text-xs">{variante.sku}</p>
               </div>
               <Button
@@ -177,7 +176,7 @@ export function AjusteSimple({
         open={confirmando}
         onOpenChange={setConfirmando}
         title="Confirmar ajuste"
-        description={`${variante?.nombreCompleto} · ${deposito}`}
+        description={`${variante?.titulo} · ${deposito}`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirmando(false)} disabled={enviando}>

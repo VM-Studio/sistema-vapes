@@ -1,16 +1,16 @@
 import { expect, test } from "./base";
 
-import { codigoDe, db, loginDueno, pistola, stock, soltarFoco } from "./helpers";
+import { codigoDe, db, loginDueno, pistola, stock, soltarFoco, IGNITE_V80 } from "./helpers";
 
 test("venta completa en el celular: 2 sabores escaneados, un medio de pago, ID de venta → stock descontado", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "mobile", "flujo de celular");
-  const mango = await codigoDe("Ignite V80", "Mango Ice");
-  const blue = await codigoDe("Ignite V80", "Blue Razz Ice");
+  const mango = await codigoDe(IGNITE_V80, "Mango Ice");
+  const blue = await codigoDe(IGNITE_V80, "Blue Razz Ice");
   const antes = [
-    await stock("Ignite V80", "Mango Ice", "Ayres Plaza"),
-    await stock("Ignite V80", "Blue Razz Ice", "Ayres Plaza"),
+    await stock(IGNITE_V80, "Mango Ice", "Ayres Plaza"),
+    await stock(IGNITE_V80, "Blue Razz Ice", "Ayres Plaza"),
   ];
   await loginDueno(page);
   await page.goto("/p/vapes/ventas/nueva");
@@ -36,6 +36,19 @@ test("venta completa en el celular: 2 sabores escaneados, un medio de pago, ID d
   expect(venta.estado).toBe("CONFIRMADA");
   expect(venta.medioPago).toBe("TRANSFERENCIA");
   expect(venta.items).toHaveLength(2);
-  expect(await stock("Ignite V80", "Mango Ice", "Ayres Plaza")).toBe(antes[0]! - 1);
-  expect(await stock("Ignite V80", "Blue Razz Ice", "Ayres Plaza")).toBe(antes[1]! - 1);
+  // Precio: el del producto, salvo el sabor con precio propio (Blue Razz Ice).
+  // Costo: snapshot del último costo del sabor al momento de vender.
+  for (const [codigo, precio] of [
+    [mango, "16000"],
+    [blue, "16500"],
+  ] as const) {
+    const v = await db.variante.findFirstOrThrow({
+      where: { panelId: "pnl_vapes", codigoBarras: codigo },
+    });
+    const item = venta.items.find((i) => i.varianteId === v.id)!;
+    expect(item.precioUnitario.toString()).toBe(precio);
+    expect(item.costoUnitario.toString()).toBe((v.ultimoCosto ?? 0).toString());
+  }
+  expect(await stock(IGNITE_V80, "Mango Ice", "Ayres Plaza")).toBe(antes[0]! - 1);
+  expect(await stock(IGNITE_V80, "Blue Razz Ice", "Ayres Plaza")).toBe(antes[1]! - 1);
 });

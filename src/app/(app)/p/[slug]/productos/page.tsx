@@ -3,10 +3,9 @@ import type { Metadata } from "next";
 
 import { listarProductosSchema } from "@/lib/validations/producto";
 import { requirePaginaPanel } from "@/server/auth/permissions";
-import { listarCategoriasActivas } from "@/server/services/categoria.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
-import { listarMarcasActivas } from "@/server/services/marca.service";
-import { listarProductos } from "@/server/services/producto.service";
+import { listarMarcas } from "@/server/services/marca.service";
+import { listar } from "@/server/services/producto.service";
 
 import { ProductosView } from "./productos-view";
 
@@ -21,19 +20,19 @@ export default async function ProductosPage({ searchParams }: { searchParams: Pr
     Object.entries(params).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   const filtros = listarProductosSchema.parse(plano);
-  const [resultado, depositos, categorias, marcas] = await Promise.all([
-    listarProductos(ctx, filtros),
+  const [resultado, depositos, marcas] = await Promise.all([
+    listar(ctx, filtros),
     listarDepositosActivos(ctx),
-    listarCategoriasActivas(ctx),
-    listarMarcasActivas(ctx),
+    listarMarcas(ctx),
   ]);
   return (
     <ProductosView
       resultado={resultado}
       depositos={depositos}
       params={plano}
-      categorias={categorias.map((c) => ({ value: c.id, label: c.nombre }))}
-      marcas={marcas.map((m) => ({ value: m.id, label: m.nombre }))}
+      marcas={marcas
+        .filter((m) => m.productosActivos > 0 || m.id === filtros.marcaId)
+        .map((m) => ({ value: m.id, label: m.nombre }))}
     />
   );
 }

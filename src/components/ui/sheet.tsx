@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -33,12 +33,14 @@ export function Sheet({
   className,
 }: SheetProps) {
   const { ref, onBackdropClick } = useDialogElement(open, onOpenChange);
+  // Id único por instancia: con varios diálogos en la página, un id fijo apuntaría al título de otro.
+  const idTitulo = useId();
 
   return (
     <dialog
       ref={ref}
       onClick={onBackdropClick}
-      aria-labelledby="sheet-title"
+      aria-labelledby={idTitulo}
       className={cn(
         "anim-sheet bg-surface text-foreground shadow-sheet m-0 max-h-none max-w-none p-0",
         // mobile: bottom sheet
@@ -56,7 +58,7 @@ export function Sheet({
           />
           <header className="border-border flex items-start justify-between gap-3 border-b px-5 py-4 md:px-6 md:py-5">
             <div className="flex min-w-0 flex-col gap-1 pt-1.5">
-              <h2 id="sheet-title" className="text-xl leading-tight font-semibold tracking-tight">
+              <h2 id={idTitulo} className="text-xl leading-tight font-semibold tracking-tight">
                 {title}
               </h2>
               {description && <p className="text-muted text-sm">{description}</p>}

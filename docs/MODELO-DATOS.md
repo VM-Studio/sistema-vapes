@@ -1,12 +1,12 @@
 # Modelo de datos
 
-Base PostgreSQL 16 manejada con Prisma 6. La fuente de verdad es `prisma/schema.prisma`; las reglas que Prisma no sabe expresar (CHECKs, índices únicos parciales, triggers, vistas) viven en las migraciones SQL de `prisma/migrations/` (la reforma multipanel es `20260928160000_reforma_multipanel`).
+Base PostgreSQL 16 manejada con Prisma 6. La fuente de verdad es `prisma/schema.prisma`; las reglas que Prisma no sabe expresar (CHECKs, índices únicos parciales, triggers, vistas) viven en las migraciones SQL de `prisma/migrations/` (la reforma multipanel R1 es `20260928160000_reforma_multipanel`; la reforma R2 de catálogo, proveedores y compras es `20260929090000_catalogo_proveedores_compras`).
 
 Convenciones generales:
 
 - **Paneles**: la app son varios sistemas independientes (`Panel`: Vapes, Cosmetic, Especiales y los que se agreguen). Toda tabla de negocio tiene `panelId` y solo puede apuntar a filas de su mismo panel. Lo global (usuarios, sesiones, `ConfiguracionGlobal`, backups, rate limit, auditoría) no pertenece a ningún panel.
-- **IDs**: `cuid()` en texto (los paneles, depósitos y secuencias creados por la migración tienen ids fijos: `pnl_vapes`, `pnl_cosmetic`, `pnl_especiales`). Los documentos que ve el usuario (ventas, compras, transferencias, devoluciones) tienen además un `numero` **correlativo por panel** (tabla `Secuencia`). El ID de venta visible es `{3 letras del slug}-{número con 6 dígitos}`: `VAP-000001`.
-- **Dinero**: `Decimal(12,2)`. **Cantidades**: enteros.
+- **IDs**: `cuid()` en texto (los paneles, depósitos y secuencias creados por la migración tienen ids fijos: `pnl_vapes`, `pnl_cosmetic`, `pnl_especiales`). Los documentos que ve el usuario (ventas, compras, transferencias, devoluciones) tienen además un `numero` **correlativo por panel** (tabla `Secuencia`). El ID de venta visible es `{3 letras del slug}-{número con 6 dígitos}`: `VAP-000001`; el de compra lleva una `C`: `VAP-C-000001` (`formatearIdVenta` / `formatearIdCompra` en `src/lib/paneles.ts`).
+- **Dinero**: `Decimal(12,2)`, en pesos salvo `ProveedorProducto.precio`, que lleva su `moneda` (`ARS` o `USD`). **Cantidades**: enteros.
 - **Fechas**: `timestamp` en UTC sin zona. Los rangos de días se calculan en la zona horaria del negocio (`ConfiguracionGlobal.timezone`, por defecto `America/Argentina/Buenos_Aires`).
 - **Nada se borra físicamente** en las tablas de negocio: los maestros usan soft delete (`deletedAt`) o `activo = false` (también los paneles), y los documentos confirmados se **anulan**.
 - **Caché verificado**: `Stock` es derivado del ledger `MovimientoStock`; la base verifica que solo cambie junto con su movimiento.
@@ -66,6 +66,11 @@ Enum EstadoTransferencia {
   PENDIENTE
   COMPLETADA
   ANULADA
+}
+
+Enum Moneda {
+  ARS
+  USD
 }
 
 Enum MedioPago {
@@ -316,11 +321,9 @@ Table Marca {
 Table Proveedor {
   id text [pk, default: `cuid()`]
   panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  nombre text [not null]
-  cuit text [note: 'Único por panel entre no borrados (único parcial)']
-  telefono text
-  email text
-  direccion text
+  nombre text [not null, note: 'Persona de contacto']
+  telefono text [note: '+54 + dígitos (CHECK); único por panel entre no borrados (único parcial)']
+  nombreTienda text [not null, note: 'No vacío (CHECK)']
   notas text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -329,7 +332,26 @@ Table Proveedor {
 
   indexes {
     (panelId, nombre)
+    (panelId, nombreTienda)
   }
+}
+
+Table ProveedorProducto {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  proveedorId text [not null]
+  productoId text [not null]
+  precio decimal(12,2) [not null, note: 'Precio de compra unitario del producto (cualquier sabor); ≥ 0 (CHECK)']
+  moneda Moneda [not null, default: 'ARS']
+  actualizadoAt timestamp [not null, default: `now()`]
+  usuarioId text [not null, note: 'Quién fijó el precio vigente']
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (panelId, proveedorId, productoId) [unique]
+    (panelId, productoId, precio) [note: 'Proveedores de un producto, de menor a mayor']
+  }
+  Note: 'Qué vende cada proveedor y a cuánto. Se pisa al editarlo o al recibir una compra con "actualizar precio".'
 }
 
 Table Cliente {
@@ -363,11 +385,13 @@ Table Cliente {
 Table Producto {
   id text [pk, default: `cuid()`]
   panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  nombre text [not null]
-  descripcion text
-  categoriaId text [not null]
-  marcaId text
-  tieneVariantes boolean [not null, default: false, note: 'false => exactamente una variante "Único"']
+  marcaId text [not null]
+  nombre text [not null, note: 'El modelo ("BC")']
+  especificacion text [not null, default: '', note: 'Atributo principal del panel (Panel.etiquetaEspecificacion): "5000" pitadas en Vapes']
+  especificacionNorm text [not null, default: '', note: 'Trigger: lower(especificacion) sin espacios']
+  nombreCompleto text [not null, default: '', note: 'Trigger: "{Marca} {Modelo} {Especificación}" (sin "Sin marca")']
+  categoriaId text
+  precioVenta decimal(12,2) [not null, note: 'Precio de todos sus sabores salvo los que tienen precio propio; ≥ 0 (CHECK)']
   imagenUrl text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -375,22 +399,23 @@ Table Producto {
   deletedAt timestamp
 
   indexes {
-    (panelId, nombre, marcaId) [unique]
+    (panelId, marcaId, nombre, especificacionNorm) [unique]
     (panelId, categoriaId)
     (panelId, marcaId)
-    nombre [type: gin, name: 'producto_nombre_trgm']
+    nombreCompleto [type: gin, name: 'producto_nombre_completo_trgm']
   }
+  Note: 'Producto = marca + modelo + especificación. Tiene al menos una variante (sabor).'
 }
 
 Table Variante {
   id text [pk, default: `cuid()`]
   panelId text [not null, default: `current_setting('app.panel_id', true)`, note: '= Producto.panelId (trigger)']
   productoId text [not null]
-  nombre text [not null]
+  nombre text [not null, note: 'El sabor ("Mango Ice"); "Único" en un producto sin sabor']
   sku text [not null]
   codigoBarras text [note: 'Único por panel entre no borradas y frente a los alternativos']
-  precioCosto decimal(12,2) [not null]
-  precioVenta decimal(12,2) [not null]
+  precioVenta decimal(12,2) [note: 'Precio propio; null = usa Producto.precioVenta']
+  ultimoCosto decimal(12,2) [note: 'Costo de la última compra recibida; null = sin compras']
   stockMinimo int [not null, default: 0]
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -399,7 +424,7 @@ Table Variante {
 
   indexes {
     (panelId, sku) [unique]
-    (productoId, nombre) [unique]
+    (panelId, productoId, nombre) [unique]
     nombre [type: gin, name: 'variante_nombre_trgm']
     sku [type: gin, name: 'variante_sku_trgm']
   }
@@ -510,9 +535,9 @@ Table TransferenciaItem {
 Table Compra {
   id text [pk, default: `cuid()`]
   panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  numero int [not null, note: 'Correlativo por panel (Secuencia)']
-  proveedorId text
-  depositoId text [not null]
+  numero int [not null, note: 'Correlativo por panel (Secuencia); ID visible VAP-C-000001']
+  proveedorId text [note: 'Obligatorio en la app; nulo solo en compras anteriores a R2']
+  depositoId text [not null, note: 'Galpón donde entra la mercadería']
   fecha timestamp [not null, default: `now()`]
   estado EstadoCompra [not null, default: 'BORRADOR']
   subtotal decimal(12,2) [not null]
@@ -536,7 +561,8 @@ Table CompraItem {
   id text [pk, default: `cuid()`]
   panelId text [not null, default: `current_setting('app.panel_id', true)`]
   compraId text [not null]
-  varianteId text [not null]
+  varianteId text [not null, note: 'Se compra por sabor']
+  productoId text [not null, note: '= variante.productoId (trigger)']
   cantidad int [not null]
   costoUnitario decimal(12,2) [not null]
   subtotal decimal(12,2) [not null]
@@ -546,6 +572,7 @@ Table CompraItem {
   indexes {
     (compraId, varianteId) [unique]
     (panelId, varianteId)
+    (panelId, productoId)
   }
 }
 
@@ -593,7 +620,7 @@ Table VentaItem {
   varianteId text [not null]
   cantidad int [not null]
   precioUnitario decimal(12,2) [not null, note: 'Snapshot del precio de venta']
-  costoUnitario decimal(12,2) [not null, note: 'Snapshot del costo']
+  costoUnitario decimal(12,2) [not null, note: 'Snapshot de Variante.ultimoCosto al vender (0 si no hubo compras)']
   descuento decimal(12,2) [not null, default: 0]
   subtotal decimal(12,2) [not null, note: 'cantidad × precioUnitario − descuento (CHECK)']
   notas text
@@ -645,6 +672,10 @@ Ref: Deposito.panelId > Panel.id [delete: restrict]
 Ref: Categoria.panelId > Panel.id [delete: restrict]
 Ref: Marca.panelId > Panel.id [delete: restrict]
 Ref: Proveedor.panelId > Panel.id [delete: restrict]
+Ref: ProveedorProducto.panelId > Panel.id [delete: restrict]
+Ref: ProveedorProducto.proveedorId > Proveedor.id [delete: restrict]
+Ref: ProveedorProducto.productoId > Producto.id [delete: restrict]
+Ref: ProveedorProducto.usuarioId > Usuario.id [delete: restrict]
 Ref: Cliente.panelId > Panel.id [delete: restrict]
 
 Ref: Producto.panelId > Panel.id [delete: restrict]
@@ -678,6 +709,7 @@ Ref: Compra.usuarioId > Usuario.id [delete: restrict]
 Ref: CompraItem.panelId > Panel.id [delete: restrict]
 Ref: CompraItem.compraId > Compra.id [delete: cascade]
 Ref: CompraItem.varianteId > Variante.id [delete: restrict]
+Ref: CompraItem.productoId > Producto.id [delete: restrict]
 
 Ref: Venta.panelId > Panel.id [delete: restrict]
 Ref: Venta.clienteId > Cliente.id [delete: restrict]
@@ -717,35 +749,37 @@ Ref: Devolucion.usuarioId > Usuario.id [delete: restrict]
 ### Maestros
 
 - **Deposito**: locales o galpones de un panel. Uno solo por panel puede ser el principal. En Vapes: **Ayres Plaza** (principal) y **Mercedes**. No se borra: se desactiva, y solo si no tiene stock y no es el principal.
-- **Categoria** y **Marca**: clasificación de productos, con nombre único por panel. No se pueden desactivar si tienen productos activos.
-- **Proveedor**: con CUIT opcional, único por panel entre los no borrados.
+- **Categoria** y **Marca**: clasificación de productos, con nombre único por panel. No se pueden desactivar si tienen productos activos. La marca es obligatoria en todo producto (la categoría no); el alta de productos crea la marca si no existe. Renombrar una marca recalcula el `nombreCompleto` de sus productos (trigger `trg_marca_renombrada`). La marca «Sin marca» (creada por la migración R2 para los productos que no tenían) no aparece en el nombre completo.
+- **Proveedor**: `nombre` es la persona de contacto y `nombreTienda` (obligatorio) el comercio. Teléfono opcional, normalizado igual que el de los clientes (`+54` + dígitos) y único por panel entre los no borrados. `notas` libres (la migración R2 pasó ahí el CUIT, el email y la dirección, que dejaron de ser columnas, y los teléfonos repetidos). Un proveedor inactivo no aparece para compras nuevas; no se desactiva si tiene compras en borrador.
+- **ProveedorProducto**: qué productos vende cada proveedor y a cuánto: un `precio` por (proveedor, producto), sin importar el sabor, con su `moneda` (`ARS` o `USD`), cuándo se actualizó y quién lo fijó. Se pisa al editarlo desde la ficha del proveedor o al recibir una compra con «actualizar precio del proveedor» (no guarda historial: el cambio queda en la auditoría). La ficha del producto lista los proveedores de menor a mayor precio (índice `(panelId, productoId, precio)`). Precios y montos comprados solo los ven los dueños o quien tiene `ver` en `COMPRAS` (`veCostosCompras()` en `proveedor.service.ts`).
 - **Cliente**: datos de contacto. Documento y teléfono opcionales, cada uno único por panel entre los no borrados. El teléfono se guarda normalizado: `+54` seguido solo de dígitos (la app y la función SQL `fn_normalizar_telefono` aplican la misma regla: se quitan los no-dígitos y los ceros iniciales; si ya empieza con `54` y tiene al menos 12 dígitos se respeta el código de país).
 
 ### Catálogo
 
-- **Producto**: nombre (único por panel y marca), categoría, marca, imagen. Todo producto tiene al menos una variante; si `tieneVariantes = false`, tiene exactamente una llamada «Único».
-- **Variante**: lo que realmente se vende y se cuenta (el sabor, el color). Tiene SKU único por panel (`{prefijoSku}-XXXXXX` si no se indica), código de barras principal, precio de costo, precio de venta y stock mínimo. Repite el `panelId` de su producto (verificado por trigger) para buscar por código dentro de un panel sin join.
+- **Producto**: **marca** (obligatoria) + **modelo** (`nombre`) + **especificación** (el atributo principal del panel, con la etiqueta `Panel.etiquetaEspecificacion`: «Pitadas» en Vapes). `nombreCompleto` («Elf Bar BC 5000») y `especificacionNorm` («5000», en minúsculas y sin espacios) los mantiene la base con el trigger `trg_producto_derivados`: la app nunca los escribe. La clave (panel, marca, modelo, `especificacionNorm`) es única. Tiene un **precio de venta único** para todos sus sabores, categoría opcional e imagen. Todo producto tiene al menos una variante; uno sin sabores tiene una sola variante «Único» que la interfaz no muestra como sabor.
+- **Variante**: el **sabor**, que es lo que realmente se vende, se compra y se cuenta (el stock es por sabor y depósito). Tiene SKU único por panel (`{prefijoSku}-XXXXXX` si no se indica), código de barras principal, stock mínimo, un **precio propio** opcional (`precioVenta`: `null` = usa el del producto; `precioVentaEfectivo()` en `src/lib/precios.ts`) y `ultimoCosto`, el costo de la última compra recibida (lo actualiza `recibirCompra()`; `null` si todavía no hubo compras). El último costo solo lo ven los dueños. Repite el `panelId` de su producto (verificado por trigger) para buscar por código dentro de un panel sin join.
 - **CodigoBarrasAlternativo**: otros códigos que identifican a la misma variante (distintos lotes o importadores). Dentro de un panel, un código no puede repetirse entre esta tabla y `Variante.codigoBarras`; en paneles distintos sí.
 
 ### Inventario
 
 - **MovimientoStock**: el ledger. Cada entrada o salida de mercadería es una fila inmutable con tipo (`INGRESO_COMPRA`, `INGRESO_MANUAL`, `VENTA`, `DEVOLUCION_CLIENTE`, `DEVOLUCION_PROVEEDOR`, `AJUSTE_POSITIVO`, `AJUSTE_NEGATIVO`, `TRANSFERENCIA_SALIDA`, `TRANSFERENCIA_ENTRADA`), cantidad siempre positiva (el signo lo da el tipo), stock anterior y posterior, costo y referencia al documento que lo originó. Un error se corrige con un ajuste inverso, nunca editando.
-- **Stock**: cantidad actual por (variante, depósito). Es un caché del ledger: solo cambia en la misma transacción que inserta el movimiento correspondiente (`registrarMovimiento()` / `transferirStock()` en `stock.service.ts`). La vista **Global** de la app suma todos los depósitos del panel.
+- **Stock**: cantidad actual por (variante, depósito). Es un caché del ledger: solo cambia en la misma transacción que inserta el movimiento correspondiente (`registrarMovimiento()` / `transferirStock()` en `stock.service.ts`). La vista **Global** de la app suma todos los depósitos del panel. La carga de stock por escaneo (`cargarStockPorEscaneo()` en `producto.service.ts`) registra un `INGRESO_MANUAL` por sabor en **un** depósito activo elegido, todo en una transacción; sin depósito el servicio la rechaza (`SIN_GALPON`) aunque la llame otro código que no sea la pantalla.
 - **Transferencia** y **TransferenciaItem**: envío de mercadería entre depósitos del mismo panel. Nace `PENDIENTE`, se `COMPLETA` (genera la salida y la entrada) o se `ANULA`.
 
 Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por panel:
 
-- `vw_stock_consolidado`: stock por variante con el total y un `por_deposito` en JSON (`{ depositoId: cantidad }`).
+- `vw_stock_consolidado`: stock por variante con el nombre completo del producto (`producto`), el total y un `por_deposito` en JSON (`{ depositoId: cantidad }`).
 - `vw_alertas_stock`: variantes activas cuyo stock total (todos los depósitos del panel) está por debajo de su stock mínimo, con el faltante.
 
 ### Compras
 
-- **Compra** y **CompraItem**: mercadería recibida de un proveedor en un depósito. `BORRADOR` (editable) → `RECIBIDA` (genera un `INGRESO_COMPRA` por ítem y opcionalmente actualiza el costo de la variante) → `ANULADA` (genera `DEVOLUCION_PROVEEDOR`). Los totales se calculan en el servidor y la base verifica que cierren con los ítems.
+- **Compra**: mercadería de un proveedor que entra en un galpón. Proveedor y galpón son obligatorios en la app (`proveedorId` sigue siendo nulo en la base solo para compras anteriores a R2). ID visible `VAP-C-000001`. `BORRADOR` (editable, no mueve stock) → `RECIBIDA` (un `INGRESO_COMPRA` por ítem con su costo, `Variante.ultimoCosto` = costo de la compra y, si se elige, el precio del proveedor = costo pagado) → `ANULADA` (si estaba recibida, un `DEVOLUCION_PROVEEDOR` por ítem; falla completa si ya no hay stock en el galpón; no revierte costos ni precios). Los totales se calculan en el servidor y la base verifica que cierren con los ítems. Costos y totales solo los ven los dueños o quien tiene `ver` en `COMPRAS`.
+- **CompraItem**: un renglón por **sabor** (`varianteId`) con cantidad y costo unitario. Lleva `productoId` desnormalizado (igual a `variante.productoId`, verificado por trigger) para comparar con los precios de `ProveedorProducto`, que son por producto: si una compra trae varios sabores del mismo producto con costos distintos, el precio del proveedor queda con el del último ítem cargado. El costo sugerido al cargar es el precio en pesos del proveedor para el producto o, si no tiene, el `ultimoCosto` del sabor (`costoSugerido()` en `compra.service.ts`).
 
 ### Ventas y devoluciones
 
 - **Venta**: cabecera con depósito, cliente opcional, vendedor, totales, costo congelado (`costoTotal`) y ganancia bruta. Se cobra **completa con un único medio de pago** (`medioPago`, obligatorio al confirmar). `redondeo` es siempre cero o negativo (a favor del cliente). Una venta confirmada no se edita: se anula, registrando quién, cuándo y por qué, y el stock vuelve al depósito.
-- **VentaItem**: renglones con precio y costo congelados al momento de vender y descuento por ítem. Costo y ganancia solo se muestran a los dueños.
+- **VentaItem**: renglones con precio y costo congelados al momento de vender y descuento por ítem. El precio es el efectivo del sabor (propio o del producto); el costo es un **snapshot** de `Variante.ultimoCosto` (0 si el sabor no tuvo compras; `costoParaVenta()` en `src/lib/precios.ts`), así la ganancia de una venta no cambia con compras posteriores. Costo y ganancia solo se muestran a los dueños.
 - **Devolucion**: devolución vinculada a una venta, con depósito de reingreso, motivo y número correlativo por panel. No tiene campos económicos: queda reservada para las devoluciones por garantía (módulo en preparación). Inmutable.
 
 ## Invariantes garantizadas por la base
@@ -755,9 +789,9 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Aislamiento entre paneles
 
 - Toda tabla de negocio tiene `panelId NOT NULL` con FK a `Panel` y `DEFAULT current_setting('app.panel_id', true)`. Nadie setea esa variable, así que el default es `NULL`: un `INSERT` que olvide el panel **falla** por `NOT NULL` en vez de guardar una fila huérfana. (En la app, `dbPara(panelId)` completa el panel en cada create.)
-- `fn_verificar_mismo_panel` (triggers `trg_panel_*`) verifica que cada FK apunte a una fila **del mismo panel**: producto → categoría y marca; variante → producto; código alternativo → variante; stock y movimiento → variante y depósito; compra → proveedor y depósito; ítems → su documento y su variante; venta → cliente y depósito; devolución → venta y depósito; transferencia → depósitos de origen y destino.
+- `fn_verificar_mismo_panel` (triggers `trg_panel_*`) verifica que cada FK apunte a una fila **del mismo panel**: producto → categoría y marca; variante → producto; precio de proveedor → proveedor y producto; código alternativo → variante; stock y movimiento → variante y depósito; compra → proveedor y depósito; ítems → su documento y su variante; venta → cliente y depósito; devolución → venta y depósito; transferencia → depósitos de origen y destino.
 - `panelId` **no se puede cambiar** en ninguna tabla de negocio (el mismo trigger lo rechaza en `UPDATE`).
-- Unicidades **por panel**: nombre de depósito, categoría y marca; producto por (nombre, marca); SKU; código alternativo; número de venta, compra, transferencia y devolución; clave de configuración; (panel, entidad) de secuencia. Índices únicos parciales por panel: un solo depósito principal; código de barras principal, CUIT de proveedor, documento y teléfono de cliente entre los no borrados.
+- Unicidades **por panel**: nombre de depósito, categoría y marca; producto por (marca, modelo, `especificacionNorm`); sabor por (producto, nombre); precio por (proveedor, producto); SKU; código alternativo; número de venta, compra, transferencia y devolución; clave de configuración; (panel, entidad) de secuencia. Índices únicos parciales por panel: un solo depósito principal; código de barras principal, teléfono de proveedor, documento y teléfono de cliente entre los no borrados.
 - Código de barras único dentro del panel entre `Variante.codigoBarras` y `CodigoBarrasAlternativo.codigo` (trigger con advisory lock por panel y código, porque un índice no abarca dos tablas). El mismo EAN puede existir en dos paneles.
 - `PermisoUsuario.modulo` nunca es `USUARIOS` ni `CONFIGURACION` (son globales, solo para dueños).
 
@@ -784,18 +818,24 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Catálogo
 
 - Nombres no vacíos en usuarios, depósitos, categorías, marcas, productos y variantes.
-- Precios y stock mínimo ≥ 0. Códigos de barras de 4 a 64 caracteres alfanuméricos o guiones.
-- Todo producto tiene al menos una variante; uno sin variantes tiene exactamente una «Único» (diferido).
+- Precios y stock mínimo ≥ 0: `Producto.precioVenta` (obligatorio), `Variante.precioVenta` y `Variante.ultimoCosto` (nulos o ≥ 0), `ProveedorProducto.precio`. Códigos de barras de 4 a 64 caracteres alfanuméricos o guiones.
+- Todo producto no borrado tiene al menos una variante (sabor) no borrada (trigger diferido `trg_producto_variantes`).
+- Todo producto tiene marca (`marcaId NOT NULL`); la categoría es opcional.
+- `nombreCompleto` y `especificacionNorm` los calcula la base en cada `INSERT`/`UPDATE` de `Producto` (trigger `trg_producto_derivados`, que además colapsa espacios en modelo y especificación) y se recalculan al renombrar la marca (`trg_marca_renombrada`); la marca «Sin marca» no aparece en el nombre. Lo que la app mande en esas columnas se pisa.
 - No se desactiva el depósito principal ni un depósito con stock; no se desactiva una categoría o marca con productos activos.
 
-### Clientes
+### Clientes y proveedores
 
 - `Cliente.telefono` es nulo o cumple `^\+54[0-9]{6,13}$` (CHECK `Cliente_telefono_chk`).
 - Teléfono y documento únicos por panel entre los clientes no borrados.
+- `Proveedor.telefono` es nulo o cumple el mismo formato (CHECK `Proveedor_telefono_chk`) y es único por panel entre los proveedores no borrados (índice parcial `proveedor_telefono_unico`).
+- `Proveedor.nombreTienda` no vacío (CHECK `Proveedor_nombreTienda_chk`).
+- `ProveedorProducto.precio ≥ 0` y una sola fila por (panel, proveedor, producto).
 
 ### Compras y ventas
 
 - Totales: `total = subtotal − descuento` en compras; en ventas, `total = subtotal − descuento + redondeo` con `redondeo ≤ 0` y `gananciaBruta = total − costoTotal`; subtotal de cada ítem igual a cantidad × precio (menos descuento en ventas). Al COMMIT se verifica que los totales de la cabecera coincidan con la suma de ítems y que el documento tenga ítems.
+- `CompraItem.productoId` es siempre el producto de su variante (trigger `trg_compra_item_producto`).
 - Una venta que no está en borrador tiene medio de pago (CHECK `Venta_medioPago_chk`).
 - Venta anulada ⇔ tiene `anuladaAt` y `anuladaPorId`.
 - Transferencias: origen distinto de destino; `completadaAt` coherente con el estado; al menos un ítem.

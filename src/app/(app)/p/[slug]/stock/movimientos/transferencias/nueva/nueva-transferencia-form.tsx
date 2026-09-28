@@ -4,7 +4,8 @@ import { ArrowLeftRight, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { VariantePicker, type VarianteBuscada } from "@/components/catalogo/variante-picker";
+import { VariantePicker } from "@/components/catalogo/variante-picker";
+import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { crearTransferenciaAction, variantesPorIdAction } from "../../actions";
 
 interface Item {
-  variante: VarianteBuscada;
+  variante: VarianteEncontrada;
   cantidad: string;
 }
 
@@ -34,7 +35,7 @@ export function NuevaTransferenciaForm({
   depositos: { id: string; nombre: string }[];
   origenInicial: string;
   destinoInicial: string;
-  precargadas: VarianteBuscada[];
+  precargadas: VarianteEncontrada[];
 }) {
   const router = useRouter();
   const ruta = useRutaPanel();
@@ -47,26 +48,31 @@ export function NuevaTransferenciaForm({
   const [notas, setNotas] = useState("");
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [enviando, setEnviando] = useState(false);
-  const ids = useMemo(() => new Set(items.map((i) => i.variante.id)), [items]);
+  const ids = useMemo(() => new Set(items.map((i) => i.variante.varianteId)), [items]);
 
   async function cambiarOrigen(id: string) {
     setOrigen(id);
     if (id === destino) setDestino(depositos.find((d) => d.id !== id)?.id ?? "");
     if (items.length === 0) return;
-    const r = await variantesPorIdAction({ ids: items.map((i) => i.variante.id), depositoId: id });
+    const r = await variantesPorIdAction({
+      ids: items.map((i) => i.variante.varianteId),
+      depositoId: id,
+    });
     if (r.ok) {
-      const porId = new Map(r.data.map((v) => [v.id, v]));
+      const porId = new Map(r.data.map((v) => [v.varianteId, v]));
       setItems((its) =>
-        its.map((i) => ({ ...i, variante: porId.get(i.variante.id) ?? i.variante })),
+        its.map((i) => ({ ...i, variante: porId.get(i.variante.varianteId) ?? i.variante })),
       );
     }
   }
 
-  function agregar(v: VarianteBuscada) {
+  function agregar(v: VarianteEncontrada) {
     setItems((its) =>
-      its.some((i) => i.variante.id === v.id)
+      its.some((i) => i.variante.varianteId === v.varianteId)
         ? its.map((i) =>
-            i.variante.id === v.id ? { ...i, cantidad: String((Number(i.cantidad) || 0) + 1) } : i,
+            i.variante.varianteId === v.varianteId
+              ? { ...i, cantidad: String((Number(i.cantidad) || 0) + 1) }
+              : i,
           )
         : [...its, { variante: v, cantidad: "1" }],
     );
@@ -76,8 +82,9 @@ export function NuevaTransferenciaForm({
   const escaner = useEscanerVariantes({
     onVariante: (v) => void agregarPorId(v.varianteId),
     validar: (v) => {
-      const enOrigen = v.stock.find((s) => s.depositoId === origen)?.cantidad ?? 0;
-      const yaCargadas = Number(items.find((i) => i.variante.id === v.varianteId)?.cantidad) || 0;
+      const enOrigen = v.stockPorDeposito.find((s) => s.depositoId === origen)?.cantidad ?? 0;
+      const yaCargadas =
+        Number(items.find((i) => i.variante.varianteId === v.varianteId)?.cantidad) || 0;
       if (enOrigen <= 0) return `Sin stock en ${depositos.find((d) => d.id === origen)?.nombre}`;
       if (yaCargadas >= enOrigen)
         return `Solo hay ${enOrigen} en ${depositos.find((d) => d.id === origen)?.nombre}`;
@@ -98,7 +105,7 @@ export function NuevaTransferenciaForm({
       depositoOrigenId: origen,
       depositoDestinoId: destino,
       notas,
-      items: items.map((i) => ({ varianteId: i.variante.id, cantidad: i.cantidad })),
+      items: items.map((i) => ({ varianteId: i.variante.varianteId, cantidad: i.cantidad })),
     });
     setEnviando(false);
     if (!r.ok) {
@@ -164,19 +171,19 @@ export function NuevaTransferenciaForm({
         ) : (
           <ul className="flex flex-col gap-2" aria-label="Productos a transferir">
             {items.map((it, i) => {
-              const disponible = it.variante.stockDeposito ?? 0;
+              const disponible = it.variante.stockEnDeposito ?? 0;
               const excede = Number(it.cantidad) > disponible;
               const error = errores[`items.${i}.cantidad`];
               return (
                 <li
-                  key={it.variante.id}
+                  key={it.variante.varianteId}
                   className={cn(
                     "bg-surface flex items-center gap-3 rounded-2xl border p-3",
                     excede ? "border-danger/50" : "border-border",
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{it.variante.nombreCompleto}</p>
+                    <p className="font-medium">{it.variante.titulo}</p>
                     <p className={cn("text-xs", excede ? "text-danger" : "text-muted")}>
                       Disponible en origen: <strong className="tabular-nums">{disponible}</strong>
                       {excede && " — no alcanza"}
@@ -186,12 +193,12 @@ export function NuevaTransferenciaForm({
                   <input
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    aria-label={`Cantidad de ${it.variante.nombreCompleto}`}
+                    aria-label={`Cantidad de ${it.variante.titulo}`}
                     value={it.cantidad}
                     onChange={(e) =>
                       setItems((its) =>
                         its.map((x) =>
-                          x.variante.id === it.variante.id
+                          x.variante.varianteId === it.variante.varianteId
                             ? { ...x, cantidad: e.target.value.replace(/\D/g, "") }
                             : x,
                         ),
@@ -208,9 +215,11 @@ export function NuevaTransferenciaForm({
                     size="icon"
                     className="text-danger"
                     onClick={() =>
-                      setItems((its) => its.filter((x) => x.variante.id !== it.variante.id))
+                      setItems((its) =>
+                        its.filter((x) => x.variante.varianteId !== it.variante.varianteId),
+                      )
                     }
-                    aria-label={`Quitar ${it.variante.nombreCompleto}`}
+                    aria-label={`Quitar ${it.variante.titulo}`}
                   >
                     <Trash2 strokeWidth={1.75} />
                   </Button>

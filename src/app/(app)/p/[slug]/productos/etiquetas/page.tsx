@@ -30,8 +30,8 @@ export default async function EtiquetasPage({ searchParams }: { searchParams: Pr
     : [];
   const idsIniciales = texto(params.variantes).split(",").filter(Boolean).slice(0, 300);
   const preseleccion = (await obtenerVariantesPorId(ctx, idsIniciales)).map((v) => ({
-    varianteId: v.id,
-    nombreCompleto: v.nombreCompleto,
+    varianteId: v.varianteId,
+    nombreCompleto: v.titulo,
     codigoBarras: v.codigoBarras,
   }));
 

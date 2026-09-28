@@ -44,7 +44,7 @@ interface EsquemaOffline extends DBSchema {
 }
 
 export const NOMBRE_DB = "gestion-offline";
-const VERSION_DB = 2;
+const VERSION_DB = 3;
 let conexion: Promise<IDBPDatabase<EsquemaOffline>> | null = null;
 
 export const claveCodigo = (panelId: string, codigo: string) => `${panelId}|${codigo}`;
@@ -52,7 +52,7 @@ export const claveCodigo = (panelId: string, codigo: string) => `${panelId}|${co
 export function abrirDb(): Promise<IDBPDatabase<EsquemaOffline>> {
   conexion ??= openDB<EsquemaOffline>(NOMBRE_DB, VERSION_DB, {
     upgrade(db) {
-      // v1 (un solo catálogo + cola) no sirve más: se rehace de cero.
+      // Versiones anteriores (otra forma de los datos) no sirven: se rehace de cero.
       for (const store of [...db.objectStoreNames]) db.deleteObjectStore(store);
       const variantes = db.createObjectStore("variantes", { keyPath: "clave" });
       variantes.createIndex("porCodigo", "codigosPanel", { multiEntry: true });

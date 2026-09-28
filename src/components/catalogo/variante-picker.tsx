@@ -3,13 +3,15 @@
 import { Loader2, Search } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
-import { buscarVariantesAction } from "@/app/(app)/p/[slug]/stock/movimientos/actions";
 import { controlClass } from "@/components/ui/field";
+import { buscarVariantesCatalogoAction } from "@/features/scanner/actions";
+import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { VarianteBuscada } from "@/server/services/producto.service";
 
-export type { VarianteBuscada };
+export type { VarianteEncontrada };
+/** Lo que devuelve el buscador: un sabor del panel con precio efectivo y stock por depósito. */
+export type VarianteBuscada = VarianteEncontrada;
 
 interface VariantePickerProps {
   onSelect: (v: VarianteBuscada) => void;
@@ -19,6 +21,8 @@ interface VariantePickerProps {
   /** Variantes ya agregadas (se muestran marcadas). */
   yaAgregadas?: ReadonlySet<string>;
   placeholder?: string;
+  /** Texto con el que arranca el buscador (ej: el producto recién creado). */
+  valorInicial?: string;
   autoFocus?: boolean;
   disabled?: boolean;
   id?: string;
@@ -28,7 +32,7 @@ interface VariantePickerProps {
 const pareceCodigo = (q: string) => /^[0-9A-Za-z-]{4,64}$/.test(q) && /\d/.test(q);
 
 /**
- * Buscador de variantes por nombre, sabor, SKU o código de barras.
+ * Buscador de sabores del panel por nombre completo del producto, sabor, SKU o código.
  * Pensado para la pistola lectora (keyboard wedge): escribe el código + Enter;
  * si hay una sola coincidencia se agrega directo y el foco queda en el input
  * para el siguiente escaneo.
@@ -38,7 +42,8 @@ export function VariantePicker({
   depositoId,
   soloConStock,
   yaAgregadas,
-  placeholder = "Buscar por nombre, sabor, SKU o código…",
+  placeholder = "Buscar por producto, sabor, SKU o código…",
+  valorInicial = "",
   autoFocus,
   disabled,
   id,
@@ -47,7 +52,7 @@ export function VariantePicker({
   const autoId = useId();
   const inputId = id ?? autoId;
   const listaId = `${inputId}-lista`;
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(valorInicial);
   const [resultados, setResultados] = useState<VarianteBuscada[]>([]);
   const [abierto, setAbierto] = useState(false);
   const [cargando, setCargando] = useState(false);
@@ -60,7 +65,7 @@ export function VariantePicker({
   async function buscar(texto: string) {
     const n = ++pedido.current;
     setCargando(true);
-    const r = await buscarVariantesAction({
+    const r = await buscarVariantesCatalogoAction({
       q: texto,
       depositoId,
       soloConStockEnDeposito: soloConStock,
@@ -125,7 +130,7 @@ export function VariantePicker({
     }
   }
 
-  const stockDe = (v: VarianteBuscada) => (depositoId ? v.stockDeposito : v.stockTotal) ?? 0;
+  const stockDe = (v: VarianteBuscada) => (depositoId ? v.stockEnDeposito : v.stockTotal) ?? 0;
 
   return (
     <div className={cn("relative", className)}>
@@ -174,10 +179,10 @@ export function VariantePicker({
             <li className="text-muted px-3 py-3 text-sm">Sin resultados para “{q.trim()}”.</li>
           ) : (
             resultados.map((v, i) => {
-              const agregada = yaAgregadas?.has(v.id);
+              const agregada = yaAgregadas?.has(v.varianteId);
               return (
                 <li
-                  key={v.id}
+                  key={v.varianteId}
                   id={`${listaId}-${i}`}
                   role="option"
                   aria-selected={i === resaltado}
@@ -193,7 +198,7 @@ export function VariantePicker({
                 >
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate text-sm font-medium">
-                      {v.nombreCompleto}
+                      {v.titulo}
                       {agregada && (
                         <span className="text-primary ml-2 text-xs font-normal">(ya agregado)</span>
                       )}

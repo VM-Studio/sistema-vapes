@@ -14,13 +14,13 @@ import type {
   FiltrosMovimientos,
   IngresoManual,
 } from "@/lib/validations/movimiento";
-import { formatearIdVenta, rutaPanel } from "@/lib/paneles";
+import { formatearIdCompra, formatearIdVenta, rutaPanel } from "@/lib/paneles";
 import type { CrearTransferencia } from "@/lib/validations/transferencia";
+import { nombreConSabor } from "@/lib/ventas-ui";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { dbPara, enTransaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { nombreCompleto } from "@/server/services/producto.service";
 import {
   bloquearStock,
   registrarMovimiento,
@@ -144,7 +144,7 @@ async function resolverReferencias(
     mapa.set(`COMPRA:${c.id}`, {
       tipo: "COMPRA",
       id: c.id,
-      etiqueta: `Compra #${c.numero}`,
+      etiqueta: `Compra ${formatearIdCompra(panel.slug, c.numero)}`,
       href: ruta(`/compras/${c.id}`),
     });
   for (const m of movs) {
@@ -185,7 +185,7 @@ export async function listarMovimientos(
             nombre: true,
             sku: true,
             productoId: true,
-            producto: { select: { nombre: true, tieneVariantes: true } },
+            producto: { select: { nombreCompleto: true } },
           },
         },
         deposito: { select: { nombre: true } },
@@ -204,11 +204,7 @@ export async function listarMovimientos(
       stockPosterior: m.stockPosterior,
       varianteId: m.varianteId,
       productoId: m.variante.productoId,
-      nombre: nombreCompleto(
-        m.variante.producto.nombre,
-        m.variante.nombre,
-        m.variante.producto.tieneVariantes,
-      ),
+      nombre: nombreConSabor(m.variante.producto.nombreCompleto, m.variante.nombre),
       sku: m.variante.sku,
       depositoId: m.depositoId,
       deposito: m.deposito.nombre,
@@ -246,8 +242,8 @@ async function variantesVivas(tx: Tx, ids: string[]) {
     select: {
       id: true,
       nombre: true,
-      precioCosto: true,
-      producto: { select: { nombre: true, tieneVariantes: true } },
+      ultimoCosto: true,
+      producto: { select: { nombreCompleto: true } },
     },
   });
   if (vs.length !== new Set(ids).size)
@@ -257,7 +253,7 @@ async function variantesVivas(tx: Tx, ids: string[]) {
       v.id,
       {
         ...v,
-        nombreCompleto: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
+        nombreCompleto: nombreConSabor(v.producto.nombreCompleto, v.nombre),
       },
     ]),
   );
@@ -280,8 +276,8 @@ const porVariante = <T extends { varianteId: string }>(items: T[]) =>
 /**
  * Carga inicial o entrada sin proveedor. Una transacción, un movimiento
  * INGRESO_MANUAL por ítem. Costos: solo si quien carga es dueño; si
- * `actualizarCosto` y el costo informado difiere del precioCosto actual, lo
- * actualiza. Si no es dueño, se ignoran y el movimiento lleva el costo vigente.
+ * `actualizarCosto` y el costo informado difiere del último costo de la
+ * variante, lo actualiza (es el que tomarán las próximas ventas). Si no es dueño, se ignoran y el movimiento lleva el costo vigente.
  */
 export async function registrarIngresoManual(
   ctx: Ctx,
@@ -310,27 +306,27 @@ export async function registrarIngresoManual(
           varianteId: item.varianteId,
           depositoId: input.depositoId,
           cantidad: item.cantidad,
-          costoUnitario: costoInformado ?? v.precioCosto,
+          costoUnitario: costoInformado ?? v.ultimoCosto,
           motivo: input.motivo,
           usuarioId: ctx.usuarioId,
         });
         if (
           input.actualizarCosto &&
           costoInformado !== undefined &&
-          !new Prisma.Decimal(costoInformado).equals(v.precioCosto)
+          (v.ultimoCosto === null || !new Prisma.Decimal(costoInformado).equals(v.ultimoCosto))
         ) {
           await tx.variante.update({
             where: { id: item.varianteId },
-            data: { precioCosto: costoInformado },
+            data: { ultimoCosto: costoInformado },
           });
           await registrarAuditoria(tx, {
             usuarioId: ctx.usuarioId,
             accion: AccionAuditoria.UPDATE,
             entidad: "Variante",
             entidadId: item.varianteId,
-            datosAntes: { precioCosto: v.precioCosto.toFixed(2) },
+            datosAntes: { ultimoCosto: v.ultimoCosto?.toFixed(2) ?? null },
             datosDespues: {
-              precioCosto: new Prisma.Decimal(costoInformado).toFixed(2),
+              ultimoCosto: new Prisma.Decimal(costoInformado).toFixed(2),
               motivo: `Ingreso manual: ${input.motivo}`,
             },
             meta: ctx.meta,
@@ -541,19 +537,19 @@ export async function listarStockParaRecuento(
         ? { activo: true }
         : { stocks: { some: { depositoId, cantidad: { gt: 0 } } } }),
     },
-    orderBy: [{ producto: { nombre: "asc" } }, { nombre: "asc" }],
+    orderBy: [{ producto: { nombreCompleto: "asc" } }, { nombre: "asc" }],
     select: {
       id: true,
       nombre: true,
       sku: true,
       codigoBarras: true,
-      producto: { select: { nombre: true, tieneVariantes: true } },
+      producto: { select: { nombreCompleto: true } },
       stocks: { where: { depositoId }, select: { cantidad: true } },
     },
   });
   return variantes.map((v) => ({
     varianteId: v.id,
-    nombre: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
+    nombre: nombreConSabor(v.producto.nombreCompleto, v.nombre),
     sku: v.sku,
     codigoBarras: v.codigoBarras,
     stockSistema: v.stocks[0]?.cantidad ?? 0,
@@ -651,7 +647,7 @@ export async function crearTransferencia(
 /**
  * Completa la transferencia: por cada ítem, transferirStock (SALIDA + ENTRADA).
  * Transacción Serializable del panel. Si falta stock en cualquier ítem, falla
- * completa con el detalle de TODOS los faltantes y queda PENDIENTE.
+ * completa con el detalle de todos los faltantes y queda PENDIENTE.
  */
 export async function completarTransferencia(
   ctx: Ctx,
@@ -679,7 +675,7 @@ export async function completarTransferencia(
         items.map((i) => i.varianteId),
       );
 
-      // Bloquear todo primero (orden fijo) y reportar TODOS los faltantes juntos.
+      // Bloquear todo primero (orden fijo) y reportar todos los faltantes juntos.
       for (const i of items)
         await bloquearStock(tx, ctx.panelId, i.varianteId, [
           t.depositoOrigenId,
@@ -868,7 +864,7 @@ export async function obtenerTransferencia(ctx: Ctx, id: string): Promise<Transf
             select: {
               nombre: true,
               sku: true,
-              producto: { select: { nombre: true, tieneVariantes: true } },
+              producto: { select: { nombreCompleto: true } },
               stocks: { select: { depositoId: true, cantidad: true } },
             },
           },
@@ -892,11 +888,7 @@ export async function obtenerTransferencia(ctx: Ctx, id: string): Promise<Transf
     unidades: t.items.reduce((a, i) => a + i.cantidad, 0),
     items: t.items.map((i) => ({
       varianteId: i.varianteId,
-      nombre: nombreCompleto(
-        i.variante.producto.nombre,
-        i.variante.nombre,
-        i.variante.producto.tieneVariantes,
-      ),
+      nombre: nombreConSabor(i.variante.producto.nombreCompleto, i.variante.nombre),
       sku: i.variante.sku,
       cantidad: i.cantidad,
       stockOrigen:

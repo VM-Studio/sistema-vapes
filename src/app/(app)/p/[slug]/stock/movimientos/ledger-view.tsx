@@ -5,7 +5,8 @@ import { History, X } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { VariantePicker, type VarianteBuscada } from "@/components/catalogo/variante-picker";
+import { VariantePicker } from "@/components/catalogo/variante-picker";
+import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { Badge } from "@/components/ui/badge";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
@@ -31,7 +32,7 @@ interface Props {
   /** Selector Global / depósito (lo arma el servidor). */
   selector: ReactNode;
   usuarios: { id: string; nombre: string; activo: boolean }[];
-  varianteFiltro: VarianteBuscada | null;
+  varianteFiltro: VarianteEncontrada | null;
   productoFiltro: { id: string; nombre: string } | null;
 }
 
@@ -158,8 +159,7 @@ export function LedgerView({
             {varianteFiltro || productoFiltro ? (
               <span className="border-primary bg-primary-soft text-primary-soft-foreground flex h-11 items-center justify-between gap-2 rounded-lg border px-3 text-sm">
                 <span className="truncate">
-                  {varianteFiltro?.nombreCompleto ??
-                    `${productoFiltro?.nombre} (todas las variantes)`}
+                  {varianteFiltro?.titulo ?? `${productoFiltro?.nombre} (todas las variantes)`}
                 </span>
                 <button
                   type="button"
@@ -173,7 +173,7 @@ export function LedgerView({
             ) : (
               <VariantePicker
                 placeholder="Filtrar por producto…"
-                onSelect={(v) => actualizar({ varianteId: v.id })}
+                onSelect={(v) => actualizar({ varianteId: v.varianteId })}
               />
             )}
           </div>

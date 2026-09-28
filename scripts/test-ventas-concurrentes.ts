@@ -48,7 +48,8 @@ async function main() {
   };
   const deposito = await db.deposito.findFirstOrThrow({ where: { esPrincipal: true } });
   const variante = await db.variante.findFirstOrThrow({
-    where: { nombre: "Grape Ice", producto: { nombre: "Ignite V80" } },
+    where: { nombre: "Grape Ice", producto: { nombre: "V80", marca: { nombre: "Ignite" } } },
+    include: { producto: { select: { nombreCompleto: true } } },
   });
   const stockActual = async () =>
     (
@@ -93,7 +94,7 @@ async function main() {
 
   // ---------------------------------------------------------------------------
   console.log(
-    `\n1) Ignite V80 — Grape Ice con stock 5 en ${deposito.nombre}: 10 confirmaciones simultáneas`,
+    `\n1) ${variante.producto.nombreCompleto} — ${variante.nombre} con stock 5 en ${deposito.nombre}: 10 confirmaciones simultáneas`,
   );
   await dejarStock(5);
   check((await stockActual()) === 5, "stock inicial 5");
@@ -200,7 +201,7 @@ async function main() {
     ) x`;
   check(Number(duplicados[0]?.n) === 0, "ningún número de venta repetido en el panel");
 
-  console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} verificación(es) fallaron`);
+  console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);
   process.exitCode = fallos === 0 ? 0 : 1;
 }
 

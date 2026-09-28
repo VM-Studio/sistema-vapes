@@ -27,3 +27,17 @@ export const ETIQUETA_MEDIO_PAGO: Record<MedioPago, string> = {
   MERCADOPAGO: "MercadoPago",
   OTRO: "Otro",
 };
+
+/** Nombre de la variante de un producto sin sabor (la UI no lo muestra como sabor). */
+export const SABOR_UNICO = "Único";
+
+/** El sabor para mostrar: null si es la variante "Único" de un producto sin sabor. */
+export function saborVisible(sabor: string | null | undefined): string | null {
+  return !sabor || sabor.trim() === "" || sabor === SABOR_UNICO ? null : sabor;
+}
+
+/** "Elf Bar BC 5000 — Mango Ice", o solo el nombre completo del producto si no tiene sabor. */
+export function nombreConSabor(nombreCompleto: string, sabor: string | null | undefined): string {
+  const s = saborVisible(sabor);
+  return s ? `${nombreCompleto} — ${s}` : nombreCompleto;
+}

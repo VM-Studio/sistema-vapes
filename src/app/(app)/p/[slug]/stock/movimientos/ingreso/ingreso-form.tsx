@@ -4,7 +4,8 @@ import { PackagePlus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { VariantePicker, type VarianteBuscada } from "@/components/catalogo/variante-picker";
+import { VariantePicker } from "@/components/catalogo/variante-picker";
+import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,7 +25,7 @@ import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { ingresoManualAction, variantesPorIdAction } from "../actions";
 
 interface Item {
-  variante: VarianteBuscada;
+  variante: VarianteEncontrada;
   cantidad: string;
   costo: string;
 }
@@ -40,7 +41,7 @@ export function IngresoForm({
 }: {
   depositos: { id: string; nombre: string }[];
   depositoInicial: string;
-  precargadas: VarianteBuscada[];
+  precargadas: VarianteEncontrada[];
   /** Solo dueños cargan (y ven) costos. */
   conCostos: boolean;
 }) {
@@ -56,16 +57,18 @@ export function IngresoForm({
   const [preguntarCosto, setPreguntarCosto] = useState<Item[] | null>(null);
   const [ultimo, setUltimo] = useState<{ unidades: number; deposito: string } | null>(null);
 
-  const ids = useMemo(() => new Set(items.map((i) => i.variante.id)), [items]);
+  const ids = useMemo(() => new Set(items.map((i) => i.variante.varianteId)), [items]);
   const unidades = items.reduce((a, i) => a + (Number(i.cantidad) || 0), 0);
 
-  function agregar(v: VarianteBuscada) {
+  function agregar(v: VarianteEncontrada) {
     setUltimo(null);
     setItems((its) =>
-      its.some((i) => i.variante.id === v.id)
+      its.some((i) => i.variante.varianteId === v.varianteId)
         ? // Escaneo repetido = una unidad más.
           its.map((i) =>
-            i.variante.id === v.id ? { ...i, cantidad: String((Number(i.cantidad) || 0) + 1) } : i,
+            i.variante.varianteId === v.varianteId
+              ? { ...i, cantidad: String((Number(i.cantidad) || 0) + 1) }
+              : i,
           )
         : [...its, { variante: v, cantidad: "1", costo: "" }],
     );
@@ -85,17 +88,20 @@ export function IngresoForm({
   async function cambiarDeposito(id: string) {
     setDepositoId(id);
     if (items.length === 0) return;
-    const r = await variantesPorIdAction({ ids: items.map((i) => i.variante.id), depositoId: id });
+    const r = await variantesPorIdAction({
+      ids: items.map((i) => i.variante.varianteId),
+      depositoId: id,
+    });
     if (r.ok) {
-      const porId = new Map(r.data.map((v) => [v.id, v]));
+      const porId = new Map(r.data.map((v) => [v.varianteId, v]));
       setItems((its) =>
-        its.map((i) => ({ ...i, variante: porId.get(i.variante.id) ?? i.variante })),
+        its.map((i) => ({ ...i, variante: porId.get(i.variante.varianteId) ?? i.variante })),
       );
     }
   }
 
   const actualizarItem = (id: string, cambios: Partial<Item>) =>
-    setItems((its) => its.map((i) => (i.variante.id === id ? { ...i, ...cambios } : i)));
+    setItems((its) => its.map((i) => (i.variante.varianteId === id ? { ...i, ...cambios } : i)));
 
   const costoNum = (s: string) => Number(s.replace(",", "."));
 
@@ -103,7 +109,10 @@ export function IngresoForm({
     setErrores({});
     const conCostoDistinto = conCostos
       ? items.filter(
-          (i) => i.costo.trim() !== "" && costoNum(i.costo) !== Number(i.variante.precioCosto),
+          (i) =>
+            i.costo.trim() !== "" &&
+            (i.variante.ultimoCosto === null ||
+              costoNum(i.costo) !== Number(i.variante.ultimoCosto)),
         )
       : [];
     if (conCostoDistinto.length > 0) setPreguntarCosto(conCostoDistinto);
@@ -118,7 +127,7 @@ export function IngresoForm({
       motivo,
       actualizarCosto,
       items: items.map((i) => ({
-        varianteId: i.variante.id,
+        varianteId: i.variante.varianteId,
         cantidad: i.cantidad,
         ...(conCostos ? { costoUnitario: i.costo.replace(",", ".") } : {}),
       })),
@@ -208,17 +217,17 @@ export function IngresoForm({
           <ul className="flex flex-col gap-2" aria-label="Productos a ingresar">
             {items.map((it, i) => (
               <li
-                key={it.variante.id}
+                key={it.variante.varianteId}
                 className={cn(
                   "border-border bg-surface grid grid-cols-2 items-start gap-3 rounded-2xl border p-3 md:items-center",
                   conCostos ? "md:grid-cols-[1fr_7rem_9rem_auto]" : "md:grid-cols-[1fr_7rem_auto]",
                 )}
               >
                 <div className="col-span-2 min-w-0 md:col-span-1">
-                  <p className="font-medium">{it.variante.nombreCompleto}</p>
+                  <p className="font-medium">{it.variante.titulo}</p>
                   <p className="text-muted text-xs">
                     {it.variante.sku} · en depósito:{" "}
-                    <strong className="tabular-nums">{it.variante.stockDeposito ?? 0}</strong>
+                    <strong className="tabular-nums">{it.variante.stockEnDeposito ?? 0}</strong>
                   </p>
                 </div>
                 <label className="text-muted flex flex-col gap-1 text-xs">
@@ -226,10 +235,12 @@ export function IngresoForm({
                   <input
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    aria-label={`Cantidad de ${it.variante.nombreCompleto}`}
+                    aria-label={`Cantidad de ${it.variante.titulo}`}
                     value={it.cantidad}
                     onChange={(e) =>
-                      actualizarItem(it.variante.id, { cantidad: soloEntero(e.target.value) })
+                      actualizarItem(it.variante.varianteId, {
+                        cantidad: soloEntero(e.target.value),
+                      })
                     }
                     aria-invalid={errorItem(i, "cantidad") ? true : undefined}
                     className={cn(
@@ -246,11 +257,17 @@ export function IngresoForm({
                     Costo unitario
                     <input
                       inputMode="decimal"
-                      aria-label={`Costo unitario de ${it.variante.nombreCompleto}`}
-                      placeholder={formatearPesos(it.variante.precioCosto)}
+                      aria-label={`Costo unitario de ${it.variante.titulo}`}
+                      placeholder={
+                        it.variante.ultimoCosto
+                          ? formatearPesos(it.variante.ultimoCosto)
+                          : "Sin costo"
+                      }
                       value={it.costo}
                       onChange={(e) =>
-                        actualizarItem(it.variante.id, { costo: soloDecimal(e.target.value) })
+                        actualizarItem(it.variante.varianteId, {
+                          costo: soloDecimal(e.target.value),
+                        })
                       }
                       aria-invalid={errorItem(i, "costoUnitario") ? true : undefined}
                       className={cn(controlClass, "h-11 text-right tabular-nums")}
@@ -268,9 +285,11 @@ export function IngresoForm({
                     conCostos ? "col-span-2" : "col-span-1",
                   )}
                   onClick={() =>
-                    setItems((its) => its.filter((x) => x.variante.id !== it.variante.id))
+                    setItems((its) =>
+                      its.filter((x) => x.variante.varianteId !== it.variante.varianteId),
+                    )
                   }
-                  aria-label={`Quitar ${it.variante.nombreCompleto}`}
+                  aria-label={`Quitar ${it.variante.titulo}`}
                 >
                   <Trash2 strokeWidth={1.75} />
                 </Button>
@@ -306,8 +325,8 @@ export function IngresoForm({
       <Dialog
         open={preguntarCosto !== null}
         onOpenChange={(o) => !o && setPreguntarCosto(null)}
-        title="¿Actualizar el precio de costo?"
-        description="Estos productos entraron con un costo distinto al que tienen cargado:"
+        title="¿Actualizar el último costo?"
+        description="Estos productos entraron con un costo distinto al último registrado (es el que toman las próximas ventas):"
         footer={
           <>
             <Button variant="secondary" onClick={() => void enviar(false)}>
@@ -319,10 +338,10 @@ export function IngresoForm({
       >
         <ul className="flex flex-col gap-1.5 text-sm">
           {preguntarCosto?.map((i) => (
-            <li key={i.variante.id} className="flex justify-between gap-3">
-              <span className="truncate">{i.variante.nombreCompleto}</span>
+            <li key={i.variante.varianteId} className="flex justify-between gap-3">
+              <span className="truncate">{i.variante.titulo}</span>
               <span className="shrink-0 tabular-nums">
-                {formatearPesos(i.variante.precioCosto)} →{" "}
+                {i.variante.ultimoCosto ? formatearPesos(i.variante.ultimoCosto) : "Sin costo"} →{" "}
                 <strong>{formatearPesos(costoNum(i.costo))}</strong>
               </span>
             </li>

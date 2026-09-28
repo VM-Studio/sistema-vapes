@@ -5,8 +5,9 @@ import { z } from "zod";
 import { normalizarCodigoBarras } from "@/lib/barcode";
 import { aCSV } from "@/lib/csv";
 import { ESTADO_STOCK_UI } from "@/lib/movimientos-ui";
+import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
-import { estadoStock, nombreCompleto, type EstadoStock } from "@/server/services/producto.service";
+import { estadoStock, type EstadoStock } from "@/server/services/producto.service";
 
 /**
  * STOCK DEL PANEL: lectura del stock por depósito y consolidado ("Global",
@@ -61,14 +62,18 @@ export type FiltrosStock = z.output<typeof filtrosStockSchema>;
 export interface FilaStock {
   varianteId: string;
   productoId: string;
+  /** Nombre completo del producto ("Elf Bar BC 5000"). */
   producto: string;
+  /** Nombre de la variante tal cual ("Único" en productos sin sabor). */
   variante: string;
+  /** El sabor para mostrar (null si el producto no tiene sabores). */
+  sabor: string | null;
+  /** Producto + sabor. */
   nombreCompleto: string;
-  tieneVariantes: boolean;
   sku: string;
   codigoBarras: string | null;
-  marca: string | null;
-  categoria: string;
+  marca: string;
+  categoria: string | null;
   stockMinimo: number;
   /** Cantidad por depositoId (depósitos activos del panel; 0 si no hay stock). */
   porDeposito: Record<string, number>;
@@ -102,9 +107,8 @@ const filaSqlSchema = z.object({
   total: z.number().int(),
   cantidad: z.number().int(),
   por_deposito: z.record(z.string(), z.number().int()),
-  tiene_variantes: z.boolean(),
-  marca: z.string().nullable(),
-  categoria: z.string(),
+  marca: z.string(),
+  categoria: z.string().nullable(),
   total_resultados: z.union([z.bigint(), z.number()]).transform(Number),
 });
 const filasSqlSchema = z.array(filaSqlSchema);
@@ -140,7 +144,7 @@ function construirWhere(ctx: Ctx, f: FiltrosStock): Prisma.Sql {
       .slice(0, 5)
       .map((w) => {
         const patron = `%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-        return Prisma.sql`(p."nombre" ILIKE ${patron} OR v."nombre" ILIKE ${patron} OR v."sku" ILIKE ${patron})`;
+        return Prisma.sql`(p."nombreCompleto" ILIKE ${patron} OR v."nombre" ILIKE ${patron} OR v."sku" ILIKE ${patron})`;
       });
     const porTexto = Prisma.join(texto, " AND ");
     if (pareceCodigo(q)) {
@@ -192,7 +196,6 @@ function selectFilas(f: FiltrosStock): Prisma.Sql {
   return Prisma.sql`
   s.variante_id, s.producto_id, s.producto, s.variante, s.sku, s.codigo_barras,
   s.stock_minimo, s.total, ${expresionCantidad(f.depositoId)} AS cantidad, s.por_deposito,
-  p."tieneVariantes" AS tiene_variantes,
   m."nombre" AS marca, c."nombre" AS categoria`;
 }
 
@@ -200,8 +203,8 @@ const FROM_FILAS = Prisma.sql`
   FROM vw_stock_consolidado s
   JOIN "Variante" v ON v."id" = s.variante_id
   JOIN "Producto" p ON p."id" = s.producto_id
-  JOIN "Categoria" c ON c."id" = p."categoriaId"
-  LEFT JOIN "Marca" m ON m."id" = p."marcaId"`;
+  JOIN "Marca" m ON m."id" = p."marcaId"
+  LEFT JOIN "Categoria" c ON c."id" = p."categoriaId"`;
 
 async function consultar(
   ctx: Ctx,
@@ -248,8 +251,8 @@ function aFila(r: FilaSql, depositos: DepositoStock[]): FilaStock {
     productoId: r.producto_id,
     producto: r.producto,
     variante: r.variante,
-    nombreCompleto: nombreCompleto(r.producto, r.variante, r.tiene_variantes),
-    tieneVariantes: r.tiene_variantes,
+    sabor: saborVisible(r.variante),
+    nombreCompleto: nombreConSabor(r.producto, r.variante),
     sku: r.sku,
     codigoBarras: r.codigo_barras,
     marca: r.marca,
@@ -459,7 +462,7 @@ async function planillaStock(ctx: Ctx, filtros: FiltrosStock): Promise<Planilla>
     titulo: deposito ? `Stock ${deposito.nombre}` : "Stock global",
     encabezado: [
       "Producto",
-      "Variante",
+      "Sabor",
       "SKU",
       "Código de barras",
       "Marca",
@@ -470,11 +473,11 @@ async function planillaStock(ctx: Ctx, filtros: FiltrosStock): Promise<Planilla>
     ],
     filas: filas.map((fila) => [
       fila.producto,
-      fila.tieneVariantes ? fila.variante : "",
+      fila.sabor ?? "",
       fila.sku,
       fila.codigoBarras ?? "",
-      fila.marca ?? "",
-      fila.categoria,
+      fila.marca,
+      fila.categoria ?? "",
       ...(deposito
         ? [fila.cantidad]
         : [...depositos.map((d) => fila.porDeposito[d.id] ?? 0), fila.total]),

@@ -4,39 +4,36 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { DialogoRecibir } from "@/components/compras/dialogo-recibir";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
-import { formatearNumero, formatearPesos } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatearNumero } from "@/lib/format";
+import type { CambioPrecioProveedor } from "@/server/services/compra.service";
 
 import { anularCompraAction, recibirCompraAction } from "../actions";
 
-export interface CambioCosto {
-  nombre: string;
-  antes: string;
-  despues: string;
-}
-
 export function AccionesCompra({
   id,
-  numero,
+  idVisible,
   estado,
   unidades,
   deposito,
-  cambiosDeCosto,
+  proveedor,
+  cambios,
   puedeEditar,
   puedeAnular,
 }: {
   id: string;
-  numero: number;
+  idVisible: string;
   estado: "BORRADOR" | "RECIBIDA" | "ANULADA";
   unidades: number;
   deposito: string;
-  cambiosDeCosto: CambioCosto[];
+  proveedor: string;
+  cambios: CambioPrecioProveedor[];
   puedeEditar: boolean;
   puedeAnular: boolean;
 }) {
@@ -51,16 +48,16 @@ export function AccionesCompra({
 
   if (estado === "ANULADA" || (!puedeEditar && !puedeAnular)) return null;
 
-  async function recibir(actualizarCostos: boolean) {
+  async function recibir(actualizarPrecioProveedor: boolean) {
     setEnviando(true);
-    const r = await recibirCompraAction({ id, actualizarCostos });
+    const r = await recibirCompraAction({ id, actualizarPrecioProveedor });
     setEnviando(false);
     setRecibiendo(false);
     if (!r.ok) return toast.error("No se pudo recibir", r.error.message);
     invalidarResoluciones();
     toast.success(
-      `Compra #${numero} recibida`,
-      `Ingresaron ${formatearNumero(r.data.unidades)} unidades${r.data.costosActualizados ? ` · ${r.data.costosActualizados} costo(s) actualizado(s)` : ""}.`,
+      `Compra ${idVisible} recibida`,
+      `Ingresaron ${formatearNumero(r.data.unidades)} unidades a ${deposito}${r.data.preciosActualizados ? ` · ${r.data.preciosActualizados} precio(s) de ${proveedor} actualizado(s)` : ""}.`,
     );
     router.refresh();
   }
@@ -77,7 +74,7 @@ export function AccionesCompra({
     setAnulando(false);
     invalidarResoluciones();
     toast.success(
-      `Compra #${numero} anulada`,
+      `Compra ${idVisible} anulada`,
       r.data.devoluciones
         ? `${r.data.devoluciones} devolución(es) al proveedor registradas.`
         : undefined,
@@ -104,69 +101,21 @@ export function AccionesCompra({
         </>
       )}
 
-      <Dialog
-        open={recibiendo}
-        onOpenChange={setRecibiendo}
-        title={`Recibir la compra #${numero}`}
-        description={`Ingresan ${formatearNumero(unidades)} unidades a ${deposito}.`}
-        footer={
-          cambiosDeCosto.length > 0 ? (
-            <>
-              <Button variant="secondary" onClick={() => void recibir(false)} loading={enviando}>
-                Recibir sin actualizar costos
-              </Button>
-              <Button onClick={() => void recibir(true)} loading={enviando}>
-                Recibir y actualizar costos
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="secondary" onClick={() => setRecibiendo(false)} disabled={enviando}>
-                Volver
-              </Button>
-              <Button onClick={() => void recibir(false)} loading={enviando}>
-                Recibir
-              </Button>
-            </>
-          )
-        }
-      >
-        {cambiosDeCosto.length > 0 ? (
-          <>
-            <p className="text-sm font-medium">
-              ¿Actualizar los precios de costo con los de esta compra?
-            </p>
-            <ul className="flex max-h-60 flex-col gap-1.5 overflow-y-auto text-sm">
-              {cambiosDeCosto.map((c) => {
-                const antes = Number(c.antes);
-                const despues = Number(c.despues);
-                const pct = antes > 0 ? ((despues - antes) / antes) * 100 : null;
-                return (
-                  <li key={c.nombre} className="flex justify-between gap-3">
-                    <span className="truncate">{c.nombre}</span>
-                    <span className="shrink-0 tabular-nums">
-                      {formatearPesos(antes)} → <strong>{formatearPesos(despues)}</strong>
-                      {pct !== null && (
-                        <span className={cn("ml-1", pct > 0 ? "text-danger" : "text-success")}>
-                          ({pct > 0 ? "+" : ""}
-                          {pct.toFixed(1)}%)
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </>
-        ) : (
-          <p className="text-muted text-sm">Los costos coinciden con los cargados.</p>
-        )}
-      </Dialog>
+      <DialogoRecibir
+        abierto={recibiendo}
+        onCerrar={() => setRecibiendo(false)}
+        proveedor={proveedor}
+        deposito={deposito}
+        unidades={unidades}
+        cambios={cambios}
+        enviando={enviando}
+        onConfirmar={(a) => void recibir(a)}
+      />
 
       <Dialog
         open={anulando}
         onOpenChange={setAnulando}
-        title={`¿Anular la compra #${numero}?`}
+        title={`¿Anular la compra ${idVisible}?`}
         description={
           estado === "RECIBIDA"
             ? `Se registra una devolución al proveedor por cada producto: salen ${formatearNumero(unidades)} unidades de ${deposito}. Si alguna ya no está en stock, no se anula nada.`

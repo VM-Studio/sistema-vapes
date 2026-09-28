@@ -9,14 +9,15 @@ import {
 import { finDelDia, inicioDelDia } from "@/lib/fechas";
 import { formatearPesos } from "@/lib/format";
 import { formatearIdVenta, numeroDeIdVenta } from "@/lib/paneles";
+import { costoParaVenta, precioVentaEfectivo, tienePrecioPropio } from "@/lib/precios";
 import { ahora } from "@/lib/reloj";
 import type { BorradorVenta, FiltrosVentas, RedondeoVenta, Vender } from "@/lib/validations/venta";
+import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
 import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { medir } from "@/server/log";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { nombreCompleto } from "@/server/services/producto.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
@@ -29,6 +30,9 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  *   stock (VENTA por ítem) y congela el costo. Todo o nada.
  * - `numero` es correlativo por panel (tabla Secuencia) y se toma en la misma
  *   transacción que crea la venta. El ID visible es formatearIdVenta(slug, numero).
+ * - Precio: el efectivo del sabor (el propio o, si no tiene, el del producto).
+ * - Costo: snapshot de Variante.ultimoCosto al confirmar (0 si el sabor todavía
+ *   no tuvo compras): la ganancia histórica no cambia con compras posteriores.
  * - Costos y ganancia: solo los ve el OWNER (`verCostos`); a un empleado no le llegan.
  */
 
@@ -76,8 +80,8 @@ async function bloquearVenta(tx: Tx, ctx: Ctx, ventaId: string) {
           variante: {
             select: {
               nombre: true,
-              precioCosto: true,
-              producto: { select: { nombre: true, tieneVariantes: true } },
+              ultimoCosto: true,
+              producto: { select: { nombreCompleto: true } },
             },
           },
         },
@@ -121,8 +125,10 @@ async function calcularBorrador(tx: Tx, ctx: Ctx, datos: BorradorVenta, permisos
         nombre: true,
         activo: true,
         precioVenta: true,
-        precioCosto: true,
-        producto: { select: { nombre: true, tieneVariantes: true, activo: true, deletedAt: true } },
+        ultimoCosto: true,
+        producto: {
+          select: { nombreCompleto: true, precioVenta: true, activo: true, deletedAt: true },
+        },
       },
     }),
     tx.usuario.findUniqueOrThrow({ where: { id: ctx.usuarioId }, select: { nombre: true } }),
@@ -139,22 +145,23 @@ async function calcularBorrador(tx: Tx, ctx: Ctx, datos: BorradorVenta, permisos
     const v = porId.get(i.varianteId);
     if (!v || v.producto.deletedAt)
       throw new NotFoundError("Alguno de los productos no existe o fue dado de baja");
-    const nombre = nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes);
+    const nombre = nombreConSabor(v.producto.nombreCompleto, v.nombre);
     if (!v.activo || !v.producto.activo)
       throw new DomainError(`${nombre} está inactivo: no se puede vender`);
-    let precio = v.precioVenta;
+    const lista = D(precioVentaEfectivo(v, v.producto));
+    let precio = lista;
     let notas: string | null = null;
-    if (i.precioUnitario !== undefined && !D(i.precioUnitario).equals(v.precioVenta)) {
+    if (i.precioUnitario !== undefined && !D(i.precioUnitario).equals(lista)) {
       if (!permisos.puedeEditar)
         throw new ForbiddenError("No tenés permiso para cambiar precios en la venta.");
       precio = r2(D(i.precioUnitario));
-      notas = `Precio modificado por ${usuario.nombre} de ${$(v.precioVenta)} a ${$(precio)}`;
+      notas = `Precio modificado por ${usuario.nombre} de ${$(lista)} a ${$(precio)}`;
     }
     return {
       varianteId: v.id,
       cantidad: i.cantidad,
       precioUnitario: precio,
-      costoUnitario: v.precioCosto, // provisorio: al confirmar se toma el costo del momento
+      costoUnitario: D(costoParaVenta(v)), // provisorio: al confirmar se toma el costo del momento
       subtotal: precio.mul(i.cantidad),
       notas,
     };
@@ -346,7 +353,7 @@ async function confirmarEnTx(
   const total = multiplo > 1 ? base.div(multiplo).floor().mul(multiplo) : base;
   const redondeo = total.minus(base);
 
-  // 3. Stock: primero se informa TODO lo que falta; después, un VENTA por ítem (todo o nada).
+  // 3. Stock: primero se informa todo lo que falta; después, un VENTA por ítem (todo o nada).
   const stocks = await tx.stock.findMany({
     where: {
       depositoId: venta.depositoId,
@@ -358,11 +365,7 @@ async function confirmarEnTx(
   const faltan = venta.items
     .filter((i) => (disponible.get(i.varianteId) ?? 0) < i.cantidad)
     .map((i) => {
-      const n = nombreCompleto(
-        i.variante.producto.nombre,
-        i.variante.nombre,
-        i.variante.producto.tieneVariantes,
-      );
+      const n = nombreConSabor(i.variante.producto.nombreCompleto, i.variante.nombre);
       return `${n}: hay ${disponible.get(i.varianteId) ?? 0}, se piden ${i.cantidad}`;
     });
   if (faltan.length) {
@@ -378,7 +381,7 @@ async function confirmarEnTx(
       varianteId: item.varianteId,
       depositoId: venta.depositoId,
       cantidad: item.cantidad,
-      costoUnitario: item.variante.precioCosto,
+      costoUnitario: D(costoParaVenta(item.variante)),
       motivo: `Venta ${idVenta}`,
       referenciaTipo: "VENTA",
       referenciaId: venta.id,
@@ -389,7 +392,7 @@ async function confirmarEnTx(
   // 4. Snapshot de costos (el de ahora, no el del borrador): la ganancia histórica queda fija.
   let costoTotal = CERO;
   for (const item of venta.items) {
-    const costo = item.variante.precioCosto;
+    const costo = D(costoParaVenta(item.variante));
     costoTotal = costoTotal.plus(costo.mul(item.cantidad));
     if (!costo.equals(item.costoUnitario)) {
       await tx.ventaItem.update({ where: { id: item.id }, data: { costoUnitario: costo } });
@@ -660,7 +663,7 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
               id: true,
               nombre: true,
               sku: true,
-              producto: { select: { id: true, nombre: true, tieneVariantes: true } },
+              producto: { select: { id: true, nombreCompleto: true } },
             },
           },
         },
@@ -706,11 +709,9 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
       id: i.id,
       varianteId: i.varianteId,
       productoId: i.variante.producto.id,
-      nombre: nombreCompleto(
-        i.variante.producto.nombre,
-        i.variante.nombre,
-        i.variante.producto.tieneVariantes,
-      ),
+      nombre: nombreConSabor(i.variante.producto.nombreCompleto, i.variante.nombre),
+      producto: i.variante.producto.nombreCompleto,
+      sabor: saborVisible(i.variante.nombre),
       sku: i.variante.sku,
       cantidad: i.cantidad,
       precioUnitario: dec(i.precioUnitario),
@@ -790,8 +791,8 @@ export async function productosRapidos(ctx: Ctx, depositoId: string, limite = 12
     where: { id: { in: ids }, deletedAt: null, activo: true },
     select: {
       id: true,
-      nombre: true,
-      tieneVariantes: true,
+      nombreCompleto: true,
+      precioVenta: true,
       imagenUrl: true,
       variantes: {
         where: { deletedAt: null, activo: true },
@@ -812,15 +813,17 @@ export async function productosRapidos(ctx: Ctx, depositoId: string, limite = 12
     .sort((a, b) => (orden.get(a.id) ?? 0) - (orden.get(b.id) ?? 0))
     .map((p) => ({
       id: p.id,
-      nombre: p.nombre,
-      tieneVariantes: p.tieneVariantes,
+      nombre: p.nombreCompleto,
+      precioVenta: dec(p.precioVenta),
       imagenUrl: p.imagenUrl,
       variantes: p.variantes.map((v) => ({
         varianteId: v.id,
-        nombre: v.nombre,
-        nombreCompleto: nombreCompleto(p.nombre, v.nombre, p.tieneVariantes),
+        /** El sabor (null si es la variante "Único" de un producto sin sabor). */
+        sabor: saborVisible(v.nombre),
+        nombreCompleto: nombreConSabor(p.nombreCompleto, v.nombre),
         sku: v.sku,
-        precioVenta: dec(v.precioVenta),
+        precioVenta: precioVentaEfectivo(v, p),
+        tienePrecioPropio: tienePrecioPropio(v),
         stock: v.stocks[0]?.cantidad ?? 0,
       })),
     }));

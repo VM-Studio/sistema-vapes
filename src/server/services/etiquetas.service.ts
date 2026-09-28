@@ -15,10 +15,11 @@ import { formatearPesos } from "@/lib/format";
 import type { FormatoEtiqueta, PedidoEtiquetas } from "@/lib/validations/etiquetas";
 import { DomainError } from "@/server/errors";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
+import { precioVentaEfectivo } from "@/lib/precios";
+import { nombreConSabor } from "@/lib/validations/producto";
 import {
   asignarCodigosInternos,
   esCodigoInterno,
-  nombreCompleto,
   prefijoCodigoInterno,
 } from "@/server/services/producto.service";
 
@@ -113,12 +114,12 @@ export async function listarVariantesParaEtiquetas(
                 { nombre: { contains: q, mode: "insensitive" } },
                 { sku: { contains: q, mode: "insensitive" } },
                 { codigoBarras: { contains: q.toUpperCase() } },
-                { producto: { nombre: { contains: q, mode: "insensitive" } } },
+                { producto: { nombreCompleto: { contains: q, mode: "insensitive" } } },
               ],
             }
           : {}),
       },
-      orderBy: [{ producto: { nombre: "asc" } }, { nombre: "asc" }],
+      orderBy: [{ producto: { nombreCompleto: "asc" } }, { nombre: "asc" }],
       take: 500,
       select: {
         id: true,
@@ -126,7 +127,7 @@ export async function listarVariantesParaEtiquetas(
         sku: true,
         codigoBarras: true,
         precioVenta: true,
-        producto: { select: { nombre: true, tieneVariantes: true } },
+        producto: { select: { nombreCompleto: true, precioVenta: true } },
       },
     }),
   ]);
@@ -136,10 +137,10 @@ export async function listarVariantesParaEtiquetas(
     if (filtro.soloSinCodigoDeFabrica && !sinCodigoDeFabrica) continue;
     resultado.push({
       varianteId: v.id,
-      nombreCompleto: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
+      nombreCompleto: nombreConSabor(v.producto.nombreCompleto, v.nombre),
       sku: v.sku,
       codigoBarras: v.codigoBarras,
-      precioVenta: v.precioVenta.toFixed(2),
+      precioVenta: precioVentaEfectivo(v, v.producto),
       sinCodigoDeFabrica,
     });
   }
@@ -268,7 +269,7 @@ export async function generarPdfEtiquetas(
       nombre: true,
       codigoBarras: true,
       precioVenta: true,
-      producto: { select: { nombre: true, tieneVariantes: true } },
+      producto: { select: { nombreCompleto: true, precioVenta: true } },
     },
   });
   const porId = new Map(variantes.map((v) => [v.id, v]));
@@ -308,9 +309,9 @@ export async function generarPdfEtiquetas(
         y,
         plantilla,
         {
-          nombre: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
+          nombre: nombreConSabor(v.producto.nombreCompleto, v.nombre),
           codigo: v.codigoBarras,
-          precio: pedido.mostrarPrecio ? formatearPesos(v.precioVenta.toFixed(2)) : null,
+          precio: pedido.mostrarPrecio ? formatearPesos(precioVentaEfectivo(v, v.producto)) : null,
         },
         imagen,
         fuentes,

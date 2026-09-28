@@ -27,7 +27,8 @@ export type FiltroExtra =
     };
 
 interface FiltrosCatalogoProps {
-  categorias: OpcionFiltro[];
+  /** Opcional: sin categorías (o vacío) no se muestra ese filtro. */
+  categorias?: OpcionFiltro[];
   marcas: OpcionFiltro[];
   extras?: FiltroExtra[];
   placeholder?: string;
@@ -38,7 +39,7 @@ interface FiltrosCatalogoProps {
  * Desktop: todo en línea. Mobile: buscador + botón "Filtros" que abre un Sheet.
  */
 export function FiltrosCatalogo({
-  categorias,
+  categorias = [],
   marcas,
   extras = [],
   placeholder,
@@ -48,14 +49,16 @@ export function FiltrosCatalogo({
 
   const controles = (enSheet: boolean) => (
     <>
-      <Select
-        label={enSheet ? "Categoría" : undefined}
-        aria-label="Categoría"
-        options={[{ value: "", label: "Todas las categorías" }, ...categorias]}
-        value={params.get("categoriaId") ?? ""}
-        onChange={(e) => actualizar({ categoriaId: e.target.value || null })}
-        containerClassName={cn(!enSheet && "w-48")}
-      />
+      {categorias && categorias.length > 0 && (
+        <Select
+          label={enSheet ? "Categoría" : undefined}
+          aria-label="Categoría"
+          options={[{ value: "", label: "Todas las categorías" }, ...categorias]}
+          value={params.get("categoriaId") ?? ""}
+          onChange={(e) => actualizar({ categoriaId: e.target.value || null })}
+          containerClassName={cn(!enSheet && "w-48")}
+        />
+      )}
       <Select
         label={enSheet ? "Marca" : undefined}
         aria-label="Marca"

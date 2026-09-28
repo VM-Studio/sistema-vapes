@@ -40,7 +40,7 @@ export default async function NuevaVentaPage({ searchParams }: { searchParams: P
         b.items.map((i) => i.varianteId),
         b.depositoId,
       );
-      const porId = new Map(variantes.map((v) => [v.id, v]));
+      const porId = new Map(variantes.map((v) => [v.varianteId, v]));
       inicial = {
         borradorId: b.id,
         borradorIdVenta: b.idVenta,
@@ -56,13 +56,13 @@ export default async function NuevaVentaPage({ searchParams }: { searchParams: P
           const precio = i.precioUnitario.toFixed(2);
           return [
             {
-              varianteId: v.id,
-              nombreCompleto: v.nombreCompleto,
+              varianteId: v.varianteId,
+              nombreCompleto: v.titulo,
               sku: v.sku,
               precioLista: v.precioVenta,
               precioManual: precio !== v.precioVenta ? precio : null,
               cantidad: i.cantidad,
-              stock: v.stockDeposito ?? 0,
+              stock: v.stockEnDeposito ?? 0,
             },
           ];
         }),

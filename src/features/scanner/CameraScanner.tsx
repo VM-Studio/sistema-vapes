@@ -99,7 +99,7 @@ export function CameraScanner({
     onDetectRef.current(codigo, "camara");
   }, []);
 
-  /** Libera TODO: detección y tracks de la cámara (se apaga el indicador del navegador). */
+  /** Libera todo: detección y tracks de la cámara (se apaga el indicador del navegador). */
   const detener = useCallback(() => {
     sesion.current++;
     detenerDeteccion.current?.();

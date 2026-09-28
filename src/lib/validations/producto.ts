@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  cantidad,
   codigoBarras,
   codigoBarrasOpcional,
   enteroNoNegativo,
@@ -12,102 +13,137 @@ import {
   vacioAUndefined,
 } from "./common";
 
+/**
+ * CATÁLOGO: producto = marca + modelo + especificación ("Elf Bar" + "BC" +
+ * "5000"), con un precio de venta para todos sus sabores. Cada sabor es una
+ * Variante (con su código de barras y, opcionalmente, un precio propio).
+ * Un producto sin sabor tiene una sola variante "Único" que la UI no muestra.
+ */
 export const NOMBRE_VARIANTE_UNICA = "Único";
 
-/** SKU: opcional (se genera {prefijo}-XXXXXX); si viene, mayúsculas sin espacios. */
-export const skuOpcional = z.preprocess(
-  vacioAUndefined,
-  z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z0-9-]{3,32}$/, "SKU inválido (3-32 letras, números o guiones)")
-    .optional(),
-);
+/** El sabor para mostrar: null si es la variante "Único" de un producto sin sabores. */
+export function saborVisible(nombreVariante: string): string | null {
+  return nombreVariante === NOMBRE_VARIANTE_UNICA ? null : nombreVariante;
+}
+
+/** "Elf Bar BC 5000 — Mango", o solo el producto si no tiene sabor. */
+export function nombreConSabor(nombreCompletoProducto: string, nombreVariante: string): string {
+  const sabor = saborVisible(nombreVariante);
+  return sabor ? `${nombreCompletoProducto} — ${sabor}` : nombreCompletoProducto;
+}
+
+/** Misma normalización que el trigger de la DB (especificacionNorm): minúsculas y sin espacios. */
+export function normalizarEspecificacion(especificacion: string): string {
+  return especificacion.replace(/\s+/g, "").toLowerCase();
+}
+
+/** Espacios repetidos → uno (igual que hace la DB con modelo y especificación). */
+export const colapsarEspacios = (s: string) => s.trim().replace(/\s+/g, " ");
 
 const idOpcional = z.preprocess(vacioAUndefined, id.optional());
+const especificacion = z
+  .string()
+  .trim()
+  .max(60, "Máximo 60 caracteres")
+  .optional()
+  .transform((v) => colapsarEspacios(v ?? ""));
 
-/** Una fila del editor de variantes. `id` presente = variante existente (edición). */
-export const varianteFormSchema = z.object({
+/** Una fila de sabor del formulario. `id` presente = sabor existente (edición). */
+export const saborFormSchema = z.object({
   id: idOpcional,
-  nombre: texto(100),
-  sku: skuOpcional,
+  sabor: textoOpcional(100),
   codigoBarras: codigoBarrasOpcional,
-  /** Solo lo carga un dueño: si viene de un empleado, el servicio lo ignora. */
-  precioCosto: montoOpcional,
-  precioVenta: monto,
+  /** Precio propio del sabor (vacío = usa el del producto). */
+  precioVenta: montoOpcional,
   stockMinimo: enteroNoNegativo.default(0),
   activo: z.boolean().default(true),
 });
 
 /**
- * Producto + variantes, para crear y para editar (mismo formulario).
- * - tieneVariantes=false => exactamente una variante; se llama "Único".
- * - Sin nombres de variante ni códigos de barras repetidos dentro del formulario.
- *   (La unicidad contra la DB la verifica el servicio, y la DB de última.)
+ * Producto completo (crear y editar). Con una sola fila sin sabor, el
+ * producto no tiene sabores (variante "Único"). Con varias, todas llevan sabor
+ * y no se repiten; tampoco los códigos dentro del formulario (la unicidad
+ * contra el panel la verifica el servicio).
  */
 export const productoSchema = z
   .object({
-    nombre: texto(150),
-    descripcion: textoOpcional(2000),
-    categoriaId: id,
-    marcaId: idOpcional,
+    marca: texto(80),
+    modelo: texto(120),
+    especificacion,
+    categoriaId: idOpcional,
+    precioVenta: monto,
     imagenUrl: z.preprocess(vacioAUndefined, z.url("URL inválida").optional()),
     activo: z.boolean().default(true),
-    tieneVariantes: z.boolean(),
-    variantes: z.array(varianteFormSchema).min(1, "Agregá al menos una variante").max(200),
+    sabores: z.array(saborFormSchema).min(1, "Agregá al menos un sabor").max(200),
   })
   .superRefine((p, ctx) => {
-    if (!p.tieneVariantes && p.variantes.length !== 1) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Un producto sin variantes tiene exactamente una",
-        path: ["variantes"],
-      });
-    }
+    const variosSabores = p.sabores.length > 1;
     const nombres = new Map<string, number>();
     const codigos = new Map<string, number>();
-    const skus = new Map<string, number>();
-    p.variantes.forEach((v, i) => {
-      const nombre = v.nombre.toLocaleLowerCase("es");
-      if (p.tieneVariantes && nombres.has(nombre)) {
+    p.sabores.forEach((s, i) => {
+      if (variosSabores && !s.sabor) {
         ctx.addIssue({
           code: "custom",
-          message: `Variante repetida: ${v.nombre}`,
-          path: ["variantes", i, "nombre"],
+          message: "Poné el sabor",
+          path: ["sabores", i, "sabor"],
         });
       }
-      nombres.set(nombre, i);
-      if (v.codigoBarras) {
-        const otra = codigos.get(v.codigoBarras);
+      if (s.sabor) {
+        const clave = s.sabor.toLocaleLowerCase("es");
+        if (nombres.has(clave)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Sabor repetido: ${s.sabor}`,
+            path: ["sabores", i, "sabor"],
+          });
+        }
+        nombres.set(clave, i);
+      }
+      if (s.codigoBarras) {
+        const otra = codigos.get(s.codigoBarras);
         if (otra !== undefined) {
           ctx.addIssue({
             code: "custom",
-            message: `Código repetido (también en la variante ${otra + 1})`,
-            path: ["variantes", i, "codigoBarras"],
+            message: `Código repetido (también en la fila ${otra + 1})`,
+            path: ["sabores", i, "codigoBarras"],
           });
         }
-        codigos.set(v.codigoBarras, i);
-      }
-      if (v.sku) {
-        if (skus.has(v.sku)) {
-          ctx.addIssue({
-            code: "custom",
-            message: "SKU repetido en el formulario",
-            path: ["variantes", i, "sku"],
-          });
-        }
-        skus.set(v.sku, i);
+        codigos.set(s.codigoBarras, i);
       }
     });
   })
-  .transform((p) =>
-    p.tieneVariantes
-      ? p
-      : { ...p, variantes: p.variantes.map((v) => ({ ...v, nombre: NOMBRE_VARIANTE_UNICA })) },
-  );
+  .transform((p) => ({
+    ...p,
+    sabores: p.sabores.map((s) => ({ ...s, nombre: s.sabor ?? NOMBRE_VARIANTE_UNICA })),
+  }));
 
 export const actualizarProductoSchema = z.object({ id, datos: productoSchema });
+
+/**
+ * Alta rápida desde el escáner: código desconocido → producto + sabor en un
+ * paso. Si marca + modelo + especificación ya existen, solo se agrega el sabor
+ * (y `precioVenta` no hace falta: el sabor usa el del producto salvo
+ * `precioVentaSabor`).
+ */
+export const altaRapidaSchema = z.object({
+  codigoBarras,
+  marca: texto(80),
+  modelo: texto(120),
+  especificacion,
+  sabor: textoOpcional(100),
+  precioVenta: montoOpcional,
+  precioVentaSabor: montoOpcional,
+});
+
+/** Carga de stock por escaneo. `depositoId` se valida en el servicio (mensaje propio). */
+export const cargarStockSchema = z.object({
+  depositoId: z.preprocess(vacioAUndefined, z.string().trim().optional()),
+  items: z
+    .array(z.object({ varianteId: id, cantidad }))
+    .min(1, "No hay nada para cargar")
+    .max(500, "Máximo 500 productos por carga"),
+  motivo: textoOpcional(300),
+});
 
 export const codigoAlternativoSchema = z.object({
   varianteId: id,
@@ -120,34 +156,25 @@ export const verificarCodigoSchema = z.object({
   excluirVarianteId: idOpcional,
 });
 
-/** Cambio manual de precios (una o varias variantes). */
-export const actualizarPreciosSchema = z
-  .object({
-    varianteIds: z.array(id).min(1).max(500),
-    precioCosto: montoOpcional,
-    precioVenta: montoOpcional,
-    motivo: textoOpcional(300),
-  })
-  .refine((d) => d.precioCosto !== undefined || d.precioVenta !== undefined, {
-    message: "Indicá al menos un precio",
-    path: ["precioVenta"],
-  });
-
-export const ORDENES_PRODUCTO = ["nombre", "-nombre", "reciente"] as const;
+export const buscarVariantesSchema = z.object({
+  q: z.string().trim().max(100),
+  depositoId: idOpcional,
+  soloConStockEnDeposito: z.boolean().optional(),
+});
 
 export const listarProductosSchema = z.object({
   q: z.preprocess(vacioAUndefined, z.string().trim().max(100).optional()),
-  categoriaId: idOpcional,
   marcaId: idOpcional,
-  estado: z.enum(["activos", "inactivos", "todos"]).catch("activos"),
-  conStockBajo: z.preprocess((v) => v === true || v === "1" || v === "true", z.boolean()),
+  soloBajoMinimo: z.preprocess((v) => v === true || v === "1" || v === "true", z.boolean()),
+  inactivos: z.preprocess((v) => v === true || v === "1" || v === "true", z.boolean()),
   page: z.coerce.number().int().min(1).catch(1),
-  pageSize: z.coerce.number().int().min(5).max(100).catch(20),
-  orden: z.enum(ORDENES_PRODUCTO).catch("nombre"),
+  pageSize: z.coerce.number().int().min(5).max(100).catch(25),
 });
 
 export type ProductoInput = z.input<typeof productoSchema>;
 export type Producto = z.output<typeof productoSchema>;
-export type VarianteForm = z.output<typeof varianteFormSchema>;
-export type ActualizarPrecios = z.output<typeof actualizarPreciosSchema>;
+export type SaborForm = Producto["sabores"][number];
+export type AltaRapida = z.output<typeof altaRapidaSchema>;
+export type AltaRapidaInput = z.input<typeof altaRapidaSchema>;
+export type CargarStock = z.output<typeof cargarStockSchema>;
 export type FiltrosProductos = z.output<typeof listarProductosSchema>;

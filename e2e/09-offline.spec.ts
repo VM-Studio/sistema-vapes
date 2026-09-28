@@ -7,6 +7,7 @@ import {
   pistola,
   stock,
   soltarFoco,
+  ELF_BAR_BC5000,
 } from "./helpers";
 
 /**
@@ -18,8 +19,8 @@ test("sin conexión: el escáner consulta desde IndexedDB y bloquea las operacio
   page,
   context,
 }) => {
-  const codigo = await codigoDe("Elf Bar BC5000", "Peach Mango");
-  const antes = await stock("Elf Bar BC5000", "Peach Mango", "Ayres Plaza");
+  const codigo = await codigoDe(ELF_BAR_BC5000, "Peach Mango");
+  const antes = await stock(ELF_BAR_BC5000, "Peach Mango", "Ayres Plaza");
   await loginDueno(page);
   await page.goto("/p/vapes/escanear");
   await esperarCatalogoOffline(page);
@@ -31,10 +32,11 @@ test("sin conexión: el escáner consulta desde IndexedDB y bloquea las operacio
   await soltarFoco(page);
   await pistola(page, codigo);
   const producto = page.getByRole("region", { name: "Producto" });
-  await expect(producto.getByRole("heading", { level: 2 })).toContainText("Peach Mango");
+  await expect(producto.getByRole("heading", { level: 2 })).toHaveText(ELF_BAR_BC5000);
+  await expect(producto).toContainText("Peach Mango");
 
-  // Ingresar / contar / transferir: bloqueados con el motivo.
-  for (const modo of ["Ingresar", "Contar", "Transferir"]) {
+  // Cargar stock / contar / transferir: bloqueados con el motivo.
+  for (const modo of ["Cargar stock", "Contar", "Transferir"]) {
     const tab = page.getByRole("tab", { name: new RegExp(modo) });
     await expect(tab).toHaveAttribute("aria-disabled", "true");
     await expect(tab).toHaveAttribute("title", "Sin conexión: esta acción necesita señal.");
@@ -42,7 +44,7 @@ test("sin conexión: el escáner consulta desde IndexedDB y bloquea las operacio
 
   await context.setOffline(false);
   await expect(page.getByTestId("version-catalogo")).toContainText("Con conexión");
-  expect(await stock("Elf Bar BC5000", "Peach Mango", "Ayres Plaza")).toBe(antes);
+  expect(await stock(ELF_BAR_BC5000, "Peach Mango", "Ayres Plaza")).toBe(antes);
 });
 
 test("sin conexión: vender está bloqueado con el mensaje exacto", async ({ page, context }) => {

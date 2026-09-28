@@ -10,12 +10,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatearPesos } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
-import { rutaPanel } from "@/lib/paneles";
-import { esOwner, puede } from "@/lib/permisos";
+import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
+import { puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
-import { obtenerCompra } from "@/server/services/compra.service";
+import { obtenerCompra, preciosQueCambian } from "@/server/services/compra.service";
+import { veCostosCompras } from "@/server/services/proveedor.service";
 
 import { AccionesCompra } from "./acciones-compra";
 
@@ -23,30 +24,27 @@ export const metadata: Metadata = { title: "Compra" };
 
 export default async function CompraPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requirePaginaPanel(Modulo.COMPRAS, "ver");
-  const { usuario, panelId } = ctx;
-  const ruta = (r: string) => rutaPanel(ctx.panel.slug, r);
+  const { usuario, panelId, panel } = ctx;
+  const ruta = (r: string) => rutaPanel(panel.slug, r);
   const { id } = await params;
-  const c = await obtenerCompra(ctx, id, { incluirCostoActual: esOwner(usuario) }).catch(
-    (e: unknown) => {
-      if (e instanceof NotFoundError) notFound();
-      throw e;
-    },
-  );
-  const cambiosDeCosto = c.items.flatMap((i) =>
-    i.precioCostoActual !== null && Number(i.costoUnitario) !== Number(i.precioCostoActual)
-      ? [{ nombre: i.nombre, antes: i.precioCostoActual, despues: i.costoUnitario }]
-      : [],
-  );
+  const c = await obtenerCompra(ctx, id).catch((e: unknown) => {
+    if (e instanceof NotFoundError) notFound();
+    throw e;
+  });
+  const idVisible = formatearIdCompra(panel.slug, c.numero);
+  const verCostos = veCostosCompras(ctx);
+  const puedeEditar = puede(usuario, panelId, Modulo.COMPRAS, "editar");
+  const cambios = c.estado === "BORRADOR" && puedeEditar ? await preciosQueCambian(ctx, c.id) : [];
   const verMovimientos = c.movimientos > 0 && puede(usuario, panelId, Modulo.STOCK, "ver");
 
   return (
     <>
       <PageHeader
-        title={`Compra #${c.numero}`}
+        title={`Compra ${idVisible}`}
         subtitle={c.proveedor ?? "Sin proveedor"}
         actions={
           <Link href={ruta("/compras")} className={buttonVariants({ variant: "secondary" })}>
-            <ArrowLeft /> Compras
+            <ArrowLeft strokeWidth={1.75} /> Compras
           </Link>
         }
       />
@@ -64,13 +62,24 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
               <p>{formatearFechaHora(c.fecha)}</p>
             </div>
             <div>
-              <p className="text-muted">Depósito</p>
+              <p className="text-muted">Galpón</p>
               <p>{c.deposito}</p>
             </div>
             <div>
               <p className="text-muted">Cargada por</p>
               <p>{c.usuario}</p>
             </div>
+            {c.proveedorId && puede(usuario, panelId, Modulo.PROVEEDORES, "ver") && (
+              <div className="col-span-2">
+                <p className="text-muted">Proveedor</p>
+                <Link
+                  href={ruta(`/proveedores/${c.proveedorId}`)}
+                  className="text-primary font-medium hover:underline"
+                >
+                  {c.proveedor}
+                </Link>
+              </div>
+            )}
             {c.notas && (
               <div className="col-span-2 md:col-span-4">
                 <p className="text-muted">Notas</p>
@@ -87,37 +96,23 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
           {c.items.map((i) => (
             <li key={i.varianteId} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
-                <p className="font-medium">{i.nombre}</p>
+                <p className="font-medium">{i.nombreCompleto}</p>
                 <p className="text-muted text-xs">
-                  {i.sku} · {i.cantidad} × {formatearPesos(i.costoUnitario)}
-                  {c.estado === "BORRADOR" &&
-                    i.precioCostoActual !== null &&
-                    Number(i.costoUnitario) !== Number(i.precioCostoActual) && (
-                      <span className="text-warning-soft-foreground">
-                        {" "}
-                        · costo actual {formatearPesos(i.precioCostoActual)}
-                      </span>
-                    )}
+                  {i.sabor ? `${i.sabor} · ` : ""}
+                  {i.sku} · {i.cantidad} u.
+                  {verCostos && ` × ${formatearPesos(i.costoUnitario)}`}
                 </p>
               </div>
-              <p className="font-semibold tabular-nums">{formatearPesos(i.subtotal)}</p>
+              {verCostos && (
+                <p className="font-semibold tabular-nums">{formatearPesos(i.subtotal)}</p>
+              )}
             </li>
           ))}
-          <li className="flex flex-col gap-1 px-4 py-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted">Subtotal ({c.unidades} unidades)</span>
-              <span className="tabular-nums">{formatearPesos(c.subtotal)}</span>
-            </div>
-            {Number(c.descuento) > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted">Descuento</span>
-                <span className="tabular-nums">−{formatearPesos(c.descuento)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-base font-semibold">
-              <span>Total</span>
-              <span className="tabular-nums">{formatearPesos(c.total)}</span>
-            </div>
+          <li className="flex justify-between px-4 py-3 text-base font-semibold">
+            <span>
+              Total <span className="text-muted text-sm font-normal">({c.unidades} unidades)</span>
+            </span>
+            {verCostos && <span className="tabular-nums">{formatearPesos(c.total)}</span>}
           </li>
         </ul>
 
@@ -129,18 +124,19 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
               className: "text-primary h-auto min-h-11 self-start py-2 whitespace-normal",
             })}
           >
-            <History /> Ver sus {c.movimientos} movimientos de stock
+            <History strokeWidth={1.75} /> Ver los {c.movimientos} movimientos de stock que generó
           </Link>
         )}
 
         <AccionesCompra
           id={c.id}
-          numero={c.numero}
+          idVisible={idVisible}
           estado={c.estado}
           unidades={c.unidades}
           deposito={c.deposito}
-          cambiosDeCosto={cambiosDeCosto}
-          puedeEditar={puede(usuario, panelId, Modulo.COMPRAS, "editar")}
+          proveedor={c.proveedorNombre ?? "el proveedor"}
+          cambios={cambios}
+          puedeEditar={puedeEditar}
           puedeAnular={puede(usuario, panelId, Modulo.COMPRAS, "eliminar")}
         />
       </div>

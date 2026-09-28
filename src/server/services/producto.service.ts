@@ -1,42 +1,49 @@
 import { randomInt } from "node:crypto";
 
-import { AccionAuditoria, Prisma, type RolUsuario, type Variante } from "@prisma/client";
+import { AccionAuditoria, Prisma, TipoMovimiento, type RolUsuario } from "@prisma/client";
 
+import type { StockEnDeposito, VarianteEncontrada } from "@/features/scanner/tipos";
 import { CODIGO_BARRAS_REGEX, digitoLuhn, normalizarCodigoBarras } from "@/lib/barcode";
 import { esOwner } from "@/lib/permisos";
+import { precioVentaEfectivo, tienePrecioPropio } from "@/lib/precios";
 import {
+  colapsarEspacios,
   NOMBRE_VARIANTE_UNICA,
+  nombreConSabor,
+  normalizarEspecificacion,
+  saborVisible,
+  type AltaRapida,
+  type CargarStock,
   type FiltrosProductos,
   type Producto,
 } from "@/lib/validations/producto";
-import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
+import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
- * CATÁLOGO DEL PANEL: productos, variantes (sabores), códigos de barras y precios.
- * Todo vive dentro del panel del `ctx`: SKU y códigos de barras son únicos
- * POR PANEL (el mismo EAN puede existir en otro panel).
+ * CATÁLOGO DEL PANEL: productos (marca + modelo + especificación, con un
+ * precio de venta), sus sabores (variantes, con código de barras y precio
+ * propio opcional) y la carga de stock por escaneo. Todo dentro del panel del
+ * `ctx`: SKU y códigos de barras son únicos POR PANEL (el mismo EAN puede
+ * existir en otro panel y no se ven entre sí).
  *
- * Convenciones de los DTO que salen de acá hacia la UI:
- * - Montos como string con 2 decimales ("9500.00"): Decimal no viaja a
- *   Client Components y un float perdería precisión.
- * - Stock por depósito como Record<depositoId, cantidad> (0 si no hay fila).
- * - `precioCosto` (y el margen) solo llegan si el ctx es de un OWNER: con un
- *   CtxPanel (requireCtx / requirePaginaPanel) se decide solo; con un ctx sin
- *   usuario, nunca se incluyen.
+ * - `nombreCompleto` / `especificacionNorm` del producto los mantiene la DB
+ *   (trigger): acá solo se leen.
+ * - Montos hacia la UI como string con 2 decimales.
+ * - `ultimoCosto` solo llega si el ctx es de un dueño (se decide acá, en el servidor).
  */
 
 /** Contexto de lectura: panel y, si se conoce, quién mira (para decidir si ve costos). */
 export type CtxCatalogo = Pick<Ctx, "panelId"> & { usuario?: { rol: RolUsuario } };
 
-/** Contexto de escritura del catálogo: si no es de un dueño, el costo del formulario se ignora. */
-export type CtxEscrituraCatalogo = Ctx & { usuario?: { rol: RolUsuario } };
-
 /** ¿Este ctx puede ver costos? Solo los dueños. */
 export function veCosto(ctx: CtxCatalogo): boolean {
   return ctx.usuario !== undefined && esOwner(ctx.usuario);
 }
+
+export const MENSAJE_SIN_GALPON = "Tenés que elegir el galpón antes de cargar stock";
 
 // =============================================================================
 // Tipos (DTO)
@@ -50,14 +57,21 @@ export function estadoStock(total: number, minimo: number): EstadoStock {
   return "OK";
 }
 
-export interface VarianteListada {
+/** "Elf Bar BC 5000 — Mango" a partir del nombre completo del producto y el nombre de la variante. */
+export function nombreCompleto(nombreCompletoProducto: string, nombreVariante: string): string {
+  return nombreConSabor(nombreCompletoProducto, nombreVariante);
+}
+
+export interface SaborListado {
   id: string;
+  /** Nombre de la variante tal cual ("Único" en productos sin sabor). */
   nombre: string;
+  sabor: string | null;
   sku: string;
   codigoBarras: string | null;
-  /** null si quien mira no es dueño. */
-  precioCosto: string | null;
+  /** Efectivo: el propio o el del producto. */
   precioVenta: string;
+  tienePrecioPropio: boolean;
   stockMinimo: number;
   activo: boolean;
   stockPorDeposito: Record<string, number>;
@@ -67,20 +81,23 @@ export interface VarianteListada {
 
 export interface ProductoListado {
   id: string;
-  nombre: string;
-  marca: string | null;
-  categoria: string;
+  nombreCompleto: string;
+  marca: string;
+  marcaId: string;
+  modelo: string;
+  especificacion: string;
+  categoria: string | null;
+  precioVenta: string;
   activo: boolean;
-  tieneVariantes: boolean;
   imagenUrl: string | null;
-  variantes: VarianteListada[];
-  stockTotal: number;
+  /** true si es un producto sin sabores (una sola variante "Único"). */
+  sinSabores: boolean;
+  sabores: SaborListado[];
   stockPorDeposito: Record<string, number>;
-  precioVentaMin: string | null;
-  precioVentaMax: string | null;
-  /** SIN_STOCK si no hay unidades; BAJO si algún sabor activo está bajo el mínimo; OK si no. */
+  stockTotal: number;
+  /** SIN_STOCK sin unidades; BAJO si algún sabor activo está bajo el mínimo; si no, OK. */
   estado: EstadoStock;
-  variantesBajoMinimo: number;
+  saboresBajoMinimo: number;
 }
 
 export interface CodigoAlternativoDTO {
@@ -89,40 +106,17 @@ export interface CodigoAlternativoDTO {
   descripcion: string | null;
 }
 
-export interface VarianteDetalle extends VarianteListada {
-  codigosAlternativos: CodigoAlternativoDTO[];
-  /** Margen sobre el costo, en %. null si el costo es 0 o quien mira no es dueño. */
-  margen: number | null;
-}
-
-export interface ProductoDetalle extends Omit<ProductoListado, "variantes"> {
-  descripcion: string | null;
-  categoriaId: string;
-  marcaId: string | null;
-  variantes: VarianteDetalle[];
-}
-
-/** Resultado de buscarPorCodigo(): todo lo que necesita el escáner / el POS. */
-export interface VarianteEncontrada {
-  varianteId: string;
-  productoId: string;
-  producto: string;
-  variante: string;
-  nombreCompleto: string;
-  sku: string;
-  codigoBarras: string | null;
-  /** true si el código escaneado es un código alternativo de la variante. */
-  porCodigoAlternativo: boolean;
-  marca: string | null;
-  categoria: string;
-  imagenUrl: string | null;
-  activo: boolean;
+export interface SaborDetalle extends SaborListado {
+  /** Precio propio (null = usa el del producto). */
+  precioPropio: string | null;
   /** null si quien mira no es dueño. */
-  precioCosto: string | null;
-  precioVenta: string;
-  stockMinimo: number;
-  stock: { depositoId: string; deposito: string; esPrincipal: boolean; cantidad: number }[];
-  stockTotal: number;
+  ultimoCosto: string | null;
+  codigosAlternativos: CodigoAlternativoDTO[];
+}
+
+export interface ProductoDetalle extends Omit<ProductoListado, "sabores"> {
+  categoriaId: string | null;
+  sabores: SaborDetalle[];
 }
 
 // =============================================================================
@@ -131,24 +125,25 @@ export interface VarianteEncontrada {
 
 const dec = (d: Prisma.Decimal | string | number) => new Prisma.Decimal(d).toFixed(2);
 
-/** "Ignite V80 — Mango Ice", o solo el producto si no tiene variantes. */
-export function nombreCompleto(
-  producto: string,
-  variante: string,
-  tieneVariantes: boolean,
-): string {
-  return tieneVariantes ? `${producto} — ${variante}` : producto;
-}
-
-function margen(costo: Prisma.Decimal, venta: Prisma.Decimal): number | null {
-  if (costo.isZero()) return null;
-  return Number(venta.minus(costo).div(costo).mul(100).toFixed(1));
-}
-
 /** Normaliza un código de barras (sin espacios, mayúsculas). null si no tiene formato válido. */
 export function normalizarCodigo(codigo: string): string | null {
   const c = normalizarCodigoBarras(codigo.trim());
   return CODIGO_BARRAS_REGEX.test(c) ? c : null;
+}
+
+/** ¿El texto parece un código de barras (y no un nombre)? */
+function pareceCodigo(q: string): boolean {
+  return /^[0-9A-Za-z-]{4,64}$/.test(q) && /\d/.test(q);
+}
+
+/** Precio propio a guardar: null si no viene o si es igual al del producto. */
+function precioPropio(
+  precioSabor: number | null | undefined,
+  precioProducto: Prisma.Decimal | number,
+): Prisma.Decimal | null {
+  if (precioSabor === null || precioSabor === undefined) return null;
+  const p = new Prisma.Decimal(precioSabor).toDecimalPlaces(2);
+  return p.equals(precioProducto) ? null : p;
 }
 
 // --- SKU ---------------------------------------------------------------------
@@ -157,8 +152,8 @@ const ALFABETO_SKU = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin 0/O ni 1/I: se l
 const LARGO_SKU = 6;
 
 /** Prefijo de SKU del panel (Configuracion "prefijoSku", "PRD" por defecto). */
-async function prefijoSku(tx: Tx, panelId: string): Promise<string> {
-  const conf = await tx.configuracion.findFirst({ where: { panelId, clave: "prefijoSku" } });
+async function prefijoSku(tx: Tx): Promise<string> {
+  const conf = await tx.configuracion.findFirst({ where: { clave: "prefijoSku" } });
   return typeof conf?.valor === "string" && conf.valor.trim() !== ""
     ? conf.valor.trim().toUpperCase()
     : "PRD";
@@ -167,10 +162,9 @@ async function prefijoSku(tx: Tx, panelId: string): Promise<string> {
 /** Genera un SKU libre en el panel con formato `{prefijoSku}-XXXXXX`. */
 export async function generarSku(
   tx: Tx,
-  panelId: string,
   reservados: ReadonlySet<string> = new Set(),
 ): Promise<string> {
-  const prefijo = await prefijoSku(tx, panelId);
+  const prefijo = await prefijoSku(tx);
   for (let intento = 0; intento < 20; intento++) {
     const sufijo = Array.from(
       { length: LARGO_SKU },
@@ -178,84 +172,54 @@ export async function generarSku(
     ).join("");
     const sku = `${prefijo}-${sufijo}`;
     if (reservados.has(sku)) continue;
-    const existe = await tx.variante.findFirst({ where: { panelId, sku }, select: { id: true } });
+    const existe = await tx.variante.findFirst({ where: { sku }, select: { id: true } });
     if (!existe) return sku;
   }
   throw new Error("No se pudo generar un SKU único tras 20 intentos.");
 }
 
-async function assertSkuDisponible(
-  tx: Tx,
-  panelId: string,
-  sku: string,
-  excluirVarianteId?: string,
-): Promise<void> {
-  const v = await tx.variante.findFirst({
-    where: { panelId, sku },
-    select: {
-      id: true,
-      nombre: true,
-      producto: { select: { nombre: true, tieneVariantes: true } },
-    },
-  });
-  if (v && v.id !== excluirVarianteId) {
-    throw new ConflictError(
-      `El SKU ${sku} ya pertenece a ${nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes)}`,
-    );
-  }
-}
-
 // --- Códigos de barras -------------------------------------------------------
 
-interface DuenioCodigo {
-  varianteId: string;
-  nombre: string;
-}
+const selectNombre = {
+  id: true,
+  nombre: true,
+  producto: { select: { nombreCompleto: true } },
+} as const;
 
-/** ¿De quién es este código EN EL PANEL? Busca en código principal (variantes vivas) y alternativos. */
+/** ¿De quién es este código EN EL PANEL? Código principal (sabores vivos) y alternativos. */
 async function duenioDeCodigo(
   tx: Tx,
-  panelId: string,
   codigo: string,
   excluirVarianteId?: string,
-): Promise<DuenioCodigo | null> {
-  const seleccion = {
-    id: true,
-    nombre: true,
-    producto: { select: { nombre: true, tieneVariantes: true } },
-  } as const;
+): Promise<{ varianteId: string; nombre: string } | null> {
   const [principal, alternativo] = await Promise.all([
     tx.variante.findFirst({
       where: {
-        panelId,
         codigoBarras: codigo,
         deletedAt: null,
         ...(excluirVarianteId ? { id: { not: excluirVarianteId } } : {}),
       },
-      select: seleccion,
+      select: selectNombre,
     }),
     tx.codigoBarrasAlternativo.findFirst({
-      where: { panelId, codigo },
-      select: { variante: { select: seleccion } },
+      where: { codigo },
+      select: { variante: { select: selectNombre } },
     }),
   ]);
   const v = principal ?? alternativo?.variante;
   return v
-    ? {
-        varianteId: v.id,
-        nombre: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
-      }
+    ? { varianteId: v.id, nombre: nombreConSabor(v.producto.nombreCompleto, v.nombre) }
     : null;
 }
 
-/** Lanza DomainError("El código X ya pertenece a {producto} — {variante}") si está usado en el panel. */
+/** Lanza DomainError("El código X ya pertenece a …") si está usado en el panel. */
 export async function assertCodigoDisponible(
   ctx: Pick<Ctx, "panelId">,
   codigo: string,
   excluirVarianteId?: string,
   tx: Tx = dbPara(ctx.panelId),
 ): Promise<void> {
-  const duenio = await duenioDeCodigo(tx, ctx.panelId, codigo, excluirVarianteId);
+  const duenio = await duenioDeCodigo(tx, codigo, excluirVarianteId);
   if (duenio)
     throw new DomainError(
       `El código ${codigo} ya pertenece a ${duenio.nombre}`,
@@ -264,7 +228,7 @@ export async function assertCodigoDisponible(
     );
 }
 
-/** Para validación en vivo del formulario (con debounce). */
+/** Para la validación en vivo del formulario (con debounce). */
 export async function verificarCodigoDisponible(
   ctx: Pick<Ctx, "panelId">,
   codigo: string,
@@ -272,132 +236,20 @@ export async function verificarCodigoDisponible(
 ): Promise<{ disponible: true } | { disponible: false; mensaje: string }> {
   const c = normalizarCodigo(codigo);
   if (!c) return { disponible: false, mensaje: "Código de barras inválido" };
-  const duenio = await duenioDeCodigo(dbPara(ctx.panelId), ctx.panelId, c, excluirVarianteId);
+  const duenio = await duenioDeCodigo(dbPara(ctx.panelId), c, excluirVarianteId);
   return duenio
     ? { disponible: false, mensaje: `Ya pertenece a ${duenio.nombre}` }
     : { disponible: true };
 }
 
-// =============================================================================
-// buscarPorCodigo — la función que usa el escáner (cientos de veces por día)
-// =============================================================================
-
-const selectEncontrada = {
-  id: true,
-  nombre: true,
-  sku: true,
-  codigoBarras: true,
-  precioCosto: true,
-  precioVenta: true,
-  stockMinimo: true,
-  activo: true,
-  producto: {
-    select: {
-      id: true,
-      nombre: true,
-      tieneVariantes: true,
-      imagenUrl: true,
-      activo: true,
-      marca: { select: { nombre: true } },
-      categoria: { select: { nombre: true } },
-    },
-  },
-  stocks: {
-    where: { deposito: { activo: true } },
-    select: {
-      cantidad: true,
-      deposito: { select: { id: true, nombre: true, esPrincipal: true } },
-    },
-  },
-} satisfies Prisma.VarianteSelect;
-
-function aEncontrada(
-  v: Prisma.VarianteGetPayload<{ select: typeof selectEncontrada }>,
-  codigoBuscado: string | null,
-  conCosto: boolean,
-): VarianteEncontrada {
-  const stock = v.stocks
-    .map((s) => ({
-      depositoId: s.deposito.id,
-      deposito: s.deposito.nombre,
-      esPrincipal: s.deposito.esPrincipal,
-      cantidad: s.cantidad,
-    }))
-    .sort(
-      (a, b) =>
-        Number(b.esPrincipal) - Number(a.esPrincipal) || a.deposito.localeCompare(b.deposito),
-    );
-
-  return {
-    varianteId: v.id,
-    productoId: v.producto.id,
-    producto: v.producto.nombre,
-    variante: v.nombre,
-    nombreCompleto: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
-    sku: v.sku,
-    codigoBarras: v.codigoBarras,
-    porCodigoAlternativo: codigoBuscado !== null && v.codigoBarras !== codigoBuscado,
-    marca: v.producto.marca?.nombre ?? null,
-    categoria: v.producto.categoria.nombre,
-    imagenUrl: v.producto.imagenUrl,
-    activo: v.activo && v.producto.activo,
-    precioCosto: conCosto ? dec(v.precioCosto) : null,
-    precioVenta: dec(v.precioVenta),
-    stockMinimo: v.stockMinimo,
-    stock,
-    stockTotal: stock.reduce((acc, s) => acc + s.cantidad, 0),
-  };
-}
-
-/**
- * Busca una variante DEL PANEL por código de barras principal o alternativo.
- * El código se normaliza (trim, sin espacios, mayúsculas) y la DB lo guarda
- * igual, así que la búsqueda es una igualdad exacta que usa los índices
- * únicos. Con relationLoadStrategy "join" Prisma resuelve variante + producto
- * + marca + categoría + stock + depósitos en UNA sola query.
- */
-export async function buscarPorCodigo(
-  ctx: CtxCatalogo,
-  codigo: string,
-): Promise<VarianteEncontrada | null> {
-  const c = normalizarCodigo(codigo);
-  if (!c) return null;
-
-  const v = await dbPara(ctx.panelId).variante.findFirst({
-    relationLoadStrategy: "join",
-    where: {
-      deletedAt: null,
-      producto: { deletedAt: null },
-      OR: [{ codigoBarras: c }, { codigosAlternativos: { some: { codigo: c } } }],
-    },
-    select: selectEncontrada,
-  });
-  return v ? aEncontrada(v, c, veCosto(ctx)) : null;
-}
-
-/** Misma forma que buscarPorCodigo pero por id (ej: volver al escáner después de crear el producto). */
-export async function obtenerVarianteEncontrada(
-  ctx: CtxCatalogo,
-  id: string,
-): Promise<VarianteEncontrada | null> {
-  const v = await dbPara(ctx.panelId).variante.findFirst({
-    relationLoadStrategy: "join",
-    where: { id, deletedAt: null, producto: { deletedAt: null } },
-    select: selectEncontrada,
-  });
-  return v ? aEncontrada(v, v.codigoBarras, veCosto(ctx)) : null;
-}
-
-// =============================================================================
-// Códigos internos (Code128) para productos sin código de fábrica
-// =============================================================================
+// --- Códigos internos (Code128) para productos sin código de fábrica ---------
 
 /** Prefijo de los códigos internos del panel: el de los SKU, solo letras y números. */
 export async function prefijoCodigoInterno(
   ctx: Pick<Ctx, "panelId">,
   tx: Tx = dbPara(ctx.panelId),
 ): Promise<string> {
-  return (await prefijoSku(tx, ctx.panelId)).replace(/[^A-Z0-9]/g, "") || "PRD";
+  return (await prefijoSku(tx)).replace(/[^A-Z0-9]/g, "") || "PRD";
 }
 
 /** Formato: {prefijo}{7 dígitos}{verificador Luhn} — ej: PRD12345674. Libre dentro del panel. */
@@ -411,7 +263,7 @@ export async function generarCodigoInterno(
     const base = String(randomInt(0, 10_000_000)).padStart(7, "0");
     const codigo = `${prefijo}${base}${digitoLuhn(base)}`;
     if (reservados.has(codigo)) continue;
-    if (!(await duenioDeCodigo(tx, ctx.panelId, codigo))) return codigo;
+    if (!(await duenioDeCodigo(tx, codigo))) return codigo;
   }
   throw new Error("No se pudo generar un código interno único tras 20 intentos.");
 }
@@ -423,10 +275,7 @@ export function esCodigoInterno(codigo: string | null, prefijo: string): boolean
   return m !== null && digitoLuhn(m[1]!) === Number(m[2]);
 }
 
-/**
- * Asigna un código interno a las variantes del panel que no tienen código de
- * barras (las que ya tienen uno no se tocan).
- */
+/** Asigna un código interno a los sabores del panel que no tienen código (los demás no se tocan). */
 export async function asignarCodigosInternos(
   ctx: Ctx,
   varianteIds: string[],
@@ -458,445 +307,793 @@ export async function asignarCodigosInternos(
 }
 
 // =============================================================================
-// Crear / actualizar producto
+// VarianteEncontrada: la forma que usan escáner, POS, compras y carga de stock
 // =============================================================================
 
-async function assertClasificacionActiva(tx: Tx, categoriaId: string, marcaId: string | undefined) {
-  const [categoria, marca] = await Promise.all([
-    tx.categoria.findUnique({ where: { id: categoriaId }, select: { activo: true } }),
-    marcaId
-      ? tx.marca.findUnique({ where: { id: marcaId }, select: { activo: true } })
-      : Promise.resolve(null),
-  ]);
-  if (!categoria)
-    throw new DomainError("La categoría no existe", "VALIDATION_ERROR", 400, {
-      categoriaId: ["La categoría no existe"],
-    });
-  if (!categoria.activo)
-    throw new DomainError("La categoría está inactiva", "VALIDATION_ERROR", 400, {
-      categoriaId: ["La categoría está inactiva"],
-    });
-  if (marcaId && !marca)
-    throw new DomainError("La marca no existe", "VALIDATION_ERROR", 400, {
-      marcaId: ["La marca no existe"],
-    });
-  if (marca && !marca.activo)
-    throw new DomainError("La marca está inactiva", "VALIDATION_ERROR", 400, {
-      marcaId: ["La marca está inactiva"],
-    });
-}
-
-/** Nombre único por marca entre productos vivos del panel (NULL en marca incluido, que el índice no cubre). */
-async function assertNombreDisponible(
-  tx: Tx,
-  nombre: string,
-  marcaId: string | undefined,
-  excluirId?: string,
-) {
-  const existente = await tx.producto.findFirst({
-    where: {
-      nombre: { equals: nombre, mode: "insensitive" },
-      marcaId: marcaId ?? null,
-      deletedAt: null,
-      ...(excluirId ? { id: { not: excluirId } } : {}),
+const selectEncontrada = {
+  id: true,
+  nombre: true,
+  sku: true,
+  codigoBarras: true,
+  precioVenta: true,
+  ultimoCosto: true,
+  stockMinimo: true,
+  activo: true,
+  producto: {
+    select: {
+      id: true,
+      nombre: true,
+      especificacion: true,
+      nombreCompleto: true,
+      precioVenta: true,
+      imagenUrl: true,
+      activo: true,
+      marcaId: true,
+      marca: { select: { nombre: true } },
+      categoria: { select: { nombre: true } },
     },
-    select: { id: true },
-  });
-  if (existente) {
-    throw new ConflictError("Ya existe un producto con ese nombre para esa marca", {
-      nombre: ["Ya existe un producto con ese nombre para esa marca"],
-    });
-  }
-}
+  },
+  stocks: { select: { depositoId: true, cantidad: true } },
+  // Los depósitos activos del panel de la variante (el mismo del ctx): así el
+  // stock sale con todos los galpones (0 donde no hay fila) en la misma query.
+  panel: {
+    select: {
+      depositos: {
+        where: { activo: true },
+        orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
+        select: { id: true, nombre: true, esPrincipal: true },
+      },
+    },
+  },
+} satisfies Prisma.VarianteSelect;
 
-/** Valida códigos y SKUs de las variantes contra el panel, con el error en el campo correcto. */
-async function assertCodigosYSkus(tx: Tx, panelId: string, variantes: Producto["variantes"]) {
-  for (const [i, v] of variantes.entries()) {
-    if (v.codigoBarras) {
-      const duenio = await duenioDeCodigo(tx, panelId, v.codigoBarras, v.id);
-      if (duenio) {
-        const msg = `El código ${v.codigoBarras} ya pertenece a ${duenio.nombre}`;
-        throw new DomainError(msg, "CODIGO_EN_USO", 409, {
-          [`variantes.${i}.codigoBarras`]: [msg],
-        });
-      }
-    }
-    if (v.sku) {
-      try {
-        await assertSkuDisponible(tx, panelId, v.sku, v.id);
-      } catch (e) {
-        if (e instanceof ConflictError)
-          throw new ConflictError(e.message, { [`variantes.${i}.sku`]: [e.message] });
-        throw e;
-      }
-    }
-  }
-}
+type FilaEncontrada = Prisma.VarianteGetPayload<{ select: typeof selectEncontrada }>;
 
-function snapshotProducto(p: {
-  nombre: string;
-  categoriaId: string;
-  marcaId: string | null;
-  activo: boolean;
-  tieneVariantes: boolean;
-  variantes: Pick<
-    Variante,
-    | "id"
-    | "nombre"
-    | "sku"
-    | "codigoBarras"
-    | "precioCosto"
-    | "precioVenta"
-    | "stockMinimo"
-    | "activo"
-    | "deletedAt"
-  >[];
-}): Prisma.InputJsonObject {
+function aEncontrada(
+  v: FilaEncontrada,
+  opciones: { codigoBuscado?: string | null; conCosto: boolean; depositoId?: string },
+): VarianteEncontrada {
+  const porDeposito = new Map(v.stocks.map((s) => [s.depositoId, s.cantidad]));
+  const stockPorDeposito: StockEnDeposito[] = v.panel.depositos.map((d) => ({
+    depositoId: d.id,
+    nombre: d.nombre,
+    esPrincipal: d.esPrincipal,
+    cantidad: porDeposito.get(d.id) ?? 0,
+  }));
+  const p = v.producto;
   return {
-    nombre: p.nombre,
-    categoriaId: p.categoriaId,
+    varianteId: v.id,
+    productoId: p.id,
+    nombreCompleto: p.nombreCompleto,
+    sabor: saborVisible(v.nombre),
+    titulo: nombreConSabor(p.nombreCompleto, v.nombre),
+    marca: p.marca.nombre,
     marcaId: p.marcaId,
-    activo: p.activo,
-    tieneVariantes: p.tieneVariantes,
-    variantes: p.variantes.map((v) => ({
-      id: v.id,
-      nombre: v.nombre,
-      sku: v.sku,
-      codigoBarras: v.codigoBarras,
-      precioCosto: dec(v.precioCosto),
-      precioVenta: dec(v.precioVenta),
-      stockMinimo: v.stockMinimo,
-      activo: v.activo,
-      eliminada: v.deletedAt !== null,
-    })),
+    modelo: p.nombre,
+    especificacion: p.especificacion,
+    categoria: p.categoria?.nombre ?? null,
+    imagenUrl: p.imagenUrl,
+    sku: v.sku,
+    codigoBarras: v.codigoBarras,
+    precioVenta: dec(precioVentaEfectivo(v, p)),
+    precioVentaProducto: dec(p.precioVenta),
+    tienePrecioPropio: tienePrecioPropio(v),
+    ultimoCosto: opciones.conCosto && v.ultimoCosto !== null ? dec(v.ultimoCosto) : null,
+    stockMinimo: v.stockMinimo,
+    stockPorDeposito,
+    stockTotal: stockPorDeposito.reduce((a, s) => a + s.cantidad, 0),
+    stockEnDeposito: opciones.depositoId ? (porDeposito.get(opciones.depositoId) ?? 0) : null,
+    activo: v.activo && p.activo,
+    porCodigoAlternativo:
+      opciones.codigoBuscado != null && v.codigoBarras !== opciones.codigoBuscado,
   };
 }
 
 /**
- * Crea Producto + Variantes en el panel. Sin variantes => una sola variante
- * "Único". SKU autogenerado si no viene. Registra AuditLog CREATE.
- * Un empleado no ve ni carga costos: sus productos nuevos arrancan con costo 0.
+ * Busca un sabor DEL PANEL por código de barras principal o alternativo.
+ * El código se normaliza igual que lo guarda la DB, así que es una igualdad
+ * exacta sobre índices únicos. Con relationLoadStrategy "join", variante +
+ * producto + marca + categoría + stock + depósitos salen en UNA query.
  */
-export async function crearProducto(
-  ctx: CtxEscrituraCatalogo,
-  input: Producto,
-): Promise<{
-  id: string;
-  variantes: { id: string; nombre: string; codigoBarras: string | null }[];
-}> {
-  const conCosto = veCosto(ctx);
-  try {
-    return await transaccion(ctx, async (tx) => {
-      await assertClasificacionActiva(tx, input.categoriaId, input.marcaId);
-      await assertNombreDisponible(tx, input.nombre, input.marcaId);
-      await assertCodigosYSkus(tx, ctx.panelId, input.variantes);
+export async function buscarPorCodigo(
+  ctx: CtxCatalogo,
+  codigo: string,
+): Promise<VarianteEncontrada | null> {
+  const c = normalizarCodigo(codigo);
+  if (!c) return null;
+  const v = await dbPara(ctx.panelId).variante.findFirst({
+    relationLoadStrategy: "join",
+    where: {
+      deletedAt: null,
+      producto: { deletedAt: null },
+      OR: [{ codigoBarras: c }, { codigosAlternativos: { some: { codigo: c } } }],
+    },
+    select: selectEncontrada,
+  });
+  return v ? aEncontrada(v, { codigoBuscado: c, conCosto: veCosto(ctx) }) : null;
+}
 
-      const reservados = new Set(input.variantes.flatMap((v) => (v.sku ? [v.sku] : [])));
-      const variantes = [];
-      for (const v of input.variantes) {
-        const sku = v.sku ?? (await generarSku(tx, ctx.panelId, reservados));
-        reservados.add(sku);
-        variantes.push({
-          nombre: input.tieneVariantes ? v.nombre : NOMBRE_VARIANTE_UNICA,
-          sku,
-          codigoBarras: v.codigoBarras ?? null,
-          precioCosto: conCosto ? (v.precioCosto ?? 0) : 0,
-          precioVenta: v.precioVenta,
-          stockMinimo: v.stockMinimo,
-          activo: v.activo,
+/** Sabores del panel por id, en el orden pedido (los que no existen se omiten). */
+export async function obtenerVariantesPorId(
+  ctx: CtxCatalogo,
+  ids: string[],
+  depositoId?: string,
+): Promise<VarianteEncontrada[]> {
+  if (ids.length === 0) return [];
+  const filas = await dbPara(ctx.panelId).variante.findMany({
+    relationLoadStrategy: "join",
+    where: { id: { in: ids }, deletedAt: null, producto: { deletedAt: null } },
+    select: selectEncontrada,
+  });
+  const conCosto = veCosto(ctx);
+  const porId = new Map(filas.map((v) => [v.id, v]));
+  return ids.flatMap((id) => {
+    const v = porId.get(id);
+    return v ? [aEncontrada(v, { conCosto, depositoId })] : [];
+  });
+}
+
+/** Un sabor por id (null si no existe en el panel). */
+export async function obtenerVarianteEncontrada(
+  ctx: CtxCatalogo,
+  id: string,
+): Promise<VarianteEncontrada | null> {
+  return (await obtenerVariantesPorId(ctx, [id]))[0] ?? null;
+}
+
+/**
+ * Buscador manual de sabores del panel (carga de stock, POS, compras,
+ * movimientos): código exacto primero; si no, cada palabra tiene que aparecer
+ * en el nombre completo del producto, el sabor o el SKU ("elf mango").
+ */
+export async function buscarVariantes(
+  ctx: CtxCatalogo,
+  q: string,
+  opciones: {
+    depositoId?: string;
+    limite?: number;
+    soloConStockEnDeposito?: boolean;
+    incluirInactivas?: boolean;
+  } = {},
+): Promise<VarianteEncontrada[]> {
+  const texto = q.trim();
+  if (texto.length === 0) return [];
+  const db = dbPara(ctx.panelId);
+  const base: Prisma.VarianteWhereInput = {
+    deletedAt: null,
+    producto: { deletedAt: null, ...(opciones.incluirInactivas ? {} : { activo: true }) },
+    ...(opciones.incluirInactivas ? {} : { activo: true }),
+  };
+
+  let where: Prisma.VarianteWhereInput | null = null;
+  if (pareceCodigo(texto)) {
+    const c = normalizarCodigoBarras(texto);
+    const porCodigo: Prisma.VarianteWhereInput = {
+      ...base,
+      OR: [{ codigoBarras: c }, { codigosAlternativos: { some: { codigo: c } } }],
+    };
+    if ((await db.variante.count({ where: porCodigo })) > 0) where = porCodigo;
+  }
+  if (!where) {
+    const palabras = texto.split(/\s+/).filter(Boolean).slice(0, 6);
+    where = {
+      ...base,
+      AND: palabras.map((w) => ({
+        OR: [
+          { nombre: { contains: w, mode: "insensitive" as const } },
+          { sku: { contains: w, mode: "insensitive" as const } },
+          { producto: { nombreCompleto: { contains: w, mode: "insensitive" as const } } },
+        ],
+      })),
+    };
+  }
+  if (opciones.soloConStockEnDeposito && opciones.depositoId) {
+    where = {
+      ...where,
+      stocks: { some: { depositoId: opciones.depositoId, cantidad: { gt: 0 } } },
+    };
+  }
+  const filas = await db.variante.findMany({
+    relationLoadStrategy: "join",
+    where,
+    take: opciones.limite ?? 20,
+    orderBy: [{ producto: { nombreCompleto: "asc" } }, { nombre: "asc" }],
+    select: selectEncontrada,
+  });
+  const conCosto = veCosto(ctx);
+  return filas.map((v) => aEncontrada(v, { conCosto, depositoId: opciones.depositoId }));
+}
+
+// =============================================================================
+// Marca / producto por clave (marca + modelo + especificación)
+// =============================================================================
+
+/** Marca del panel por nombre (sin distinguir mayúsculas). Si no existe y `crear`, la crea. */
+async function marcaPorNombre(
+  tx: Tx,
+  ctx: Ctx,
+  nombre: string,
+): Promise<{ id: string; nombre: string }> {
+  const limpio = colapsarEspacios(nombre);
+  const existente = await tx.marca.findFirst({
+    where: { nombre: { equals: limpio, mode: "insensitive" } },
+    select: { id: true, nombre: true, activo: true },
+  });
+  if (existente) {
+    if (!existente.activo)
+      await tx.marca.update({ where: { id: existente.id }, data: { activo: true } });
+    return { id: existente.id, nombre: existente.nombre };
+  }
+  const marca = await tx.marca.create({
+    data: { nombre: limpio },
+    select: { id: true, nombre: true },
+  });
+  await registrarAuditoria(tx, {
+    usuarioId: ctx.usuarioId,
+    accion: AccionAuditoria.CREATE,
+    entidad: "Marca",
+    entidadId: marca.id,
+    datosDespues: { nombre: marca.nombre },
+    meta: ctx.meta,
+  });
+  return marca;
+}
+
+/** "Mismo producto": misma marca, mismo modelo (sin distinguir mayúsculas) y misma especificación normalizada. */
+function whereClave(
+  marcaId: string,
+  modelo: string,
+  especificacion: string,
+): Prisma.ProductoWhereInput {
+  return {
+    marcaId,
+    nombre: { equals: colapsarEspacios(modelo), mode: "insensitive" },
+    especificacionNorm: normalizarEspecificacion(especificacion),
+  };
+}
+
+export interface ProductoParaAlta {
+  id: string;
+  nombreCompleto: string;
+  marca: string;
+  modelo: string;
+  especificacion: string;
+  precioVenta: string;
+  activo: boolean;
+  /** Sabores vivos (sin "Único"). */
+  sabores: string[];
+}
+
+const selectParaAlta = {
+  id: true,
+  nombreCompleto: true,
+  nombre: true,
+  especificacion: true,
+  precioVenta: true,
+  activo: true,
+  marca: { select: { nombre: true } },
+  variantes: { where: { deletedAt: null }, select: { nombre: true }, orderBy: { nombre: "asc" } },
+} satisfies Prisma.ProductoSelect;
+
+function aParaAlta(
+  p: Prisma.ProductoGetPayload<{ select: typeof selectParaAlta }>,
+): ProductoParaAlta {
+  return {
+    id: p.id,
+    nombreCompleto: p.nombreCompleto,
+    marca: p.marca.nombre,
+    modelo: p.nombre,
+    especificacion: p.especificacion,
+    precioVenta: dec(p.precioVenta),
+    activo: p.activo,
+    sabores: p.variantes.flatMap((v) => (saborVisible(v.nombre) ? [v.nombre] : [])),
+  };
+}
+
+/** ¿Ya existe marca + modelo + especificación en el panel? (el Sheet de alta rápida lo detecta). */
+export async function productoPorClave(
+  ctx: Pick<Ctx, "panelId">,
+  clave: { marca: string; modelo: string; especificacion: string },
+): Promise<ProductoParaAlta | null> {
+  const db = dbPara(ctx.panelId);
+  const marca = await db.marca.findFirst({
+    where: { nombre: { equals: colapsarEspacios(clave.marca), mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (!marca) return null;
+  const p = await db.producto.findFirst({
+    where: { ...whereClave(marca.id, clave.modelo, clave.especificacion), deletedAt: null },
+    select: selectParaAlta,
+  });
+  return p ? aParaAlta(p) : null;
+}
+
+/** Autocompletar del alta rápida: marcas y productos del panel que coinciden con el texto. */
+export async function buscarParaAltaRapida(
+  ctx: Pick<Ctx, "panelId">,
+  q: string,
+): Promise<{ marcas: string[]; productos: ProductoParaAlta[] }> {
+  const db = dbPara(ctx.panelId);
+  const texto = q.trim();
+  const palabras = texto.split(/\s+/).filter(Boolean).slice(0, 6);
+  const [marcas, productos] = await Promise.all([
+    db.marca.findMany({
+      where: texto ? { nombre: { contains: texto, mode: "insensitive" } } : {},
+      orderBy: [{ activo: "desc" }, { nombre: "asc" }],
+      take: texto ? 10 : 200,
+      select: { nombre: true },
+    }),
+    texto
+      ? db.producto.findMany({
+          where: {
+            deletedAt: null,
+            AND: palabras.map((w) => ({
+              nombreCompleto: { contains: w, mode: "insensitive" as const },
+            })),
+          },
+          orderBy: { nombreCompleto: "asc" },
+          take: 8,
+          select: selectParaAlta,
+        })
+      : Promise.resolve([]),
+  ]);
+  return { marcas: marcas.map((m) => m.nombre), productos: productos.map(aParaAlta) };
+}
+
+// =============================================================================
+// Alta rápida (código desconocido escaneado)
+// =============================================================================
+
+/**
+ * Código desconocido → sabor listo para la lista de carga:
+ * - si marca + modelo + especificación ya existe, agrega el sabor con el
+ *   código (si el sabor ya existe, le asigna el código: principal si no
+ *   tenía, alternativo si ya tenía uno);
+ * - si no, crea el producto (y la marca si hace falta) con ese sabor.
+ * El sabor usa el precio del producto salvo que `precioVentaSabor` (o un
+ * `precioVenta` distinto en un producto existente) indique uno propio.
+ */
+export async function altaRapida(ctx: Ctx, input: AltaRapida): Promise<VarianteEncontrada> {
+  const codigo = normalizarCodigo(input.codigoBarras);
+  if (!codigo)
+    throw new DomainError("Código de barras inválido", "VALIDATION_ERROR", 400, {
+      codigoBarras: ["Código inválido"],
+    });
+  const nombreVariante = input.sabor ? colapsarEspacios(input.sabor) : NOMBRE_VARIANTE_UNICA;
+
+  const varianteId = await transaccion(ctx, async (tx) => {
+    const duenio = await duenioDeCodigo(tx, codigo);
+    if (duenio) {
+      const msg = `El código ${codigo} ya pertenece a ${duenio.nombre}`;
+      throw new DomainError(msg, "CODIGO_EN_USO", 409, { codigoBarras: [msg] });
+    }
+    const marca = await marcaPorNombre(tx, ctx, input.marca);
+    const existente = await tx.producto.findFirst({
+      where: { ...whereClave(marca.id, input.modelo, input.especificacion), deletedAt: null },
+      select: {
+        id: true,
+        precioVenta: true,
+        activo: true,
+        variantes: {
+          select: { id: true, nombre: true, codigoBarras: true, deletedAt: true },
+        },
+      },
+    });
+
+    if (!existente) {
+      if (input.precioVenta === undefined) {
+        throw new DomainError("Poné el precio de venta", "VALIDATION_ERROR", 400, {
+          precioVenta: ["Poné el precio de venta"],
         });
       }
-
       const producto = await tx.producto.create({
         data: {
-          nombre: input.nombre,
-          descripcion: input.descripcion ?? null,
-          categoriaId: input.categoriaId,
-          marcaId: input.marcaId ?? null,
-          imagenUrl: input.imagenUrl ?? null,
-          activo: input.activo,
-          tieneVariantes: input.tieneVariantes,
-          variantes: { create: variantes },
+          marcaId: marca.id,
+          nombre: colapsarEspacios(input.modelo),
+          especificacion: input.especificacion,
+          precioVenta: input.precioVenta,
+          variantes: {
+            create: {
+              nombre: nombreVariante,
+              sku: await generarSku(tx),
+              codigoBarras: codigo,
+              precioVenta: precioPropio(input.precioVentaSabor, input.precioVenta),
+            },
+          },
         },
-        include: { variantes: { orderBy: { createdAt: "asc" } } },
+        select: { id: true, nombreCompleto: true, variantes: { select: { id: true } } },
       });
-
       await registrarAuditoria(tx, {
         usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.CREATE,
         entidad: "Producto",
         entidadId: producto.id,
-        datosDespues: snapshotProducto(producto),
-        meta: ctx.meta,
-      });
-      return {
-        id: producto.id,
-        variantes: producto.variantes.map((v) => ({
-          id: v.id,
-          nombre: v.nombre,
-          codigoBarras: v.codigoBarras,
-        })),
-      };
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new ConflictError(
-        "Ya existe un producto o variante con esos datos (nombre, SKU o código).",
-      );
-    }
-    throw error;
-  }
-}
-
-/**
- * Actualiza el producto y sincroniza sus variantes:
- * - con id: se actualizan (precio incluido: update simple, queda en la auditoría);
- * - sin id: se crean (si coincide con una variante dada de baja, se reactiva);
- * - las que faltan: soft delete (deletedAt + activo=false), nunca DELETE físico.
- *   Si tienen stock > 0 no se pueden quitar: primero hay que ajustarlo o transferirlo.
- * Si quien edita no es dueño, el costo existente no se toca.
- */
-export async function actualizarProducto(
-  ctx: CtxEscrituraCatalogo,
-  id: string,
-  input: Producto,
-): Promise<{ id: string }> {
-  const conCosto = veCosto(ctx);
-  const costoDe = (v: Producto["variantes"][number], actual?: Prisma.Decimal) =>
-    conCosto && v.precioCosto !== undefined ? v.precioCosto : (actual ?? 0);
-  try {
-    return await transaccion(
-      ctx,
-      async (tx) => {
-        const antes = await tx.producto.findFirst({
-          where: { id, deletedAt: null },
-          include: { variantes: { orderBy: { createdAt: "asc" } } },
-        });
-        if (!antes) throw new NotFoundError("El producto no existe o fue dado de baja");
-
-        await assertClasificacionActiva(tx, input.categoriaId, input.marcaId);
-        await assertNombreDisponible(tx, input.nombre, input.marcaId, id);
-
-        const vivas = antes.variantes.filter((v) => v.deletedAt === null);
-        const porId = new Map(vivas.map((v) => [v.id, v]));
-        for (const v of input.variantes) {
-          if (v.id && !porId.has(v.id))
-            throw new DomainError("Una de las variantes no pertenece a este producto");
-        }
-
-        // 1) Variantes quitadas: soft delete (libera su código de barras). Sin stock.
-        const idsQueQuedan = new Set(input.variantes.flatMap((v) => (v.id ? [v.id] : [])));
-        const quitadas = vivas.filter((v) => !idsQueQuedan.has(v.id));
-        if (quitadas.length > 0) {
-          const stocks = await tx.stock.groupBy({
-            by: ["varianteId"],
-            where: { varianteId: { in: quitadas.map((v) => v.id) } },
-            _sum: { cantidad: true },
-          });
-          const conStock = stocks.find((s) => (s._sum.cantidad ?? 0) > 0);
-          if (conStock) {
-            const v = quitadas.find((q) => q.id === conStock.varianteId)!;
-            throw new DomainError(
-              `No se puede quitar "${v.nombre}": tiene ${conStock._sum.cantidad} unidades en stock. Ajustalo a 0 o transferilo primero.`,
-            );
-          }
-          await tx.variante.updateMany({
-            where: { id: { in: quitadas.map((v) => v.id) } },
-            data: { deletedAt: new Date(), activo: false },
-          });
-        }
-
-        // 2) Liberar códigos que cambian (permite mover un código de una variante a otra).
-        for (const v of input.variantes) {
-          const actual = v.id ? porId.get(v.id) : undefined;
-          if (actual && actual.codigoBarras && actual.codigoBarras !== (v.codigoBarras ?? null)) {
-            await tx.variante.update({ where: { id: actual.id }, data: { codigoBarras: null } });
-          }
-        }
-
-        // 3) Validar contra el panel ya con los códigos liberados.
-        await assertCodigosYSkus(tx, ctx.panelId, input.variantes);
-
-        await tx.producto.update({
-          where: { id },
-          data: {
-            nombre: input.nombre,
-            descripcion: input.descripcion ?? null,
-            categoriaId: input.categoriaId,
-            marcaId: input.marcaId ?? null,
-            imagenUrl: input.imagenUrl ?? null,
-            activo: input.activo,
-            tieneVariantes: input.tieneVariantes,
-          },
-        });
-
-        // 4) Actualizar existentes y crear/reactivar nuevas.
-        const reservados = new Set(input.variantes.flatMap((v) => (v.sku ? [v.sku] : [])));
-        for (const v of input.variantes) {
-          const nombre = input.tieneVariantes ? v.nombre : NOMBRE_VARIANTE_UNICA;
-          const actual = v.id ? porId.get(v.id) : undefined;
-          if (actual) {
-            await tx.variante.update({
-              where: { id: actual.id },
-              data: {
-                nombre,
-                sku: v.sku ?? actual.sku,
-                codigoBarras: v.codigoBarras ?? null,
-                precioCosto: costoDe(v, actual.precioCosto),
-                precioVenta: v.precioVenta,
-                stockMinimo: v.stockMinimo,
-                activo: v.activo,
-              },
-            });
-            continue;
-          }
-          const eliminada = antes.variantes.find(
-            (x) => x.deletedAt !== null && x.nombre === nombre,
-          );
-          if (eliminada) {
-            await tx.variante.update({
-              where: { id: eliminada.id },
-              data: {
-                deletedAt: null,
-                activo: v.activo,
-                sku: v.sku ?? eliminada.sku,
-                codigoBarras: v.codigoBarras ?? null,
-                precioCosto: costoDe(v, eliminada.precioCosto),
-                precioVenta: v.precioVenta,
-                stockMinimo: v.stockMinimo,
-              },
-            });
-            continue;
-          }
-          const sku = v.sku ?? (await generarSku(tx, ctx.panelId, reservados));
-          reservados.add(sku);
-          await tx.variante.create({
-            data: {
-              productoId: id,
-              nombre,
-              sku,
-              codigoBarras: v.codigoBarras ?? null,
-              precioCosto: costoDe(v),
-              precioVenta: v.precioVenta,
-              stockMinimo: v.stockMinimo,
-              activo: v.activo,
-            },
-          });
-        }
-
-        const despues = await tx.producto.findUniqueOrThrow({
-          where: { id },
-          include: { variantes: { orderBy: { createdAt: "asc" } } },
-        });
-        await registrarAuditoria(tx, {
-          usuarioId: ctx.usuarioId,
-          accion: AccionAuditoria.UPDATE,
-          entidad: "Producto",
-          entidadId: id,
-          datosAntes: snapshotProducto(antes),
-          datosDespues: snapshotProducto(despues),
-          meta: ctx.meta,
-        });
-        return { id };
-      },
-      { timeout: 30_000 },
-    );
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new ConflictError("Hay nombres de variante, SKU o códigos repetidos.");
-    }
-    throw error;
-  }
-}
-
-/** Soft delete del producto completo (solo si no tiene stock). */
-export async function darDeBajaProducto(ctx: Ctx, id: string): Promise<void> {
-  await transaccion(ctx, async (tx) => {
-    const p = await tx.producto.findFirst({
-      where: { id, deletedAt: null },
-      select: { nombre: true },
-    });
-    if (!p) throw new NotFoundError("El producto no existe o ya fue dado de baja");
-    const stock = await tx.stock.aggregate({
-      where: { variante: { productoId: id } },
-      _sum: { cantidad: true },
-    });
-    const unidades = stock._sum.cantidad ?? 0;
-    if (unidades > 0) {
-      throw new DomainError(
-        `"${p.nombre}" tiene ${unidades} unidades en stock: no se puede dar de baja. Desactivalo o ajustá el stock a 0.`,
-      );
-    }
-    const ahora = new Date();
-    await tx.producto.update({ where: { id }, data: { deletedAt: ahora, activo: false } });
-    await tx.variante.updateMany({
-      where: { productoId: id, deletedAt: null },
-      data: { deletedAt: ahora, activo: false },
-    });
-    await registrarAuditoria(tx, {
-      usuarioId: ctx.usuarioId,
-      accion: AccionAuditoria.DELETE,
-      entidad: "Producto",
-      entidadId: id,
-      datosAntes: { nombre: p.nombre },
-      meta: ctx.meta,
-    });
-  });
-}
-
-// =============================================================================
-// Precios (update simple + auditoría)
-// =============================================================================
-
-/**
- * Actualiza precios de una o varias variantes del panel (queda en AuditLog con
- * los valores anteriores). Si recibe `tx`, corre dentro de esa transacción
- * (ej: al recibir una compra con "actualizar costo").
- */
-export async function actualizarPrecios(
-  ctx: Ctx,
-  varianteIds: string | string[],
-  precios: { precioCosto?: number; precioVenta?: number },
-  motivo?: string,
-  tx?: Tx,
-): Promise<{ actualizadas: number }> {
-  const ids = Array.isArray(varianteIds) ? varianteIds : [varianteIds];
-  return enTransaccion(ctx, tx, async (t) => {
-    const variantes = await t.variante.findMany({
-      where: { id: { in: ids }, deletedAt: null },
-      select: { id: true, precioCosto: true, precioVenta: true },
-    });
-    if (variantes.length !== ids.length)
-      throw new NotFoundError("Alguna de las variantes no existe");
-    const antes: { id: string; precioCosto: string; precioVenta: string }[] = [];
-    for (const v of variantes) {
-      const costo = new Prisma.Decimal(precios.precioCosto ?? v.precioCosto).toDecimalPlaces(2);
-      const venta = new Prisma.Decimal(precios.precioVenta ?? v.precioVenta).toDecimalPlaces(2);
-      if (costo.equals(v.precioCosto) && venta.equals(v.precioVenta)) continue;
-      await t.variante.update({
-        where: { id: v.id },
-        data: { precioCosto: costo, precioVenta: venta },
-      });
-      antes.push({ id: v.id, precioCosto: dec(v.precioCosto), precioVenta: dec(v.precioVenta) });
-    }
-    if (antes.length > 0) {
-      await registrarAuditoria(t, {
-        usuarioId: ctx.usuarioId,
-        accion: AccionAuditoria.UPDATE,
-        entidad: "Variante",
-        entidadId: antes.length === 1 ? antes[0]!.id : null,
-        datosAntes: { variantes: antes },
         datosDespues: {
-          cambio: "precios",
-          varianteIds: antes.map((a) => a.id),
-          precioCosto: precios.precioCosto ?? null,
-          precioVenta: precios.precioVenta ?? null,
-          motivo: motivo ?? null,
+          origen: "alta_rapida",
+          nombreCompleto: producto.nombreCompleto,
+          sabor: nombreVariante,
+          codigo,
+          precioVenta: dec(input.precioVenta),
         },
         meta: ctx.meta,
       });
+      return producto.variantes[0]!.id;
     }
-    return { actualizadas: antes.length };
+
+    // Producto existente: el sabor.
+    if (!existente.activo)
+      await tx.producto.update({ where: { id: existente.id }, data: { activo: true } });
+    const propio = precioPropio(input.precioVentaSabor ?? input.precioVenta, existente.precioVenta);
+    const mismo = existente.variantes.find(
+      (v) => v.nombre.toLocaleLowerCase("es") === nombreVariante.toLocaleLowerCase("es"),
+    );
+    const vivas = existente.variantes.filter((v) => v.deletedAt === null);
+    let id: string;
+    if (mismo && mismo.deletedAt === null) {
+      id = mismo.id;
+      if (mismo.codigoBarras === null) {
+        await tx.variante.update({ where: { id }, data: { codigoBarras: codigo } });
+      } else {
+        await tx.codigoBarrasAlternativo.create({
+          data: { varianteId: id, codigo, descripcion: "Alta rápida desde el escáner" },
+        });
+      }
+    } else if (mismo) {
+      id = mismo.id;
+      await tx.variante.update({
+        where: { id },
+        data: { deletedAt: null, activo: true, codigoBarras: codigo, precioVenta: propio },
+      });
+    } else if (
+      // Producto sin sabores que recién recibe el primero: la variante "Único" (vacía) pasa a ser ese sabor.
+      nombreVariante !== NOMBRE_VARIANTE_UNICA &&
+      vivas.length === 1 &&
+      vivas[0]!.nombre === NOMBRE_VARIANTE_UNICA &&
+      vivas[0]!.codigoBarras === null &&
+      (await tx.stock.count({ where: { varianteId: vivas[0]!.id, cantidad: { not: 0 } } })) === 0
+    ) {
+      id = vivas[0]!.id;
+      await tx.variante.update({
+        where: { id },
+        data: { nombre: nombreVariante, codigoBarras: codigo, precioVenta: propio },
+      });
+    } else {
+      const v = await tx.variante.create({
+        data: {
+          productoId: existente.id,
+          nombre: nombreVariante,
+          sku: await generarSku(tx),
+          codigoBarras: codigo,
+          precioVenta: propio,
+        },
+        select: { id: true },
+      });
+      id = v.id;
+    }
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.UPDATE,
+      entidad: "Producto",
+      entidadId: existente.id,
+      datosDespues: {
+        origen: "alta_rapida",
+        varianteId: id,
+        sabor: nombreVariante,
+        codigo,
+        precioPropio: propio ? dec(propio) : null,
+      },
+      meta: ctx.meta,
+    });
+    return id;
+  }).catch((error: unknown) => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      throw new ConflictError("Ese sabor o código ya existe en este producto.");
+    throw error;
+  });
+
+  const v = await obtenerVarianteEncontrada(ctx, varianteId);
+  if (!v) throw new NotFoundError("No se encontró el sabor recién creado");
+  return v;
+}
+
+// =============================================================================
+// Crear / actualizar / desactivar (formulario completo)
+// =============================================================================
+
+async function assertCategoria(tx: Tx, categoriaId: string | undefined, actual?: string | null) {
+  if (!categoriaId || categoriaId === actual) return;
+  const c = await tx.categoria.findUnique({ where: { id: categoriaId }, select: { activo: true } });
+  if (!c || !c.activo)
+    throw new DomainError("La categoría no existe o está inactiva", "VALIDATION_ERROR", 400, {
+      categoriaId: ["La categoría no existe o está inactiva"],
+    });
+}
+
+async function assertClaveLibre(
+  tx: Tx,
+  marcaId: string,
+  input: Pick<Producto, "modelo" | "especificacion">,
+  excluirId?: string,
+) {
+  const otro = await tx.producto.findFirst({
+    where: {
+      ...whereClave(marcaId, input.modelo, input.especificacion),
+      ...(excluirId ? { id: { not: excluirId } } : {}),
+    },
+    select: { nombreCompleto: true, deletedAt: true },
+  });
+  if (otro) {
+    const msg = otro.deletedAt
+      ? `Ya existió "${otro.nombreCompleto}" (dado de baja): usá otro modelo o especificación`
+      : `Ya existe "${otro.nombreCompleto}"`;
+    throw new ConflictError(msg, { modelo: [msg] });
+  }
+}
+
+async function assertCodigos(tx: Tx, sabores: Producto["sabores"]) {
+  for (const [i, s] of sabores.entries()) {
+    if (!s.codigoBarras) continue;
+    const duenio = await duenioDeCodigo(tx, s.codigoBarras, s.id);
+    if (duenio) {
+      const msg = `El código ${s.codigoBarras} ya pertenece a ${duenio.nombre}`;
+      throw new DomainError(msg, "CODIGO_EN_USO", 409, { [`sabores.${i}.codigoBarras`]: [msg] });
+    }
+  }
+}
+
+const selectSnapshot = {
+  nombreCompleto: true,
+  marcaId: true,
+  nombre: true,
+  especificacion: true,
+  categoriaId: true,
+  precioVenta: true,
+  imagenUrl: true,
+  activo: true,
+  variantes: {
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      nombre: true,
+      sku: true,
+      codigoBarras: true,
+      precioVenta: true,
+      stockMinimo: true,
+      activo: true,
+      deletedAt: true,
+    },
+  },
+} satisfies Prisma.ProductoSelect;
+
+function snapshot(p: Prisma.ProductoGetPayload<{ select: typeof selectSnapshot }>) {
+  return {
+    nombreCompleto: p.nombreCompleto,
+    marcaId: p.marcaId,
+    modelo: p.nombre,
+    especificacion: p.especificacion,
+    categoriaId: p.categoriaId,
+    precioVenta: dec(p.precioVenta),
+    imagenUrl: p.imagenUrl,
+    activo: p.activo,
+    sabores: p.variantes.map((v) => ({
+      id: v.id,
+      nombre: v.nombre,
+      sku: v.sku,
+      codigoBarras: v.codigoBarras,
+      precioVenta: v.precioVenta === null ? null : dec(v.precioVenta),
+      stockMinimo: v.stockMinimo,
+      activo: v.activo,
+      eliminado: v.deletedAt !== null,
+    })),
+  } satisfies Prisma.InputJsonObject;
+}
+
+function mapearUnico(error: unknown): never {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+    throw new ConflictError("Hay sabores, SKU o códigos repetidos.");
+  throw error;
+}
+
+/**
+ * Crea producto + sabores. Una sola fila sin sabor = producto sin sabores
+ * (variante "Único"). La marca se crea si no existe. SKU automático.
+ */
+export async function crear(
+  ctx: Ctx,
+  input: Producto,
+): Promise<{
+  id: string;
+  variantes: { id: string; nombre: string; codigoBarras: string | null }[];
+}> {
+  return transaccion(ctx, async (tx) => {
+    const marca = await marcaPorNombre(tx, ctx, input.marca);
+    await assertCategoria(tx, input.categoriaId);
+    await assertClaveLibre(tx, marca.id, input);
+    await assertCodigos(tx, input.sabores);
+
+    const reservados = new Set<string>();
+    const variantes: Prisma.VarianteCreateWithoutProductoInput[] = [];
+    for (const s of input.sabores) {
+      const sku = await generarSku(tx, reservados);
+      reservados.add(sku);
+      variantes.push({
+        nombre: s.nombre,
+        sku,
+        codigoBarras: s.codigoBarras ?? null,
+        precioVenta: precioPropio(s.precioVenta, input.precioVenta),
+        stockMinimo: s.stockMinimo,
+        activo: s.activo,
+      } as Prisma.VarianteCreateWithoutProductoInput);
+    }
+    const producto = await tx.producto.create({
+      data: {
+        marcaId: marca.id,
+        nombre: input.modelo,
+        especificacion: input.especificacion,
+        categoriaId: input.categoriaId ?? null,
+        precioVenta: input.precioVenta,
+        imagenUrl: input.imagenUrl ?? null,
+        activo: input.activo,
+        variantes: { create: variantes },
+      },
+      select: { id: true, ...selectSnapshot },
+    });
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.CREATE,
+      entidad: "Producto",
+      entidadId: producto.id,
+      datosDespues: snapshot(producto),
+      meta: ctx.meta,
+    });
+    return {
+      id: producto.id,
+      variantes: producto.variantes.map((v) => ({
+        id: v.id,
+        nombre: v.nombre,
+        codigoBarras: v.codigoBarras,
+      })),
+    };
+  }).catch(mapearUnico);
+}
+
+/**
+ * Actualiza el producto y sincroniza sus sabores:
+ * - con id: se actualizan; sin id: se crean (o se reactiva uno dado de baja con ese nombre);
+ * - los que faltan: soft delete (nunca DELETE físico), solo si no tienen stock.
+ */
+export async function actualizar(ctx: Ctx, id: string, input: Producto): Promise<{ id: string }> {
+  return transaccion(
+    ctx,
+    async (tx) => {
+      const antes = await tx.producto.findFirst({
+        where: { id, deletedAt: null },
+        select: selectSnapshot,
+      });
+      if (!antes) throw new NotFoundError("El producto no existe o fue dado de baja");
+
+      const marca = await marcaPorNombre(tx, ctx, input.marca);
+      await assertCategoria(tx, input.categoriaId, antes.categoriaId);
+      await assertClaveLibre(tx, marca.id, input, id);
+
+      const vivas = antes.variantes.filter((v) => v.deletedAt === null);
+      const porId = new Map(vivas.map((v) => [v.id, v]));
+      for (const s of input.sabores) {
+        if (s.id && !porId.has(s.id))
+          throw new DomainError("Uno de los sabores no pertenece a este producto");
+      }
+
+      // 1) Sabores quitados: soft delete (libera el código). Solo sin stock.
+      const quedan = new Set(input.sabores.flatMap((s) => (s.id ? [s.id] : [])));
+      const quitadas = vivas.filter((v) => !quedan.has(v.id));
+      if (quitadas.length > 0) {
+        const stocks = await tx.stock.groupBy({
+          by: ["varianteId"],
+          where: { varianteId: { in: quitadas.map((v) => v.id) } },
+          _sum: { cantidad: true },
+        });
+        const conStock = stocks.find((s) => (s._sum.cantidad ?? 0) > 0);
+        if (conStock) {
+          const v = quitadas.find((q) => q.id === conStock.varianteId)!;
+          throw new DomainError(
+            `No se puede quitar "${v.nombre}": tiene ${conStock._sum.cantidad} unidades en stock.`,
+          );
+        }
+        await tx.variante.updateMany({
+          where: { id: { in: quitadas.map((v) => v.id) } },
+          data: { deletedAt: new Date(), activo: false, codigoBarras: null },
+        });
+      }
+
+      // 2) Liberar los códigos que cambian (permite pasar un código de un sabor a otro).
+      for (const s of input.sabores) {
+        const actual = s.id ? porId.get(s.id) : undefined;
+        if (actual?.codigoBarras && actual.codigoBarras !== (s.codigoBarras ?? null))
+          await tx.variante.update({ where: { id: actual.id }, data: { codigoBarras: null } });
+      }
+      await assertCodigos(tx, input.sabores);
+
+      await tx.producto.update({
+        where: { id },
+        data: {
+          marcaId: marca.id,
+          nombre: input.modelo,
+          especificacion: input.especificacion,
+          categoriaId: input.categoriaId ?? null,
+          precioVenta: input.precioVenta,
+          imagenUrl: input.imagenUrl ?? null,
+          activo: input.activo,
+        },
+      });
+
+      // 3) Existentes, reactivados y nuevos.
+      const reservados = new Set<string>();
+      for (const s of input.sabores) {
+        const datos = {
+          nombre: s.nombre,
+          codigoBarras: s.codigoBarras ?? null,
+          precioVenta: precioPropio(s.precioVenta, input.precioVenta),
+          stockMinimo: s.stockMinimo,
+          activo: s.activo,
+        };
+        const actual = s.id ? porId.get(s.id) : undefined;
+        if (actual) {
+          await tx.variante.update({ where: { id: actual.id }, data: datos });
+          continue;
+        }
+        const eliminada = antes.variantes.find(
+          (v) => v.deletedAt !== null && v.nombre === s.nombre,
+        );
+        if (eliminada) {
+          await tx.variante.update({
+            where: { id: eliminada.id },
+            data: { ...datos, deletedAt: null },
+          });
+          continue;
+        }
+        const sku = await generarSku(tx, reservados);
+        reservados.add(sku);
+        await tx.variante.create({ data: { ...datos, productoId: id, sku } });
+      }
+
+      const despues = await tx.producto.findUniqueOrThrow({
+        where: { id },
+        select: selectSnapshot,
+      });
+      await registrarAuditoria(tx, {
+        usuarioId: ctx.usuarioId,
+        accion: AccionAuditoria.UPDATE,
+        entidad: "Producto",
+        entidadId: id,
+        datosAntes: snapshot(antes),
+        datosDespues: snapshot(despues),
+        meta: ctx.meta,
+      });
+      return { id };
+    },
+    { timeout: 30_000 },
+  ).catch(mapearUnico);
+}
+
+/** Desactiva el producto (deja de venderse y de reconocerse como activo). Su stock e historial quedan. */
+export async function desactivar(ctx: Ctx, id: string): Promise<void> {
+  await transaccion(ctx, async (tx) => {
+    const p = await tx.producto.findFirst({
+      where: { id, deletedAt: null },
+      select: { nombreCompleto: true, activo: true },
+    });
+    if (!p) throw new NotFoundError("El producto no existe o fue dado de baja");
+    if (!p.activo) return;
+    await tx.producto.update({ where: { id }, data: { activo: false } });
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.UPDATE,
+      entidad: "Producto",
+      entidadId: id,
+      datosAntes: { activo: true },
+      datosDespues: { activo: false, nombreCompleto: p.nombreCompleto },
+      meta: ctx.meta,
+    });
   });
 }
 
@@ -920,8 +1117,8 @@ export async function agregarCodigoAlternativo(
       where: { id: varianteId, deletedAt: null },
       select: { id: true },
     });
-    if (!v) throw new NotFoundError("La variante no existe");
-    const duenio = await duenioDeCodigo(tx, ctx.panelId, c);
+    if (!v) throw new NotFoundError("El sabor no existe");
+    const duenio = await duenioDeCodigo(tx, c);
     if (duenio) {
       const msg = `El código ${c} ya pertenece a ${duenio.nombre}`;
       throw new DomainError(msg, "CODIGO_EN_USO", 409, { codigo: [msg] });
@@ -958,34 +1155,48 @@ export async function quitarCodigoAlternativo(ctx: Ctx, id: string): Promise<voi
 }
 
 // =============================================================================
-// Lectura: listado, ficha, búsqueda de variantes
+// Lectura: listado y ficha
 // =============================================================================
 
-const selectVarianteConStock = {
+const selectSabor = {
   id: true,
   nombre: true,
   sku: true,
   codigoBarras: true,
-  precioCosto: true,
   precioVenta: true,
   stockMinimo: true,
   activo: true,
   stocks: { select: { depositoId: true, cantidad: true } },
 } satisfies Prisma.VarianteSelect;
 
-type VarianteConStock = Prisma.VarianteGetPayload<{ select: typeof selectVarianteConStock }>;
+const selectProducto = {
+  id: true,
+  nombreCompleto: true,
+  nombre: true,
+  especificacion: true,
+  precioVenta: true,
+  activo: true,
+  imagenUrl: true,
+  marcaId: true,
+  marca: { select: { nombre: true } },
+  categoria: { select: { nombre: true } },
+} satisfies Prisma.ProductoSelect;
 
-function aVarianteListada(v: VarianteConStock, conCosto: boolean): VarianteListada {
+function aSabor(
+  v: Prisma.VarianteGetPayload<{ select: typeof selectSabor }>,
+  precioProducto: Prisma.Decimal,
+): SaborListado {
   const stockPorDeposito: Record<string, number> = {};
   for (const s of v.stocks) stockPorDeposito[s.depositoId] = s.cantidad;
-  const stockTotal = v.stocks.reduce((acc, s) => acc + s.cantidad, 0);
+  const stockTotal = v.stocks.reduce((a, s) => a + s.cantidad, 0);
   return {
     id: v.id,
     nombre: v.nombre,
+    sabor: saborVisible(v.nombre),
     sku: v.sku,
     codigoBarras: v.codigoBarras,
-    precioCosto: conCosto ? dec(v.precioCosto) : null,
-    precioVenta: dec(v.precioVenta),
+    precioVenta: dec(precioVentaEfectivo(v, { precioVenta: precioProducto })),
+    tienePrecioPropio: tienePrecioPropio(v),
     stockMinimo: v.stockMinimo,
     activo: v.activo,
     stockPorDeposito,
@@ -994,74 +1205,48 @@ function aVarianteListada(v: VarianteConStock, conCosto: boolean): VarianteLista
   };
 }
 
-function resumirProducto(
-  p: {
-    id: string;
-    nombre: string;
-    activo: boolean;
-    tieneVariantes: boolean;
-    imagenUrl: string | null;
-    marca: { nombre: string } | null;
-    categoria: { nombre: string };
-  },
-  variantes: VarianteListada[],
-) {
-  const activas = variantes.filter((v) => v.activo);
+function resumir(
+  p: Prisma.ProductoGetPayload<{ select: typeof selectProducto }>,
+  sabores: SaborListado[],
+): Omit<ProductoListado, "sabores"> {
+  const activos = sabores.filter((s) => s.activo);
   const stockPorDeposito: Record<string, number> = {};
-  for (const v of variantes)
-    for (const [dep, n] of Object.entries(v.stockPorDeposito))
+  for (const s of sabores)
+    for (const [dep, n] of Object.entries(s.stockPorDeposito))
       stockPorDeposito[dep] = (stockPorDeposito[dep] ?? 0) + n;
-  const precios = activas.map((v) => new Prisma.Decimal(v.precioVenta));
-  const min = precios.length ? Prisma.Decimal.min(...precios) : null;
-  const max = precios.length ? Prisma.Decimal.max(...precios) : null;
-  // Estado del PRODUCTO: sin unidades → SIN_STOCK; con unidades pero algún
-  // sabor activo bajo el mínimo (o en 0) → BAJO; si no, OK.
-  const total = variantes.reduce((acc, v) => acc + v.stockTotal, 0);
-  const estado: EstadoStock =
-    total <= 0
-      ? "SIN_STOCK"
-      : (activas.length ? activas : variantes).some((v) => v.estado !== "OK")
-        ? "BAJO"
-        : "OK";
+  const total = sabores.reduce((a, s) => a + s.stockTotal, 0);
+  const bajo = activos.filter((s) => s.estado !== "OK").length;
   return {
     id: p.id,
-    nombre: p.nombre,
-    marca: p.marca?.nombre ?? null,
-    categoria: p.categoria.nombre,
+    nombreCompleto: p.nombreCompleto,
+    marca: p.marca.nombre,
+    marcaId: p.marcaId,
+    modelo: p.nombre,
+    especificacion: p.especificacion,
+    categoria: p.categoria?.nombre ?? null,
+    precioVenta: dec(p.precioVenta),
     activo: p.activo,
-    tieneVariantes: p.tieneVariantes,
     imagenUrl: p.imagenUrl,
-    stockTotal: total,
+    sinSabores: sabores.length === 1 && sabores[0]!.sabor === null,
     stockPorDeposito,
-    precioVentaMin: min ? dec(min) : null,
-    precioVentaMax: max ? dec(max) : null,
-    estado,
-    variantesBajoMinimo: activas.filter((v) => v.estado !== "OK").length,
+    stockTotal: total,
+    estado: total <= 0 ? "SIN_STOCK" : bajo > 0 ? "BAJO" : "OK",
+    saboresBajoMinimo: bajo,
   };
 }
 
-/** ¿El texto parece un código de barras (y no un nombre)? */
-function pareceCodigo(q: string): boolean {
-  return /^[0-9A-Za-z-]{4,64}$/.test(q) && /\d/.test(q);
-}
-
-async function whereProductos(
+async function whereListado(
   ctx: Pick<Ctx, "panelId">,
-  filtros: Omit<FiltrosProductos, "page" | "pageSize" | "orden">,
+  f: Pick<FiltrosProductos, "q" | "marcaId" | "soloBajoMinimo" | "inactivos">,
 ): Promise<Prisma.ProductoWhereInput> {
   const db = dbPara(ctx.panelId);
-  const where: Prisma.ProductoWhereInput = { deletedAt: null };
-  if (filtros.estado === "activos") where.activo = true;
-  if (filtros.estado === "inactivos") where.activo = false;
-  if (filtros.categoriaId) where.categoriaId = filtros.categoriaId;
-  if (filtros.marcaId) where.marcaId = filtros.marcaId;
-
+  const where: Prisma.ProductoWhereInput = { deletedAt: null, activo: !f.inactivos };
+  if (f.marcaId) where.marcaId = f.marcaId;
   const and: Prisma.ProductoWhereInput[] = [];
-  if (filtros.q) {
-    const q = filtros.q.trim();
+  if (f.q) {
+    const q = f.q.trim();
     let porCodigo: string[] = [];
     if (pareceCodigo(q)) {
-      // Código exacto primero (principal o alternativo).
       const c = normalizarCodigoBarras(q);
       const vs = await db.variante.findMany({
         where: {
@@ -1075,27 +1260,30 @@ async function whereProductos(
     if (porCodigo.length > 0) {
       and.push({ id: { in: porCodigo } });
     } else {
-      const contiene = { contains: q, mode: "insensitive" as const };
-      and.push({
-        OR: [
-          { nombre: contiene },
-          {
-            variantes: {
-              some: {
-                deletedAt: null,
-                OR: [
-                  { nombre: contiene },
-                  { sku: contiene },
-                  { codigoBarras: { contains: q.toUpperCase() } },
-                ],
+      // Cada palabra en el nombre completo o en algún sabor / SKU / código ("elf mango").
+      for (const w of q.split(/\s+/).filter(Boolean).slice(0, 6)) {
+        const contiene = { contains: w, mode: "insensitive" as const };
+        and.push({
+          OR: [
+            { nombreCompleto: contiene },
+            {
+              variantes: {
+                some: {
+                  deletedAt: null,
+                  OR: [
+                    { nombre: contiene },
+                    { sku: contiene },
+                    { codigoBarras: { contains: w.toUpperCase() } },
+                  ],
+                },
               },
             },
-          },
-        ],
-      });
+          ],
+        });
+      }
     }
   }
-  if (filtros.conStockBajo) {
+  if (f.soloBajoMinimo) {
     const alertas = await db.$queryRaw<{ producto_id: string }[]>`
       SELECT DISTINCT producto_id FROM vw_alertas_stock WHERE panel_id = ${ctx.panelId}`;
     and.push({ id: { in: alertas.map((a) => a.producto_id) } });
@@ -1104,75 +1292,47 @@ async function whereProductos(
   return where;
 }
 
-const ORDEN_PRODUCTOS: Record<FiltrosProductos["orden"], Prisma.ProductoOrderByWithRelationInput> =
-  {
-    nombre: { nombre: "asc" },
-    "-nombre": { nombre: "desc" },
-    reciente: { createdAt: "desc" },
-  };
-
-/**
- * Listado paginado server-side del panel. Búsqueda por nombre, sabor, SKU o
- * código (si `q` parece un código, primero busca el código exacto).
- */
-export async function listarProductos(
+/** Listado paginado del panel: búsqueda por nombre completo, sabor, SKU o código; marca; bajo mínimo. */
+export async function listar(
   ctx: CtxCatalogo,
   filtros: FiltrosProductos,
 ): Promise<{ productos: ProductoListado[]; total: number; page: number; pageSize: number }> {
   const db = dbPara(ctx.panelId);
-  const conCosto = veCosto(ctx);
-  const where = await whereProductos(ctx, filtros);
+  const where = await whereListado(ctx, filtros);
   const [total, filas] = await Promise.all([
     db.producto.count({ where }),
     db.producto.findMany({
       where,
-      orderBy: [ORDEN_PRODUCTOS[filtros.orden], { id: "asc" }],
+      orderBy: [{ nombreCompleto: "asc" }, { id: "asc" }],
       skip: (filtros.page - 1) * filtros.pageSize,
       take: filtros.pageSize,
       select: {
-        id: true,
-        nombre: true,
-        activo: true,
-        tieneVariantes: true,
-        imagenUrl: true,
-        marca: { select: { nombre: true } },
-        categoria: { select: { nombre: true } },
-        variantes: {
-          where: { deletedAt: null },
-          orderBy: { nombre: "asc" },
-          select: selectVarianteConStock,
-        },
+        ...selectProducto,
+        variantes: { where: { deletedAt: null }, orderBy: { nombre: "asc" }, select: selectSabor },
       },
     }),
   ]);
   const productos = filas.map((p) => {
-    const variantes = p.variantes.map((v) => aVarianteListada(v, conCosto));
-    return { ...resumirProducto(p, variantes), variantes };
+    const sabores = p.variantes.map((v) => aSabor(v, p.precioVenta));
+    return { ...resumir(p, sabores), sabores };
   });
   return { productos, total, page: filtros.page, pageSize: filtros.pageSize };
 }
 
 /** Ficha completa (también la usa el formulario de edición). */
-export async function obtenerProducto(ctx: CtxCatalogo, id: string): Promise<ProductoDetalle> {
+export async function obtener(ctx: CtxCatalogo, id: string): Promise<ProductoDetalle> {
   const conCosto = veCosto(ctx);
   const p = await dbPara(ctx.panelId).producto.findFirst({
     where: { id, deletedAt: null },
     select: {
-      id: true,
-      nombre: true,
-      descripcion: true,
-      activo: true,
-      tieneVariantes: true,
-      imagenUrl: true,
+      ...selectProducto,
       categoriaId: true,
-      marcaId: true,
-      marca: { select: { nombre: true } },
-      categoria: { select: { nombre: true } },
       variantes: {
         where: { deletedAt: null },
         orderBy: { nombre: "asc" },
         select: {
-          ...selectVarianteConStock,
+          ...selectSabor,
+          ultimoCosto: true,
           codigosAlternativos: {
             select: { id: true, codigo: true, descripcion: true },
             orderBy: { createdAt: "asc" },
@@ -1182,137 +1342,115 @@ export async function obtenerProducto(ctx: CtxCatalogo, id: string): Promise<Pro
     },
   });
   if (!p) throw new NotFoundError("El producto no existe o fue dado de baja");
-  const variantes: VarianteDetalle[] = p.variantes.map((v) => ({
-    ...aVarianteListada(v, conCosto),
+  const sabores: SaborDetalle[] = p.variantes.map((v) => ({
+    ...aSabor(v, p.precioVenta),
+    precioPropio: v.precioVenta === null ? null : dec(v.precioVenta),
+    ultimoCosto: conCosto && v.ultimoCosto !== null ? dec(v.ultimoCosto) : null,
     codigosAlternativos: v.codigosAlternativos,
-    margen: conCosto ? margen(v.precioCosto, v.precioVenta) : null,
   }));
-  return {
-    ...resumirProducto(p, variantes),
-    descripcion: p.descripcion,
-    categoriaId: p.categoriaId,
-    marcaId: p.marcaId,
-    variantes,
-  };
+  return { ...resumir(p, sabores), categoriaId: p.categoriaId, sabores };
 }
 
-export interface VarianteBuscada {
-  id: string;
-  nombreCompleto: string;
-  sku: string;
-  codigoBarras: string | null;
-  /** null si quien mira no es dueño. */
-  precioCosto: string | null;
-  precioVenta: string;
-  stockTotal: number;
-  /** Stock en el depósito pedido (si se pidió uno). */
-  stockDeposito: number | null;
-}
+export { listar as listarProductos, obtener as obtenerProducto };
 
-const selectBuscada = {
-  id: true,
-  nombre: true,
-  sku: true,
-  codigoBarras: true,
-  precioCosto: true,
-  precioVenta: true,
-  producto: { select: { nombre: true, tieneVariantes: true } },
-  stocks: { select: { depositoId: true, cantidad: true } },
-} satisfies Prisma.VarianteSelect;
+// =============================================================================
+// Carga de stock por escaneo
+// =============================================================================
 
-function aBuscada(
-  v: Prisma.VarianteGetPayload<{ select: typeof selectBuscada }>,
-  conCosto: boolean,
-  depositoId: string | undefined,
-): VarianteBuscada {
-  return {
-    id: v.id,
-    nombreCompleto: nombreCompleto(v.producto.nombre, v.nombre, v.producto.tieneVariantes),
-    sku: v.sku,
-    codigoBarras: v.codigoBarras,
-    precioCosto: conCosto ? dec(v.precioCosto) : null,
-    precioVenta: dec(v.precioVenta),
-    stockTotal: v.stocks.reduce((a, s) => a + s.cantidad, 0),
-    stockDeposito: depositoId
-      ? (v.stocks.find((s) => s.depositoId === depositoId)?.cantidad ?? 0)
-      : null,
-  };
+export interface ResumenCargaStock {
+  deposito: { id: string; nombre: string };
+  unidades: number;
+  items: {
+    varianteId: string;
+    titulo: string;
+    cantidad: number;
+    stockAnterior: number;
+    stockPosterior: number;
+  }[];
+  /** Unidades de los sabores cargados en cada galpón activo, después de la carga. */
+  porDeposito: { depositoId: string; nombre: string; unidades: number }[];
 }
 
 /**
- * Buscador de variantes del panel (ingresos, ajustes, transferencias, POS,
- * compras): código exacto primero, si no por texto.
+ * Ingreso manual de lo escaneado en UN galpón elegido: exige un depósito
+ * activo del panel y registra un movimiento INGRESO_MANUAL por sabor, todo en
+ * una transacción (si algo falla, no se carga nada).
  */
-export async function buscarVariantes(
-  ctx: CtxCatalogo,
-  q: string,
-  opciones: { depositoId?: string; limite?: number; soloConStockEnDeposito?: boolean } = {},
-): Promise<VarianteBuscada[]> {
-  const texto = q.trim();
-  if (texto.length === 0) return [];
-  const db = dbPara(ctx.panelId);
-  const limite = opciones.limite ?? 20;
-  const base: Prisma.VarianteWhereInput = {
-    deletedAt: null,
-    activo: true,
-    producto: { deletedAt: null },
-  };
+export async function cargarStockPorEscaneo(
+  ctx: Ctx,
+  input: Omit<CargarStock, "depositoId"> & { depositoId?: string | null },
+): Promise<ResumenCargaStock> {
+  const depositoId = input.depositoId?.trim();
+  if (!depositoId) throw new DomainError(MENSAJE_SIN_GALPON, "SIN_GALPON");
+  // Un sabor escaneado en dos tandas es un solo movimiento; orden fijo por id (bloqueos sin deadlock).
+  const cantidades = new Map<string, number>();
+  for (const i of input.items)
+    cantidades.set(i.varianteId, (cantidades.get(i.varianteId) ?? 0) + i.cantidad);
+  const ids = [...cantidades.keys()].sort();
+  if (ids.length === 0) throw new DomainError("No hay nada para cargar");
 
-  let where: Prisma.VarianteWhereInput | null = null;
-  if (pareceCodigo(texto)) {
-    const c = normalizarCodigoBarras(texto);
-    const porCodigo: Prisma.VarianteWhereInput = {
-      ...base,
-      OR: [{ codigoBarras: c }, { codigosAlternativos: { some: { codigo: c } } }],
-    };
-    if ((await db.variante.count({ where: porCodigo })) > 0) where = porCodigo;
-  }
-  if (!where) {
-    const palabras = texto.split(/\s+/).filter(Boolean).slice(0, 5);
-    // Cada palabra tiene que aparecer en producto, sabor o SKU ("ignite mango").
-    where = {
-      ...base,
-      AND: palabras.map((w) => ({
-        OR: [
-          { nombre: { contains: w, mode: "insensitive" as const } },
-          { sku: { contains: w, mode: "insensitive" as const } },
-          { producto: { nombre: { contains: w, mode: "insensitive" as const } } },
-        ],
-      })),
-    };
-  }
-  if (opciones.soloConStockEnDeposito && opciones.depositoId) {
-    where = {
-      ...where,
-      stocks: { some: { depositoId: opciones.depositoId, cantidad: { gt: 0 } } },
-    };
-  }
+  return transaccion(
+    ctx,
+    async (tx) => {
+      const deposito = await tx.deposito.findFirst({
+        where: { id: depositoId, activo: true },
+        select: { id: true, nombre: true },
+      });
+      if (!deposito) throw new DomainError(MENSAJE_SIN_GALPON, "SIN_GALPON");
 
-  const filas = await db.variante.findMany({
-    where,
-    take: limite,
-    orderBy: [{ producto: { nombre: "asc" } }, { nombre: "asc" }],
-    select: selectBuscada,
-  });
-  const conCosto = veCosto(ctx);
-  return filas.map((v) => aBuscada(v, conCosto, opciones.depositoId));
-}
+      const variantes = await tx.variante.findMany({
+        where: { id: { in: ids }, deletedAt: null, producto: { deletedAt: null } },
+        select: { id: true, nombre: true, producto: { select: { nombreCompleto: true } } },
+      });
+      if (variantes.length !== ids.length)
+        throw new NotFoundError("Alguno de los productos ya no existe. Quitalo de la lista.");
+      const porId = new Map(variantes.map((v) => [v.id, v]));
 
-/** Datos mínimos de varias variantes del panel (para precargar formularios por id). */
-export async function obtenerVariantesPorId(
-  ctx: CtxCatalogo,
-  ids: string[],
-  depositoId?: string,
-): Promise<VarianteBuscada[]> {
-  if (ids.length === 0) return [];
-  const filas = await dbPara(ctx.panelId).variante.findMany({
-    where: { id: { in: ids }, deletedAt: null },
-    select: selectBuscada,
-  });
-  const conCosto = veCosto(ctx);
-  const porId = new Map(filas.map((v) => [v.id, v]));
-  return ids.flatMap((id) => {
-    const v = porId.get(id);
-    return v ? [aBuscada(v, conCosto, depositoId)] : [];
-  });
+      const items: ResumenCargaStock["items"] = [];
+      for (const varianteId of ids) {
+        const cantidad = cantidades.get(varianteId)!;
+        const m = await registrarMovimiento(tx, {
+          tipo: TipoMovimiento.INGRESO_MANUAL,
+          varianteId,
+          depositoId: deposito.id,
+          cantidad,
+          usuarioId: ctx.usuarioId,
+          motivo: input.motivo ?? "Carga por escaneo",
+        });
+        const v = porId.get(varianteId)!;
+        items.push({
+          varianteId,
+          titulo: nombreConSabor(v.producto.nombreCompleto, v.nombre),
+          cantidad,
+          stockAnterior: m.stockAnterior,
+          stockPosterior: m.stockPosterior,
+        });
+      }
+
+      const [depositos, sumas] = await Promise.all([
+        tx.deposito.findMany({
+          where: { activo: true },
+          orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
+          select: { id: true, nombre: true },
+        }),
+        tx.stock.groupBy({
+          by: ["depositoId"],
+          where: { varianteId: { in: ids } },
+          _sum: { cantidad: true },
+        }),
+      ]);
+      const suma = new Map(sumas.map((s) => [s.depositoId, s._sum.cantidad ?? 0]));
+      return {
+        deposito,
+        unidades: items.reduce((a, i) => a + i.cantidad, 0),
+        items,
+        porDeposito: depositos.map((d) => ({
+          depositoId: d.id,
+          nombre: d.nombre,
+          unidades: suma.get(d.id) ?? 0,
+        })),
+      };
+    },
+    { timeout: 60_000 },
+  );
 }

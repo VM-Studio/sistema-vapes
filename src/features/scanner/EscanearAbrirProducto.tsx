@@ -22,7 +22,7 @@ export function EscanearAbrirProducto() {
   const puedeVerProductos = usePuede(Modulo.PRODUCTOS, "ver");
   const escaner = useEscanerVariantes({
     onVariante: (v) => {
-      if (!puedeVerProductos) return actualizar({ q: v.sku });
+      if (!puedeVerProductos) return actualizar({ q: v.codigoBarras ?? v.sku });
       const destino = ruta(`/productos/${v.productoId}`);
       router.push(destino);
       // En producción el router a veces descarta esta navegación (carrera con el prefetch

@@ -82,6 +82,11 @@ enum EstadoTransferencia {
   ANULADA
 }
 
+enum Moneda {
+  ARS
+  USD
+}
+
 enum MedioPago {
   EFECTIVO
   TRANSFERENCIA
@@ -126,13 +131,14 @@ model Usuario {
   paneles           UsuarioPanel[]
   movimientos       MovimientoStock[]
   compras           Compra[]
-  ventas            Venta[]           @relation("VentaUsuario")
-  ventasAnuladas    Venta[]           @relation("VentaAnuladaPor")
+  ventas            Venta[]             @relation("VentaUsuario")
+  ventasAnuladas    Venta[]             @relation("VentaAnuladaPor")
   transferencias    Transferencia[]
   auditLogs         AuditLog[]
   devoluciones      Devolucion[]
-  sesiones          Sesion[]          @relation("SesionUsuario")
-  sesionesRevocadas Sesion[]          @relation("SesionRevocadaPor")
+  preciosProveedor  ProveedorProducto[]
+  sesiones          Sesion[]            @relation("SesionUsuario")
+  sesionesRevocadas Sesion[]            @relation("SesionRevocadaPor")
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -265,6 +271,7 @@ model Panel {
   categorias          Categoria[]
   marcas              Marca[]
   proveedores         Proveedor[]
+  proveedorProductos  ProveedorProducto[]
   clientes            Cliente[]
   productos           Producto[]
   variantes           Variante[]
@@ -356,24 +363,50 @@ model Marca {
 }
 
 model Proveedor {
-  id        String    @id @default(cuid())
-  panelId   String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  nombre    String
-  /// Único por panel entre proveedores no borrados (índice único parcial en SQL).
-  cuit      String?
-  telefono  String?
-  email     String?
-  direccion String?
-  notas     String?
-  activo    Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  id           String    @id @default(cuid())
+  panelId      String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Persona de contacto.
+  nombre       String
+  /// Normalizado ("+54" + dígitos). Único por panel entre proveedores no borrados (índice parcial en SQL).
+  telefono     String?
+  nombreTienda String
+  notas        String?
+  activo       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
-  panel   Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  compras Compra[]
+  panel     Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  compras   Compra[]
+  productos ProveedorProducto[]
 
   @@index([panelId, nombre])
+  @@index([panelId, nombreTienda])
+}
+
+/// Qué vende cada proveedor y a cuánto (precio de compra unitario por
+/// producto, sin importar el sabor). Se pisa al editarlo y al recibir una
+/// compra con "actualizar precio del proveedor".
+model ProveedorProducto {
+  id            String   @id @default(cuid())
+  panelId       String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  proveedorId   String
+  productoId    String
+  precio        Decimal  @db.Decimal(12, 2)
+  moneda        Moneda   @default(ARS)
+  actualizadoAt DateTime @default(now())
+  /// Quién fijó el precio vigente.
+  usuarioId     String
+  createdAt     DateTime @default(now())
+
+  panel     Panel     @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  proveedor Proveedor @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
+  producto  Producto  @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, proveedorId, productoId])
+  /// Comparador de precios: proveedores de un producto, de menor a mayor.
+  @@index([panelId, productoId, precio])
 }
 
 model Cliente {
@@ -408,47 +441,61 @@ model Cliente {
 // Catálogo
 // -----------------------------------------------------------------------------
 
+/// Producto = marca + modelo + especificación ("Elf Bar" + "BC" + "5000").
+/// Todo producto tiene variantes (sabores); uno sin sabor tiene una sola
+/// variante "Único" que la UI no muestra como tal.
 model Producto {
-  id             String    @id @default(cuid())
-  panelId        String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  nombre         String
-  descripcion    String?
-  categoriaId    String
-  marcaId        String?
-  /// false => existe exactamente una variante "Único".
-  tieneVariantes Boolean   @default(false)
-  imagenUrl      String?
-  activo         Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  id                 String    @id @default(cuid())
+  panelId            String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  marcaId            String
+  /// El modelo (ej. "BC").
+  nombre             String
+  /// El atributo principal del panel (Panel.etiquetaEspecificacion): "5000" pitadas en Vapes.
+  especificacion     String    @default("")
+  /// Mantenido por trigger: lower(especificacion) sin espacios. Compara "mismo producto".
+  especificacionNorm String    @default("")
+  /// Mantenido por trigger: "{Marca} {Modelo} {Especificación}" (búsquedas y toda la UI).
+  nombreCompleto     String    @default("")
+  categoriaId        String?
+  /// Precio unitario de venta de todos sus sabores (salvo los que tienen precio propio).
+  precioVenta        Decimal   @db.Decimal(12, 2)
+  imagenUrl          String?
+  activo             Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
 
-  panel     Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  categoria Categoria  @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
-  marca     Marca?     @relation(fields: [marcaId], references: [id], onDelete: Restrict)
-  variantes Variante[]
+  panel       Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  categoria   Categoria?          @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  marca       Marca               @relation(fields: [marcaId], references: [id], onDelete: Restrict)
+  variantes   Variante[]
+  proveedores ProveedorProducto[]
+  compraItems CompraItem[]
 
-  @@unique([panelId, nombre, marcaId])
+  @@unique([panelId, marcaId, nombre, especificacionNorm])
   @@index([panelId, categoriaId])
   @@index([panelId, marcaId])
   /// Trigram (pg_trgm) para búsquedas ILIKE '%texto%'.
-  @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "producto_nombre_trgm")
+  @@index([nombreCompleto(ops: raw("gin_trgm_ops"))], type: Gin, map: "producto_nombre_completo_trgm")
 }
 
+/// Variante = sabor de un producto. El stock es por variante y depósito.
 model Variante {
   id           String    @id @default(cuid())
   /// Desnormalizado (= Producto.panelId, lo verifica un trigger): buscar por
   /// código de barras dentro de un panel no necesita join.
   panelId      String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   productoId   String
-  /// Ej: "Mango Ice". "Único" para productos sin variantes.
+  /// El sabor ("Mango Ice"). "Único" para productos sin sabor.
   nombre       String
   /// Formato PRD-XXXXXX si no se provee. Único por panel.
   sku          String
   /// Único por panel (junto con CodigoBarrasAlternativo.codigo) entre variantes no borradas.
   codigoBarras String?
-  precioCosto  Decimal   @db.Decimal(12, 2)
-  precioVenta  Decimal   @db.Decimal(12, 2)
+  /// null = usa Producto.precioVenta. Solo para un sabor con precio distinto.
+  precioVenta  Decimal?  @db.Decimal(12, 2)
+  /// Costo de la última compra recibida (snapshot que toma cada venta).
+  ultimoCosto  Decimal?  @db.Decimal(12, 2)
   stockMinimo  Int       @default(0)
   activo       Boolean   @default(true)
   createdAt    DateTime  @default(now())
@@ -465,7 +512,7 @@ model Variante {
   transferenciaItems  TransferenciaItem[]
 
   @@unique([panelId, sku])
-  @@unique([productoId, nombre])
+  @@unique([panelId, productoId, nombre])
   /// Trigram (pg_trgm) para búsquedas ILIKE '%texto%'.
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "variante_nombre_trgm")
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin, map: "variante_sku_trgm")
@@ -575,11 +622,14 @@ model Compra {
   @@index([usuarioId])
 }
 
+/// Se compra por sabor (el stock es por sabor); productoId desnormalizado
+/// (= variante.productoId, lo verifica un trigger) para precios por proveedor.
 model CompraItem {
   id            String   @id @default(cuid())
   panelId       String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   compraId      String
   varianteId    String
+  productoId    String
   cantidad      Int
   costoUnitario Decimal  @db.Decimal(12, 2)
   subtotal      Decimal  @db.Decimal(12, 2)
@@ -589,9 +639,11 @@ model CompraItem {
   panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   compra   Compra   @relation(fields: [compraId], references: [id], onDelete: Cascade)
   variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
   @@unique([compraId, varianteId])
   @@index([panelId, varianteId])
+  @@index([panelId, productoId])
 }
 
 // -----------------------------------------------------------------------------

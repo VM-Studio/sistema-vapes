@@ -8,7 +8,7 @@ import type { RequestMeta } from "@/server/auth/request-meta";
  *
  * Cada panel (Vapes, Cosmetic, ...) es un sistema independiente: ninguna
  * query de negocio puede ver ni tocar datos de otro. `dbPara(panelId)` es un
- * PrismaClient extendido que, para TODO modelo con columna `panelId`:
+ * PrismaClient extendido que, para todo modelo con columna `panelId`:
  *
  *  - lecturas, updates y deletes: agrega `panelId` al `where` (también en
  *    findUnique/update/delete por id: un id de otro panel da "no encontrado");

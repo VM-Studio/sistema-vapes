@@ -4,8 +4,9 @@
 
 Sistema de gestión para un negocio con varias líneas de productos que funcionan como **sistemas
 independientes** (paneles): **Vapes**, **Cosmetic**, **Especiales** y los que los dueños agreguen desde la
-app. Cada panel tiene su propio catálogo con variantes, stock por depósito, escáner con pistola lectora o
-cámara, compras a proveedores, punto de venta y clientes. Los usuarios, la configuración general, los
+app. Cada panel tiene su propio catálogo (producto = marca + modelo + especificación, con sus sabores),
+stock por depósito, carga de stock escaneando con pistola lectora o cámara, proveedores con su lista de
+precios, compras, punto de venta y clientes. Los usuarios, la configuración general, los
 backups y la auditoría son globales.
 
 Es una PWA: se instala en el celular o la PC, abre directamente el último panel usado y, sin conexión, el
@@ -133,8 +134,30 @@ Autorización en tres capas:
   `Secuencia` (`siguienteNumero()` en `src/server/db/secuencia.ts`): `SELECT … FOR UPDATE` sobre la fila
   (panel, entidad) dentro de la transacción que inserta el documento, así dos ventas simultáneas del mismo
   panel nunca repiten número y si la transacción falla el número no se consume. Un trigger impide que la
-  secuencia retroceda o se borre. El ID de venta visible es `VAP-000001`; el prefijo de un panel nuevo no
-  puede chocar con el de otro.
+  secuencia retroceda o se borre. El ID de venta visible es `VAP-000001` y el de compra `VAP-C-000001`
+  (`src/lib/paneles.ts`); el prefijo de un panel nuevo no puede chocar con el de otro.
+- **Catálogo: producto = marca + modelo + especificación.** La marca es obligatoria y la especificación es el
+  atributo principal del panel (`Panel.etiquetaEspecificacion`: «Pitadas» en Vapes). El producto tiene **un**
+  precio de venta para todos sus sabores; cada sabor (`Variante`) puede tener precio propio (`null` = el del
+  producto) y guarda su `ultimoCosto`. `nombreCompleto` y `especificacionNorm` los mantiene un trigger de la
+  base (renombrar la marca actualiza los nombres; «Sin marca» no aparece), así la app no puede dejarlos
+  desincronizados y la unicidad (marca, modelo, especificación normalizada) no depende de mayúsculas ni
+  espacios. Las reglas de precio viven en una sola función pura, `src/lib/precios.ts`, que usan el servidor y
+  el cliente.
+- **Costos por snapshot.** Recibir una compra actualiza `Variante.ultimoCosto`; cada venta congela ese costo
+  en `VentaItem.costoUnitario` (0 si el sabor no tuvo compras). Cambiar costos o precios después no altera la
+  ganancia de las ventas ya hechas.
+- **Precios por proveedor.** `ProveedorProducto` guarda un precio por (proveedor, producto), en `ARS` o `USD`,
+  que se pisa al editarlo o al recibir una compra con «actualizar precio» (el Dialog muestra «de $X a $Y»).
+  Alimenta el costo sugerido de las compras (precio del proveedor en pesos → último costo del sabor) y la
+  lista «Proveedores que lo venden» de la ficha del producto, de menor a mayor. `CompraItem` es por sabor
+  pero lleva el `productoId` desnormalizado (verificado por trigger) para cruzarlo con esos precios.
+- **Galpón obligatorio para cargar stock.** La carga por escaneo (`/p/{slug}/productos/cargar`) y las compras
+  empiezan eligiendo el galpón con `SelectorGalpon`: el último usado viene preseleccionado pero nunca se
+  confirma solo, y el escáner no hace nada hasta confirmar. El servicio (`cargarStockPorEscaneo()`) rechaza
+  una carga sin depósito activo aunque no venga de la pantalla. Un código desconocido abre el alta rápida
+  (`AltaRapidaSheet`), que crea el producto o le agrega el sabor si marca + modelo + especificación ya
+  existen.
 - **Ventas simples.** Una venta se cobra completa en el momento con **un** medio de pago (efectivo,
   transferencia, débito, crédito, MercadoPago u otro); la base exige el medio al confirmar. Sin cuenta
   corriente, pagos partidos, caja ni comprobantes. Una venta confirmada no se edita: se anula (el stock
@@ -146,8 +169,9 @@ Autorización en tres capas:
   `transferirStock()` (`stock.service.ts`). La base rechaza un `UPDATE` a `Stock` sin movimiento en la misma
   transacción, un movimiento cuyo `stockAnterior` no coincide con el stock real y cualquier stock negativo.
   La vista **Global** de Stock consolida todos los depósitos del panel.
-- **Costos solo para dueños.** Precio de costo, costo de la venta y ganancia bruta los ven únicamente los
-  dueños, en cualquier pantalla y en el dashboard.
+- **Quién ve costos.** Último costo de los sabores, costo de la venta y ganancia bruta los ven únicamente los
+  dueños, en cualquier pantalla y en el dashboard. Costos y totales de compras y precios de proveedores los
+  ven los dueños y quien tiene `ver` en Compras (`veCostosCompras()`); el filtro se aplica en el servidor.
 - **Offline solo consulta.** El catálogo del panel (productos, códigos, precios y stock) se guarda en
   IndexedDB al entrar y cada 15 minutos con red (304 si no cambió). Sin conexión, el escáner solo consulta;
   ingresar, contar, transferir y vender necesitan señal. No hay cola offline.
@@ -193,7 +217,9 @@ pnpm dev                    # http://localhost:3000 (salud: /api/health)
 - Si el puerto 5433 está ocupado, cambiá `DB_PORT` en `.env` (lo usa `docker-compose.yml`).
 - Los paneles **Vapes**, **Cosmetic** y **Especiales**, sus depósitos y sus secuencias los crea la migración
   `20260928160000_reforma_multipanel`. El seed completa los depósitos de Vapes (**Ayres Plaza**, principal, y
-  **Mercedes**), la configuración de cada panel y un catálogo de ejemplo en Vapes con stock inicial.
+  **Mercedes**), la configuración de cada panel y un catálogo de ejemplo en Vapes (marcas, modelos, pitadas y
+  sabores, uno con precio propio) con stock inicial, más dos proveedores con su lista de precios (uno en
+  dólares).
 - `pnpm db:seed-demo` carga 90 días de operación simulada en Vapes (ventas, compras, transferencias, ajustes y
   clientes) para ver el dashboard y los listados con datos.
 - En producción el seed está bloqueado salvo `ALLOW_SEED=true` (y exige las variables `SEED_*`); el primer
@@ -241,44 +267,45 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 
 ## Scripts
 
-| Script                                                        | Qué hace                                                                                                          |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                                                    | Servidor de desarrollo (Turbopack)                                                                                |
-| `pnpm build` / `pnpm start`                                   | Build de producción (incluye el service worker) y servidor                                                        |
-| `pnpm lint`                                                   | ESLint (incluye la regla que prohíbe Prisma crudo en código de negocio)                                           |
-| `pnpm typecheck`                                              | `tsc --noEmit`                                                                                                    |
-| `pnpm format` / `pnpm format:check`                           | Prettier (escribir / verificar)                                                                                   |
-| `pnpm db:up` / `pnpm db:down`                                 | Levanta / baja el Postgres de Docker                                                                              |
-| `pnpm db:migrate`                                             | `prisma migrate dev` (crear y aplicar migraciones en desarrollo)                                                  |
-| `pnpm db:deploy`                                              | `prisma migrate deploy` (aplicar migraciones pendientes)                                                          |
-| `pnpm db:generate`                                            | `prisma generate` (también corre en `postinstall`)                                                                |
-| `pnpm db:seed`                                                | Seed idempotente: usuarios, configuración y catálogo de ejemplo en Vapes                                          |
-| `pnpm db:reset`                                               | Borra la base, re-aplica migraciones y corre el seed (solo desarrollo)                                            |
-| `pnpm db:studio`                                              | Prisma Studio                                                                                                     |
-| `pnpm db:seed-demo`                                           | 90 días de operación simulada en Vapes                                                                            |
-| `pnpm crear-owner`                                            | Crea el primer dueño en una base nueva (pide datos por consola; no hace nada si ya hay un dueño activo)           |
-| `pnpm iconos`                                                 | Genera los íconos de la PWA                                                                                       |
-| `pnpm backup`                                                 | Backup manual: `pg_dump -Fc`, verificación, subida al bucket y rotación                                           |
-| `pnpm release`                                                | Paso de release en producción: backup verificado (si hay migraciones pendientes) + `prisma migrate deploy`        |
-| `pnpm storage:migrate`                                        | Copia los archivos de `.storage/` al bucket S3/R2 y verifica cada uno (`--dry-run` para simular)                  |
-| `pnpm restore <archivo> [--force]`                            | Restaura un backup en `RESTORE_DATABASE_URL` (nunca en la base de la app sin `--force` y confirmación)            |
-| `pnpm test` / `pnpm test:unit`                                | Vitest: proyectos `unit` e `integracion`                                                                          |
-| `pnpm test:e2e`                                               | Playwright contra el build de producción y una base aislada                                                       |
-| `pnpm test:restore`                                           | Backup + restauración en una base vacía + comparación de conteos                                                  |
-| `pnpm test:scripts`                                           | `test:stock` + `test:integridad` + `test:auth`                                                                    |
-| `pnpm test:stock`                                             | Prueba de humo del motor de stock contra la DB                                                                    |
-| `pnpm test:integridad`                                        | Invariantes de la base (triggers y CHECKs, incluidos los de aislamiento entre paneles)                            |
-| `pnpm test:auth`                                              | Login, sesiones y permisos contra la DB                                                                           |
-| `pnpm test:ventas:concurrencia`                               | Ventas simultáneas sobre poco stock: confirman solo las que alcanzan, numeración por panel sin repetidos          |
-| `pnpm test:catalogo`, `pnpm test:compras`, `pnpm test:ventas` | Pruebas de servicios heredadas de la v1: usan el modelo anterior a la reforma y no corren contra el schema actual |
-| `scripts/db-descartable.sh X`                                 | Recrea una base descartable X (migraciones + seed [+ `--demo`])                                                   |
+| Script                                                        | Qué hace                                                                                                   |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                                                    | Servidor de desarrollo (Turbopack)                                                                         |
+| `pnpm build` / `pnpm start`                                   | Build de producción (incluye el service worker) y servidor                                                 |
+| `pnpm lint`                                                   | ESLint (incluye la regla que prohíbe Prisma crudo en código de negocio)                                    |
+| `pnpm typecheck`                                              | `tsc --noEmit`                                                                                             |
+| `pnpm format` / `pnpm format:check`                           | Prettier (escribir / verificar)                                                                            |
+| `pnpm db:up` / `pnpm db:down`                                 | Levanta / baja el Postgres de Docker                                                                       |
+| `pnpm db:migrate`                                             | `prisma migrate dev` (crear y aplicar migraciones en desarrollo)                                           |
+| `pnpm db:deploy`                                              | `prisma migrate deploy` (aplicar migraciones pendientes)                                                   |
+| `pnpm db:generate`                                            | `prisma generate` (también corre en `postinstall`)                                                         |
+| `pnpm db:seed`                                                | Seed idempotente: usuarios, configuración, catálogo y proveedores de ejemplo en Vapes                      |
+| `pnpm db:reset`                                               | Borra la base, re-aplica migraciones y corre el seed (solo desarrollo)                                     |
+| `pnpm db:studio`                                              | Prisma Studio                                                                                              |
+| `pnpm db:seed-demo`                                           | 90 días de operación simulada en Vapes                                                                     |
+| `pnpm crear-owner`                                            | Crea el primer dueño en una base nueva (pide datos por consola; no hace nada si ya hay un dueño activo)    |
+| `pnpm iconos`                                                 | Genera los íconos de la PWA                                                                                |
+| `pnpm backup`                                                 | Backup manual: `pg_dump -Fc`, verificación, subida al bucket y rotación                                    |
+| `pnpm release`                                                | Paso de release en producción: backup verificado (si hay migraciones pendientes) + `prisma migrate deploy` |
+| `pnpm storage:migrate`                                        | Copia los archivos de `.storage/` al bucket S3/R2 y verifica cada uno (`--dry-run` para simular)           |
+| `pnpm restore <archivo> [--force]`                            | Restaura un backup en `RESTORE_DATABASE_URL` (nunca en la base de la app sin `--force` y confirmación)     |
+| `pnpm test` / `pnpm test:unit`                                | Vitest: proyectos `unit` e `integracion`                                                                   |
+| `pnpm test:e2e`                                               | Playwright contra el build de producción y una base aislada                                                |
+| `pnpm test:restore`                                           | Backup + restauración en una base vacía + comparación de conteos                                           |
+| `pnpm test:scripts`                                           | `test:stock` + `test:integridad` + `test:auth`                                                             |
+| `pnpm test:stock`                                             | Prueba de humo del motor de stock contra la DB                                                             |
+| `pnpm test:integridad`                                        | Invariantes de la base (triggers y CHECKs, incluidos los de aislamiento entre paneles)                     |
+| `pnpm test:auth`                                              | Login, sesiones y permisos contra la DB                                                                    |
+| `pnpm test:ventas:concurrencia`                               | Ventas simultáneas sobre poco stock: confirman solo las que alcanzan, numeración por panel sin repetidos   |
+| `pnpm test:catalogo`, `pnpm test:compras`, `pnpm test:ventas` | Servicios contra una DB recién sembrada: catálogo y carga de stock; proveedores y compras; ventas y costos |
+| `scripts/db-descartable.sh X`                                 | Recrea una base descartable X (migraciones + seed [+ `--demo`])                                            |
 
 ## Estructura de carpetas
 
 ```text
 prisma/
   schema.prisma           Modelo de datos (paneles + tablas de negocio con panelId)
-  migrations/             Migraciones SQL (CHECKs, triggers y vistas incluidos; la reforma es 20260928160000_reforma_multipanel)
+  migrations/             Migraciones SQL (CHECKs, triggers y vistas incluidos; reformas: 20260928160000_reforma_multipanel y
+                          20260929090000_catalogo_proveedores_compras)
   seed.ts, seed-demo.ts   Seed base y 90 días simulados en Vapes
 src/
   app/
@@ -288,7 +315,7 @@ src/
       (global)/           Fuera de los paneles: paneles (selector y «Agregar panel»), usuarios y usuarios/[id],
                           configuracion (negocio, sistemas, backups, auditoria, exportar-todo), cuenta, ayuda, sin-acceso
       p/[slug]/           Dentro de un panel: inicio (dashboard), ventas, escanear, stock (+ movimientos, ingreso,
-                          ajuste, transferencias), clientes, compras, productos (+ etiquetas), proveedores,
+                          ajuste, transferencias), clientes, compras, productos (+ cargar, etiquetas), proveedores,
                           devoluciones, cotizador-unitario, cotizador-mayorista, reportes,
                           configuracion (depositos, categorias, marcas, escaner, ventas), sin-acceso
     api/                  Route handlers: auth, p/[slug]/catalogo/offline, p/[slug]/etiquetas, p/[slug]/stock/exportar,
@@ -296,12 +323,14 @@ src/
     offline/              Pantalla sin conexión (precacheada) con el escáner en modo consulta
     sw.ts, serwist/       Service worker (Serwist) y su ruta de servido
     manifest.ts, icons/   Manifest e íconos de la PWA
-  components/             UI (ui/), layout (shells, sidebar, navegación mobile, contexto de panel), pwa, catálogo, compras, clientes
+  components/             UI (ui/), layout (shells, sidebar, navegación mobile, contexto de panel), pwa, catálogo
+                          (selector de galpón, alta rápida), compras, clientes
   config/navigation.ts    Única fuente de la navegación dentro de un panel
   features/
     scanner/              Pistola, cámara, resolución de códigos
     offline/              IndexedDB: catálogo del panel para consulta sin conexión
-  lib/                    Utilidades compartidas: paneles.ts, permisos.ts (lógica pura), fechas, zona horaria, reloj, validaciones Zod
+  lib/                    Utilidades compartidas: paneles.ts, permisos.ts y precios.ts (lógica pura), fechas, zona horaria, reloj,
+                          validaciones Zod
   server/
     db/                   panel-scoped.ts (dbPara, transaccion, Ctx) y secuencia.ts (numeración por panel)
     services/             Lógica de negocio (con dbPara) y servicios globales
@@ -322,16 +351,20 @@ docs/                     Manual, modelo de datos, deploy
 
 - **Vitest** (`pnpm test`), dos proyectos:
   - `unit` (jsdom, sin DB): detector de la pistola, seguridad (CSP, rate limit, magic bytes, contraseñas
-    comunes), normalización de teléfonos, rotación de backups y fechas.
+    comunes), normalización de teléfonos, precios (precio efectivo, snapshot de costo, IDs de venta y compra),
+    rotación de backups y fechas.
   - `integracion`: aislamiento entre paneles (`dbPara`, triggers y `DEFAULT` de `panelId`), motor de stock,
     integridad de la DB y concurrencia de ventas contra una base aislada (`DATABASE_URL_TEST_VITEST`, default
     `gestion_test_vitest` en el Postgres local; se recrea al empezar).
 - **Playwright** (`pnpm test:e2e`): corre contra el **build** de producción (`pnpm build` antes) en el puerto
   3100 y una base aislada `DATABASE_URL_TEST` (default `gestion_e2e`), que el setup global recrea con
   migraciones y seed. Dos proyectos: escritorio 1440×900 y celular (Pixel 7). Flujos: login y cambio de
-  contraseña, permisos, alta de producto, ingreso con escáner, venta en celular, venta sin stock,
-  transferencia, modo sin conexión (solo consulta), seguridad y paneles (empleada con un solo panel entra
-  directo; dueño crea y desactiva un panel).
+  contraseña, permisos, alta de producto (precio del producto y precio propio de un sabor), carga de stock
+  escaneando (sin galpón no se carga nada, alta rápida de códigos desconocidos, stock por galpón), proveedores
+  con precios, compra con costo sugerido y «recibir actualizando el precio», catálogo de la empleada (sin
+  costos, sin cargar stock ni entrar a Compras), venta en celular, venta sin stock, transferencia, modo sin
+  conexión (solo consulta), seguridad y paneles (empleada con un solo panel entra directo; dueño crea y
+  desactiva un panel).
 - **Restauración** (`pnpm test:restore`): hace un backup de la base de `DATABASE_URL`, lo restaura en una base
   vacía (`RESTORE_DB`, default `gestion_restore`) y compara `COUNT(*)` de todas las tablas, la suma de stock y
   la cantidad de triggers y vistas. Corre en CI después del seed.

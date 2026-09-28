@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { buscarProductosPosAction, type VariantePos } from "../actions";
 
 /**
- * Búsqueda manual por nombre, variante o SKU con stock del depósito y precio.
+ * Búsqueda manual por producto, sabor, SKU con stock del depósito y precio.
  * (Los códigos de barras los resuelve el escáner, con o sin foco acá.)
  */
 export function BuscadorPos({
@@ -57,7 +57,7 @@ export function BuscadorPos({
         ref={inputRef}
         type="search"
         aria-label="Buscar producto"
-        placeholder="Buscar por nombre, variante o SKU (F2)"
+        placeholder="Buscar por producto, sabor o SKU (F2)"
         autoComplete="off"
         className={cn(controlClass, "h-11 pr-9 pl-9")}
         value={q}

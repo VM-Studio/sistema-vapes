@@ -13,7 +13,12 @@ export const metadata: Metadata = { title: "Nueva compra" };
 
 type SP = Record<string, string | string[] | undefined>;
 
-/** ?deposito=id&items=varianteId:cantidad,… precargan la compra (ej: "Registrar como compra" desde /escanear). */
+/**
+ * ?proveedor=id preselecciona el proveedor (desde su ficha) · ?deposito=id
+ * preselecciona el galpón · ?items=varianteId:cantidad,… precarga ítems
+ * (ej: "Registrar como compra" desde /escanear). El costo sugerido se
+ * completa en el cliente apenas hay proveedor.
+ */
 export default async function NuevaCompraPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanel(Modulo.COMPRAS, "crear");
   const params = await searchParams;
@@ -22,10 +27,13 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
     listarProveedoresActivos(ctx),
   ]);
   const depositoId =
-    (typeof params.deposito === "string" && depositos.find((d) => d.id === params.deposito)?.id) ||
-    depositos.find((d) => d.esPrincipal)?.id ||
-    depositos[0]?.id ||
-    "";
+    typeof params.deposito === "string" && depositos.some((d) => d.id === params.deposito)
+      ? params.deposito
+      : "";
+  const proveedorId =
+    typeof params.proveedor === "string" && proveedores.some((p) => p.id === params.proveedor)
+      ? params.proveedor
+      : "";
   const pedidos = new Map<string, number>();
   if (typeof params.items === "string") {
     for (const par of params.items.split(",").slice(0, 300)) {
@@ -35,10 +43,6 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
     }
   }
   const variantes = await obtenerVariantesPorId(ctx, [...pedidos.keys()]);
-  const proveedorId =
-    typeof params.proveedor === "string" && proveedores.some((p) => p.id === params.proveedor)
-      ? params.proveedor
-      : "";
 
   return (
     <CompraForm
@@ -49,15 +53,16 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
         proveedorId,
         depositoId,
         fecha: hoyAR(),
-        descuento: "0",
         notas: "",
         items: variantes.map((v) => ({
-          varianteId: v.id,
-          nombre: v.nombreCompleto,
+          varianteId: v.varianteId,
+          productoId: v.productoId,
+          nombreCompleto: v.nombreCompleto,
+          sabor: v.sabor,
           sku: v.sku,
-          precioCostoActual: v.precioCosto,
-          cantidad: String(pedidos.get(v.id) ?? 1),
-          costo: v.precioCosto === null ? "" : String(Number(v.precioCosto)),
+          cantidad: String(pedidos.get(v.varianteId) ?? 1),
+          costo: "",
+          origenCosto: null,
         })),
       }}
     />

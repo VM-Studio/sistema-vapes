@@ -12,7 +12,7 @@ type VarianteRapida = ProductoRapido["variantes"][number];
 
 /**
  * Los 12 más vendidos (30 días) para vender sin escanear. Un producto con
- * variantes abre un Sheet para elegir cuál (con su stock).
+ * varios sabores abre un Sheet para elegir cuál (con su stock).
  */
 export function GrillaRapida({
   productos,
@@ -67,9 +67,9 @@ export function GrillaRapida({
         open={abierto !== null}
         onOpenChange={(o) => !o && setAbierto(null)}
         title={abierto?.nombre ?? ""}
-        description="Elegí la variante"
+        description="Elegí el sabor"
       >
-        <ul aria-label="Variantes" className="flex flex-col gap-2">
+        <ul aria-label="Sabores" className="flex flex-col gap-2">
           {abierto?.variantes.map((v) => {
             const quedan = v.stock - (enCarrito.get(v.varianteId) ?? 0);
             return (
@@ -89,7 +89,7 @@ export function GrillaRapida({
                       className="text-muted size-4 shrink-0"
                       aria-hidden
                     />
-                    <span className="truncate font-medium">{v.nombre}</span>
+                    <span className="truncate font-medium">{v.sabor ?? abierto.nombre}</span>
                   </span>
                   <span className="shrink-0 text-right">
                     <span className="block font-semibold tabular-nums">

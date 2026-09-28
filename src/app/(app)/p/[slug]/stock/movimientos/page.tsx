@@ -75,7 +75,7 @@ export default async function MovimientosPage({ searchParams }: { searchParams: 
         usuarios={usuarios}
         varianteFiltro={varianteFiltro[0] ?? null}
         productoFiltro={
-          productoFiltro ? { id: productoFiltro.id, nombre: productoFiltro.nombre } : null
+          productoFiltro ? { id: productoFiltro.id, nombre: productoFiltro.nombreCompleto } : null
         }
         selector={
           <SelectorDeposito

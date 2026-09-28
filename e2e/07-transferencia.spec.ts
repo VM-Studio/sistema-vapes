@@ -1,12 +1,12 @@
 import { expect, test } from "./base";
 
-import { codigoDe, loginDueno, pistola, stock, soltarFoco } from "./helpers";
+import { codigoDe, loginDueno, pistola, stock, soltarFoco, IGNITE_V80 } from "./helpers";
 
 test("transferencia entre galpones → totales por galpón correctos", async ({ page }) => {
-  const codigo = await codigoDe("Ignite V80", "Strawberry Watermelon");
+  const codigo = await codigoDe(IGNITE_V80, "Strawberry Watermelon");
   const [g1, g2] = [
-    await stock("Ignite V80", "Strawberry Watermelon", "Ayres Plaza"),
-    await stock("Ignite V80", "Strawberry Watermelon", "Mercedes"),
+    await stock(IGNITE_V80, "Strawberry Watermelon", "Ayres Plaza"),
+    await stock(IGNITE_V80, "Strawberry Watermelon", "Mercedes"),
   ];
   await loginDueno(page);
   await page.goto("/p/vapes/escanear?modo=transferir");
@@ -20,8 +20,8 @@ test("transferencia entre galpones → totales por galpón correctos", async ({ 
   await page.getByRole("button", { name: "Completar ahora" }).click();
   await expect(page.getByText(/completada/)).toBeVisible();
 
-  expect(await stock("Ignite V80", "Strawberry Watermelon", "Ayres Plaza")).toBe(g1 - 2);
-  expect(await stock("Ignite V80", "Strawberry Watermelon", "Mercedes")).toBe(g2 + 2);
+  expect(await stock(IGNITE_V80, "Strawberry Watermelon", "Ayres Plaza")).toBe(g1 - 2);
+  expect(await stock(IGNITE_V80, "Strawberry Watermelon", "Mercedes")).toBe(g2 + 2);
   // El total no cambia: solo se mudó de galpón.
   await page.goto("/p/vapes/stock?q=Strawberry");
   await expect(

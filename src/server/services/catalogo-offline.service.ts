@@ -1,38 +1,29 @@
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
+import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { normalizarCodigoBarras } from "@/lib/barcode";
+import { precioVentaEfectivo } from "@/lib/precios";
+import { nombreConSabor, saborVisible } from "@/lib/validations/producto";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
-import { nombreCompleto } from "@/server/services/producto.service";
 
 /**
- * Snapshot liviano del catálogo DE UN PANEL para el escáner sin conexión: variantes
- * activas con sus códigos (principal + alternativos + SKU), precio de venta y
- * stock por depósito. SIN costos. La versión es el último cambio de catálogo o
+ * Snapshot liviano del catálogo DE UN PANEL para el escáner sin conexión: sabores
+ * activos con sus códigos (principal + alternativos + SKU), precio de venta
+ * efectivo y stock por depósito. SIN costos. La versión es el último cambio de catálogo o
  * stock del panel: si no cambió, el cliente no vuelve a bajarlo (ETag / 304).
  * Toda la SQL cruda filtra por panelId a mano (no pasa por dbPara).
  */
 
-export interface VarianteOffline {
-  varianteId: string;
-  productoId: string;
-  producto: string;
-  variante: string;
-  nombreCompleto: string;
-  sku: string;
-  codigoBarras: string | null;
+export type VarianteOffline = Omit<
+  VarianteEncontrada,
+  "ultimoCosto" | "porCodigoAlternativo" | "stockEnDeposito"
+> & {
   /** Normalizados: principal, alternativos y SKU. */
   codigos: string[];
   /** Códigos que son alternativos (para marcar "leído por código alternativo"). */
   alternativos: string[];
-  marca: string | null;
-  categoria: string;
-  imagenUrl: string | null;
-  precioVenta: string;
-  stockMinimo: number;
-  stock: { depositoId: string; deposito: string; esPrincipal: boolean; cantidad: number }[];
-  stockTotal: number;
-}
+};
 
 export interface CatalogoOffline {
   panelId: string;
@@ -57,21 +48,26 @@ export async function versionCatalogo(ctx: Pick<Ctx, "panelId">): Promise<string
   return `${r?.v?.getTime() ?? 0}-${r?.n ?? 0}`;
 }
 
+const decimal = z.custom<Prisma.Decimal>(
+  (v) => Prisma.Decimal.isDecimal(v) || typeof v === "string",
+);
+
 const filaSchema = z.object({
   id: z.string(),
   producto_id: z.string(),
-  producto: z.string(),
+  nombre_completo: z.string(),
   variante: z.string(),
-  tiene_variantes: z.boolean(),
+  marca: z.string(),
+  marca_id: z.string(),
+  modelo: z.string(),
+  especificacion: z.string(),
   sku: z.string(),
   codigo_barras: z.string().nullable(),
   alternativos: z.array(z.string()),
-  marca: z.string().nullable(),
-  categoria: z.string(),
+  categoria: z.string().nullable(),
   imagen_url: z.string().nullable(),
-  precio_venta: z.custom<Prisma.Decimal>(
-    (v) => Prisma.Decimal.isDecimal(v) || typeof v === "string",
-  ),
+  precio_producto: decimal,
+  precio_variante: decimal.nullable(),
   stock_minimo: z.number(),
   stock: z.record(z.string(), z.number()),
 });
@@ -86,19 +82,21 @@ export async function generarCatalogoOffline(ctx: Pick<Ctx, "panelId">): Promise
       select: { id: true, nombre: true, esPrincipal: true },
     }),
     db.$queryRaw`
-      SELECT va."id", p."id" AS producto_id, p."nombre" AS producto, va."nombre" AS variante,
-             p."tieneVariantes" AS tiene_variantes, va."sku", va."codigoBarras" AS codigo_barras,
+      SELECT va."id", p."id" AS producto_id, p."nombreCompleto" AS nombre_completo,
+             va."nombre" AS variante, m."nombre" AS marca, m."id" AS marca_id,
+             p."nombre" AS modelo, p."especificacion", va."sku", va."codigoBarras" AS codigo_barras,
              COALESCE((SELECT array_agg(a."codigo") FROM "CodigoBarrasAlternativo" a WHERE a."varianteId" = va."id"), '{}') AS alternativos,
-             m."nombre" AS marca, c."nombre" AS categoria, p."imagenUrl" AS imagen_url,
-             va."precioVenta" AS precio_venta, va."stockMinimo" AS stock_minimo,
+             c."nombre" AS categoria, p."imagenUrl" AS imagen_url,
+             p."precioVenta" AS precio_producto, va."precioVenta" AS precio_variante,
+             va."stockMinimo" AS stock_minimo,
              COALESCE((SELECT jsonb_object_agg(s."depositoId", s."cantidad") FROM "Stock" s WHERE s."varianteId" = va."id"), '{}') AS stock
       FROM "Variante" va
       JOIN "Producto" p ON p."id" = va."productoId"
-      JOIN "Categoria" c ON c."id" = p."categoriaId"
-      LEFT JOIN "Marca" m ON m."id" = p."marcaId"
+      JOIN "Marca" m ON m."id" = p."marcaId"
+      LEFT JOIN "Categoria" c ON c."id" = p."categoriaId"
       WHERE va."panelId" = ${ctx.panelId}
         AND va."deletedAt" IS NULL AND va."activo" AND p."deletedAt" IS NULL AND p."activo"
-      ORDER BY p."nombre", va."nombre"`,
+      ORDER BY p."nombreCompleto", va."nombre"`,
   ]);
   const filas = z.array(filaSchema).parse(crudo);
   return {
@@ -107,9 +105,9 @@ export async function generarCatalogoOffline(ctx: Pick<Ctx, "panelId">): Promise
     generadoEn: new Date().toISOString(),
     depositos,
     variantes: filas.map((f) => {
-      const stock = depositos.map((d) => ({
+      const stockPorDeposito = depositos.map((d) => ({
         depositoId: d.id,
-        deposito: d.nombre,
+        nombre: d.nombre,
         esPrincipal: d.esPrincipal,
         cantidad: f.stock[d.id] ?? 0,
       }));
@@ -121,23 +119,34 @@ export async function generarCatalogoOffline(ctx: Pick<Ctx, "panelId">): Promise
           normalizarCodigoBarras(f.sku),
         ]),
       ];
+      const precio = (d: Prisma.Decimal | string | null) =>
+        d === null ? null : new Prisma.Decimal(d).toFixed(2);
       return {
         varianteId: f.id,
         productoId: f.producto_id,
-        producto: f.producto,
-        variante: f.variante,
-        nombreCompleto: nombreCompleto(f.producto, f.variante, f.tiene_variantes),
+        nombreCompleto: f.nombre_completo,
+        sabor: saborVisible(f.variante),
+        titulo: nombreConSabor(f.nombre_completo, f.variante),
+        marca: f.marca,
+        marcaId: f.marca_id,
+        modelo: f.modelo,
+        especificacion: f.especificacion,
+        categoria: f.categoria,
+        imagenUrl: f.imagen_url,
         sku: f.sku,
         codigoBarras: f.codigo_barras,
         codigos,
         alternativos,
-        marca: f.marca,
-        categoria: f.categoria,
-        imagenUrl: f.imagen_url,
-        precioVenta: new Prisma.Decimal(f.precio_venta).toFixed(2),
+        precioVenta: precioVentaEfectivo(
+          { precioVenta: precio(f.precio_variante) },
+          { precioVenta: precio(f.precio_producto) },
+        ),
+        precioVentaProducto: precio(f.precio_producto) ?? "0.00",
+        tienePrecioPropio: f.precio_variante !== null,
         stockMinimo: f.stock_minimo,
-        stock,
-        stockTotal: stock.reduce((a, s) => a + s.cantidad, 0),
+        stockPorDeposito,
+        stockTotal: stockPorDeposito.reduce((a, s) => a + s.cantidad, 0),
+        activo: true,
       };
     }),
   };

@@ -9,11 +9,12 @@ import {
   pistola,
   stock,
   soltarFoco,
+  IGNITE_V80,
 } from "./helpers";
 
 test("venta con stock insuficiente → error visible, nada descontado", async ({ page }) => {
-  const grape = await codigoDe("Ignite V80", "Grape Ice");
-  const hay = await stock("Ignite V80", "Grape Ice", "Ayres Plaza");
+  const grape = await codigoDe(IGNITE_V80, "Grape Ice");
+  const hay = await stock(IGNITE_V80, "Grape Ice", "Ayres Plaza");
   const confirmadas = await db.venta.count({
     where: { panelId: "pnl_vapes", estado: "CONFIRMADA" },
   });
@@ -22,7 +23,7 @@ test("venta con stock insuficiente → error visible, nada descontado", async ({
   await page.getByLabel("Depósito de venta").selectOption({ label: "Ayres Plaza" });
   await soltarFoco(page);
   await pistola(page, grape);
-  const cantidad = page.getByLabel("Cantidad de Ignite V80 — Grape Ice");
+  const cantidad = page.getByLabel(`Cantidad de ${IGNITE_V80} — Grape Ice`);
   await cantidad.fill(String(hay + 5));
   await cantidad.blur();
   // UI: la fila queda marcada y no deja cobrar.
@@ -57,7 +58,7 @@ test("venta con stock insuficiente → error visible, nada descontado", async ({
     "/p/vapes/ventas/nueva",
   );
   expect(r).toContain("STOCK_INSUFICIENTE");
-  expect(await stock("Ignite V80", "Grape Ice", "Ayres Plaza")).toBe(hay);
+  expect(await stock(IGNITE_V80, "Grape Ice", "Ayres Plaza")).toBe(hay);
   expect(await db.venta.count({ where: { panelId: "pnl_vapes", estado: "CONFIRMADA" } })).toBe(
     confirmadas,
   );

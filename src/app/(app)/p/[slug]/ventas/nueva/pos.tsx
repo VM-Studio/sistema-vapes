@@ -282,12 +282,12 @@ export function Pos({
 
   // Escáner siempre activo (pistola vía ScannerProvider + cámara).
   const stockEn = (v: VarianteEscaneada) =>
-    v.stock.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
+    v.stockPorDeposito.find((s) => s.depositoId === depositoId)?.cantidad ?? 0;
   const escaner = useEscanerVariantes({
     onVariante: (v) =>
       agregar({
         varianteId: v.varianteId,
-        nombreCompleto: v.nombreCompleto,
+        nombreCompleto: v.titulo,
         sku: v.sku,
         precioVenta: v.precioVenta,
         stock: stockEn(v),

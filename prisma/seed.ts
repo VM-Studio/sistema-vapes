@@ -6,19 +6,21 @@
  *   (solo Vapes). Emails y contraseñas iniciales vienen del entorno
  *   (SEED_OWNER1_EMAIL / SEED_OWNER1_PASSWORD, SEED_OWNER2_*, SEED_EMPLEADO1_*),
  *   con cambio obligatorio al primer ingreso.
- * - Catálogo de ejemplo en Vapes; el stock inicial entra SOLO por
+ * - Catálogo de ejemplo en Vapes (marca + modelo + pitadas, sabores, un sabor
+ *   con precio propio, proveedores con su lista de precios); el stock inicial entra SOLO por
  *   registrarMovimiento (INGRESO_MANUAL), una vez por (variante, depósito).
  * - Todo lo de negocio pasa por dbPara(panelId): el panel se inyecta solo.
  */
 import { randomBytes } from "node:crypto";
 
-import { Modulo, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
+import { Modulo, Moneda, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { CONFIG_ESCANER_DEFAULT } from "../src/features/scanner/config";
 import { generarEan13 } from "../src/lib/barcode";
 import { prisma } from "../src/lib/db";
 import { normalizarPermiso, type PermisoModulo } from "../src/lib/permisos";
+import { normalizarTelefono } from "../src/lib/validations/cliente";
 import { configVentasSchema } from "../src/lib/validations/venta";
 import { dbPara, transaccion } from "../src/server/db/panel-scoped";
 import { registrarMovimiento } from "../src/server/services/stock.service";
@@ -214,153 +216,163 @@ async function seedDepositosVapes() {
   return [ayres, mercedes] as const;
 }
 
-// Productos de ejemplo (en Vapes).
+// Catálogo de ejemplo (en Vapes). Producto = marca + modelo + especificación
+// ("Pitadas" en Vapes) con UN precio para todos sus sabores; un sabor puede
+// tener precio propio. nombreCompleto lo arma la DB (trigger): nunca se escribe.
 
-interface VarianteSeed {
+interface SaborSeed {
+  /** El sabor; "Único" para un producto sin sabor. */
   nombre: string;
   /** 12 dígitos base: el verificador EAN-13 se calcula. */
   ean12?: string;
-  precioCosto: string;
-  precioVenta: string;
+  /** Solo si el sabor tiene un precio distinto al del producto. */
+  precioPropio?: string;
+  /** Último costo (el de la compra con la que entró el stock inicial). */
+  costo: string;
   stockMinimo: number;
   /** Stock inicial por depósito de Vapes: [Ayres Plaza, Mercedes]. */
   stock: [number, number];
 }
 
 interface ProductoSeed {
-  nombre: string;
-  descripcion: string;
-  categoria: string;
   marca: string;
-  tieneVariantes: boolean;
-  variantes: VarianteSeed[];
+  modelo: string;
+  especificacion: string;
+  categoria: string | null;
+  precioVenta: string;
+  sabores: SaborSeed[];
 }
 
 // 779 = prefijo GS1 Argentina; el resto es ficticio.
 const PRODUCTOS: ProductoSeed[] = [
   {
-    nombre: "Ignite V80",
-    descripcion: "Vape descartable 8000 puffs",
-    categoria: "Vapes",
     marca: "Ignite",
-    tieneVariantes: true,
-    variantes: [
+    modelo: "V80",
+    especificacion: "8000",
+    categoria: "Vapes",
+    precioVenta: "16000.00",
+    sabores: [
       {
         nombre: "Mango Ice",
         ean12: "779000100001",
-        precioCosto: "9500.00",
-        precioVenta: "16000.00",
+        costo: "9500.00",
         stockMinimo: 10,
         stock: [24, 12],
       },
       {
         nombre: "Strawberry Watermelon",
         ean12: "779000100002",
-        precioCosto: "9500.00",
-        precioVenta: "16000.00",
+        costo: "9500.00",
         stockMinimo: 10,
         stock: [18, 6],
       },
       {
         nombre: "Blue Razz Ice",
         ean12: "779000100003",
-        precioCosto: "9500.00",
-        precioVenta: "16000.00",
+        precioPropio: "16500.00",
+        costo: "9800.00",
         stockMinimo: 10,
         stock: [30, 10],
       },
       {
         nombre: "Grape Ice",
         ean12: "779000100004",
-        precioCosto: "9500.00",
-        precioVenta: "16000.00",
+        costo: "9500.00",
         stockMinimo: 10,
         stock: [4, 2],
       },
     ],
   },
   {
-    nombre: "Elf Bar BC5000",
-    descripcion: "Vape descartable recargable 5000 puffs",
-    categoria: "Vapes",
     marca: "Elf Bar",
-    tieneVariantes: true,
-    variantes: [
+    modelo: "BC",
+    especificacion: "5000",
+    categoria: "Vapes",
+    precioVenta: "14500.00",
+    sabores: [
       {
         nombre: "Watermelon Ice",
         ean12: "779000200001",
-        precioCosto: "8200.00",
-        precioVenta: "14500.00",
+        costo: "8200.00",
         stockMinimo: 8,
         stock: [20, 10],
       },
       {
         nombre: "Peach Mango",
         ean12: "779000200002",
-        precioCosto: "8200.00",
-        precioVenta: "14500.00",
+        costo: "8200.00",
         stockMinimo: 8,
         stock: [15, 5],
       },
       {
         nombre: "Cool Mint",
         ean12: "779000200003",
-        precioCosto: "8200.00",
-        precioVenta: "14500.00",
+        costo: "8200.00",
         stockMinimo: 8,
         stock: [12, 12],
       },
       {
         nombre: "Lemon Mint",
         ean12: "779000200004",
-        precioCosto: "8200.00",
-        precioVenta: "14500.00",
+        costo: "8200.00",
         stockMinimo: 8,
         stock: [0, 3],
       },
     ],
   },
   {
-    nombre: "Cargador USB-C 20W",
-    descripcion: "Cargador de pared USB-C con carga rápida",
-    categoria: "Accesorios",
-    marca: "TechPro",
-    tieneVariantes: false,
-    variantes: [
+    marca: "Elf Bar",
+    modelo: "BC",
+    especificacion: "10000",
+    categoria: "Vapes",
+    precioVenta: "19000.00",
+    sabores: [
       {
-        nombre: "Único",
-        ean12: "779000300001",
-        precioCosto: "4500.00",
-        precioVenta: "8900.00",
+        nombre: "Watermelon Ice",
+        ean12: "779000200011",
+        costo: "11000.00",
         stockMinimo: 5,
-        stock: [15, 5],
+        stock: [10, 4],
+      },
+      {
+        nombre: "Blue Razz Ice",
+        ean12: "779000200012",
+        costo: "11000.00",
+        stockMinimo: 5,
+        stock: [8, 0],
       },
     ],
   },
   {
-    nombre: "Parlante Bluetooth Mini",
-    descripcion: "Parlante portátil Bluetooth 5.0, 10W",
-    categoria: "Artefactos",
     marca: "TechPro",
-    tieneVariantes: false,
-    variantes: [
-      {
-        nombre: "Único",
-        ean12: "779000300002",
-        precioCosto: "12000.00",
-        precioVenta: "21990.00",
-        stockMinimo: 2,
-        stock: [6, 0],
-      },
+    modelo: "Cargador USB-C 20W",
+    especificacion: "",
+    categoria: "Accesorios",
+    precioVenta: "8900.00",
+    sabores: [
+      { nombre: "Único", ean12: "779000300001", costo: "4500.00", stockMinimo: 5, stock: [15, 5] },
+    ],
+  },
+  {
+    marca: "TechPro",
+    modelo: "Parlante Bluetooth Mini",
+    especificacion: "",
+    categoria: "Artefactos",
+    precioVenta: "21990.00",
+    sabores: [
+      { nombre: "Único", ean12: "779000300002", costo: "12000.00", stockMinimo: 2, stock: [6, 0] },
     ],
   },
 ];
 
+const clave = (p: { marca: string; modelo: string; especificacion: string }) =>
+  `${p.marca}|${p.modelo}|${p.especificacion}`;
+
 /** Un mismo vape que llega de otro importador con otro código. */
 const CODIGOS_ALTERNATIVOS = [
   {
-    producto: "Ignite V80",
-    variante: "Mango Ice",
+    producto: { marca: "Ignite", modelo: "V80", especificacion: "8000" },
+    sabor: "Mango Ice",
     ean12: "779999900001",
     descripcion: "Lote importador B",
   },
@@ -398,51 +410,64 @@ async function seedCatalogoBase() {
 /** SKU del seed: PRD-XXXXXX (el mismo formato que genera la app). */
 const skuNuevo = () => `PRD-${randomBytes(4).toString("hex").slice(0, 6).toUpperCase()}`;
 
+/** Devuelve el id de cada producto sembrado, por marca|modelo|especificación. */
 async function seedProductos(
   refs: Awaited<ReturnType<typeof seedCatalogoBase>>,
   depositos: readonly [{ id: string }, { id: string }],
   usuarioId: string,
-) {
+): Promise<Map<string, string>> {
   const ctx = { panelId: PANEL_VAPES, usuarioId };
+  const ids = new Map<string, string>();
   for (const p of PRODUCTOS) {
-    const categoriaId = refs.categorias.get(p.categoria);
     const marcaId = refs.marcas.get(p.marca);
-    if (!categoriaId || !marcaId) throw new Error(`Referencias faltantes para ${p.nombre}`);
+    const categoriaId = p.categoria ? refs.categorias.get(p.categoria) : null;
+    if (!marcaId || categoriaId === undefined)
+      throw new Error(`Referencias faltantes para ${clave(p)}`);
 
-    // Producto + variantes + stock inicial en UNA transacción: la DB verifica
+    // Producto + sabores + stock inicial en UNA transacción: la DB verifica
     // al COMMIT que todo producto tenga sus variantes (constraint diferida).
-    await transaccion(
+    const productoId = await transaccion(
       ctx,
       async (tx) => {
-        const producto = await tx.producto.upsert({
-          where: { panelId_nombre_marcaId: { panelId: PANEL_VAPES, nombre: p.nombre, marcaId } },
-          update: {},
-          create: {
-            nombre: p.nombre,
-            descripcion: p.descripcion,
-            categoriaId,
-            marcaId,
-            tieneVariantes: p.tieneVariantes,
-          },
-        });
-        for (const v of p.variantes) {
+        const producto =
+          (await tx.producto.findFirst({
+            where: { marcaId, nombre: p.modelo, especificacion: p.especificacion },
+            select: { id: true },
+          })) ??
+          (await tx.producto.create({
+            data: {
+              marcaId,
+              nombre: p.modelo,
+              especificacion: p.especificacion,
+              categoriaId,
+              precioVenta: p.precioVenta,
+            },
+            select: { id: true },
+          }));
+        for (const s of p.sabores) {
           const variante =
             (await tx.variante.findUnique({
-              where: { productoId_nombre: { productoId: producto.id, nombre: v.nombre } },
+              where: {
+                panelId_productoId_nombre: {
+                  panelId: PANEL_VAPES,
+                  productoId: producto.id,
+                  nombre: s.nombre,
+                },
+              },
             })) ??
             (await tx.variante.create({
               data: {
                 productoId: producto.id,
-                nombre: v.nombre,
+                nombre: s.nombre,
                 sku: skuNuevo(),
-                codigoBarras: v.ean12 ? generarEan13(v.ean12) : null,
-                precioCosto: v.precioCosto,
-                precioVenta: v.precioVenta,
-                stockMinimo: v.stockMinimo,
+                codigoBarras: s.ean12 ? generarEan13(s.ean12) : null,
+                precioVenta: s.precioPropio ?? null,
+                ultimoCosto: s.costo,
+                stockMinimo: s.stockMinimo,
               },
             }));
           for (const [i, deposito] of depositos.entries()) {
-            const cantidad = v.stock[i] ?? 0;
+            const cantidad = s.stock[i] ?? 0;
             if (cantidad <= 0) continue;
             const yaCargado = await tx.movimientoStock.findFirst({
               where: {
@@ -459,24 +484,29 @@ async function seedProductos(
               varianteId: variante.id,
               depositoId: deposito.id,
               cantidad,
-              costoUnitario: v.precioCosto,
+              costoUnitario: s.costo,
               motivo: MOTIVO_STOCK_INICIAL,
               usuarioId,
             });
           }
         }
+        return producto.id;
       },
       { timeout: 60_000 },
     );
+    ids.set(clave(p), productoId);
   }
 
   const db = dbPara(PANEL_VAPES);
   for (const alt of CODIGOS_ALTERNATIVOS) {
-    const variante = await db.variante.findFirst({
-      where: { nombre: alt.variante, producto: { nombre: alt.producto } },
-      select: { id: true },
-    });
-    if (!variante) throw new Error(`No existe ${alt.producto} - ${alt.variante}`);
+    const productoId = ids.get(clave(alt.producto));
+    const variante = productoId
+      ? await db.variante.findFirst({
+          where: { productoId, nombre: alt.sabor },
+          select: { id: true },
+        })
+      : null;
+    if (!variante) throw new Error(`No existe ${clave(alt.producto)} - ${alt.sabor}`);
     const codigo = generarEan13(alt.ean12);
     await db.codigoBarrasAlternativo.upsert({
       where: { panelId_codigo: { panelId: PANEL_VAPES, codigo } },
@@ -484,20 +514,78 @@ async function seedProductos(
       create: { varianteId: variante.id, codigo, descripcion: alt.descripcion },
     });
   }
+  return ids;
 }
 
-async function seedProveedorYCliente() {
+// Proveedores: contacto, tienda y teléfono (normalizado +54), con la lista de
+// precios de cada uno por producto (ignora el sabor).
+
+interface ProveedorSeed {
+  nombre: string;
+  nombreTienda: string;
+  telefono: string;
+  notas?: string;
+  precios: { producto: string; precio: string; moneda: Moneda }[];
+}
+
+const PROVEEDORES: ProveedorSeed[] = [
+  {
+    nombre: "Lucas Fernández",
+    nombreTienda: "Distribuidora Ejemplo",
+    telefono: "11 5555-0000",
+    notas: "Entrega martes y viernes",
+    precios: [
+      { producto: "Ignite|V80|8000", precio: "9500.00", moneda: Moneda.ARS },
+      { producto: "Elf Bar|BC|5000", precio: "8200.00", moneda: Moneda.ARS },
+      { producto: "TechPro|Cargador USB-C 20W|", precio: "4500.00", moneda: Moneda.ARS },
+    ],
+  },
+  {
+    nombre: "Sofía Ríos",
+    nombreTienda: "Vape Import Once",
+    telefono: "11 5555-0001",
+    precios: [
+      { producto: "Ignite|V80|8000", precio: "9300.00", moneda: Moneda.ARS },
+      { producto: "Elf Bar|BC|10000", precio: "9.50", moneda: Moneda.USD },
+    ],
+  },
+];
+
+async function seedProveedores(productos: Map<string, string>, usuarioId: string) {
   const db = dbPara(PANEL_VAPES);
-  if (!(await db.proveedor.findFirst({ where: { cuit: "30712345671", deletedAt: null } }))) {
-    await db.proveedor.create({
-      data: {
-        nombre: "Distribuidora Ejemplo SRL",
-        cuit: "30712345671",
-        telefono: "+541155550000",
-        email: "ventas@distribuidora-ejemplo.com.ar",
-      },
-    });
+  for (const p of PROVEEDORES) {
+    const telefono = normalizarTelefono(p.telefono);
+    const proveedor =
+      (await db.proveedor.findFirst({ where: { telefono, deletedAt: null } })) ??
+      (await db.proveedor.create({
+        data: { nombre: p.nombre, nombreTienda: p.nombreTienda, telefono, notas: p.notas ?? null },
+      }));
+    for (const pr of p.precios) {
+      const productoId = productos.get(pr.producto);
+      if (!productoId) throw new Error(`No existe el producto ${pr.producto}`);
+      await db.proveedorProducto.upsert({
+        where: {
+          panelId_proveedorId_productoId: {
+            panelId: PANEL_VAPES,
+            proveedorId: proveedor.id,
+            productoId,
+          },
+        },
+        update: {},
+        create: {
+          proveedorId: proveedor.id,
+          productoId,
+          precio: pr.precio,
+          moneda: pr.moneda,
+          usuarioId,
+        },
+      });
+    }
   }
+}
+
+async function seedCliente() {
+  const db = dbPara(PANEL_VAPES);
   if (!(await db.cliente.findFirst({ where: { telefono: "+541155550101", deletedAt: null } }))) {
     await db.cliente.create({
       data: {
@@ -516,8 +604,9 @@ async function main() {
   const { ownerId } = await seedUsuarios();
   const depositos = await seedDepositosVapes();
   const refs = await seedCatalogoBase();
-  await seedProductos(refs, depositos, ownerId);
-  await seedProveedorYCliente();
+  const productos = await seedProductos(refs, depositos, ownerId);
+  await seedProveedores(productos, ownerId);
+  await seedCliente();
 
   const [usuarios, paneles, variantes, movimientos, stockTotal] = await Promise.all([
     prisma.usuario.count(),

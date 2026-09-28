@@ -1,25 +1,29 @@
 /**
- * Compras a nivel servicios + DB en el panel Vapes: compras (recibir con
- * actualización de costos, anular con devolución), proveedores, recuento
- * "Contar" (50 → 48), códigos internos, PDF de etiquetas y aislamiento
- * entre paneles.
+ * Compras a nivel servicios + DB en el panel Vapes: proveedores (teléfono,
+ * nombre de tienda, precios por producto), compras por sabor (proveedor y
+ * galpón obligatorios, costo sugerido, recibir con último costo y precio del
+ * proveedor, anular con devolución), recuento "Contar" (50 → 48), códigos
+ * internos, PDF de etiquetas y aislamiento entre paneles.
  * Uso: pnpm test:compras — pensado para una DB recién sembrada (crea datos).
  */
-import { EstadoCompra, RolUsuario, TipoMovimiento } from "@prisma/client";
+import { EstadoCompra, Moneda, RolUsuario, TipoMovimiento } from "@prisma/client";
 import { PDFDocument } from "pdf-lib";
 
 import { digitoLuhn, generarEan13 } from "../src/lib/barcode";
 import { prisma } from "../src/lib/db";
-import { dbPara, type Ctx } from "../src/server/db/panel-scoped";
+import { formatearIdCompra } from "../src/lib/paneles";
+import type { SujetoPermisos } from "../src/lib/permisos";
+import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { compraSchema } from "../src/lib/validations/compra";
-import { productoSchema } from "../src/lib/validations/producto";
 import { crearProveedorSchema } from "../src/lib/validations/proveedor";
 import { ConflictError, DomainError, NotFoundError } from "../src/server/errors";
 import {
   actualizarCompra,
   anularCompra,
+  costoSugerido,
   crearCompra,
   obtenerCompra,
+  preciosQueCambian,
   recibirCompra,
 } from "../src/server/services/compra.service";
 import {
@@ -34,15 +38,17 @@ import {
 import {
   asignarCodigosInternos,
   buscarPorCodigo,
-  crearProducto,
   esCodigoInterno,
   generarCodigoInterno,
   prefijoCodigoInterno,
 } from "../src/server/services/producto.service";
 import {
-  crearProveedor,
-  darDeBajaProveedor,
-  listarProveedores,
+  asignarProducto,
+  crear as crearProveedor,
+  desactivar as desactivarProveedor,
+  listar as listarProveedores,
+  listarProveedoresActivos,
+  proveedoresDeProducto,
 } from "../src/server/services/proveedor.service";
 
 let fallos = 0;
@@ -68,93 +74,189 @@ const stockDe = async (varianteId: string, depositoId: string) =>
     })
   )?.cantidad ?? 0;
 
-const CON_COSTO = { incluirCostoActual: true };
-
 async function main() {
   const owner = await prisma.usuario.findFirstOrThrow({
     where: { rol: RolUsuario.OWNER, deletedAt: null },
     orderBy: { createdAt: "asc" },
   });
-  const actor: Ctx & { usuario: { rol: RolUsuario } } = {
+  const actor: Ctx & { usuario: SujetoPermisos } = {
     panelId: VAPES,
     usuarioId: owner.id,
     meta: { ip: "127.0.0.1", userAgent: "test-compras" },
-    usuario: { rol: owner.rol },
+    usuario: { rol: owner.rol, permisos: [], paneles: [] },
   };
   const [g1, g2] = await db.deposito.findMany({
     where: { activo: true },
     orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
   });
   if (!g1 || !g2) throw new Error("Faltan depósitos");
-  const vapes = await db.categoria.findFirstOrThrow({ where: { nombre: "Vapes" } });
   const sufijo = String(Date.now()).slice(-6);
 
-  const producto = await crearProducto(
-    actor,
-    productoSchema.parse({
-      nombre: `Vape Compras ${sufijo}`,
-      categoriaId: vapes.id,
-      tieneVariantes: true,
-      variantes: ["Uva", "Limón", "Durazno"].map((nombre, i) => ({
-        nombre,
-        codigoBarras: generarEan13(`7797${sufijo}${String(i).padStart(2, "0")}`),
-        precioCosto: "5000",
-        precioVenta: "9000",
-      })),
-    }),
-  );
+  // Catálogo propio: un vape con 3 sabores (Durazno sin compras todavía) y un
+  // cargador sin sabor ni código (para los códigos internos).
+  const { producto, cargadorId, fundaId } = await transaccion(actor, async (tx) => {
+    const marca = await tx.marca.upsert({
+      where: { panelId_nombre: { panelId: VAPES, nombre: "Test Compras" } },
+      update: {},
+      create: { nombre: "Test Compras" },
+    });
+    const producto = await tx.producto.create({
+      data: {
+        marcaId: marca.id,
+        nombre: `Vape ${sufijo}`,
+        especificacion: "6000",
+        precioVenta: "9000.00",
+        variantes: {
+          create: ["Uva", "Limón", "Durazno"].map((nombre, i) => ({
+            nombre,
+            sku: `TC-${sufijo}-${i}`,
+            codigoBarras: generarEan13(`7797${sufijo}${String(i).padStart(2, "0")}`),
+            ultimoCosto: nombre === "Durazno" ? null : "5000.00",
+          })),
+        },
+      },
+      include: { variantes: true },
+    });
+    const sinSabor = async (nombre: string, sku: string) =>
+      (
+        await tx.producto.create({
+          data: {
+            marcaId: marca.id,
+            nombre,
+            precioVenta: "2500.00",
+            variantes: { create: [{ nombre: "Único", sku, ultimoCosto: "1000.00" }] },
+          },
+          include: { variantes: true },
+        })
+      ).variantes[0]!.id;
+    return {
+      producto,
+      cargadorId: await sinSabor(`Cargador ${sufijo}`, `TC-${sufijo}-C`),
+      fundaId: await sinSabor(`Funda ${sufijo}`, `TC-${sufijo}-F`),
+    };
+  });
   const porNombre = (n: string) => producto.variantes.find((v) => v.nombre === n);
   const [uva, limon, durazno] = [porNombre("Uva"), porNombre("Limón"), porNombre("Durazno")];
   if (!uva || !limon || !durazno) throw new Error("Faltan variantes");
 
   // ---------------------------------------------------------------------------
-  console.log("\n1) Proveedores: CUIT con dígito verificador, único, baja lógica");
-  check(
-    !crearProveedorSchema.safeParse({ nombre: "X", cuit: "30-71234567-2" }).success,
-    "CUIT con verificador incorrecto → rechazado por Zod",
-  );
-  const cuit = "20" + sufijo.padStart(8, "0").slice(0, 8);
-  const cuitValido =
-    cuit +
-    String(
-      (() => {
-        const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-        const r = 11 - (pesos.reduce((a, p, i) => a + p * Number(cuit[i]), 0) % 11);
-        return r === 11 ? 0 : r === 10 ? 9 : r;
-      })(),
-    );
+  console.log("\n1) Proveedores: tienda, teléfono único por panel, precios por producto");
+  const tel = `11 ${sufijo}${String(Date.now()).slice(-2)}`;
   const prov = await crearProveedor(
     actor,
     crearProveedorSchema.parse({
-      nombre: `Importadora ${sufijo}`,
-      cuit: cuitValido.replace(/^(\d{2})(\d{8})(\d)$/, "$1-$2-$3"),
+      nombre: `Juan ${sufijo}`,
+      nombreTienda: `Importadora ${sufijo}`,
+      telefono: tel,
+      productos: [{ productoId: producto.id, precio: "5100" }],
     }),
   );
   const guardado = await prisma.proveedor.findUniqueOrThrow({ where: { id: prov.id } });
-  check(guardado.cuit === cuitValido, `CUIT guardado normalizado: ${guardado.cuit}`);
+  check(
+    guardado.telefono === `+54${tel.replace(/\D/g, "")}` &&
+      guardado.nombreTienda === `Importadora ${sufijo}`,
+    `teléfono guardado normalizado: ${guardado.telefono} · tienda ${guardado.nombreTienda}`,
+  );
   const dup = await error(() =>
-    crearProveedor(actor, crearProveedorSchema.parse({ nombre: "Otro", cuit: cuitValido })),
+    crearProveedor(
+      actor,
+      crearProveedorSchema.parse({ nombre: "Otro", nombreTienda: "Otra", telefono: `+54 ${tel}` }),
+    ),
   );
   check(
-    dup instanceof ConflictError && Boolean(dup.fields?.cuit),
-    `CUIT repetido → ConflictError en el campo cuit`,
+    dup instanceof ConflictError && Boolean(dup.fields?.telefono),
+    `teléfono repetido → ConflictError en el campo telefono («${(dup as Error)?.message}»)`,
+  );
+  const barato = await crearProveedor(
+    actor,
+    crearProveedorSchema.parse({
+      nombre: `Ana ${sufijo}`,
+      nombreTienda: `Mayorista ${sufijo}`,
+      productos: [{ productoId: producto.id, precio: "4900" }],
+    }),
+  );
+  const enDolares = await crearProveedor(
+    actor,
+    crearProveedorSchema.parse({ nombre: `Leo ${sufijo}`, nombreTienda: `Dólar ${sufijo}` }),
+  );
+  await asignarProducto(actor, enDolares.id, {
+    productoId: producto.id,
+    precio: 4,
+    moneda: Moneda.USD,
+  });
+  const comparador = await proveedoresDeProducto(actor, producto.id);
+  const enPesos = comparador.filter((c) => c.moneda === Moneda.ARS);
+  check(
+    comparador.length === 3 &&
+      comparador.some((c) => c.proveedorId === enDolares.id && c.moneda === Moneda.USD) &&
+      enPesos[0]?.proveedorId === barato.id &&
+      enPesos[1]?.proveedorId === prov.id,
+    `proveedores del producto por precio: ${comparador.map((c) => `${c.nombreTienda} ${c.moneda} ${c.precio}`).join(" < ")}`,
+  );
+  await asignarProducto(actor, barato.id, {
+    productoId: producto.id,
+    precio: 4950,
+    moneda: Moneda.ARS,
+  });
+  const ppBarato = await db.proveedorProducto.findMany({
+    where: { proveedorId: barato.id, productoId: producto.id },
+  });
+  check(
+    ppBarato.length === 1 && ppBarato[0]!.precio.toFixed(2) === "4950.00",
+    "asignar de nuevo el mismo producto actualiza el precio (una sola fila)",
+  );
+  check(
+    (await listarProveedores(actor, { q: `Vape ${sufijo}` })).some((p) => p.id === prov.id),
+    "buscar proveedores por el nombre de un producto que venden",
   );
   const provTemp = await crearProveedor(
     actor,
-    crearProveedorSchema.parse({ nombre: `Temporal ${sufijo}` }),
+    crearProveedorSchema.parse({ nombre: `Temporal ${sufijo}`, nombreTienda: "Temporal" }),
   );
-  await darDeBajaProveedor(actor, provTemp.id);
+  await desactivarProveedor(actor, provTemp.id);
   check(
-    !(await listarProveedores(actor, { conCompras: false })).some((p) => p.id === provTemp.id),
-    "proveedor dado de baja → no aparece en el listado",
+    !(await listarProveedoresActivos(actor)).some((p) => p.id === provTemp.id),
+    "proveedor desactivado → no se ofrece para compras nuevas",
+  );
+  const eInactivo = await error(() =>
+    crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: provTemp.id,
+        depositoId: g1.id,
+        items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
+      }),
+    ),
+  );
+  check(
+    eInactivo instanceof DomainError,
+    `comprar a un proveedor inactivo → «${(eInactivo as Error)?.message}»`,
   );
 
   // ---------------------------------------------------------------------------
-  console.log("\n2) Compra de 3 ítems: totales calculados en el servidor");
+  console.log("\n2) Compra de 3 sabores: proveedor y galpón obligatorios, totales del servidor");
+  const sinProveedor = compraSchema.safeParse({
+    depositoId: g1.id,
+    items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
+  });
+  check(
+    !sinProveedor.success &&
+      sinProveedor.error.issues.some((i) => i.path.join(".") === "proveedorId"),
+    `compra sin proveedor → Zod: «${sinProveedor.error?.issues[0]?.message}»`,
+  );
+  const sugerido = await costoSugerido(actor, prov.id, [uva.id, durazno.id]);
+  const sugeridoSinPrecio = await costoSugerido(actor, provTemp.id, [uva.id, durazno.id]);
+  check(
+    sugerido[uva.id]?.costo === "5100.00" &&
+      sugerido[uva.id]?.fuente === "PROVEEDOR" &&
+      sugeridoSinPrecio[uva.id]?.costo === "5000.00" &&
+      sugeridoSinPrecio[uva.id]?.fuente === "ULTIMO_COSTO" &&
+      sugeridoSinPrecio[durazno.id]?.costo === null,
+    "costo sugerido: precio del proveedor → último costo del sabor → nada",
+  );
   const datos = compraSchema.parse({
     proveedorId: prov.id,
     depositoId: g1.id,
-    descuento: "1000",
     notas: "Remito 0001-000123",
     items: [
       { varianteId: uva.id, cantidad: 10, costoUnitario: "5200" },
@@ -162,20 +264,25 @@ async function main() {
       { varianteId: durazno.id, cantidad: 3, costoUnitario: "5000" },
     ],
   });
-  const excedido = await error(() =>
-    crearCompra(actor, { ...datos, descuento: 999_999 } as typeof datos),
-  );
-  check(
-    excedido instanceof DomainError && Boolean(excedido.fields?.descuento),
-    "descuento mayor al subtotal → DomainError en el campo descuento",
-  );
   const compra = await crearCompra(actor, datos);
-  let det = await obtenerCompra(actor, compra.id, CON_COSTO);
-  // 10×5200 + 5×4800,50 + 3×5000 = 52000 + 24002,50 + 15000 = 91002,50 − 1000
-  check(det.estado === EstadoCompra.BORRADOR, `compra #${det.numero} creada en BORRADOR`);
+  const idCompra = formatearIdCompra("vapes", compra.numero);
+  let det = await obtenerCompra(actor, compra.id);
+  // 10×5200 + 5×4800,50 + 3×5000 = 52000 + 24002,50 + 15000
+  check(det.estado === EstadoCompra.BORRADOR, `compra ${idCompra} creada en BORRADOR`);
   check(
-    det.subtotal === "91002.50" && det.total === "90002.50",
+    det.subtotal === "91002.50" && det.total === "91002.50",
     `subtotal ${det.subtotal}, total ${det.total} (calculados por el servidor)`,
+  );
+  check(
+    det.items.every((i) => i.productoId === producto.id) &&
+      (await db.compraItem.count({ where: { compraId: compra.id, productoId: producto.id } })) ===
+        3,
+    "cada ítem guarda el producto de su sabor (CompraItem.productoId)",
+  );
+  check(
+    det.items.every((i) => i.nombreCompleto === producto.nombreCompleto) &&
+      det.items.map((i) => i.sabor).join() === "Uva,Limón,Durazno",
+    `ítems con nombre completo y sabor: ${producto.nombreCompleto} — ${det.items.map((i) => i.sabor).join(", ")}`,
   );
   check(
     (await prisma.movimientoStock.count({ where: { referenciaId: compra.id } })) === 0,
@@ -187,16 +294,21 @@ async function main() {
     ...datos,
     items: datos.items.map((i) => (i.varianteId === durazno.id ? { ...i, cantidad: 4 } : i)),
   });
-  det = await obtenerCompra(actor, compra.id, CON_COSTO);
+  det = await obtenerCompra(actor, compra.id);
   check(
-    det.items.find((i) => i.varianteId === durazno.id)?.cantidad === 4 && det.total === "95002.50",
+    det.items.find((i) => i.varianteId === durazno.id)?.cantidad === 4 && det.total === "96002.50",
     `borrador editado: Durazno ×4, total ${det.total}`,
   );
 
   // ---------------------------------------------------------------------------
-  console.log("\n3) Recibir con «actualizar costos»");
+  console.log("\n3) Recibir: último costo por sabor y precio del proveedor");
+  const cambios = await preciosQueCambian(actor, compra.id);
+  check(
+    cambios.length === 1 && cambios[0]?.antes === "5100.00" && cambios[0].despues === "5000.00",
+    `precio del proveedor que cambiaría: ${cambios.map((c) => `${c.nombreCompleto} ${c.antes} → ${c.despues}`).join(", ")} (gana el último ítem del producto)`,
+  );
   const stocksAntes = await Promise.all([uva, limon, durazno].map((v) => stockDe(v.id, g1.id)));
-  const r = await recibirCompra(actor, compra.id, { actualizarCostos: true });
+  const r = await recibirCompra(actor, compra.id, { actualizarPrecioProveedor: true });
   check(r.unidades === 19, `recibida: ${r.unidades} unidades`);
   const movs = await prisma.movimientoStock.findMany({
     where: { referenciaTipo: "COMPRA", referenciaId: compra.id },
@@ -207,8 +319,8 @@ async function main() {
     `3 movimientos INGRESO_COMPRA con referencia COMPRA/${compra.id.slice(0, 8)}…`,
   );
   check(
-    movs.every((m) => m.depositoId === g1.id && m.motivo === `Compra #${det.numero}`),
-    "en el depósito de la compra, motivo «Compra #N»",
+    movs.every((m) => m.depositoId === g1.id && m.motivo === `Compra ${idCompra}`),
+    `en el galpón de la compra, motivo «Compra ${idCompra}»`,
   );
   const stocksDespues = await Promise.all([uva, limon, durazno].map((v) => stockDe(v.id, g1.id)));
   check(
@@ -216,17 +328,24 @@ async function main() {
       [stocksAntes[0]! + 10, stocksAntes[1]! + 5, stocksAntes[2]! + 4].join(),
     `stock ${stocksAntes.join("/")} → ${stocksDespues.join("/")}`,
   );
-  // Durazno no cambia de costo (5000 = 5000): solo se actualizan Uva y Limón.
-  check(r.costosActualizados === 2, `costos actualizados: ${r.costosActualizados} (Uva y Limón)`);
   const variantes = await prisma.variante.findMany({
     where: { id: { in: [uva.id, limon.id, durazno.id] } },
   });
-  const costo = (id: string) => variantes.find((v) => v.id === id)!.precioCosto.toFixed(2);
+  const costo = (id: string) => variantes.find((v) => v.id === id)!.ultimoCosto?.toFixed(2);
   check(
     costo(uva.id) === "5200.00" && costo(limon.id) === "4800.50" && costo(durazno.id) === "5000.00",
-    `precioCosto actualizado: Uva ${costo(uva.id)}, Limón ${costo(limon.id)}, Durazno ${costo(durazno.id)}`,
+    `ultimoCosto por sabor: Uva ${costo(uva.id)}, Limón ${costo(limon.id)}, Durazno ${costo(durazno.id)} (antes sin costo)`,
   );
-  const otraVez = await error(() => recibirCompra(actor, compra.id, { actualizarCostos: false }));
+  const pp = await db.proveedorProducto.findFirstOrThrow({
+    where: { proveedorId: prov.id, productoId: producto.id },
+  });
+  check(
+    r.preciosActualizados === 1 && pp.precio.toFixed(2) === "5000.00" && pp.usuarioId === owner.id,
+    `precio del proveedor actualizado: ${pp.precio.toFixed(2)} (${r.preciosActualizados} producto)`,
+  );
+  const otraVez = await error(() =>
+    recibirCompra(actor, compra.id, { actualizarPrecioProveedor: false }),
+  );
   check(
     otraVez instanceof DomainError && /ya fue recibida/.test(otraVez.message),
     `recibir de nuevo → DomainError: ${(otraVez as Error)?.message}`,
@@ -253,7 +372,7 @@ async function main() {
   check(an.devoluciones === 3 && devs.length === 3, `3 movimientos DEVOLUCION_PROVEEDOR`);
   const stocksFinal = await Promise.all([uva, limon, durazno].map((v) => stockDe(v.id, g1.id)));
   check(stocksFinal.join() === stocksAntes.join(), `stock vuelve a ${stocksFinal.join("/")}`);
-  det = await obtenerCompra(actor, compra.id, CON_COSTO);
+  det = await obtenerCompra(actor, compra.id);
   check(
     det.estado === EstadoCompra.ANULADA && /\[Anulada\] Mercadería con falla/.test(det.notas ?? ""),
     "estado ANULADA y motivo en las notas",
@@ -270,14 +389,25 @@ async function main() {
   const c2 = await crearCompra(
     actor,
     compraSchema.parse({
+      proveedorId: prov.id,
       depositoId: g2.id,
       items: [
-        { varianteId: uva.id, cantidad: 5, costoUnitario: 5200 },
+        { varianteId: uva.id, cantidad: 5, costoUnitario: 5300 },
         { varianteId: limon.id, cantidad: 2, costoUnitario: 4800.5 },
       ],
     }),
   );
-  await recibirCompra(actor, c2.id, { actualizarCostos: false });
+  await recibirCompra(actor, c2.id, { actualizarPrecioProveedor: false });
+  check(
+    (
+      await db.proveedorProducto.findFirstOrThrow({
+        where: { proveedorId: prov.id, productoId: producto.id },
+      })
+    ).precio.toFixed(2) === "5000.00" &&
+      (await db.variante.findUniqueOrThrow({ where: { id: uva.id } })).ultimoCosto?.toFixed(2) ===
+        "5300.00",
+    "recibir sin «actualizar precio del proveedor»: el precio queda, el último costo cambia",
+  );
   await registrarAjuste(actor, {
     depositoId: g2.id,
     varianteId: uva.id,
@@ -290,13 +420,14 @@ async function main() {
     `DomainError con el detalle: ${(e2 as Error)?.message}`,
   );
   check(
-    (await obtenerCompra(actor, c2.id, CON_COSTO)).estado === EstadoCompra.RECIBIDA &&
+    (await obtenerCompra(actor, c2.id)).estado === EstadoCompra.RECIBIDA &&
       (await stockDe(limon.id, g2.id)) === 2,
     "la compra sigue RECIBIDA y el Limón no se devolvió",
   );
   const c3 = await crearCompra(
     actor,
     compraSchema.parse({
+      proveedorId: prov.id,
       depositoId: g1.id,
       items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
     }),
@@ -346,16 +477,7 @@ async function main() {
       !esCodigoInterno(`${prefijo}${m![1]}${(Number(m![2]) + 1) % 10}`, prefijo),
     "esCodigoInterno distingue un verificador inválido",
   );
-  const sinCodigo = await crearProducto(
-    actor,
-    productoSchema.parse({
-      nombre: `Cargador USB-C ${sufijo}`,
-      categoriaId: vapes.id,
-      tieneVariantes: false,
-      variantes: [{ nombre: "Único", precioCosto: 1000, precioVenta: 2500 }],
-    }),
-  );
-  const cargador = sinCodigo.variantes[0]!;
+  const cargador = { id: cargadorId };
   check(
     (await listarVariantesParaEtiquetas(actor, { soloSinCodigoDeFabrica: true })).some(
       (v) => v.varianteId === cargador.id,
@@ -388,22 +510,13 @@ async function main() {
     (await asignarCodigosInternos(actor, [cargador.id])).asignados.length === 0,
     "asignar de nuevo no pisa el código existente",
   );
-  const sinPermiso = await crearProducto(
-    actor,
-    productoSchema.parse({
-      nombre: `Funda ${sufijo}`,
-      categoriaId: vapes.id,
-      tieneVariantes: false,
-      variantes: [{ nombre: "Único", precioCosto: 100, precioVenta: 300 }],
-    }),
-  );
   const e7 = await error(() =>
     generarPdfEtiquetas(
       actor,
       {
         formato: "rollo50x30",
         mostrarPrecio: false,
-        items: [{ varianteId: sinPermiso.variantes[0]!.id, cantidad: 1 }],
+        items: [{ varianteId: fundaId, cantidad: 1 }],
       },
       { puedeGenerarCodigos: false },
     ),
@@ -435,7 +548,16 @@ async function main() {
   const depCosmetic = await dbPara(COSMETIC).deposito.findFirstOrThrow({
     where: { esPrincipal: true },
   });
-  const eLeer = await error(() => obtenerCompra(ctxCosmetic, compra.id, CON_COSTO));
+  const provCosmetic = await crearProveedor(
+    ctxCosmetic,
+    crearProveedorSchema.parse({
+      nombre: `Juan ${sufijo}`,
+      nombreTienda: `Importadora ${sufijo}`,
+      telefono: tel,
+    }),
+  );
+  check(provCosmetic.id !== prov.id, "el mismo teléfono puede ser de un proveedor de otro panel");
+  const eLeer = await error(() => obtenerCompra(ctxCosmetic, compra.id));
   check(eLeer instanceof NotFoundError, "leer una compra de Vapes desde Cosmetic → no existe");
   const eAnular = await error(() => anularCompra(ctxCosmetic, c2.id, "intruso"));
   check(eAnular instanceof NotFoundError, "anular una compra de Vapes desde Cosmetic → no existe");
@@ -443,6 +565,7 @@ async function main() {
     crearCompra(
       ctxCosmetic,
       compraSchema.parse({
+        proveedorId: provCosmetic.id,
         depositoId: depCosmetic.id,
         items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
       }),
@@ -450,7 +573,7 @@ async function main() {
   );
   check(
     eCruzada instanceof NotFoundError,
-    `comprar en Cosmetic una variante de Vapes → «${(eCruzada as Error)?.message}»`,
+    `comprar en Cosmetic un sabor de Vapes → «${(eCruzada as Error)?.message}»`,
   );
   const eProv = await error(() =>
     crearCompra(
@@ -466,17 +589,24 @@ async function main() {
     eProv instanceof NotFoundError,
     `proveedor de Vapes en una compra de Cosmetic → «${(eProv as Error)?.message}»`,
   );
+  const ePrecio = await error(() =>
+    asignarProducto(ctxCosmetic, provCosmetic.id, {
+      productoId: producto.id,
+      precio: 1,
+      moneda: Moneda.ARS,
+    }),
+  );
   check(
-    !(await listarProveedores(ctxCosmetic, { conCompras: false })).some((p) => p.id === prov.id),
-    "los proveedores de Vapes no aparecen en Cosmetic",
+    ePrecio instanceof NotFoundError,
+    `precio de un proveedor de Cosmetic para un producto de Vapes → «${(ePrecio as Error)?.message}»`,
   );
-  const provCosmetic = await crearProveedor(
-    ctxCosmetic,
-    crearProveedorSchema.parse({ nombre: `Importadora ${sufijo}`, cuit: cuitValido }),
+  check(
+    !(await listarProveedoresActivos(ctxCosmetic)).some((p) => p.id === prov.id) &&
+      (await proveedoresDeProducto(ctxCosmetic, producto.id)).length === 0,
+    "los proveedores y precios de Vapes no aparecen en Cosmetic",
   );
-  check(provCosmetic.id !== prov.id, "el mismo CUIT puede existir como proveedor de otro panel");
 
-  console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} verificación(es) fallaron`);
+  console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);
   process.exitCode = fallos === 0 ? 0 : 1;
 }
 

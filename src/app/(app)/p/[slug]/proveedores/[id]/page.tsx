@@ -1,5 +1,5 @@
 import { Modulo } from "@prisma/client";
-import { ArrowLeft, Plus, Truck } from "lucide-react";
+import { ArrowLeft, MessageCircle, Plus, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -12,70 +12,84 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatearPesos } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
-import { rutaPanel } from "@/lib/paneles";
+import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
-import { formatearCuit } from "@/lib/validations/proveedor";
+import { enlaceWhatsApp, formatearTelefono } from "@/lib/validations/proveedor";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
-import { obtenerProveedor } from "@/server/services/proveedor.service";
+import { obtener, veCostosCompras } from "@/server/services/proveedor.service";
 
 import { AccionesProveedor } from "./acciones-proveedor";
+import { ProductosProveedor } from "./productos-proveedor";
 
 export const metadata: Metadata = { title: "Proveedor" };
 
 export default async function ProveedorPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requirePaginaPanel(Modulo.PROVEEDORES, "ver");
-  const { usuario, panelId } = ctx;
-  const ruta = (r: string) => rutaPanel(ctx.panel.slug, r);
+  const { usuario, panelId, panel } = ctx;
+  const ruta = (r: string) => rutaPanel(panel.slug, r);
   const { id } = await params;
-  const verCompras = puede(usuario, panelId, Modulo.COMPRAS, "ver");
-  const { proveedor: p, compras } = await obtenerProveedor(ctx, id, {
-    conCompras: verCompras,
-  }).catch((e: unknown) => {
+  const d = await obtener(ctx, id).catch((e: unknown) => {
     if (e instanceof NotFoundError) notFound();
     throw e;
   });
-  const recibidas = (compras ?? []).filter((c) => c.estado === "RECIBIDA");
-  const total = recibidas.reduce((a, c) => a + Number(c.total), 0);
+  const p = d.proveedor;
+  const verPrecios = veCostosCompras(ctx);
+  const verCompras = puede(usuario, panelId, Modulo.COMPRAS, "ver");
 
   return (
     <>
       <PageHeader
         title={p.nombre}
-        subtitle={p.activo ? undefined : <Badge variant="neutral">Inactivo</Badge>}
+        subtitle={
+          <span className="flex items-center gap-2">
+            {p.nombreTienda}
+            {!p.activo && <Badge variant="neutral">Inactivo</Badge>}
+          </span>
+        }
         actions={
           <>
             <Link href={ruta("/proveedores")} className={buttonVariants({ variant: "secondary" })}>
-              <ArrowLeft /> Proveedores
+              <ArrowLeft strokeWidth={1.75} /> Proveedores
             </Link>
             {p.activo && puede(usuario, panelId, Modulo.COMPRAS, "crear") && (
               <Link href={ruta(`/compras/nueva?proveedor=${p.id}`)} className={buttonVariants()}>
-                <Plus /> Nueva compra
+                <Plus strokeWidth={1.75} /> Nueva compra a este proveedor
               </Link>
             )}
           </>
         }
       />
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         <Card>
           <CardContent className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-4">
             <div>
-              <p className="text-muted">CUIT</p>
-              <p className="tabular-nums">{p.cuit ? formatearCuit(p.cuit) : "—"}</p>
-            </div>
-            <div>
               <p className="text-muted">Teléfono</p>
-              <p>{p.telefono ?? "—"}</p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-muted">Email</p>
-              <p className="truncate">{p.email ?? "—"}</p>
+              {p.telefono ? (
+                <a
+                  href={enlaceWhatsApp(p.telefono)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary inline-flex min-h-11 items-center gap-1.5 font-medium"
+                >
+                  <MessageCircle className="size-4" strokeWidth={1.75} aria-hidden />
+                  {formatearTelefono(p.telefono)}
+                </a>
+              ) : (
+                <p>—</p>
+              )}
             </div>
             <div>
-              <p className="text-muted">Dirección</p>
-              <p>{p.direccion ?? "—"}</p>
+              <p className="text-muted">Compras</p>
+              <p className="tabular-nums">{d.cantidadCompras}</p>
             </div>
+            {d.totalComprado !== null && (
+              <div>
+                <p className="text-muted">Total comprado</p>
+                <p className="font-semibold tabular-nums">{formatearPesos(d.totalComprado)}</p>
+              </div>
+            )}
             {p.notas && (
               <div className="col-span-2 md:col-span-4">
                 <p className="text-muted">Notas</p>
@@ -85,86 +99,103 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
           </CardContent>
         </Card>
 
-        {compras && (
-          <section aria-labelledby="historial" className="flex flex-col gap-3">
-            <h2 id="historial" className="text-lg font-semibold">
-              Historial de compras
-              <span className="text-muted ml-2 text-sm font-normal">
-                {recibidas.length} recibidas · {formatearPesos(total)}
-                {compras.length === 50 && " (últimas 50)"}
-              </span>
-            </h2>
-            <DataTable
-              caption="Compras del proveedor"
-              rows={compras}
-              getRowKey={(c) => c.id}
-              empty={<EmptyState icon={Truck} title="Todavía no hay compras a este proveedor" />}
-              columns={[
-                {
-                  key: "numero",
-                  header: "N.º",
-                  cell: (c) => (
+        <ProductosProveedor
+          proveedorId={p.id}
+          productos={d.productos}
+          verPrecios={verPrecios}
+          puedeEditar={puede(usuario, panelId, Modulo.PROVEEDORES, "editar")}
+        />
+
+        <section aria-labelledby="historial" className="flex flex-col gap-3">
+          <h2 id="historial" className="text-lg font-semibold">
+            Historial de compras
+            {d.compras.length === 50 && (
+              <span className="text-muted ml-2 text-sm font-normal">(últimas 50)</span>
+            )}
+          </h2>
+          <DataTable
+            caption="Compras del proveedor"
+            rows={d.compras}
+            getRowKey={(c) => c.id}
+            empty={<EmptyState icon={Truck} title="Todavía no hay compras a este proveedor" />}
+            columns={[
+              {
+                key: "numero",
+                header: "ID",
+                cell: (c) =>
+                  verCompras ? (
                     <Link
                       href={ruta(`/compras/${c.id}`)}
                       className="text-primary font-semibold hover:underline"
                     >
-                      #{c.numero}
+                      {formatearIdCompra(panel.slug, c.numero)}
                     </Link>
+                  ) : (
+                    <span className="font-semibold">{formatearIdCompra(panel.slug, c.numero)}</span>
                   ),
-                },
-                {
-                  key: "fecha",
-                  header: "Fecha",
-                  cell: (c) => <span className="text-muted">{formatearFechaHora(c.fecha)}</span>,
-                },
-                { key: "deposito", header: "Depósito", cell: (c) => c.deposito },
-                {
-                  key: "unidades",
-                  header: "Unidades",
-                  className: "text-right tabular-nums",
-                  cell: (c) => c.unidades,
-                },
-                {
-                  key: "total",
-                  header: "Total",
-                  className: "text-right tabular-nums",
-                  cell: (c) => formatearPesos(c.total),
-                },
-                {
-                  key: "estado",
-                  header: "Estado",
-                  cell: (c) => (
-                    <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>
-                      {ESTADO_COMPRA_UI[c.estado].label}
-                    </Badge>
-                  ),
-                },
-              ]}
-              renderMobile={(c) => (
-                <Link
-                  href={ruta(`/compras/${c.id}`)}
-                  className="border-border bg-surface block rounded-2xl border p-4"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold">#{c.numero}</span>
-                    <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>
-                      {ESTADO_COMPRA_UI[c.estado].label}
-                    </Badge>
-                  </div>
-                  <div className="mt-1 flex items-end justify-between gap-2">
-                    <p className="text-muted text-xs">
-                      {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
-                    </p>
+              },
+              {
+                key: "fecha",
+                header: "Fecha",
+                cell: (c) => <span className="text-muted">{formatearFechaHora(c.fecha)}</span>,
+              },
+              { key: "deposito", header: "Galpón", cell: (c) => c.deposito },
+              {
+                key: "unidades",
+                header: "Unidades",
+                className: "text-right tabular-nums",
+                cell: (c) => c.unidades,
+              },
+              ...(verPrecios
+                ? [
+                    {
+                      key: "total",
+                      header: "Total",
+                      className: "text-right tabular-nums",
+                      cell: (c: (typeof d.compras)[number]) => formatearPesos(c.total),
+                    },
+                  ]
+                : []),
+              {
+                key: "estado",
+                header: "Estado",
+                cell: (c) => (
+                  <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>
+                    {ESTADO_COMPRA_UI[c.estado].label}
+                  </Badge>
+                ),
+              },
+            ]}
+            renderMobile={(c) => (
+              <div className="border-border bg-surface rounded-2xl border p-4">
+                <div className="flex items-center justify-between gap-2">
+                  {verCompras ? (
+                    <Link href={ruta(`/compras/${c.id}`)} className="text-primary font-semibold">
+                      {formatearIdCompra(panel.slug, c.numero)}
+                    </Link>
+                  ) : (
+                    <span className="font-semibold">{formatearIdCompra(panel.slug, c.numero)}</span>
+                  )}
+                  <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>
+                    {ESTADO_COMPRA_UI[c.estado].label}
+                  </Badge>
+                </div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <p className="text-muted text-xs">
+                    {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
+                  </p>
+                  {c.total !== null && (
                     <p className="font-semibold tabular-nums">{formatearPesos(c.total)}</p>
-                  </div>
-                </Link>
-              )}
-            />
-          </section>
-        )}
+                  )}
+                </div>
+              </div>
+            )}
+          />
+        </section>
 
         <AccionesProveedor
           proveedor={p}
+          verPrecios={verPrecios}
           puedeEditar={puede(usuario, panelId, Modulo.PROVEEDORES, "editar")}
           puedeEliminar={puede(usuario, panelId, Modulo.PROVEEDORES, "eliminar")}
         />

@@ -2,14 +2,12 @@
 
 import { Modulo } from "@prisma/client";
 import { Link2, PackagePlus } from "lucide-react";
-import Link from "next/link";
 import { useState } from "react";
 
 import { agregarCodigoAlternativoAction } from "@/app/(app)/p/[slug]/productos/actions";
 import { VariantePicker, type VarianteBuscada } from "@/components/catalogo/variante-picker";
-import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 
@@ -18,25 +16,27 @@ import { invalidarResoluciones } from "./resolver-codigo";
 import type { VarianteEscaneada } from "./tipos";
 
 /**
- * "Este código no existe": asociarlo a un producto existente (queda como
- * código alternativo) o crear el producto con el código precargado. Ambas
- * opciones requieren permiso en Productos; si no, solo se avisa.
+ * "Este código no existe": asociarlo a un sabor existente (queda como código
+ * alternativo) o darlo de alta (alta rápida, con el código precargado). Sin
+ * permiso para ninguna de las dos, solo se avisa.
  */
 export function CodigoDesconocidoSheet({
   codigo,
   onClose,
   onAsociado,
-  volverA,
+  onCrear,
 }: {
   codigo: string | null;
   onClose: () => void;
   onAsociado: (v: VarianteEscaneada) => void;
-  volverA: string;
+  /** Abre el alta rápida con este código. */
+  onCrear: (codigo: string) => void;
 }) {
   const toast = useToast();
-  const ruta = useRutaPanel();
   const puedeAsociar = usePuede(Modulo.PRODUCTOS, "editar");
-  const puedeCrear = usePuede(Modulo.PRODUCTOS, "crear");
+  const creaProductos = usePuede(Modulo.PRODUCTOS, "crear");
+  const creaCompras = usePuede(Modulo.COMPRAS, "crear");
+  const puedeCrear = creaProductos || creaCompras;
   const [elegida, setElegida] = useState<VarianteBuscada | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string>();
@@ -51,7 +51,7 @@ export function CodigoDesconocidoSheet({
     if (!codigo || !elegida) return;
     setEnviando(true);
     const r = await agregarCodigoAlternativoAction({
-      varianteId: elegida.id,
+      varianteId: elegida.varianteId,
       codigo,
       descripcion: "Asociado desde el escáner",
     });
@@ -61,16 +61,12 @@ export function CodigoDesconocidoSheet({
       return;
     }
     invalidarResoluciones(codigo);
-    const v = await resolverVarianteAction({ varianteId: elegida.id });
+    const v = await resolverVarianteAction({ varianteId: elegida.varianteId });
     setEnviando(false);
-    toast.success(`Código ${codigo} asociado`, elegida.nombreCompleto);
+    toast.success(`Código ${codigo} asociado`, elegida.titulo);
     if (v.ok && v.data) onAsociado(v.data);
     cerrar();
   }
-
-  const hrefCrear = codigo
-    ? `${ruta("/productos/nuevo")}?codigo=${encodeURIComponent(codigo)}&volver=${encodeURIComponent(volverA)}`
-    : "#";
 
   return (
     <Sheet
@@ -106,13 +102,11 @@ export function CodigoDesconocidoSheet({
           <section className="flex flex-col gap-2">
             <h3 className="font-medium">Asociar a un producto existente</h3>
             <p className="text-muted text-sm">
-              Por ejemplo, el mismo vape que llegó de otro importador con otro código.
+              Por ejemplo, el mismo producto que llegó de otro importador con otro código.
             </p>
             {elegida ? (
               <div className="border-primary bg-primary-soft flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-sm">
-                <span className="text-primary-soft-foreground font-medium">
-                  {elegida.nombreCompleto}
-                </span>
+                <span className="text-primary-soft-foreground font-medium">{elegida.titulo}</span>
                 <Button variant="ghost" size="sm" onClick={() => setElegida(null)}>
                   Cambiar
                 </Button>
@@ -130,9 +124,9 @@ export function CodigoDesconocidoSheet({
         {puedeCrear && (
           <section className="border-border flex flex-col gap-2 border-t pt-4">
             <h3 className="font-medium">¿Es un producto nuevo?</h3>
-            <Link href={hrefCrear} className={buttonVariants({ variant: "secondary" })}>
-              <PackagePlus /> Crear producto con este código
-            </Link>
+            <Button variant="secondary" onClick={() => codigo && onCrear(codigo)}>
+              <PackagePlus strokeWidth={1.75} /> Crear producto con este código
+            </Button>
           </section>
         )}
       </div>

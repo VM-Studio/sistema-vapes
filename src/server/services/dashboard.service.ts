@@ -1,9 +1,9 @@
 import { EstadoVenta, Prisma } from "@prisma/client";
 
 import { ahora } from "@/lib/reloj";
+import { nombreConSabor } from "@/lib/ventas-ui";
 import { diaEn, limitesRango, sumarDias, ZONA_DEFAULT, type DiaISO } from "@/lib/zona-horaria";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
-import { nombreCompleto } from "@/server/services/producto.service";
 
 /**
  * INICIO DEL PANEL: métricas calculadas directo sobre Venta / VentaItem /
@@ -95,7 +95,7 @@ async function topProductos(ctx: Ctx, rango: { inicio: Date; fin: Date }): Promi
   const filas = await dbPara(ctx.panelId).$queryRaw<
     { productoId: string; nombre: string; unidades: number; total: Prisma.Decimal }[]
   >`
-    SELECT p."id" AS "productoId", p."nombre" AS "nombre",
+    SELECT p."id" AS "productoId", p."nombreCompleto" AS "nombre",
            SUM(vi."cantidad")::integer AS "unidades", SUM(vi."subtotal") AS "total"
     FROM "VentaItem" vi
     JOIN "Venta" v ON v."id" = vi."ventaId"
@@ -105,7 +105,7 @@ async function topProductos(ctx: Ctx, rango: { inicio: Date; fin: Date }): Promi
       AND v."panelId" = ${ctx.panelId}
       AND v."estado" = 'CONFIRMADA'
       AND v."fecha" >= ${rango.inicio} AND v."fecha" < ${rango.fin}
-    GROUP BY p."id", p."nombre"
+    GROUP BY p."id", p."nombreCompleto"
     ORDER BY "unidades" DESC, "total" DESC
     LIMIT 5
   `;
@@ -121,7 +121,6 @@ async function alertasStock(ctx: Ctx): Promise<{ alertas: AlertaStock[]; total: 
         productoId: string;
         producto: string;
         variante: string;
-        tieneVariantes: boolean;
         sku: string;
         stockTotal: number;
         stockMinimo: number;
@@ -129,10 +128,9 @@ async function alertasStock(ctx: Ctx): Promise<{ alertas: AlertaStock[]; total: 
     >`
       SELECT a.variante_id AS "varianteId", a.producto_id AS "productoId",
              a.producto AS "producto", a.variante AS "variante",
-             p."tieneVariantes" AS "tieneVariantes", a.sku AS "sku",
+             a.sku AS "sku",
              a.stock_total AS "stockTotal", a.stock_minimo AS "stockMinimo"
       FROM vw_alertas_stock a
-      JOIN "Producto" p ON p."id" = a.producto_id AND p."panelId" = ${ctx.panelId}
       WHERE a.panel_id = ${ctx.panelId}
       ORDER BY a.stock_total ASC, a.faltante DESC, a.producto ASC
       LIMIT 6
@@ -146,7 +144,7 @@ async function alertasStock(ctx: Ctx): Promise<{ alertas: AlertaStock[]; total: 
     alertas: filas.map((f) => ({
       varianteId: f.varianteId,
       productoId: f.productoId,
-      nombre: nombreCompleto(f.producto, f.variante, f.tieneVariantes),
+      nombre: nombreConSabor(f.producto, f.variante),
       sku: f.sku,
       stockTotal: f.stockTotal,
       stockMinimo: f.stockMinimo,
