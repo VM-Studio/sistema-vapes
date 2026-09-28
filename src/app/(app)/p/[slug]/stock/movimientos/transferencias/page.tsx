@@ -1,10 +1,9 @@
 import { EstadoTransferencia, Modulo } from "@prisma/client";
-import { ArrowRight, ArrowLeftRight, Plus } from "lucide-react";
+import { ArrowRight, ArrowLeftRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -12,7 +11,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { ESTADO_TRANSFERENCIA_UI } from "@/lib/movimientos-ui";
 import { rutaPanel } from "@/lib/paneles";
-import { puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { depositosActivosPanel } from "@/server/services/inventario.service";
@@ -56,23 +54,10 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
 
   return (
     <>
-      <StockTabs
-        panel={ctx.panel}
-        usuario={ctx.usuario}
-        actual="transferencias"
-        depositoId={depositoId}
-      />
+      <StockTabs panel={ctx.panel} actual="transferencias" depositoId={depositoId} />
       <PageHeader
         title="Transferencias"
-        subtitle="Mover mercadería entre depósitos. Se crea pendiente y el stock se mueve al completarla."
-        actions={
-          puede(ctx.usuario, ctx.panelId, Modulo.STOCK, "crear") &&
-          depositos.length > 1 && (
-            <Link href={`${PATH}/nueva`} className={buttonVariants()}>
-              <Plus strokeWidth={1.75} /> Nueva transferencia
-            </Link>
-          )
-        }
+        subtitle="Mercadería movida entre galpones. Para transferir, usá “Transferir” en la fila del sabor, en Stock."
       />
       <SelectorDeposito
         depositos={depositos}

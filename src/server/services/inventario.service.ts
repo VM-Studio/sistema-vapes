@@ -4,10 +4,9 @@ import { z } from "zod";
 
 import { normalizarCodigoBarras } from "@/lib/barcode";
 import { aCSV } from "@/lib/csv";
-import { ESTADO_STOCK_UI } from "@/lib/movimientos-ui";
+import { ESTADO_STOCK_UI, estadoDeStock, type EstadoStockUI } from "@/lib/movimientos-ui";
 import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
-import { estadoStock, type EstadoStock } from "@/server/services/producto.service";
 
 /**
  * STOCK DEL PANEL: lectura del stock por depósito y consolidado ("Global",
@@ -81,7 +80,7 @@ export interface FilaStock {
   total: number;
   /** Lo que muestra la vista: el total en Global, la cantidad del depósito si se eligió uno. */
   cantidad: number;
-  estado: EstadoStock;
+  estado: EstadoStockUI;
 }
 
 export interface ResultadoStock {
@@ -261,7 +260,7 @@ function aFila(r: FilaSql, depositos: DepositoStock[]): FilaStock {
     porDeposito,
     total: r.total,
     cantidad: r.cantidad,
-    estado: estadoStock(r.cantidad, r.stock_minimo),
+    estado: estadoDeStock(r.cantidad, r.stock_minimo),
   };
 }
 
@@ -347,7 +346,7 @@ export interface MatrizStockProducto {
     porDeposito: Record<string, number>;
     total: number;
     stockMinimo: number;
-    estado: EstadoStock;
+    estado: EstadoStockUI;
   }[];
   totalesPorDeposito: Record<string, number>;
   total: number;
@@ -388,7 +387,7 @@ export async function obtenerStockPorProducto(
       porDeposito,
       total,
       stockMinimo: v.stockMinimo,
-      estado: estadoStock(total, v.stockMinimo),
+      estado: estadoDeStock(total, v.stockMinimo),
     };
   });
   return { depositos, filas, totalesPorDeposito, total: filas.reduce((a, f) => a + f.total, 0) };

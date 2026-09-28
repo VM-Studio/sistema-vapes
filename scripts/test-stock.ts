@@ -11,8 +11,13 @@ import { Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
 import { prisma } from "../src/lib/db";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { StockInsuficienteError } from "../src/server/errors";
+import { transferirAhora } from "../src/server/services/movimiento.service";
 import {
+  movimientos,
   registrarMovimiento,
+  resumenStock,
+  stockGlobal,
+  stockPorDeposito,
   stockTotalVariante,
   transferirStock,
 } from "../src/server/services/stock.service";
@@ -317,6 +322,83 @@ async function main() {
   check(
     fila?.total === totalReal && sumaDepositos === totalReal,
     `total ${fila?.total} = Σ por_deposito ${sumaDepositos} = stock ${totalReal}`,
+  );
+
+  // 11. Lecturas de la pantalla Stock y "Transferir a {otro galpón}" desde la fila
+  console.log("11) Stock por galpón / global, ledger y transferencia en el acto");
+  const q = variante.nombre;
+  const [porG1, global, resumenAntes] = await Promise.all([
+    stockPorDeposito(ctx, g1.id, { q }),
+    stockGlobal(ctx, { q }),
+    resumenStock(ctx),
+  ]);
+  const filaG1 = porG1.filas.find((f) => f.varianteId === variante.id);
+  const filaGlobal = global.filas.find((f) => f.varianteId === variante.id);
+  check(
+    filaG1?.cantidad === (await stockEn(variante.id, g1.id)) &&
+      filaGlobal?.cantidad === totalReal &&
+      filaGlobal.porDeposito[g1.id] === filaG1.cantidad &&
+      filaGlobal.porDeposito[g2.id] === (await stockEn(variante.id, g2.id)),
+    `stockPorDeposito = cantidad del galpón (${filaG1?.cantidad}); stockGlobal = total (${filaGlobal?.cantidad}) con cada galpón`,
+  );
+  check(
+    resumenAntes.porDeposito.length === 2 &&
+      resumenAntes.total === resumenAntes.porDeposito.reduce((a, d) => a + d.unidades, 0),
+    `resumenStock: ${resumenAntes.porDeposito.map((d) => `${d.nombre} ${d.unidades}`).join(" + ")} = ${resumenAntes.total}`,
+  );
+  const ajeno = await dbPara("pnl_cosmetic").deposito.findFirstOrThrow();
+  check(
+    (await esperarError(() => stockPorDeposito(ctx, ajeno.id))) !== null,
+    "stockPorDeposito con un galpón de otro panel → no existe",
+  );
+  await transaccion(ctx, (tx) =>
+    registrarMovimiento(tx, {
+      ...base,
+      tipo: TipoMovimiento.INGRESO_MANUAL,
+      depositoId: g1.id,
+      cantidad: 5,
+    }),
+  );
+  const totalAntes = await stockTotalVariante(db, variante.id);
+  const t = await transferirAhora(ctx, {
+    varianteId: variante.id,
+    depositoOrigenId: g1.id,
+    depositoDestinoId: g2.id,
+    cantidad: 5,
+    notas: MOTIVO,
+  });
+  const doc = await db.transferencia.findUniqueOrThrow({ where: { id: t.id } });
+  const resumenDespues = await resumenStock(ctx);
+  check(
+    doc.estado === "COMPLETADA" && (await stockTotalVariante(db, variante.id)) === totalAntes,
+    `transferirAhora: Transferencia #${t.numero} COMPLETADA en el acto; total sin cambios (${totalAntes})`,
+  );
+  check(
+    resumenDespues.total === resumenAntes.total + 5,
+    "el total global del panel no cambia al transferir (solo el ingreso previo de 5)",
+  );
+  const ledgerG2 = await movimientos(ctx, { depositoId: g2.id, referenciaId: t.id });
+  const ledgerTodos = await movimientos(ctx, { depositoId: null, referenciaId: t.id });
+  check(
+    ledgerG2.total === 1 &&
+      ledgerG2.movimientos[0]?.cantidad === 5 &&
+      ledgerG2.movimientos[0].referencia?.etiqueta === `Transferencia #${t.numero}` &&
+      ledgerTodos.total === 2 &&
+      ledgerTodos.movimientos.some((m) => m.cantidad === -5 && m.depositoId === g1.id),
+    "movimientos(): filtrado por galpón (+5 en destino) o de todos (−5 / +5) con la referencia",
+  );
+  const transferenciasAntes = await db.transferencia.count();
+  const errorSinStock = await esperarError(() =>
+    transferirAhora(ctx, {
+      varianteId: variante.id,
+      depositoOrigenId: g1.id,
+      depositoDestinoId: g2.id,
+      cantidad: 100_000,
+    }),
+  );
+  check(
+    errorSinStock !== null && (await db.transferencia.count()) === transferenciasAntes,
+    `transferirAhora sin stock → error («${errorSinStock}») y no queda ninguna transferencia`,
   );
 
   console.log(

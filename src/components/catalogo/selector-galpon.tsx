@@ -17,12 +17,15 @@ export function SelectorGalpon({
   titulo,
   descripcion,
   onConfirmar,
+  unidades,
 }: {
   depositos: { id: string; nombre: string; esPrincipal: boolean }[];
   preseleccionadoId?: string | null;
   titulo: string;
   descripcion?: string;
   onConfirmar: (depositoId: string) => void;
+  /** Unidades totales por depósito (opcional): la card las muestra. */
+  unidades?: Record<string, number>;
 }) {
   const [elegido, setElegido] = useState<string | null>(
     depositos.some((d) => d.id === preseleccionadoId) ? (preseleccionadoId ?? null) : null,
@@ -75,6 +78,12 @@ export function SelectorGalpon({
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate text-lg font-semibold">{d.nombre}</span>
                   {d.esPrincipal && <span className="text-muted text-sm">Principal</span>}
+                  {unidades && (
+                    <span className="text-muted text-sm tabular-nums">
+                      {(unidades[d.id] ?? 0).toLocaleString("es-AR")}{" "}
+                      {(unidades[d.id] ?? 0) === 1 ? "unidad" : "unidades"}
+                    </span>
+                  )}
                 </span>
               </button>
             );

@@ -9,9 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { navegacionPermitida, type ItemNavegacion } from "@/config/navigation";
 import { formatearNumero, formatearPesos } from "@/lib/format";
-import { formatearIdVenta, rutaPanel } from "@/lib/paneles";
+import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
+import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { requirePaginaPanelUsuario } from "@/server/auth/permissions";
 import { obtenerDashboard, type KpiVentas } from "@/server/services/dashboard.service";
 
@@ -122,11 +123,13 @@ export default async function InicioPanelPage() {
                         <Receipt className="size-4" strokeWidth={1.75} aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block font-medium tabular-nums">
-                          {formatearIdVenta(panel.slug, v.numero)}
-                        </span>
+                        <span className="block font-medium tabular-nums">{v.codigo}</span>
                         <span className="text-muted block truncate text-sm">
-                          {formatearFechaHora(v.fecha)} · {v.cliente ?? "Consumidor final"}
+                          {formatearFechaHora(v.fecha)} · {v.cliente} ·{" "}
+                          {ETIQUETA_MEDIO_PAGO[v.medioPago]}
+                        </span>
+                        <span className="text-muted block truncate text-xs">
+                          Vendió {v.vendedor}
                         </span>
                       </span>
                       <span className="text-sm font-semibold tabular-nums">
@@ -160,7 +163,7 @@ export default async function InicioPanelPage() {
               }
               accion={
                 verStock && d.alertasTotal > 0
-                  ? { href: ruta("/stock?soloBajoMinimo=1"), label: "Ver stock" }
+                  ? { href: ruta("/stock?tab=global&soloBajoMinimo=1"), label: "Ver stock" }
                   : undefined
               }
               vacio={d.alertas.length === 0 ? "Todo el stock está por encima del mínimo." : null}
@@ -203,6 +206,18 @@ export default async function InicioPanelPage() {
 function Kpi({ label, k }: { label: string; k: KpiVentas }) {
   return (
     <StatCard label={label} value={formatearPesos(k.total)} hint={ventas(k.cantidad)}>
+      {k.cantidad > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1.5" aria-label={`${label}: por medio de pago`}>
+          {k.porMedio
+            .filter((m) => m.cantidad > 0)
+            .map((m) => (
+              <li key={m.medio} className="bg-surface-2 rounded-full px-2.5 py-1 text-xs">
+                {ETIQUETA_MEDIO_PAGO[m.medio]}{" "}
+                <strong className="tabular-nums">{formatearPesos(m.total)}</strong>
+              </li>
+            ))}
+        </ul>
+      )}
       {k.costo !== null && k.ganancia !== null && (
         <dl className="border-border mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm">
           <div>

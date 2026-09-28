@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
+import { useRutaPanel } from "@/components/layout/panel-context";
 import {
   aplicarErroresServidor,
   Form,
@@ -10,36 +12,25 @@ import {
   useZodForm,
 } from "@/components/ui/form";
 import { useToast } from "@/components/ui/toast";
-import { crearClienteSchema, type CrearCliente } from "@/lib/validations/cliente";
+import { crearClienteSchema, telefonoValido, type CrearCliente } from "@/lib/validations/cliente";
 
-import { actualizarClienteAction, crearClienteAction } from "@/app/(app)/p/[slug]/clientes/actions";
+import {
+  actualizarClienteAction,
+  clientePorTelefonoAction,
+  crearClienteAction,
+} from "@/app/(app)/p/[slug]/clientes/actions";
 
 export interface ClienteEditable {
   id: string;
   nombre: string;
-  apellido: string | null;
-  documento: string | null;
-  telefono: string | null;
-  email: string | null;
-  direccion: string | null;
+  telefono: string;
   notas: string | null;
-  activo: boolean;
 }
 
-function valoresIniciales(c: ClienteEditable | null) {
-  return {
-    nombre: c?.nombre ?? "",
-    apellido: c?.apellido ?? "",
-    documento: c?.documento ?? "",
-    telefono: c?.telefono ?? "",
-    email: c?.email ?? "",
-    direccion: c?.direccion ?? "",
-    notas: c?.notas ?? "",
-    activo: c?.activo ?? true,
-  };
-}
-
-/** Alta/edición de cliente del panel actual. El teléfono se guarda normalizado (+54…) y no se repite. */
+/**
+ * Alta/edición de cliente del panel actual. El teléfono se guarda normalizado
+ * (+54…) y no se repite: mientras se escribe se avisa si ya es de otro cliente.
+ */
 export function ClienteForm({
   formId,
   cliente,
@@ -52,9 +43,32 @@ export function ClienteForm({
   onEnviando?: (e: boolean) => void;
 }) {
   const toast = useToast();
-  const form = useZodForm(crearClienteSchema, { defaultValues: valoresIniciales(cliente) });
+  const ruta = useRutaPanel();
+  const [existente, setExistente] = useState<{ id: string; nombre: string } | null>(null);
+  const form = useZodForm(crearClienteSchema, {
+    defaultValues: {
+      nombre: cliente?.nombre ?? "",
+      telefono: cliente?.telefono ?? "",
+      notas: cliente?.notas ?? "",
+    },
+  });
   const enviando = form.formState.isSubmitting;
   useEffect(() => onEnviando?.(enviando), [enviando, onEnviando]);
+
+  const telefono = telefonoValido(form.watch("telefono"));
+  useEffect(() => {
+    setExistente(null);
+    if (!telefono || telefono === cliente?.telefono) return;
+    let vigente = true;
+    const t = setTimeout(async () => {
+      const r = await clientePorTelefonoAction({ telefono });
+      if (vigente && r.ok && r.data && r.data.id !== cliente?.id) setExistente(r.data);
+    }, 350);
+    return () => {
+      vigente = false;
+      clearTimeout(t);
+    };
+  }, [telefono, cliente?.id, cliente?.telefono]);
 
   async function onSubmit(datos: CrearCliente) {
     if (cliente) {
@@ -72,22 +86,28 @@ export function ClienteForm({
 
   return (
     <Form form={form} onSubmit={onSubmit} id={formId} className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3">
-        <FormInput name="nombre" label="Nombre" required autoComplete="off" />
-        <FormInput name="apellido" label="Apellido" autoComplete="off" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <FormInput name="documento" label="DNI / CUIT" autoComplete="off" />
-        <FormInput
-          name="telefono"
-          label="Teléfono"
-          inputMode="tel"
-          autoComplete="off"
-          hint="Con código de área. Se guarda como +54…"
-        />
-      </div>
-      <FormInput name="email" label="Email" type="email" autoComplete="off" />
-      <FormInput name="direccion" label="Dirección" autoComplete="off" />
+      <FormInput name="nombre" label="Nombre" required autoComplete="off" />
+      <FormInput
+        name="telefono"
+        label="Teléfono"
+        required
+        type="tel"
+        inputMode="tel"
+        autoComplete="off"
+        hint={telefono ? `Se guarda como ${telefono}` : "Con código de área. Ej: 11 5555 1234"}
+      />
+      {existente && (
+        <p
+          role="status"
+          className="bg-warning-soft text-warning-soft-foreground rounded-xl px-4 py-3 text-sm"
+        >
+          Ese teléfono es de{" "}
+          <Link href={ruta(`/clientes/${existente.id}`)} className="font-semibold underline">
+            {existente.nombre}
+          </Link>
+          .
+        </p>
+      )}
       <FormTextarea name="notas" label="Notas" rows={2} />
     </Form>
   );

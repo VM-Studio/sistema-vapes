@@ -12,16 +12,18 @@ import { Button } from "@/components/ui/button";
  * sesión de escaneo con productos cargados: ahí se pospone hasta que el
  * carrito quede vacío.
  */
-const CARRITOS = ["pos.carrito", "escanear.sesion"];
+/** Prefijos de lo que queda guardado mientras hay una operación a medio hacer (por panel y usuario). */
+const EN_CURSO = ["ventas.enCurso.", "carga-stock.lista."];
 
 export function hayOperacionEnCurso(): boolean {
   try {
-    return CARRITOS.some((k) => {
-      const v = localStorage.getItem(k);
-      if (!v) return false;
-      const d = JSON.parse(v) as { items?: unknown[] };
-      return Array.isArray(d.items) && d.items.length > 0;
-    });
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !EN_CURSO.some((p) => k.startsWith(p))) continue;
+      const d = JSON.parse(localStorage.getItem(k) ?? "null") as { items?: unknown[] } | null;
+      if (Array.isArray(d?.items) && d.items.length > 0) return true;
+    }
+    return false;
   } catch {
     return false;
   }

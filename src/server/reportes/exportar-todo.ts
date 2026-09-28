@@ -5,9 +5,15 @@ import { PassThrough, Readable } from "node:stream";
 import ExcelJS from "exceljs";
 
 import { prisma } from "@/lib/db";
-import { formatearIdCompra, formatearIdVenta } from "@/lib/paneles";
+import { formatearIdCompra } from "@/lib/paneles";
+import { TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { precioVentaEfectivo } from "@/lib/precios";
-import { saborVisible } from "@/lib/ventas-ui";
+import {
+  ESTADO_VENTA_UI,
+  ETIQUETA_MEDIO_PAGO,
+  ETIQUETA_TIPO_VENTA,
+  saborVisible,
+} from "@/lib/ventas-ui";
 import { formatearFechaHora } from "@/lib/utils";
 
 /**
@@ -73,7 +79,7 @@ export function streamExportarTodo(meta: {
     info.addRow([`${meta.negocio} — exportación completa`]).font = { bold: true, size: 14 };
     info.addRow([`Generada ${formatearFechaHora(new Date())} por ${meta.usuario}`]);
     info.addRow([
-      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Compras, Ítems de compras, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
+      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Devoluciones, Ítems de devoluciones, Compras, Ítems de compras, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
     ]);
     info.commit();
     const sistemas = new Map(
@@ -187,7 +193,7 @@ export function streamExportarTodo(meta: {
       (m) => ({
         sis: sistema(m.panelId),
         f: formatearFechaHora(m.createdAt),
-        t: m.tipo,
+        t: TIPO_MOVIMIENTO_UI[m.tipo].label,
         p: m.variante.producto.nombreCompleto,
         v: saborVisible(m.variante.nombre) ?? "",
         d: m.deposito.nombre,
@@ -208,31 +214,45 @@ export function streamExportarTodo(meta: {
         { header: "ID de venta", key: "n", width: 12 },
         { header: "Fecha", key: "f", width: 17 },
         { header: "Estado", key: "e", width: 12 },
+        { header: "Tipo", key: "ti", width: 11 },
         { header: "Medio de pago", key: "mp", width: 14 },
         { header: "Cliente", key: "c", width: 22 },
+        { header: "Teléfono", key: "tel", width: 16 },
         { header: "Vendedor", key: "u", width: 14 },
         { header: "Depósito", key: "d", width: 14 },
+        { header: "Subtotal", key: "st", width: 12, numFmt: MONEDA },
+        { header: "Descuento", key: "de", width: 12, numFmt: MONEDA },
         { header: "Total", key: "t", width: 12, numFmt: MONEDA },
         { header: "Costo", key: "co", width: 12, numFmt: MONEDA },
         { header: "Ganancia bruta", key: "g", width: 13, numFmt: MONEDA },
+        { header: "Motivo de anulación", key: "an", width: 30 },
       ],
       (c) =>
         prisma.venta.findMany({
           ...pag(c),
-          include: { cliente: true, usuario: { select: { nombre: true } }, deposito: true },
+          include: {
+            cliente: { select: { nombre: true, telefono: true } },
+            vendedor: { select: { nombre: true } },
+            deposito: { select: { nombre: true } },
+          },
         }),
       (v) => ({
         sis: sistema(v.panelId),
-        n: formatearIdVenta(sistemas.get(v.panelId)?.slug ?? "", v.numero),
+        n: v.codigo,
         f: formatearFechaHora(v.fecha),
-        e: v.estado,
-        mp: v.medioPago ?? "",
-        c: v.cliente ? [v.cliente.nombre, v.cliente.apellido].filter(Boolean).join(" ") : "",
-        u: v.usuario.nombre,
+        e: ESTADO_VENTA_UI[v.estado].label,
+        ti: ETIQUETA_TIPO_VENTA[v.tipo],
+        mp: ETIQUETA_MEDIO_PAGO[v.medioPago],
+        c: v.cliente.nombre,
+        tel: v.cliente.telefono,
+        u: v.vendedor.nombre,
         d: v.deposito.nombre,
+        st: num(v.subtotal),
+        de: num(v.descuento),
         t: num(v.total),
         co: num(v.costoTotal),
         g: num(v.gananciaBruta),
+        an: v.motivoAnulacion ?? "",
       }),
     );
 
@@ -245,7 +265,9 @@ export function streamExportarTodo(meta: {
         { header: "Producto", key: "p", width: 30 },
         { header: "Sabor", key: "v", width: 20 },
         { header: "Cantidad", key: "c", width: 9 },
-        { header: "Precio", key: "pr", width: 12, numFmt: MONEDA },
+        { header: "Precio de lista", key: "pl", width: 13, numFmt: MONEDA },
+        { header: "Precio cobrado", key: "pr", width: 13, numFmt: MONEDA },
+        { header: "Precio especial", key: "esp", width: 9 },
         { header: "Costo", key: "co", width: 12, numFmt: MONEDA },
         { header: "Subtotal", key: "s", width: 12, numFmt: MONEDA },
       ],
@@ -253,19 +275,91 @@ export function streamExportarTodo(meta: {
         prisma.ventaItem.findMany({
           ...pag(c),
           include: {
-            venta: { select: { numero: true } },
-            variante: { include: { producto: true } },
+            venta: { select: { codigo: true } },
+            variante: { select: { nombre: true } },
+            producto: { select: { nombreCompleto: true } },
           },
         }),
       (i) => ({
         sis: sistema(i.panelId),
-        n: formatearIdVenta(sistemas.get(i.panelId)?.slug ?? "", i.venta.numero),
-        p: i.variante.producto.nombreCompleto,
+        n: i.venta.codigo,
+        p: i.producto.nombreCompleto,
         v: saborVisible(i.variante.nombre) ?? "",
         c: i.cantidad,
+        pl: num(i.precioLista),
         pr: num(i.precioUnitario),
+        esp: i.esPrecioEspecial ? "Sí" : "No",
         co: num(i.costoUnitario),
         s: num(i.subtotal),
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Devoluciones",
+      [
+        SISTEMA,
+        { header: "ID de devolución", key: "n", width: 15 },
+        { header: "Fecha", key: "f", width: 17 },
+        { header: "Estado", key: "e", width: 12 },
+        { header: "Cliente", key: "c", width: 22 },
+        { header: "Teléfono", key: "tel", width: 16 },
+        { header: "Venta", key: "v", width: 12 },
+        { header: "Depósito", key: "d", width: 14 },
+        { header: "Observación", key: "o", width: 40 },
+        { header: "Registró", key: "u", width: 14 },
+        { header: "Motivo de anulación", key: "an", width: 30 },
+      ],
+      (c) =>
+        prisma.devolucion.findMany({
+          ...pag(c),
+          include: {
+            cliente: { select: { nombre: true, telefono: true } },
+            venta: { select: { codigo: true } },
+            deposito: { select: { nombre: true } },
+            usuario: { select: { nombre: true } },
+          },
+        }),
+      (x) => ({
+        sis: sistema(x.panelId),
+        n: x.codigo,
+        f: formatearFechaHora(x.fecha),
+        e: x.estado === "ANULADA" ? "Anulada" : "Registrada",
+        c: x.cliente.nombre,
+        tel: x.cliente.telefono,
+        v: x.venta?.codigo ?? "",
+        d: x.deposito.nombre,
+        o: x.observacion,
+        u: x.usuario.nombre,
+        an: x.motivoAnulacion ?? "",
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Ítems de devoluciones",
+      [
+        SISTEMA,
+        { header: "ID de devolución", key: "n", width: 15 },
+        { header: "Producto", key: "p", width: 30 },
+        { header: "Sabor", key: "v", width: 20 },
+        { header: "Cantidad", key: "c", width: 9 },
+      ],
+      (c) =>
+        prisma.devolucionItem.findMany({
+          ...pag(c),
+          include: {
+            devolucion: { select: { codigo: true } },
+            variante: { select: { nombre: true } },
+            producto: { select: { nombreCompleto: true } },
+          },
+        }),
+      (i) => ({
+        sis: sistema(i.panelId),
+        n: i.devolucion.codigo,
+        p: i.producto.nombreCompleto,
+        v: saborVisible(i.variante.nombre) ?? "",
+        c: i.cantidad,
       }),
     );
 
@@ -329,20 +423,20 @@ export function streamExportarTodo(meta: {
       "Clientes",
       [
         SISTEMA,
-        { header: "Nombre", key: "n", width: 18 },
-        { header: "Apellido", key: "a", width: 16 },
-        { header: "Documento", key: "d", width: 14 },
+        { header: "Nombre", key: "n", width: 24 },
         { header: "Teléfono", key: "t", width: 16 },
-        { header: "Email", key: "e", width: 24 },
+        { header: "Notas", key: "no", width: 40 },
+        { header: "Activo", key: "act", width: 8 },
+        { header: "Baja", key: "baja", width: 16 },
       ],
       (c) => prisma.cliente.findMany(pag(c)),
       (x) => ({
         sis: sistema(x.panelId),
         n: x.nombre,
-        a: x.apellido,
-        d: x.documento,
         t: x.telefono,
-        e: x.email,
+        no: x.notas,
+        act: x.activo ? "Sí" : "No",
+        baja: x.deletedAt ? formatearFechaHora(x.deletedAt) : "",
       }),
     );
 

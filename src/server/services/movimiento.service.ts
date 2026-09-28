@@ -14,8 +14,7 @@ import type {
   FiltrosMovimientos,
   IngresoManual,
 } from "@/lib/validations/movimiento";
-import { formatearIdCompra, formatearIdVenta, rutaPanel } from "@/lib/paneles";
-import type { CrearTransferencia } from "@/lib/validations/transferencia";
+import type { CrearTransferencia, TransferenciaRapida } from "@/lib/validations/transferencia";
 import { nombreConSabor } from "@/lib/ventas-ui";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { dbPara, enTransaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
@@ -23,9 +22,10 @@ import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/err
 import { registrarAuditoria } from "@/server/services/audit.service";
 import {
   bloquearStock,
+  movimientos,
   registrarMovimiento,
-  signoMovimiento,
   transferirStock,
+  type ResultadoLedger,
 } from "@/server/services/stock.service";
 
 /**
@@ -37,189 +37,22 @@ import {
  */
 
 // =============================================================================
-// Ledger
+// Ledger (la lectura vive en stock.service; esto la expone con los filtros de la URL)
 // =============================================================================
 
-export interface ReferenciaMovimiento {
-  tipo: string;
-  id: string;
-  etiqueta: string;
-  /** Ruta completa (/p/{slug}/...) a la pantalla del documento, cuando existe. */
-  href: string | null;
-}
-
-export interface MovimientoListado {
-  id: string;
-  fecha: Date;
-  tipo: TipoMovimiento;
-  /** Cantidad con signo (+ entra, − sale). */
-  cantidad: number;
-  stockAnterior: number;
-  stockPosterior: number;
-  varianteId: string;
-  productoId: string;
-  nombre: string;
-  sku: string;
-  depositoId: string;
-  deposito: string;
-  usuario: string;
-  /** Solo para dueños (opciones.incluirCostos); null para el resto. */
-  costoUnitario: string | null;
-  motivo: string | null;
-  referencia: ReferenciaMovimiento | null;
-}
-
-function whereMovimientos(f: FiltrosMovimientos): Prisma.MovimientoStockWhereInput {
-  const where: Prisma.MovimientoStockWhereInput = {};
-  if (f.varianteId) where.varianteId = f.varianteId;
-  if (f.productoId) where.variante = { productoId: f.productoId };
-  if (f.depositoId) where.depositoId = f.depositoId;
-  if (f.usuarioId) where.usuarioId = f.usuarioId;
-  if (f.tipo) where.tipo = f.tipo;
-  if (f.referenciaTipo) where.referenciaTipo = f.referenciaTipo;
-  if (f.referenciaId) where.referenciaId = f.referenciaId;
-  if (f.desde || f.hasta) {
-    where.createdAt = {
-      ...(f.desde ? { gte: f.desde } : {}),
-      ...(f.hasta ? { lte: f.hasta } : {}),
-    };
-  }
-  return where;
-}
-
-/** Etiquetas y links de referencias, resueltos en lote (sin N+1). */
-async function resolverReferencias(
-  ctx: Ctx,
-  movs: { referenciaTipo: string | null; referenciaId: string | null }[],
-): Promise<Map<string, ReferenciaMovimiento>> {
-  const db = dbPara(ctx.panelId);
-  const ids = (tipo: string) => [
-    ...new Set(movs.filter((m) => m.referenciaTipo === tipo).map((m) => m.referenciaId!)),
-  ];
-  const mapa = new Map<string, ReferenciaMovimiento>();
-  if (!movs.some((m) => m.referenciaTipo && m.referenciaId)) return mapa;
-  const [panel, transf, ventas, compras, devoluciones] = await Promise.all([
-    db.panel.findUniqueOrThrow({ where: { id: ctx.panelId }, select: { slug: true } }),
-    db.transferencia.findMany({
-      where: { id: { in: ids("TRANSFERENCIA") } },
-      select: { id: true, numero: true },
-    }),
-    db.venta.findMany({
-      where: { id: { in: ids("VENTA") } },
-      select: { id: true, numero: true },
-    }),
-    db.compra.findMany({
-      where: { id: { in: ids("COMPRA") } },
-      select: { id: true, numero: true },
-    }),
-    db.devolucion.findMany({
-      where: { id: { in: ids("DEVOLUCION") } },
-      select: { id: true, numero: true, ventaId: true, venta: { select: { numero: true } } },
-    }),
-  ]);
-  const ruta = (r: string) => rutaPanel(panel.slug, r);
-  for (const t of transf) {
-    mapa.set(`TRANSFERENCIA:${t.id}`, {
-      tipo: "TRANSFERENCIA",
-      id: t.id,
-      etiqueta: `Transferencia #${t.numero}`,
-      href: ruta(`/stock/movimientos/transferencias/${t.id}`),
-    });
-  }
-  for (const v of ventas)
-    mapa.set(`VENTA:${v.id}`, {
-      tipo: "VENTA",
-      id: v.id,
-      etiqueta: `Venta ${formatearIdVenta(panel.slug, v.numero)}`,
-      href: ruta(`/ventas/${v.id}`),
-    });
-  for (const d of devoluciones)
-    mapa.set(`DEVOLUCION:${d.id}`, {
-      tipo: "DEVOLUCION",
-      id: d.id,
-      etiqueta: `Devolución #${d.numero} (venta ${formatearIdVenta(panel.slug, d.venta.numero)})`,
-      href: ruta(`/ventas/${d.ventaId}`),
-    });
-  for (const c of compras)
-    mapa.set(`COMPRA:${c.id}`, {
-      tipo: "COMPRA",
-      id: c.id,
-      etiqueta: `Compra ${formatearIdCompra(panel.slug, c.numero)}`,
-      href: ruta(`/compras/${c.id}`),
-    });
-  for (const m of movs) {
-    if (m.referenciaTipo === "AJUSTE" && m.referenciaId) {
-      mapa.set(`AJUSTE:${m.referenciaId}`, {
-        tipo: "AJUSTE",
-        id: m.referenciaId,
-        etiqueta: "Ajuste / recuento",
-        href: null,
-      });
-    }
-  }
-  return mapa;
-}
+export type { MovimientoListado, ReferenciaMovimiento } from "@/server/services/stock.service";
 
 /**
- * Ledger del panel paginado, más nuevo primero, con producto, variante,
- * depósito y usuario. Filtrable por depósito (sin depósito = todos).
+ * Ledger del panel paginado, más nuevo primero. Filtrable por galpón (sin
+ * galpón = todos), sabor, producto, tipo, usuario, referencia y fechas.
  * El costo unitario solo viaja si `incluirCostos` (dueños).
  */
 export async function listarMovimientos(
   ctx: Ctx,
   filtros: FiltrosMovimientos,
   opciones: { incluirCostos?: boolean } = {},
-): Promise<{ movimientos: MovimientoListado[]; total: number; page: number; pageSize: number }> {
-  const db = dbPara(ctx.panelId);
-  const where = whereMovimientos(filtros);
-  const [total, filas] = await Promise.all([
-    db.movimientoStock.count({ where }),
-    db.movimientoStock.findMany({
-      where,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      skip: (filtros.page - 1) * filtros.pageSize,
-      take: filtros.pageSize,
-      include: {
-        variante: {
-          select: {
-            nombre: true,
-            sku: true,
-            productoId: true,
-            producto: { select: { nombreCompleto: true } },
-          },
-        },
-        deposito: { select: { nombre: true } },
-        usuario: { select: { nombre: true } },
-      },
-    }),
-  ]);
-  const refs = await resolverReferencias(ctx, filas);
-  return {
-    movimientos: filas.map((m) => ({
-      id: m.id,
-      fecha: m.createdAt,
-      tipo: m.tipo,
-      cantidad: signoMovimiento(m.tipo) * m.cantidad,
-      stockAnterior: m.stockAnterior,
-      stockPosterior: m.stockPosterior,
-      varianteId: m.varianteId,
-      productoId: m.variante.productoId,
-      nombre: nombreConSabor(m.variante.producto.nombreCompleto, m.variante.nombre),
-      sku: m.variante.sku,
-      depositoId: m.depositoId,
-      deposito: m.deposito.nombre,
-      usuario: m.usuario.nombre,
-      costoUnitario: opciones.incluirCostos && m.costoUnitario ? m.costoUnitario.toFixed(2) : null,
-      motivo: m.motivo,
-      referencia:
-        m.referenciaTipo && m.referenciaId
-          ? (refs.get(`${m.referenciaTipo}:${m.referenciaId}`) ?? null)
-          : null,
-    })),
-    total,
-    page: filtros.page,
-    pageSize: filtros.pageSize,
-  };
+): Promise<ResultadoLedger> {
+  return movimientos(ctx, filtros, opciones);
 }
 
 // =============================================================================
@@ -729,6 +562,37 @@ export async function completarTransferencia(
       return { numero: t.numero, unidades: items.reduce((a, i) => a + i.cantidad, 0) };
     },
     { timeout: 60_000, maxRetries: 2 },
+  );
+}
+
+/**
+ * "Transferir a {otro galpón}" desde la fila del stock: crea la transferencia
+ * (documento, para que el ledger la referencie) y la completa en el acto con
+ * transferirStock, todo en UNA transacción. Si falta stock, no queda nada.
+ */
+export async function transferirAhora(
+  ctx: Ctx,
+  input: TransferenciaRapida,
+  txExterna?: Tx,
+): Promise<{ id: string; numero: number; unidades: number }> {
+  return enTransaccion(
+    ctx,
+    txExterna,
+    async (tx) => {
+      const { id } = await crearTransferencia(
+        ctx,
+        {
+          depositoOrigenId: input.depositoOrigenId,
+          depositoDestinoId: input.depositoDestinoId,
+          notas: input.notas,
+          items: [{ varianteId: input.varianteId, cantidad: input.cantidad }],
+        },
+        tx,
+      );
+      const { numero, unidades } = await completarTransferencia(ctx, id, tx);
+      return { id, numero, unidades };
+    },
+    { timeout: 30_000, maxRetries: 2 },
   );
 }
 

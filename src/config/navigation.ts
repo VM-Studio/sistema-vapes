@@ -7,7 +7,6 @@ import {
   Home,
   Package,
   PackageOpen,
-  ScanBarcode,
   Settings,
   ShoppingCart,
   SlidersHorizontal,
@@ -30,19 +29,19 @@ import { rutaPanel } from "@/lib/paneles";
  * acción valida en el servidor.)
  */
 
-export type GrupoNavegacion = "Operación" | "Catálogo" | "Cotizadores" | "Administración";
+export type GrupoNavegacion = "Operación" | "Compras" | "Análisis" | "Administración";
 
 export const GRUPOS: readonly GrupoNavegacion[] = [
   "Operación",
-  "Catálogo",
-  "Cotizadores",
+  "Compras",
+  "Análisis",
   "Administración",
 ];
 
 export interface ItemNavegacion {
   /**
    * Módulo que hay que poder "ver". null = siempre visible (Inicio).
-   * Array = alcanza con poder ver cualquiera (Escanear sirve para vender y para stock).
+   * Array = alcanza con poder ver cualquiera de los módulos.
    * "OWNER" = solo dueños (configuración del panel).
    */
   modulo: Modulo | readonly Modulo[] | "OWNER" | null;
@@ -54,6 +53,12 @@ export interface ItemNavegacion {
   grupo: GrupoNavegacion | null;
   /** Bottom navigation mobile: Inicio, Ventas, Productos, Stock (+ "Más"). */
   enBottomBar: boolean;
+  /**
+   * Orden en mobile (bottom bar y sheet "Más"), que no es el del sidebar:
+   * Inicio · Ventas · Productos · Stock | Clientes, Devoluciones, Proveedores,
+   * Compras, Cotizadores, Reportes, ajustes.
+   */
+  ordenMobile: number;
   /** Texto corto para los accesos rápidos del inicio. */
   descripcion: string;
   /** Ruta global (fuera del panel): /usuarios, /configuracion. */
@@ -75,26 +80,19 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Home,
     grupo: null,
     enBottomBar: true,
+    ordenMobile: 0,
     descripcion: "Resumen del sistema",
   },
   {
     modulo: Modulo.VENTAS,
     label: "Ventas",
     href: "/ventas",
-    accionPrincipal: { href: "/ventas/nueva", accion: "crear" },
+    accionPrincipal: { href: "/ventas?nueva=1", accion: "crear" },
     icon: ShoppingCart,
     grupo: "Operación",
     enBottomBar: true,
-    descripcion: "Cobrar y consultar ventas",
-  },
-  {
-    modulo: [Modulo.STOCK, Modulo.VENTAS],
-    label: "Escanear",
-    href: "/escanear",
-    icon: ScanBarcode,
-    grupo: "Operación",
-    enBottomBar: false,
-    descripcion: "Consultar, ingresar, contar y transferir escaneando",
+    ordenMobile: 1,
+    descripcion: "Vender y consultar ventas",
   },
   {
     modulo: Modulo.STOCK,
@@ -103,16 +101,18 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Boxes,
     grupo: "Operación",
     enBottomBar: true,
-    descripcion: "Stock por depósito y global, movimientos y transferencias",
+    ordenMobile: 3,
+    descripcion: "Stock por galpón y global, transferencias y movimientos",
   },
   {
-    modulo: Modulo.CLIENTES,
-    label: "Clientes",
-    href: "/clientes",
-    icon: Users,
+    modulo: Modulo.PRODUCTOS,
+    label: "Productos",
+    href: "/productos",
+    icon: Package,
     grupo: "Operación",
-    enBottomBar: false,
-    descripcion: "Clientes y sus compras",
+    enBottomBar: true,
+    ordenMobile: 2,
+    descripcion: "Productos, sabores, precios y carga de stock",
   },
   {
     modulo: Modulo.DEVOLUCIONES,
@@ -121,42 +121,47 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Undo2,
     grupo: "Operación",
     enBottomBar: false,
+    ordenMobile: 11,
     descripcion: "Devoluciones por garantía",
   },
   {
-    modulo: Modulo.COMPRAS,
-    label: "Compras",
-    href: "/compras",
-    icon: Truck,
+    modulo: Modulo.CLIENTES,
+    label: "Clientes",
+    href: "/clientes",
+    icon: Users,
     grupo: "Operación",
     enBottomBar: false,
-    descripcion: "Mercadería recibida de proveedores",
-  },
-  {
-    modulo: Modulo.PRODUCTOS,
-    label: "Productos",
-    href: "/productos",
-    icon: Package,
-    grupo: "Catálogo",
-    enBottomBar: true,
-    descripcion: "Productos, variantes y precios",
+    ordenMobile: 10,
+    descripcion: "Clientes y sus compras",
   },
   {
     modulo: Modulo.PROVEEDORES,
     label: "Proveedores",
     href: "/proveedores",
     icon: Building2,
-    grupo: "Catálogo",
+    grupo: "Compras",
     enBottomBar: false,
-    descripcion: "Proveedores e importadores",
+    ordenMobile: 12,
+    descripcion: "Proveedores y sus precios",
+  },
+  {
+    modulo: Modulo.COMPRAS,
+    label: "Compras",
+    href: "/compras",
+    icon: Truck,
+    grupo: "Compras",
+    enBottomBar: false,
+    ordenMobile: 13,
+    descripcion: "Mercadería recibida de proveedores",
   },
   {
     modulo: Modulo.COTIZADOR,
     label: "Cotizador unitario",
     href: "/cotizador-unitario",
     icon: Calculator,
-    grupo: "Cotizadores",
+    grupo: "Análisis",
     enBottomBar: false,
+    ordenMobile: 14,
     descripcion: "Presupuestos por unidad",
   },
   {
@@ -164,8 +169,9 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     label: "Cotizador mayorista",
     href: "/cotizador-mayorista",
     icon: PackageOpen,
-    grupo: "Cotizadores",
+    grupo: "Análisis",
     enBottomBar: false,
+    ordenMobile: 15,
     descripcion: "Presupuestos por mayor",
   },
   {
@@ -173,8 +179,9 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     label: "Reportes",
     href: "/reportes",
     icon: BarChart3,
-    grupo: "Administración",
+    grupo: "Análisis",
     enBottomBar: false,
+    ordenMobile: 16,
     descripcion: "Ventas, stock y rendimiento",
   },
   {
@@ -184,6 +191,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: SlidersHorizontal,
     grupo: "Administración",
     enBottomBar: false,
+    ordenMobile: 20,
     descripcion: "Depósitos, categorías, marcas, escáner y ventas",
   },
   {
@@ -193,6 +201,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: UserCog,
     grupo: "Administración",
     enBottomBar: false,
+    ordenMobile: 21,
     global: true,
     descripcion: "Accesos y permisos del equipo",
   },
@@ -203,6 +212,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Settings,
     grupo: "Administración",
     enBottomBar: false,
+    ordenMobile: 22,
     global: true,
     descripcion: "Negocio, backups, auditoría",
   },

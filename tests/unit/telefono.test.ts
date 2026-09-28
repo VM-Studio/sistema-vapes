@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   crearClienteSchema,
+  mostrarTelefono,
+  linkWhatsApp,
   normalizarTelefono,
   TELEFONO_NORMALIZADO,
+  telefonoValido,
 } from "@/lib/validations/cliente";
+import { formatearIdDevolucion } from "@/lib/validations/devolucion";
 
 /** Mismos casos que fn_normalizar_telefono (SQL): la app y la DB tienen que coincidir. */
 describe("normalizarTelefono", () => {
@@ -53,9 +57,10 @@ describe("crearClienteSchema.telefono", () => {
     expect(r.telefono).toBe("+54111555551234");
   });
 
-  it("vacío queda sin teléfono", () => {
-    expect(crearClienteSchema.parse({ ...base, telefono: "" }).telefono).toBeUndefined();
-    expect(crearClienteSchema.parse(base).telefono).toBeUndefined();
+  it("es obligatorio", () => {
+    expect(crearClienteSchema.safeParse({ ...base, telefono: "" }).success).toBe(false);
+    expect(crearClienteSchema.safeParse({ ...base, telefono: "  -  " }).success).toBe(false);
+    expect(crearClienteSchema.safeParse(base).success).toBe(false);
   });
 
   it("rechaza números demasiado cortos o largos", () => {
@@ -63,5 +68,30 @@ describe("crearClienteSchema.telefono", () => {
     expect(crearClienteSchema.safeParse({ ...base, telefono: "12345678901234567" }).success).toBe(
       false,
     );
+  });
+});
+
+describe("telefonoValido / mostrarTelefono / linkWhatsApp", () => {
+  it("telefonoValido normaliza o devuelve null", () => {
+    expect(telefonoValido("11 5555-1234")).toBe("+541155551234");
+    expect(telefonoValido("1234")).toBeNull();
+    expect(telefonoValido("")).toBeNull();
+  });
+
+  it("formatea para mostrar", () => {
+    expect(mostrarTelefono("+541155551234")).toBe("+54 11 5555 1234");
+    expect(mostrarTelefono("+5491155551234")).toBe("+54 9 11 5555 1234");
+    expect(mostrarTelefono("+54351123")).toBe("+54351123");
+  });
+
+  it("link de WhatsApp solo con dígitos", () => {
+    expect(linkWhatsApp("+541155551234")).toBe("https://wa.me/541155551234");
+  });
+});
+
+describe("formatearIdDevolucion", () => {
+  it("VAP-D-000001", () => {
+    expect(formatearIdDevolucion("vapes", 1)).toBe("VAP-D-000001");
+    expect(formatearIdDevolucion("cosmetic", 1234)).toBe("COS-D-001234");
   });
 });

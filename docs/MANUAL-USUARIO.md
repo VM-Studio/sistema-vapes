@@ -87,132 +87,84 @@ Cuando hay una versión nueva, la app muestra el aviso **Hay una versión nueva*
 
 Dentro de un sistema:
 
-- **En el celular** hay una barra abajo con **Inicio**, **Ventas**, **Productos** y **Stock**, y un botón **Más** con el resto de las secciones. Arriba ves el nombre de la sección y tu inicial (menú de cuenta).
-- **En la computadora** hay un menú lateral con el logo del sistema, **Cambiar de sistema** y las secciones agrupadas en **Operación**, **Catálogo**, **Cotizadores** y **Administración**.
+- **En el celular** hay una barra abajo con **Inicio**, **Ventas**, **Productos** y **Stock**, y un botón **Más** con Clientes, Devoluciones, Proveedores, Compras, los cotizadores, Reportes y los ajustes. Arriba ves el nombre de la sección y tu inicial (menú de cuenta).
+- **En la computadora** hay un menú lateral con el logo del sistema, **Cambiar de sistema** y las secciones agrupadas en **Operación** (Ventas, Stock, Productos, Devoluciones, Clientes), **Compras** (Proveedores, Compras), **Análisis** (cotizadores y Reportes) y **Administración**.
 - Solo aparecen las secciones que tenés permitidas **en ese sistema**. Si entrás a una dirección sin permiso, ves la pantalla **Sin acceso**.
+- No hay una sección «Escanear» aparte: la pistola y la cámara funcionan **dentro de cada pantalla** que las necesita (vender, cargar stock, compras, devoluciones, etiquetas, buscadores).
 
-Secciones de cada sistema:
+| Sección             | Para qué sirve                                                          |
+| ------------------- | ----------------------------------------------------------------------- |
+| Inicio              | Resumen del sistema (dashboard) y accesos rápidos                       |
+| Ventas              | Vender y consultar ventas                                               |
+| Stock               | Stock por galpón y global, transferencias y movimientos                 |
+| Productos           | Productos, sabores, precios, carga de stock y etiquetas                 |
+| Devoluciones        | Cambios por garantía                                                    |
+| Clientes            | Nombre, teléfono e historial de compras y devoluciones                  |
+| Proveedores         | A quién le comprás, qué te vende y a cuánto                             |
+| Compras             | Mercadería que llega de los proveedores                                 |
+| Cotizador unitario  | Presupuestos por unidad                                                 |
+| Cotizador mayorista | Presupuestos por mayor                                                  |
+| Reportes            | Ventas, stock y rendimiento                                             |
+| Ajustes del panel   | Depósitos, categorías, marcas, escáner, ventas y catálogo (solo dueños) |
 
-| Sección             | Para qué sirve                                                               |
-| ------------------- | ---------------------------------------------------------------------------- |
-| Inicio              | Resumen del sistema (dashboard) y accesos rápidos                            |
-| Ventas              | Cobrar (punto de venta) y consultar ventas                                   |
-| Escanear            | Consultar, cargar stock, contar y transferir escaneando                      |
-| Stock               | Stock por depósito y global, movimientos, ingresos, ajustes y transferencias |
-| Clientes            | Datos de contacto e historial de compras                                     |
-| Devoluciones        | Devoluciones por garantía (próximamente)                                     |
-| Compras             | Mercadería que llega de los proveedores                                      |
-| Productos           | Productos, sabores, precios, carga de stock y etiquetas                      |
-| Proveedores         | A quién le comprás, qué te vende y a cuánto                                  |
-| Cotizador unitario  | Presupuestos por unidad (próximamente)                                       |
-| Cotizador mayorista | Presupuestos por mayor (próximamente)                                        |
-| Reportes            | Ventas, stock y rendimiento (próximamente)                                   |
-| Ajustes del panel   | Depósitos, categorías, marcas, escáner, ventas y catálogo (solo dueños)      |
-
-Además, fuera de los sistemas: **Usuarios** y **Configuración** (solo dueños), **Mi cuenta** y **Ayuda** (este manual). Los dueños los ven en el menú lateral; también están en el menú de tu cuenta.
+Además, fuera de los sistemas: **Usuarios** y **Configuración** (solo dueños), **Mi cuenta** y **Ayuda** (este manual).
 
 ## Inicio
 
 **Inicio** es la primera pantalla de cada sistema. Si tenés permiso para ver el **Dashboard**, muestra:
 
-- **Ventas** de hoy, de los últimos 7 días y del mes: cantidad y total.
+- **Ventas** de hoy, de los últimos 7 días y del mes: cantidad, total y cuánto entró por **efectivo**, **transferencia** y **Binance**.
 - Los **5 productos más vendidos** del mes.
-- Productos con **stock bajo** (por debajo del stock mínimo).
-- Las **últimas ventas**.
+- Sabores con **stock bajo** (por debajo del mínimo, sumando todos los galpones).
+- Las **últimas ventas** con su código, cliente, medio de pago y quién vendió.
 
-El **costo** y la **ganancia bruta** los ven solo los dueños.
-
-Debajo están los **accesos rápidos** a las secciones que podés usar en ese sistema. Sin permiso de Dashboard, el inicio muestra solo los accesos rápidos.
+El **costo** y la **ganancia bruta** los ven solo los dueños. Debajo están los **accesos rápidos** a las secciones que podés usar.
 
 ## Vender
 
-El punto de venta (POS) se abre desde **Ventas** (en la barra de abajo o en el menú lateral). Si solo tenés permiso para ver ventas, **Ventas** te muestra el listado.
+Desde **Ventas** se abre la pantalla de venta (si solo podés ver ventas, te muestra el listado). Una venta **necesita galpón, cliente y medio de pago**: sin alguno de los tres no se confirma.
 
-### Armar la venta
+1. **Galpón**: de dónde sale la mercadería (cada tarjeta muestra sus unidades).
+2. **Productos**: con la pistola (siempre activa), la cámara o el buscador. Cada renglón es un sabor, por ejemplo «Elf Bar BC 5000 — Mango Ice». No se puede vender más de lo que hay en el galpón.
+3. **Cobrar**: se abre el cierre de la venta.
+   - **Cliente**: «¿Es cliente nuevo?». **Sí**: nombre y teléfono (si el teléfono ya es de otro cliente, te ofrece seleccionarlo). **No**: buscalo por nombre o teléfono.
+   - **Medio de pago**: **Efectivo**, **Transferencia** o **Binance**. Una venta se cobra completa, con un solo medio.
+   - **Tipo**: unitaria o mayorista.
+   - Con permiso para editar ventas: **precio especial** en un renglón y **descuento** sobre el total.
+4. Al confirmar ves **Venta confirmada** con su código, por ejemplo **VAP-000123**.
 
-1. Revisá el **depósito de venta** (de dónde sale la mercadería).
-2. Agregá productos de cualquiera de estas formas:
-   - **Pistola lectora**: está siempre activa en el POS; no hace falta tocar ningún campo. Cada lectura suma una unidad.
-   - **Cámara**: tocá **Cámara** y apuntá al código de barras.
-   - **Buscador**: escribí marca, modelo, sabor o código (en la computadora, `F2` lleva al buscador).
-   - **Más vendidos**: la grilla con los productos más vendidos; tocá uno para agregarlo. Si tiene varios sabores, te pide que elijas cuál (con el stock de cada uno).
-3. En el carrito cada renglón es un producto con su sabor (por ejemplo, «Elf Bar BC 5000 — Mango Ice»). Podés cambiar cantidades o quitar renglones. El precio es el del producto, salvo que ese sabor tenga precio propio. Si tenés permiso para editar ventas, también podés cambiar el precio de un renglón (queda anotado quién lo modificó y de cuánto a cuánto).
-4. Opcional: elegí un **cliente** (buscalo por nombre, documento o teléfono, o crealo ahí mismo con **Nuevo cliente**).
-5. Opcional: agregá **notas** a la venta.
+Cada venta guarda el **precio de lista**, el **precio cobrado** y el **costo** de cada sabor del momento: si después cambian los precios, las ventas hechas no cambian. El costo y la ganancia los ven solo los dueños.
 
-No se puede vender más de lo que hay en el depósito elegido: el sistema no permite vender sin stock.
+**Consultar y anular**: en **Ventas** buscás por código, cliente, vendedor, medio o fechas. Anular (permiso para eliminar) devuelve la mercadería al galpón con un movimiento **Venta anulada**; una venta no se edita.
 
-El carrito queda guardado: si se cierra la pantalla o se corta la luz, al volver al POS de ese sistema lo encontrás como estaba.
-
-### Cobrar
-
-Tocá **Cobrar** (en la computadora, `F9`). Cada venta se cobra **completa y con un solo medio de pago**:
-
-- Elegí el **medio de pago**: efectivo, transferencia, débito, crédito, MercadoPago u otro.
-- **Efectivo**: escribí cuánto te dio el cliente y el sistema calcula el **vuelto**.
-- **Descuento** (si tenés permiso para editar ventas): en porcentaje o en pesos, sobre el total.
-- **Redondeo**: si está activado en los ajustes del sistema, el total se redondea. Siempre redondea **a favor del cliente** (para abajo).
-
-Al confirmar aparece **Venta confirmada** con su número, por ejemplo **VAP-000123**: las tres letras son del sistema y el número es correlativo dentro de ese sistema. Desde ahí seguís con la venta siguiente.
-
-Cada venta guarda el precio y el **costo** de cada sabor en el momento de vender (el costo es el de la última compra recibida de ese sabor, o cero si todavía no hubo compras). Si después cambian los precios o llega mercadería más cara, las ventas ya hechas y su ganancia no cambian. El costo y la ganancia los ven solo los dueños.
-
-### Consultar y anular ventas
-
-En **Ventas** está el listado de las ventas del sistema. Podés buscar una venta por su número (`VAP-000123`, o solo `123`). En el detalle ves fecha, vendedor, depósito, medio de pago, notas, ítems y totales.
-
-**Anular una venta** (con permiso para eliminar en Ventas): la mercadería vuelve al depósito de donde salió. Te pide el motivo, y queda registrado quién la anuló y cuándo. Una venta confirmada no se edita: si hubo un error, se anula y se hace de nuevo.
-
-### Si no hay conexión
-
-**Las ventas necesitan conexión para validar stock y registrar el pago.** Sin internet el POS no deja cobrar y muestra ese mensaje. Ver [Trabajar sin conexión](#trabajar-sin-conexion).
+**Sin conexión** no se puede vender: «Las ventas necesitan conexión para validar stock y registrar el pago».
 
 ## Clientes
 
-En **Clientes** cargás los datos de contacto (nombre y apellido, documento, teléfono, email, dirección y notas) y ves el historial de compras de cada uno: cantidad de compras, total comprado y última compra.
+Cada cliente tiene **nombre** y **teléfono** (obligatorio) y, si querés, notas. En la ficha ves sus compras y sus devoluciones.
 
-- El **teléfono** se guarda siempre con el formato `+54` seguido de los números, sin espacios ni guiones, aunque lo escribas de otra forma (por ejemplo, `011 15-1234-5678` o `+54 9 11…`).
-- En un mismo sistema no puede haber dos clientes con el mismo teléfono ni con el mismo documento. El mismo cliente puede estar cargado en otro sistema sin problema.
-- Los clientes también se pueden crear desde el POS, al elegir el cliente de una venta.
+- El teléfono se guarda como `+54` y los números, aunque lo escribas con espacios o guiones.
+- En un sistema no puede haber dos clientes con el mismo teléfono (en otro sistema sí).
+- Los clientes nuevos se dan de alta también desde la venta y desde una devolución.
 
-## Escanear
+## Devoluciones por garantía
 
-**Escanear** reúne todo lo que se hace con la pistola o la cámara dentro del sistema. Arriba elegís el modo y el depósito; después escaneás. Los modos que no tenés permitidos aparecen bloqueados.
+Cuando un cliente trae un producto fallado, se le entrega **una unidad nueva**, que sale del stock del galpón elegido (movimiento **Garantía**).
 
-| Modo             | Qué hace                                                                                                               | Permiso que necesita                 |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| **Consultar**    | Muestra el producto, el sabor, el precio y el stock en cada depósito (a los dueños, también el último costo)           | Ver en Stock o en Ventas             |
-| **Cargar stock** | Te lleva a [Cargar stock con la pistola](#cargar-stock-con-la-pistola), donde elegís el galpón y escaneás lo que entra | Crear en Productos o en Stock        |
-| **Contar**       | Recuento: escribís lo que hay en realidad y el sistema ajusta la diferencia                                            | Editar en Stock                      |
-| **Transferir**   | Arma una transferencia de un depósito (origen) a otro (destino)                                                        | Crear en Stock (completarla: editar) |
-| **Vender**       | Abre el punto de venta con el mismo depósito                                                                           | Crear en Ventas                      |
+1. Elegí el **cliente** (o dalo de alta) y, si la conocés, la **venta** original.
+2. Elegí el **galpón** de donde sale la unidad nueva y los **productos** (escaneando o buscando).
+3. Escribí la **observación**: qué le pasó al producto (mínimo 10 caracteres).
+4. Confirmá: queda con su código, por ejemplo **VAP-D-000001**.
 
-Cómo se usa (Consultar, Contar y Transferir):
-
-1. Elegí el modo y el depósito (en Transferir, origen y destino).
-2. Escaneá. En Consultar ves la ficha del producto; en los otros modos cada lectura se suma a la lista (podés corregir cantidades a mano).
-3. Tocá el botón de confirmar al final de la lista.
-
-La lista queda guardada: si salís y volvés, el sistema te ofrece retomar la sesión que dejaste a medias.
-
-La mercadería que entra ya no se carga desde acá: si viene de un proveedor, registrala en [Compras](#compras); si no (carga inicial, reposición sin compra), usá [Cargar stock con la pistola](#cargar-stock-con-la-pistola).
-
-**Código desconocido**: si escaneás un código que no está cargado en este sistema, podés **asociarlo a un producto existente** (elegís el sabor y el código queda como alternativo) o, si es un producto nuevo, **darlo de alta** con el alta rápida (ver [Cargar stock con la pistola](#cargar-stock-con-la-pistola)), sin salir de la pantalla. Para cualquiera de las dos hace falta permiso para crear en Productos o en Compras; sin ese permiso, el sistema solo avisa que el código no existe.
+Una devolución no se edita: si fue un error, se **anula** (con motivo) y la unidad vuelve al galpón (movimiento **Garantía anulada**).
 
 ## Trabajar sin conexión
 
-La app guarda en el dispositivo una copia del catálogo **del sistema en el que estás** (productos, códigos, precios y stock), que se actualiza sola al entrar y cada 15 minutos mientras hay conexión. Arriba de **Escanear** ves cuándo se actualizó por última vez.
+La app guarda en el dispositivo una copia del catálogo **del sistema en el que estás** (productos, códigos, precios y stock), que se actualiza sola al entrar y cada 15 minutos mientras hay conexión.
 
-### Qué funciona sin conexión
-
-- **Consultar** en Escanear: productos, precios y stock según la última actualización del catálogo. La pantalla lo indica con «Sin conexión: solo se puede consultar (catálogo guardado)».
-
-### Qué NO funciona sin conexión
-
-- **Vender.** Las ventas necesitan conexión para validar stock y registrar el pago.
-- **Contar** y **Transferir**: quedan bloqueados con el aviso «Sin conexión: esta acción necesita señal». Nada se guarda para enviar después: cuando vuelva la señal, hacelo de nuevo.
-- **Cargar stock**: si se corta la señal mientras escaneás, la lista queda guardada en el dispositivo pero el botón para confirmar se bloquea hasta que vuelva la conexión. Nada entra al stock sin señal.
-- Las demás pantallas: si intentás abrir una sin red, ves la pantalla **Sin conexión**, que igual te deja consultar escaneando.
+- **Sin señal solo se consulta**: si una pantalla no abre, aparece **Sin conexión**, donde escaneás o escribís un código y ves el producto, el precio y el stock por galpón del último catálogo guardado.
+- **Vender, cargar stock, transferir, ajustar, comprar y registrar devoluciones necesitan conexión.** Nada se guarda para enviar después.
+- Cuando vuelve la señal, **Sin conexión** muestra «Volvió la conexión: tocá para abrir la app».
 
 ## Productos
 
@@ -277,7 +229,7 @@ En **Productos → Etiquetas** imprimís códigos de barras (Code128) en PDF par
 
 ## Cargar stock con la pistola
 
-Es la forma de cargar la mercadería que entra **sin compra a un proveedor** (la carga inicial, lo que ya estaba en el galpón, una reposición). Se abre desde **Productos → Cargar stock (escanear)**, desde **Escanear → Cargar stock** o desde la ficha de un producto. Hace falta permiso para crear en Productos o en Stock, y conexión.
+Es la forma de cargar la mercadería que entra **sin compra a un proveedor** (la carga inicial, lo que ya estaba en el galpón, una reposición). Se abre desde **Productos → Cargar stock (escanear)** o desde la ficha de un producto. Hace falta permiso para crear en Productos o en Stock, y conexión.
 
 Si la mercadería viene de un proveedor, registrala en [Compras](#compras): así queda el costo, el proveedor y su precio.
 
@@ -313,22 +265,25 @@ Cada carga queda en **Stock → Movimientos** como **ingreso manual**, con tu no
 
 ## Stock
 
-**Stock** muestra cuánto hay de cada sabor:
+**Stock** tiene una pestaña por galpón y una **Global** (en Vapes: **Ayres Plaza | Mercedes | Global**). La pestaña elegida queda en la dirección, así que se puede compartir.
 
-- **Global**: todos los depósitos del sistema, con una columna por depósito y el total. En Vapes, por ejemplo, **Ayres Plaza** y **Mercedes**.
-- **Un depósito**: elegilo arriba para ver solo ese.
+**Pestaña de un galpón**
 
-Podés filtrar productos **bajo mínimo** o **sin stock** y exportar el listado. Desde cada fila podés **ajustar stock**, **transferir** o **ver movimientos**.
+- Arriba: **unidades** en ese galpón y cuántos sabores están **bajo mínimo** (tocá para filtrarlos).
+- Tabla (tarjetas en el celular): producto — sabor, código, cantidad, mínimo y estado. Buscás por producto, sabor o código y filtrás por marca o «solo bajo mínimo».
+- En cada fila, según tus permisos:
+  - **Transferir a {otro galpón}** (crear en Stock): elegís la cantidad y la mercadería se mueve **en el acto**. El total del sistema no cambia.
+  - **Ajustar** (editar en Stock): escribís cuántas hay en realidad y el motivo; el sistema registra la diferencia como ajuste.
+- Abajo, **Movimientos de {galpón}**: fecha, tipo, producto — sabor, cantidad con signo, stock anterior → posterior, usuario y referencia (el código de la venta, compra o devolución, con link). Se filtran por tipo y fechas.
 
-### Movimientos
+**Pestaña Global**
 
-El stock nunca se «pisa» a mano: cada entrada o salida queda registrada como un **movimiento** (quién, cuándo, cuánto había antes y después). En **Stock → Movimientos** ves el historial completo (global o de un depósito) y podés filtrarlo por producto, tipo o usuario. Desde ahí también:
+- Arriba: el **total** de unidades y una tarjeta por galpón.
+- Tabla con una columna por galpón, **Total**, mínimo y estado; también **Por producto** (agrupado).
+- Abajo, **Movimientos de todos los galpones**, con la columna galpón.
+- Los dueños pueden **Exportar CSV** de lo que están viendo.
 
-- **Ingreso**: mercadería que entra sin compra a proveedor, cargada a mano (elegís el depósito, los productos y la cantidad). Para cargar escaneando, lo más rápido es [Cargar stock con la pistola](#cargar-stock-con-la-pistola).
-- **Ajuste**: **ajuste simple** de un producto, o **recuento** («contá cuántas hay en realidad: el sistema ajusta la diferencia»). Solo se ajusta lo que no coincide.
-- **Transferencias** entre depósitos del mismo sistema: se crean **pendientes** y el stock se mueve recién al **completarlas** (cuando la mercadería llegó). Una pendiente se puede anular.
-
-Si te equivocaste en un movimiento, no se edita: se corrige con otro ajuste en sentido contrario.
+**Transferencias** (arriba a la derecha) lista las transferencias hechas; **Ver historial completo** abre todos los movimientos con más filtros (usuario, producto). El stock nunca se «pisa»: si te equivocaste, se corrige con otro ajuste o transferencia.
 
 ## Compras
 
@@ -395,14 +350,6 @@ Con esos precios, la ficha de cada producto muestra **Proveedores que lo venden*
 **Desactivar** un proveedor (permiso para eliminar en Proveedores) hace que no aparezca para compras nuevas; sus compras y precios se conservan y se puede reactivar desde **Editar**. No se puede desactivar si tiene compras en borrador: primero recibilas o anulalas.
 
 Los precios de los proveedores y los montos comprados los ven los dueños y quien tiene permiso para ver Compras.
-
-## Devoluciones, cotizadores y reportes
-
-Estas secciones ya aparecen en el menú (para quien tenga el permiso) pero todavía están **en preparación**: al abrirlas ves qué van a incluir.
-
-- **Devoluciones**: devoluciones por garantía a partir del número de venta, con reposición del producto al cliente y su movimiento de stock.
-- **Cotizador unitario** y **Cotizador mayorista**: presupuestos por unidad y por mayor, con el stock a la vista, para compartir por WhatsApp o pasar a venta.
-- **Reportes**: ventas por período, producto, categoría y vendedor; stock por depósito y productos sin movimiento; costos y ganancias (solo para dueños).
 
 ## Ajustes del panel
 
@@ -484,7 +431,7 @@ La pistola «tipea» con la distribución de teclado que tenga configurada, y el
 ### 4. Probar
 
 1. Entrá a **Ajustes del panel → Escáner** y usá **Probar pistola**: escaneá un producto y fijate que el código aparezca completo y correcto.
-2. Después andá a **Escanear**, en modo **Consultar**, y escaneá un producto cargado en ese sistema: tiene que aparecer su ficha con el stock.
+2. Después andá a **Productos** y escaneá un producto cargado en ese sistema (con el foco fuera de los campos): se abre su ficha con el stock.
 
 ### Si no lee bien
 
@@ -507,13 +454,13 @@ No. Cada venta se cobra completa en el momento, con un solo medio de pago. Si el
 Las ventas no se borran. Si fue un error, **anulala** desde el detalle de la venta (el stock vuelve al depósito) y hacela de nuevo.
 
 **Cargué mal un ingreso de mercadería. ¿Lo edito?**
-No: hacé un **ajuste** en sentido contrario desde **Stock → Movimientos → Ajuste**. Así el historial muestra qué pasó. Si lo cargaste en el galpón equivocado, lo más simple es una **transferencia** al galpón correcto.
+No: en **Stock**, en la pestaña del galpón, tocá **Ajustar** en la fila del sabor y poné la cantidad real. Así el historial muestra qué pasó. Si lo cargaste en el galpón equivocado, usá **Transferir a {otro galpón}** en la misma fila.
 
 **¿Por qué me hace elegir el galpón cada vez que cargo stock?**
 Para que nunca se cargue mercadería en el galpón equivocado sin darte cuenta. El último que usaste ya aparece marcado: solo tenés que confirmarlo con un toque.
 
 **Escaneé un código y dice que no existe, pero el producto sí está cargado.**
-Seguramente es un sabor nuevo o un lote con otro código. En el alta rápida buscá el producto en «¿Ya existe el producto?» y escribí el sabor: el sistema le agrega el sabor (o el código) al producto existente, sin duplicarlo. Desde Escanear también podés usar **Asociar a un producto existente**.
+Seguramente es un sabor nuevo o un lote con otro código. En el alta rápida buscá el producto en «¿Ya existe el producto?» y escribí el sabor: el sistema le agrega el sabor (o el código) al producto existente, sin duplicarlo.
 
 **Cambié el precio de un producto. ¿Cambian las ventas que ya hice?**
 No. Cada venta guarda el precio y el costo del momento en que se hizo. El precio nuevo vale para todos los sabores del producto que no tengan precio propio, desde ese momento.

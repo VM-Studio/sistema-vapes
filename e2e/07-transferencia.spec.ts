@@ -1,33 +1,41 @@
 import { expect, test } from "./base";
 
-import { codigoDe, loginDueno, pistola, stock, soltarFoco, IGNITE_V80 } from "./helpers";
+import { depositoId, loginDueno, stock, IGNITE_V80 } from "./helpers";
 
-test("transferencia entre galpones → totales por galpón correctos", async ({ page }) => {
-  const codigo = await codigoDe(IGNITE_V80, "Strawberry Watermelon");
+const SABOR = "Blue Razz Ice";
+
+test("transferencia desde la fila del stock → se completa en el acto y queda en el ledger", async ({
+  page,
+}) => {
   const [g1, g2] = [
-    await stock(IGNITE_V80, "Strawberry Watermelon", "Ayres Plaza"),
-    await stock(IGNITE_V80, "Strawberry Watermelon", "Mercedes"),
+    await stock(IGNITE_V80, SABOR, "Ayres Plaza"),
+    await stock(IGNITE_V80, SABOR, "Mercedes"),
   ];
   await loginDueno(page);
-  await page.goto("/p/vapes/escanear?modo=transferir");
-  await page.getByLabel("Origen").selectOption({ label: "Ayres Plaza" });
-  await page.getByLabel("Destino").selectOption({ label: "Mercedes" });
-  await soltarFoco(page);
-  await pistola(page, codigo);
-  await pistola(page, codigo);
-  await page.getByRole("button", { name: /Crear transferencia \(2 u\.\)/ }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Crear", exact: true }).click();
-  await page.getByRole("button", { name: "Completar ahora" }).click();
-  await expect(page.getByText(/completada/)).toBeVisible();
+  await page.goto(
+    `/p/vapes/stock?tab=${await depositoId("Ayres Plaza")}&q=${encodeURIComponent(SABOR)}`,
+  );
+  await page
+    .getByRole("button", { name: `Transferir ${IGNITE_V80} — ${SABOR} a Mercedes` })
+    .locator("visible=true")
+    .first()
+    .click();
+  const sheet = page.getByRole("dialog", { name: "Transferir a Mercedes" });
+  const cantidad = sheet.getByLabel("Cantidad a transferir");
+  await cantidad.fill("2");
+  await cantidad.blur();
+  await sheet.getByRole("button", { name: "Transferir 2 u." }).click();
+  await expect(page.getByText(/Transferencia #\d+ completada/)).toBeVisible();
 
-  expect(await stock(IGNITE_V80, "Strawberry Watermelon", "Ayres Plaza")).toBe(g1 - 2);
-  expect(await stock(IGNITE_V80, "Strawberry Watermelon", "Mercedes")).toBe(g2 + 2);
-  // El total no cambia: solo se mudó de galpón.
-  await page.goto("/p/vapes/stock?q=Strawberry");
-  await expect(
-    page
-      .getByText(String(g1 + g2), { exact: true })
-      .locator("visible=true")
-      .first(),
-  ).toBeVisible();
+  await expect.poll(() => stock(IGNITE_V80, SABOR, "Ayres Plaza")).toBe(g1 - 2);
+  expect(await stock(IGNITE_V80, SABOR, "Mercedes")).toBe(g2 + 2);
+
+  // La referencia del ledger abre la transferencia, ya completada.
+  await page
+    .getByRole("link", { name: /Transferencia #\d+/ })
+    .locator("visible=true")
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/p\/vapes\/stock\/movimientos\/transferencias\//);
+  await expect(page.getByText("Completada").first()).toBeVisible();
 });

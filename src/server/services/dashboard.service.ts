@@ -1,4 +1,4 @@
-import { EstadoVenta, Prisma } from "@prisma/client";
+import { EstadoVenta, MedioPago, Prisma } from "@prisma/client";
 
 import { ahora } from "@/lib/reloj";
 import { nombreConSabor } from "@/lib/ventas-ui";
@@ -18,6 +18,8 @@ const dec = (d: Prisma.Decimal | string | number | null | undefined) =>
 export interface KpiVentas {
   cantidad: number;
   total: string;
+  /** Cobrado por medio de pago (efectivo, transferencia, Binance). */
+  porMedio: { medio: MedioPago; cantidad: number; total: string }[];
   /** null = sin permiso para ver costos (no es dueño). */
   costo: string | null;
   ganancia: string | null;
@@ -41,9 +43,12 @@ export interface AlertaStock {
 
 export interface VentaReciente {
   id: string;
-  numero: number;
+  /** ID visible (VAP-000001). */
+  codigo: string;
   fecha: Date;
-  cliente: string | null;
+  cliente: string;
+  vendedor: string;
+  medioPago: MedioPago;
   total: string;
   unidades: number;
 }
@@ -78,14 +83,30 @@ async function kpi(
   rango: { inicio: Date; fin: Date },
   conCostos: boolean,
 ): Promise<KpiVentas> {
-  const r = await dbPara(ctx.panelId).venta.aggregate({
-    where: { estado: EstadoVenta.CONFIRMADA, fecha: { gte: rango.inicio, lt: rango.fin } },
-    _count: { _all: true },
-    _sum: { total: true, costoTotal: true, gananciaBruta: true },
-  });
+  const db = dbPara(ctx.panelId);
+  const where = { estado: EstadoVenta.CONFIRMADA, fecha: { gte: rango.inicio, lt: rango.fin } };
+  const [r, medios] = await Promise.all([
+    db.venta.aggregate({
+      where,
+      _count: { _all: true },
+      _sum: { total: true, costoTotal: true, gananciaBruta: true },
+    }),
+    db.venta.groupBy({
+      by: ["medioPago"],
+      where,
+      _count: { _all: true },
+      _sum: { total: true },
+    }),
+  ]);
+  const porMedio = new Map(medios.map((m) => [m.medioPago, m]));
   return {
     cantidad: r._count._all,
     total: dec(r._sum.total),
+    porMedio: Object.values(MedioPago).map((medio) => ({
+      medio,
+      cantidad: porMedio.get(medio)?._count._all ?? 0,
+      total: dec(porMedio.get(medio)?._sum.total),
+    })),
     costo: conCostos ? dec(r._sum.costoTotal) : null,
     ganancia: conCostos ? dec(r._sum.gananciaBruta) : null,
   };
@@ -99,8 +120,7 @@ async function topProductos(ctx: Ctx, rango: { inicio: Date; fin: Date }): Promi
            SUM(vi."cantidad")::integer AS "unidades", SUM(vi."subtotal") AS "total"
     FROM "VentaItem" vi
     JOIN "Venta" v ON v."id" = vi."ventaId"
-    JOIN "Variante" va ON va."id" = vi."varianteId"
-    JOIN "Producto" p ON p."id" = va."productoId"
+    JOIN "Producto" p ON p."id" = vi."productoId"
     WHERE vi."panelId" = ${ctx.panelId}
       AND v."panelId" = ${ctx.panelId}
       AND v."estado" = 'CONFIRMADA'
@@ -159,18 +179,22 @@ async function ultimasVentas(ctx: Ctx): Promise<VentaReciente[]> {
     take: 5,
     select: {
       id: true,
-      numero: true,
+      codigo: true,
       fecha: true,
       total: true,
-      cliente: { select: { nombre: true, apellido: true } },
+      medioPago: true,
+      cliente: { select: { nombre: true } },
+      vendedor: { select: { nombre: true } },
       items: { select: { cantidad: true } },
     },
   });
   return ventas.map((v) => ({
     id: v.id,
-    numero: v.numero,
+    codigo: v.codigo,
     fecha: v.fecha,
-    cliente: v.cliente ? [v.cliente.nombre, v.cliente.apellido].filter(Boolean).join(" ") : null,
+    cliente: v.cliente.nombre,
+    vendedor: v.vendedor.nombre,
+    medioPago: v.medioPago,
     total: dec(v.total),
     unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
   }));

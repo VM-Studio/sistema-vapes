@@ -5,7 +5,7 @@ Base PostgreSQL 16 manejada con Prisma 6. La fuente de verdad es `prisma/schema.
 Convenciones generales:
 
 - **Paneles**: la app son varios sistemas independientes (`Panel`: Vapes, Cosmetic, Especiales y los que se agreguen). Toda tabla de negocio tiene `panelId` y solo puede apuntar a filas de su mismo panel. Lo global (usuarios, sesiones, `ConfiguracionGlobal`, backups, rate limit, auditoría) no pertenece a ningún panel.
-- **IDs**: `cuid()` en texto (los paneles, depósitos y secuencias creados por la migración tienen ids fijos: `pnl_vapes`, `pnl_cosmetic`, `pnl_especiales`). Los documentos que ve el usuario (ventas, compras, transferencias, devoluciones) tienen además un `numero` **correlativo por panel** (tabla `Secuencia`). El ID de venta visible es `{3 letras del slug}-{número con 6 dígitos}`: `VAP-000001`; el de compra lleva una `C`: `VAP-C-000001` (`formatearIdVenta` / `formatearIdCompra` en `src/lib/paneles.ts`).
+- **IDs**: `cuid()` en texto (los paneles, depósitos y secuencias creados por la migración tienen ids fijos: `pnl_vapes`, `pnl_cosmetic`, `pnl_especiales`). Los documentos que ve el usuario (ventas, compras, transferencias, devoluciones) tienen además un `numero` **correlativo por panel** (tabla `Secuencia`). El ID de venta visible es `{3 letras del slug}-{número con 6 dígitos}`: `VAP-000001`; el de compra lleva una `C`: `VAP-C-000001` y el de devolución una `D`: `VAP-D-000001` (`formatearIdVenta` / `formatearIdCompra` en `src/lib/paneles.ts`, `formatearIdDevolucion`). Venta y devolución guardan ese código en la columna `codigo` (única por panel).
 - **Dinero**: `Decimal(12,2)`, en pesos salvo `ProveedorProducto.precio`, que lleva su `moneda` (`ARS` o `USD`). **Cantidades**: enteros.
 - **Fechas**: `timestamp` en UTC sin zona. Los rangos de días se calculan en la zona horaria del negocio (`ConfiguracionGlobal.timezone`, por defecto `America/Argentina/Buenos_Aires`).
 - **Nada se borra físicamente** en las tablas de negocio: los maestros usan soft delete (`deletedAt`) o `activo = false` (también los paneles), y los documentos confirmados se **anulan**.
@@ -24,7 +24,7 @@ Enum RolUsuario {
 }
 
 Enum Modulo {
-  DASHBOARD
+  DASHBOARD [note: 'Por panel: DASHBOARD..REPORTES (PermisoUsuario con panelId). Globales (solo OWNER, sin filas de permiso): USUARIOS, CONFIGURACION.']
   PROVEEDORES
   PRODUCTOS
   STOCK
@@ -34,25 +34,37 @@ Enum Modulo {
   COMPRAS
   COTIZADOR
   REPORTES
-  USUARIOS [note: 'Global, solo OWNER: sin filas de permiso']
-  CONFIGURACION [note: 'Global, solo OWNER: sin filas de permiso']
+  USUARIOS
+  CONFIGURACION
 }
 
 Enum TipoMovimiento {
   INGRESO_COMPRA
   INGRESO_MANUAL
   VENTA
-  DEVOLUCION_CLIENTE
+  DEVOLUCION_CLIENTE [note: 'Histórico (anulación de ventas antes de R3). Nuevas anulaciones: VENTA_ANULADA.']
   DEVOLUCION_PROVEEDOR
   AJUSTE_POSITIVO
   AJUSTE_NEGATIVO
   TRANSFERENCIA_SALIDA
   TRANSFERENCIA_ENTRADA
+  GARANTIA [note: 'Egreso: la unidad nueva que se le entrega al cliente por una falla (garantía).']
+  GARANTIA_ANULADA [note: 'Ingreso: se anuló una devolución por garantía.']
+  VENTA_ANULADA [note: 'Ingreso: se anuló una venta (vuelve la mercadería).']
 }
 
 Enum EstadoVenta {
-  BORRADOR
   CONFIRMADA
+  ANULADA
+}
+
+Enum TipoVenta {
+  UNITARIA
+  MAYORISTA
+}
+
+Enum EstadoDevolucion {
+  REGISTRADA
   ANULADA
 }
 
@@ -76,10 +88,7 @@ Enum Moneda {
 Enum MedioPago {
   EFECTIVO
   TRANSFERENCIA
-  DEBITO
-  CREDITO
-  MERCADOPAGO
-  OTRO
+  BINANCE
 }
 
 Enum AccionAuditoria {
@@ -89,22 +98,18 @@ Enum AccionAuditoria {
   LOGIN
   LOGOUT
   PERMISO_CAMBIADO
-  ACCESO_DENEGADO
+  ACCESO_DENEGADO [note: 'Intento de hacer algo sin permiso (Forbidden).']
   SESION_REVOCADA
 }
-
-// ---------------------------------------------------------------------------
-// Usuarios, sesiones y seguridad (globales)
-// ---------------------------------------------------------------------------
 
 Table Usuario {
   id text [pk, default: `cuid()`]
   nombre text [not null]
-  email text [not null, unique, note: 'Siempre en minúsculas (CHECK)']
+  email text [unique, not null, note: 'Siempre en minúsculas (CHECK en DB + toLowerCase() en Zod).']
   passwordHash text [not null]
   rol RolUsuario [not null]
   activo boolean [not null, default: true]
-  debeCambiarPassword boolean [not null, default: false]
+  debeCambiarPassword boolean [not null, default: false, note: 'true => al iniciar sesión se lo obliga a ir a /cuenta a cambiarla.']
   ultimoLogin timestamp
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
@@ -112,9 +117,9 @@ Table Usuario {
 }
 
 Table Sesion {
-  id text [pk, default: `cuid()`, note: 'Viaja en el JWT como sid']
+  id text [pk, default: `cuid()`]
   usuarioId text [not null]
-  tokenHash text [not null, note: 'sha256 del secreto tok del JWT']
+  tokenHash text [not null, note: 'sha256 del secreto aleatorio que viaja en el JWT (`tok`): un sid solo no alcanza.']
   userAgent text
   ip text
   createdAt timestamp [not null, default: `now()`]
@@ -127,13 +132,60 @@ Table Sesion {
     (usuarioId, revocadaAt)
     expiraAt
   }
+
+  Note: 'Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso en el próximo request (el middleware la consulta con caché de 60 s).'
+}
+
+Table Backup {
+  id text [pk, default: `cuid()`]
+  archivo text [not null, note: 'Clave en el bucket de backups (backups/backup-YYYY-MM-DD-HHmm.dump).']
+  tamanio bigint
+  duracionMs int [not null]
+  ok boolean [not null]
+  error text
+  origen text [not null, default: 'cron', note: '"cron" | "manual" | "release"']
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    createdAt
+  }
+
+  Note: 'Registro de cada backup (pg_dump) y su verificación.'
+}
+
+Table RateLimit {
+  clave text [not null]
+  ventana timestamp [not null]
+  contador int [not null, default: 0]
+
+  indexes {
+    (clave, ventana) [pk]
+    ventana
+  }
+
+  Note: 'Rate limit con ventana deslizante aproximada (ventanas de 1 minuto).'
+}
+
+Table IntentoLogin {
+  id text [pk, default: `cuid()`]
+  email text [not null, note: 'Normalizado (trim + minúsculas). No es FK: se registran emails inexistentes.']
+  ip text
+  exitoso boolean [not null]
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (email, createdAt)
+    (ip, createdAt)
+  }
+
+  Note: 'Registro de intentos de login para rate limit (persistente: sobrevive a redeploys y funciona con múltiples instancias, a diferencia de memoria).'
 }
 
 Table PermisoUsuario {
   id text [pk, default: `cuid()`]
   usuarioId text [not null]
   panelId text [not null]
-  modulo Modulo [not null, note: 'Nunca USUARIOS ni CONFIGURACION (CHECK)']
+  modulo Modulo [not null]
   puedeVer boolean [not null, default: false]
   puedeCrear boolean [not null, default: false]
   puedeEditar boolean [not null, default: false]
@@ -145,6 +197,8 @@ Table PermisoUsuario {
     (usuarioId, panelId, modulo) [unique]
     panelId
   }
+
+  Note: 'Permisos de un EMPLEADO por panel y módulo. Los OWNER tienen acceso total por rol y no necesitan filas acá (ni en UsuarioPanel).'
 }
 
 Table UsuarioPanel {
@@ -157,59 +211,17 @@ Table UsuarioPanel {
     (usuarioId, panelId) [unique]
     panelId
   }
-  Note: 'Paneles a los que accede un EMPLEADO. Los OWNER acceden a todos sin filas.'
+
+  Note: 'Paneles a los que accede un EMPLEADO (los OWNER acceden a todos sin filas).'
 }
-
-Table IntentoLogin {
-  id text [pk, default: `cuid()`]
-  email text [not null, note: 'Normalizado; no es FK (se registran emails inexistentes)']
-  ip text
-  exitoso boolean [not null]
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (email, createdAt)
-    (ip, createdAt)
-  }
-}
-
-Table RateLimit {
-  clave text [not null, note: 'u:<usuarioId> o ip:<ip>']
-  ventana timestamp [not null, note: 'Ventana de 1 minuto']
-  contador int [not null, default: 0]
-
-  indexes {
-    (clave, ventana) [pk]
-    ventana
-  }
-}
-
-Table Backup {
-  id text [pk, default: `cuid()`]
-  archivo text [not null, note: 'backups/backup-YYYY-MM-DD-HHmm.dump']
-  tamanio bigint
-  duracionMs int [not null]
-  ok boolean [not null]
-  error text
-  origen text [not null, default: 'cron', note: 'cron | manual | release']
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    createdAt
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Paneles, numeración y configuración
-// ---------------------------------------------------------------------------
 
 Table Panel {
   id text [pk, default: `cuid()`]
-  nombre text [not null, unique]
-  slug text [not null, unique, note: 'kebab-case, 2 a 40: /p/{slug}; prefijo del ID de venta']
+  nombre text [unique, not null]
+  slug text [unique, not null, note: 'kebab-case: /p/{slug}. El prefijo del ID de venta sale de acá (VAP-000001).']
   logoUrl text
-  colorAcento text [note: '#RRGGBB']
-  etiquetaEspecificacion text [not null, note: 'Pitadas, Contenido, Detalle…']
+  colorAcento text [note: 'Hex (#RRGGBB): tiñe botón primario e ítems activos dentro del panel.']
+  etiquetaEspecificacion text [not null, note: 'Cómo llama el panel al atributo principal de sus productos ("Pitadas", "Contenido"...).']
   orden int [not null, default: 0]
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -222,67 +234,25 @@ Table Panel {
 
 Table Secuencia {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  entidad text [not null, note: 'VENTA | COMPRA | TRANSFERENCIA | DEVOLUCION']
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  entidad text [not null]
   ultimoNumero int [not null, default: 0]
   updatedAt timestamp [not null]
 
   indexes {
     (panelId, entidad) [unique]
   }
+
+  Note: 'Numeración correlativa por panel y entidad ("VENTA", "COMPRA", "TRANSFERENCIA", "DEVOLUCION"). Se toma con SELECT ... FOR UPDATE dentro de la transacción.'
 }
-
-Table Configuracion {
-  id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  clave text [not null, note: 'escaner, ventas, alertaStockMinimo, prefijoSku']
-  valor jsonb [not null]
-  updatedAt timestamp [not null]
-
-  indexes {
-    (panelId, clave) [unique]
-  }
-}
-
-Table ConfiguracionGlobal {
-  id text [pk, default: `cuid()`]
-  clave text [not null, unique, note: 'nombreNegocio, iconoApp, timezone, moneda']
-  valor jsonb [not null]
-  updatedAt timestamp [not null]
-}
-
-Table AuditLog {
-  id text [pk, default: `cuid()`]
-  panelId text [note: 'null = acción global (login, usuarios, configuración)']
-  usuarioId text
-  accion AccionAuditoria [not null]
-  entidad text [not null]
-  entidadId text
-  datosAntes jsonb
-  datosDespues jsonb
-  ip text
-  userAgent text
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (entidad, entidadId)
-    (usuarioId, createdAt)
-    (panelId, createdAt)
-    createdAt
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Maestros (por panel)
-// ---------------------------------------------------------------------------
 
 Table Deposito {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   nombre text [not null]
   direccion text
   activo boolean [not null, default: true]
-  esPrincipal boolean [not null, default: false, note: 'Uno solo por panel (único parcial)']
+  esPrincipal boolean [not null, default: false, note: 'Un solo depósito principal por panel (índice único parcial en SQL).']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
 
@@ -293,7 +263,7 @@ Table Deposito {
 
 Table Categoria {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   nombre text [not null]
   descripcion text
   activo boolean [not null, default: true]
@@ -307,7 +277,7 @@ Table Categoria {
 
 Table Marca {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   nombre text [not null]
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -320,10 +290,10 @@ Table Marca {
 
 Table Proveedor {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  nombre text [not null, note: 'Persona de contacto']
-  telefono text [note: '+54 + dígitos (CHECK); único por panel entre no borrados (único parcial)']
-  nombreTienda text [not null, note: 'No vacío (CHECK)']
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  nombre text [not null, note: 'Persona de contacto.']
+  telefono text [note: 'Normalizado ("+54" + dígitos). Único por panel entre proveedores no borrados (índice parcial en SQL).']
+  nombreTienda text [not null]
   notas text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -338,31 +308,28 @@ Table Proveedor {
 
 Table ProveedorProducto {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   proveedorId text [not null]
   productoId text [not null]
-  precio decimal(12,2) [not null, note: 'Precio de compra unitario del producto (cualquier sabor); ≥ 0 (CHECK)']
+  precio decimal(12,2) [not null]
   moneda Moneda [not null, default: 'ARS']
   actualizadoAt timestamp [not null, default: `now()`]
-  usuarioId text [not null, note: 'Quién fijó el precio vigente']
+  usuarioId text [not null, note: 'Quién fijó el precio vigente.']
   createdAt timestamp [not null, default: `now()`]
 
   indexes {
     (panelId, proveedorId, productoId) [unique]
-    (panelId, productoId, precio) [note: 'Proveedores de un producto, de menor a mayor']
+    (panelId, productoId, precio)
   }
-  Note: 'Qué vende cada proveedor y a cuánto. Se pisa al editarlo o al recibir una compra con "actualizar precio".'
+
+  Note: 'Qué vende cada proveedor y a cuánto (precio de compra unitario por producto, sin importar el sabor). Se pisa al editarlo y al recibir una compra con "actualizar precio del proveedor".'
 }
 
 Table Cliente {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   nombre text [not null]
-  apellido text
-  documento text [note: 'Único por panel entre no borrados (único parcial)']
-  telefono text [note: '+54 + dígitos (CHECK); único por panel entre no borrados']
-  email text
-  direccion text
+  telefono text [not null, note: 'Obligatorio, normalizado "+54" + dígitos. Único por panel entre clientes no borrados (índice único parcial en SQL + CHECK de formato).']
   notas text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -372,26 +339,20 @@ Table Cliente {
   indexes {
     (panelId, nombre)
     nombre [type: gin, name: 'cliente_nombre_trgm']
-    apellido [type: gin, name: 'cliente_apellido_trgm']
-    documento [type: gin, name: 'cliente_documento_trgm']
     telefono [type: gin, name: 'cliente_telefono_trgm']
   }
 }
 
-// ---------------------------------------------------------------------------
-// Catálogo (por panel)
-// ---------------------------------------------------------------------------
-
 Table Producto {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   marcaId text [not null]
-  nombre text [not null, note: 'El modelo ("BC")']
-  especificacion text [not null, default: '', note: 'Atributo principal del panel (Panel.etiquetaEspecificacion): "5000" pitadas en Vapes']
-  especificacionNorm text [not null, default: '', note: 'Trigger: lower(especificacion) sin espacios']
-  nombreCompleto text [not null, default: '', note: 'Trigger: "{Marca} {Modelo} {Especificación}" (sin "Sin marca")']
+  nombre text [not null, note: 'El modelo (ej. "BC").']
+  especificacion text [not null, default: '', note: 'El atributo principal del panel (Panel.etiquetaEspecificacion): "5000" pitadas en Vapes.']
+  especificacionNorm text [not null, default: '', note: 'Mantenido por trigger: lower(especificacion) sin espacios. Compara "mismo producto".']
+  nombreCompleto text [not null, default: '', note: 'Mantenido por trigger: "{Marca} {Modelo} {Especificación}" (búsquedas y toda la UI).']
   categoriaId text
-  precioVenta decimal(12,2) [not null, note: 'Precio de todos sus sabores salvo los que tienen precio propio; ≥ 0 (CHECK)']
+  precioVenta decimal(12,2) [not null, note: 'Precio unitario de venta de todos sus sabores (salvo los que tienen precio propio).']
   imagenUrl text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -404,18 +365,19 @@ Table Producto {
     (panelId, marcaId)
     nombreCompleto [type: gin, name: 'producto_nombre_completo_trgm']
   }
-  Note: 'Producto = marca + modelo + especificación. Tiene al menos una variante (sabor).'
+
+  Note: 'Producto = marca + modelo + especificación ("Elf Bar" + "BC" + "5000"). Todo producto tiene variantes (sabores); uno sin sabor tiene una sola variante "Único" que la UI no muestra como tal.'
 }
 
 Table Variante {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`, note: '= Producto.panelId (trigger)']
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")', note: 'Desnormalizado (= Producto.panelId, lo verifica un trigger): buscar por código de barras dentro de un panel no necesita join.']
   productoId text [not null]
-  nombre text [not null, note: 'El sabor ("Mango Ice"); "Único" en un producto sin sabor']
-  sku text [not null]
-  codigoBarras text [note: 'Único por panel entre no borradas y frente a los alternativos']
-  precioVenta decimal(12,2) [note: 'Precio propio; null = usa Producto.precioVenta']
-  ultimoCosto decimal(12,2) [note: 'Costo de la última compra recibida; null = sin compras']
+  nombre text [not null, note: 'El sabor ("Mango Ice"). "Único" para productos sin sabor.']
+  sku text [not null, note: 'Formato PRD-XXXXXX si no se provee. Único por panel.']
+  codigoBarras text [note: 'Único por panel (junto con CodigoBarrasAlternativo.codigo) entre variantes no borradas.']
+  precioVenta decimal(12,2) [note: 'null = usa Producto.precioVenta. Solo para un sabor con precio distinto.']
+  ultimoCosto decimal(12,2) [note: 'Costo de la última compra recibida (snapshot que toma cada venta).']
   stockMinimo int [not null, default: 0]
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -428,11 +390,13 @@ Table Variante {
     nombre [type: gin, name: 'variante_nombre_trgm']
     sku [type: gin, name: 'variante_sku_trgm']
   }
+
+  Note: 'Variante = sabor de un producto. El stock es por variante y depósito.'
 }
 
 Table CodigoBarrasAlternativo {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   varianteId text [not null]
   codigo text [not null]
   descripcion text
@@ -442,15 +406,13 @@ Table CodigoBarrasAlternativo {
     (panelId, codigo) [unique]
     varianteId
   }
-}
 
-// ---------------------------------------------------------------------------
-// Inventario (por panel)
-// ---------------------------------------------------------------------------
+  Note: 'Un mismo producto puede venir con más de un código según lote/importador.'
+}
 
 Table Stock {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   varianteId text [not null]
   depositoId text [not null]
   cantidad int [not null, default: 0]
@@ -460,21 +422,22 @@ Table Stock {
     (panelId, varianteId, depositoId) [unique]
     (panelId, depositoId)
   }
-  Note: 'Caché del ledger: solo cambia vía registrarMovimiento()'
+
+  Note: 'Caché del ledger. NUNCA se actualiza directo: solo vía registrarMovimiento(). Un trigger rechaza cualquier cambio de cantidad sin movimiento en la misma tx.'
 }
 
 Table MovimientoStock {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   tipo TipoMovimiento [not null]
   varianteId text [not null]
   depositoId text [not null]
-  cantidad int [not null, note: 'Siempre > 0: el signo lo define el tipo']
+  cantidad int [not null, note: 'Siempre > 0: el signo lo define el tipo.']
   stockAnterior int [not null]
   stockPosterior int [not null]
   costoUnitario decimal(12,2)
   motivo text
-  referenciaTipo text [note: 'VENTA | COMPRA | TRANSFERENCIA | AJUSTE | DEVOLUCION']
+  referenciaTipo text [note: '"VENTA" | "COMPRA" | "TRANSFERENCIA" | "AJUSTE" | "DEVOLUCION" (CHECK en DB).']
   referenciaId text
   usuarioId text [not null]
   createdAt timestamp [not null, default: `now()`]
@@ -486,13 +449,163 @@ Table MovimientoStock {
     (referenciaTipo, referenciaId)
     usuarioId
   }
-  Note: 'Ledger INMUTABLE'
+
+  Note: 'Ledger INMUTABLE. Sin updatedAt. Los errores se corrigen con AJUSTE inverso.'
+}
+
+Table Compra {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  numero int [not null, note: 'Correlativo por panel (tabla Secuencia).']
+  proveedorId text
+  depositoId text [not null, note: 'Depósito donde ingresa la mercadería.']
+  fecha timestamp [not null, default: `now()`]
+  estado EstadoCompra [not null, default: 'BORRADOR']
+  subtotal decimal(12,2) [not null]
+  descuento decimal(12,2) [not null, default: 0]
+  total decimal(12,2) [not null]
+  notas text
+  usuarioId text [not null]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, numero) [unique]
+    (panelId, fecha)
+    (panelId, proveedorId)
+    (panelId, depositoId)
+    usuarioId
+  }
+}
+
+Table CompraItem {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  compraId text [not null]
+  varianteId text [not null]
+  productoId text [not null]
+  cantidad int [not null]
+  costoUnitario decimal(12,2) [not null]
+  subtotal decimal(12,2) [not null]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (compraId, varianteId) [unique]
+    (panelId, varianteId)
+    (panelId, productoId)
+  }
+
+  Note: 'Se compra por sabor (el stock es por sabor); productoId desnormalizado (= variante.productoId, lo verifica un trigger) para precios por proveedor.'
+}
+
+Table Venta {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  numero int [not null, note: 'Correlativo por panel (Secuencia VENTA).']
+  codigo text [not null, note: 'ID de venta visible: "VAP-000001". Único por panel.']
+  fecha timestamp [not null, default: `now()`]
+  clienteId text [not null]
+  depositoId text [not null]
+  vendedorId text [not null, note: 'Quién la hizo (rendimiento por vendedor).']
+  tipo TipoVenta [not null, default: 'UNITARIA']
+  estado EstadoVenta [not null, default: 'CONFIRMADA']
+  medioPago MedioPago [not null]
+  subtotal decimal(12,2) [not null]
+  descuento decimal(12,2) [not null, default: 0]
+  total decimal(12,2) [not null, note: 'subtotal − descuento (CHECK en DB).']
+  costoTotal decimal(12,2) [not null, note: 'Σ cantidad × costoUnitario (snapshot del último costo al vender).']
+  gananciaBruta decimal(12,2) [not null, note: 'total − costoTotal (CHECK en DB).']
+  notas text
+  anuladaPorId text
+  motivoAnulacion text
+  anuladaAt timestamp
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, numero) [unique]
+    (panelId, codigo) [unique]
+    (panelId, fecha)
+    (panelId, vendedorId, fecha)
+    (panelId, clienteId)
+    (panelId, tipo, fecha)
+    (panelId, depositoId, fecha)
+  }
+
+  Note: 'Venta: se cobra completa en el momento con un solo medio de pago. Sin galpón, cliente o medio de pago no existe. Inmutable: se anula.'
+}
+
+Table VentaItem {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  ventaId text [not null]
+  varianteId text [not null]
+  productoId text [not null, note: 'Desnormalizado (= variante.productoId, lo verifica un trigger).']
+  cantidad int [not null]
+  precioLista decimal(12,2) [not null, note: 'precioVentaEfectivo al momento de vender.']
+  precioUnitario decimal(12,2) [not null, note: 'Lo cobrado por unidad: el de lista salvo precio especial.']
+  esPrecioEspecial boolean [not null, default: false]
+  costoUnitario decimal(12,2) [not null, note: 'Snapshot de Variante.ultimoCosto (0 si nunca se compró).']
+  subtotal decimal(12,2) [not null, note: 'cantidad × precioUnitario (CHECK en DB).']
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, ventaId, varianteId) [unique]
+    (panelId, varianteId)
+    (panelId, productoId)
+  }
+}
+
+Table Devolucion {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  numero int [not null, note: 'Correlativo por panel (Secuencia DEVOLUCION).']
+  codigo text [not null, note: 'ID visible: "VAP-D-000001". Único por panel.']
+  fecha timestamp [not null, default: `now()`]
+  clienteId text [not null]
+  ventaId text [note: 'La venta original, si se conoce.']
+  depositoId text [not null, note: 'De dónde sale la unidad nueva que se entrega.']
+  observacion text [not null, note: 'Por qué se devolvió (mínimo 10 caracteres, CHECK en DB).']
+  usuarioId text [not null]
+  estado EstadoDevolucion [not null, default: 'REGISTRADA']
+  anuladaPorId text
+  motivoAnulacion text
+  anuladaAt timestamp
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, numero) [unique]
+    (panelId, codigo) [unique]
+    (panelId, fecha)
+    (panelId, clienteId)
+    (panelId, ventaId)
+  }
+
+  Note: 'Devolución por GARANTÍA: al cliente se le entrega una unidad nueva, que sale del stock del galpón elegido (movimiento GARANTIA).'
+}
+
+Table DevolucionItem {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  devolucionId text [not null]
+  varianteId text [not null]
+  productoId text [not null, note: 'Desnormalizado (= variante.productoId, lo verifica un trigger).']
+  cantidad int [not null]
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (panelId, devolucionId, varianteId) [unique]
+    (panelId, varianteId)
+  }
 }
 
 Table Transferencia {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  numero int [not null, note: 'Correlativo por panel (Secuencia)']
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  numero int [not null, note: 'Correlativo por panel (tabla Secuencia).']
   depositoOrigenId text [not null]
   depositoDestinoId text [not null]
   estado EstadoTransferencia [not null, default: 'PENDIENTE']
@@ -515,7 +628,7 @@ Table Transferencia {
 
 Table TransferenciaItem {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   transferenciaId text [not null]
   varianteId text [not null]
   cantidad int [not null]
@@ -528,133 +641,51 @@ Table TransferenciaItem {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Compras (por panel)
-// ---------------------------------------------------------------------------
-
-Table Compra {
+Table Configuracion {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  numero int [not null, note: 'Correlativo por panel (Secuencia); ID visible VAP-C-000001']
-  proveedorId text [note: 'Obligatorio en la app; nulo solo en compras anteriores a R2']
-  depositoId text [not null, note: 'Galpón donde entra la mercadería']
-  fecha timestamp [not null, default: `now()`]
-  estado EstadoCompra [not null, default: 'BORRADOR']
-  subtotal decimal(12,2) [not null]
-  descuento decimal(12,2) [not null, default: 0]
-  total decimal(12,2) [not null]
-  notas text
-  usuarioId text [not null]
-  createdAt timestamp [not null, default: `now()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  clave text [not null]
+  valor jsonb [not null]
   updatedAt timestamp [not null]
 
   indexes {
-    (panelId, numero) [unique]
-    (panelId, fecha)
-    (panelId, proveedorId)
-    (panelId, depositoId)
-    usuarioId
+    (panelId, clave) [unique]
   }
+
+  Note: 'Key-value POR PANEL. Claves: escaner, ventas, alertaStockMinimo, prefijoSku.'
 }
 
-Table CompraItem {
+Table ConfiguracionGlobal {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  compraId text [not null]
-  varianteId text [not null, note: 'Se compra por sabor']
-  productoId text [not null, note: '= variante.productoId (trigger)']
-  cantidad int [not null]
-  costoUnitario decimal(12,2) [not null]
-  subtotal decimal(12,2) [not null]
-  createdAt timestamp [not null, default: `now()`]
+  clave text [unique, not null]
+  valor jsonb [not null]
   updatedAt timestamp [not null]
 
-  indexes {
-    (compraId, varianteId) [unique]
-    (panelId, varianteId)
-    (panelId, productoId)
-  }
+  Note: 'Key-value GLOBAL (fuera de los paneles). Claves: nombreNegocio, iconoApp, timezone.'
 }
 
-// ---------------------------------------------------------------------------
-// Ventas (por panel): se cobran completas con un único medio de pago
-// ---------------------------------------------------------------------------
-
-Table Venta {
+Table AuditLog {
   id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  numero int [not null, note: 'Correlativo por panel; ID visible VAP-000001']
-  fecha timestamp [not null, default: `now()`]
-  clienteId text
-  depositoId text [not null]
-  estado EstadoVenta [not null, default: 'BORRADOR']
-  subtotal decimal(12,2) [not null]
-  descuento decimal(12,2) [not null, default: 0]
-  total decimal(12,2) [not null]
-  costoTotal decimal(12,2) [not null, note: 'Snapshot: Σ costoUnitario × cantidad']
-  gananciaBruta decimal(12,2) [not null, note: 'total − costoTotal (CHECK)']
-  medioPago MedioPago [note: 'Obligatorio salvo en BORRADOR (CHECK)']
-  redondeo decimal(12,2) [not null, default: 0, note: '≤ 0: a favor del cliente']
-  notas text
-  usuarioId text [not null]
-  anuladaPorId text
-  motivoAnulacion text
-  anuladaAt timestamp
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    (panelId, numero) [unique]
-    (panelId, fecha)
-    (panelId, estado, fecha)
-    (panelId, clienteId, estado)
-    (panelId, depositoId, fecha)
-    (panelId, usuarioId, fecha)
-  }
-}
-
-Table VentaItem {
-  id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  ventaId text [not null]
-  varianteId text [not null]
-  cantidad int [not null]
-  precioUnitario decimal(12,2) [not null, note: 'Snapshot del precio de venta']
-  costoUnitario decimal(12,2) [not null, note: 'Snapshot de Variante.ultimoCosto al vender (0 si no hubo compras)']
-  descuento decimal(12,2) [not null, default: 0]
-  subtotal decimal(12,2) [not null, note: 'cantidad × precioUnitario − descuento (CHECK)']
-  notas text
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    (ventaId, varianteId) [unique]
-    (panelId, varianteId)
-  }
-}
-
-Table Devolucion {
-  id text [pk, default: `cuid()`]
-  panelId text [not null, default: `current_setting('app.panel_id', true)`]
-  numero int [not null, note: 'Correlativo por panel (Secuencia)']
-  ventaId text [not null]
-  depositoId text [not null]
-  fecha timestamp [not null, default: `now()`]
-  motivo text [not null]
-  usuarioId text [not null]
+  panelId text
+  usuarioId text
+  accion AccionAuditoria [not null]
+  entidad text [not null, note: 'Nombre de la tabla afectada.']
+  entidadId text
+  datosAntes jsonb
+  datosDespues jsonb
+  ip text
+  userAgent text
   createdAt timestamp [not null, default: `now()`]
 
   indexes {
-    (panelId, numero) [unique]
-    (panelId, ventaId)
-    (panelId, fecha)
+    (entidad, entidadId)
+    (usuarioId, createdAt)
+    (panelId, createdAt)
+    createdAt
   }
-  Note: 'Sin campos económicos (devoluciones por garantía, próximamente). Inmutable.'
-}
 
-// ---------------------------------------------------------------------------
-// Relaciones
-// ---------------------------------------------------------------------------
+  Note: 'INMUTABLE (trigger bloquea UPDATE/DELETE). panelId null = acción global (login, usuarios, configuración).'
+}
 
 Ref: Sesion.usuarioId > Usuario.id [delete: cascade]
 Ref: Sesion.revocadaPorId > Usuario.id [delete: set null]
@@ -662,12 +693,7 @@ Ref: PermisoUsuario.usuarioId > Usuario.id [delete: cascade]
 Ref: PermisoUsuario.panelId > Panel.id [delete: restrict]
 Ref: UsuarioPanel.usuarioId > Usuario.id [delete: cascade]
 Ref: UsuarioPanel.panelId > Panel.id [delete: restrict]
-
 Ref: Secuencia.panelId > Panel.id [delete: restrict]
-Ref: Configuracion.panelId > Panel.id [delete: restrict]
-Ref: AuditLog.panelId > Panel.id [delete: restrict]
-Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
-
 Ref: Deposito.panelId > Panel.id [delete: restrict]
 Ref: Categoria.panelId > Panel.id [delete: restrict]
 Ref: Marca.panelId > Panel.id [delete: restrict]
@@ -677,7 +703,6 @@ Ref: ProveedorProducto.proveedorId > Proveedor.id [delete: restrict]
 Ref: ProveedorProducto.productoId > Producto.id [delete: restrict]
 Ref: ProveedorProducto.usuarioId > Usuario.id [delete: restrict]
 Ref: Cliente.panelId > Panel.id [delete: restrict]
-
 Ref: Producto.panelId > Panel.id [delete: restrict]
 Ref: Producto.categoriaId > Categoria.id [delete: restrict]
 Ref: Producto.marcaId > Marca.id [delete: restrict]
@@ -685,7 +710,6 @@ Ref: Variante.panelId > Panel.id [delete: restrict]
 Ref: Variante.productoId > Producto.id [delete: restrict]
 Ref: CodigoBarrasAlternativo.panelId > Panel.id [delete: restrict]
 Ref: CodigoBarrasAlternativo.varianteId > Variante.id [delete: restrict]
-
 Ref: Stock.panelId > Panel.id [delete: restrict]
 Ref: Stock.varianteId > Variante.id [delete: restrict]
 Ref: Stock.depositoId > Deposito.id [delete: restrict]
@@ -693,15 +717,6 @@ Ref: MovimientoStock.panelId > Panel.id [delete: restrict]
 Ref: MovimientoStock.varianteId > Variante.id [delete: restrict]
 Ref: MovimientoStock.depositoId > Deposito.id [delete: restrict]
 Ref: MovimientoStock.usuarioId > Usuario.id [delete: restrict]
-
-Ref: Transferencia.panelId > Panel.id [delete: restrict]
-Ref: Transferencia.depositoOrigenId > Deposito.id [delete: restrict]
-Ref: Transferencia.depositoDestinoId > Deposito.id [delete: restrict]
-Ref: Transferencia.usuarioId > Usuario.id [delete: restrict]
-Ref: TransferenciaItem.panelId > Panel.id [delete: restrict]
-Ref: TransferenciaItem.transferenciaId > Transferencia.id [delete: cascade]
-Ref: TransferenciaItem.varianteId > Variante.id [delete: restrict]
-
 Ref: Compra.panelId > Panel.id [delete: restrict]
 Ref: Compra.proveedorId > Proveedor.id [delete: restrict]
 Ref: Compra.depositoId > Deposito.id [delete: restrict]
@@ -710,20 +725,35 @@ Ref: CompraItem.panelId > Panel.id [delete: restrict]
 Ref: CompraItem.compraId > Compra.id [delete: cascade]
 Ref: CompraItem.varianteId > Variante.id [delete: restrict]
 Ref: CompraItem.productoId > Producto.id [delete: restrict]
-
 Ref: Venta.panelId > Panel.id [delete: restrict]
 Ref: Venta.clienteId > Cliente.id [delete: restrict]
 Ref: Venta.depositoId > Deposito.id [delete: restrict]
-Ref: Venta.usuarioId > Usuario.id [delete: restrict]
+Ref: Venta.vendedorId > Usuario.id [delete: restrict]
 Ref: Venta.anuladaPorId > Usuario.id [delete: restrict]
 Ref: VentaItem.panelId > Panel.id [delete: restrict]
 Ref: VentaItem.ventaId > Venta.id [delete: cascade]
 Ref: VentaItem.varianteId > Variante.id [delete: restrict]
-
+Ref: VentaItem.productoId > Producto.id [delete: restrict]
 Ref: Devolucion.panelId > Panel.id [delete: restrict]
+Ref: Devolucion.clienteId > Cliente.id [delete: restrict]
 Ref: Devolucion.ventaId > Venta.id [delete: restrict]
 Ref: Devolucion.depositoId > Deposito.id [delete: restrict]
 Ref: Devolucion.usuarioId > Usuario.id [delete: restrict]
+Ref: Devolucion.anuladaPorId > Usuario.id [delete: restrict]
+Ref: DevolucionItem.panelId > Panel.id [delete: restrict]
+Ref: DevolucionItem.devolucionId > Devolucion.id [delete: cascade]
+Ref: DevolucionItem.varianteId > Variante.id [delete: restrict]
+Ref: DevolucionItem.productoId > Producto.id [delete: restrict]
+Ref: Transferencia.panelId > Panel.id [delete: restrict]
+Ref: Transferencia.depositoOrigenId > Deposito.id [delete: restrict]
+Ref: Transferencia.depositoDestinoId > Deposito.id [delete: restrict]
+Ref: Transferencia.usuarioId > Usuario.id [delete: restrict]
+Ref: TransferenciaItem.panelId > Panel.id [delete: restrict]
+Ref: TransferenciaItem.transferenciaId > Transferencia.id [delete: cascade]
+Ref: TransferenciaItem.varianteId > Variante.id [delete: restrict]
+Ref: Configuracion.panelId > Panel.id [delete: restrict]
+Ref: AuditLog.panelId > Panel.id [delete: restrict]
+Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
 ```
 
 ## Tablas por dominio
@@ -732,7 +762,7 @@ Ref: Devolucion.usuarioId > Usuario.id [delete: restrict]
 
 - **Panel**: cada sistema independiente de la app. `slug` (kebab-case) arma las rutas `/p/{slug}` y el prefijo de los IDs visibles (tres primeras letras: `vapes` → `VAP`); la app no deja crear un panel cuyo prefijo choque con otro. `colorAcento` tiñe la interfaz dentro del panel y `etiquetaEspecificacion` es cómo el panel llama al atributo principal de sus productos («Pitadas», «Contenido», «Detalle»). No se borra: se desactiva (`activo = false`) desde `/configuracion/sistemas` y sus datos se conservan. La migración crea **Vapes** (`pnl_vapes`), **Cosmetic** (`pnl_cosmetic`) y **Especiales** (`pnl_especiales`); los dueños agregan otros desde `/paneles`, y cada uno nace con un depósito «Principal» y sus secuencias en cero.
 - **Secuencia**: último número usado por (panel, entidad) para `VENTA`, `COMPRA`, `TRANSFERENCIA` y `DEVOLUCION`. `siguienteNumero()` (`src/server/db/secuencia.ts`) la toma con `SELECT … FOR UPDATE` dentro de la transacción que inserta el documento: dos transacciones del mismo panel se serializan y nunca repiten número, y si la transacción falla el número no se consume.
-- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas` (redondeo), `alertaStockMinimo` y `prefijoSku`.
+- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas`, `alertaStockMinimo` y `prefijoSku`.
 - **ConfiguracionGlobal**: pares clave-valor JSON que valen para toda la app: `nombreNegocio`, `iconoApp`, `timezone` y `moneda`.
 
 ### Usuarios, sesiones y seguridad
@@ -752,7 +782,7 @@ Ref: Devolucion.usuarioId > Usuario.id [delete: restrict]
 - **Categoria** y **Marca**: clasificación de productos, con nombre único por panel. No se pueden desactivar si tienen productos activos. La marca es obligatoria en todo producto (la categoría no); el alta de productos crea la marca si no existe. Renombrar una marca recalcula el `nombreCompleto` de sus productos (trigger `trg_marca_renombrada`). La marca «Sin marca» (creada por la migración R2 para los productos que no tenían) no aparece en el nombre completo.
 - **Proveedor**: `nombre` es la persona de contacto y `nombreTienda` (obligatorio) el comercio. Teléfono opcional, normalizado igual que el de los clientes (`+54` + dígitos) y único por panel entre los no borrados. `notas` libres (la migración R2 pasó ahí el CUIT, el email y la dirección, que dejaron de ser columnas, y los teléfonos repetidos). Un proveedor inactivo no aparece para compras nuevas; no se desactiva si tiene compras en borrador.
 - **ProveedorProducto**: qué productos vende cada proveedor y a cuánto: un `precio` por (proveedor, producto), sin importar el sabor, con su `moneda` (`ARS` o `USD`), cuándo se actualizó y quién lo fijó. Se pisa al editarlo desde la ficha del proveedor o al recibir una compra con «actualizar precio del proveedor» (no guarda historial: el cambio queda en la auditoría). La ficha del producto lista los proveedores de menor a mayor precio (índice `(panelId, productoId, precio)`). Precios y montos comprados solo los ven los dueños o quien tiene `ver` en `COMPRAS` (`veCostosCompras()` en `proveedor.service.ts`).
-- **Cliente**: datos de contacto. Documento y teléfono opcionales, cada uno único por panel entre los no borrados. El teléfono se guarda normalizado: `+54` seguido solo de dígitos (la app y la función SQL `fn_normalizar_telefono` aplican la misma regla: se quitan los no-dígitos y los ceros iniciales; si ya empieza con `54` y tiene al menos 12 dígitos se respeta el código de país).
+- **Cliente**: `nombre`, `telefono` **obligatorio** (único por panel entre los no borrados) y `notas`. El teléfono se guarda normalizado: `+54` seguido solo de dígitos (la app y la función SQL `fn_normalizar_telefono` aplican la misma regla: se quitan los no-dígitos y los ceros iniciales; si ya empieza con `54` y tiene al menos 12 dígitos se respeta el código de país). Desde R3 no hay apellido, documento, email ni dirección (la migración los pasó al nombre y a las notas; los clientes sin teléfono recibieron uno provisorio `+54000…` anotado en las notas, y las ventas sin cliente quedaron en «Cliente sin datos»).
 
 ### Catálogo
 
@@ -762,9 +792,10 @@ Ref: Devolucion.usuarioId > Usuario.id [delete: restrict]
 
 ### Inventario
 
-- **MovimientoStock**: el ledger. Cada entrada o salida de mercadería es una fila inmutable con tipo (`INGRESO_COMPRA`, `INGRESO_MANUAL`, `VENTA`, `DEVOLUCION_CLIENTE`, `DEVOLUCION_PROVEEDOR`, `AJUSTE_POSITIVO`, `AJUSTE_NEGATIVO`, `TRANSFERENCIA_SALIDA`, `TRANSFERENCIA_ENTRADA`), cantidad siempre positiva (el signo lo da el tipo), stock anterior y posterior, costo y referencia al documento que lo originó. Un error se corrige con un ajuste inverso, nunca editando.
+- **MovimientoStock**: el ledger. Cada entrada o salida de mercadería es una fila inmutable con tipo (entradas: `INGRESO_COMPRA`, `INGRESO_MANUAL`, `TRANSFERENCIA_ENTRADA`, `AJUSTE_POSITIVO`, `VENTA_ANULADA`, `GARANTIA_ANULADA` y el histórico `DEVOLUCION_CLIENTE`; salidas: `VENTA`, `GARANTIA`, `DEVOLUCION_PROVEEDOR`, `AJUSTE_NEGATIVO`, `TRANSFERENCIA_SALIDA`; el signo lo define `fn_signo_movimiento()`, espejo de `signoMovimiento()` y de `TIPO_MOVIMIENTO_UI`), cantidad siempre positiva (el signo lo da el tipo), stock anterior y posterior, costo y referencia al documento que lo originó. Un error se corrige con un ajuste inverso, nunca editando.
 - **Stock**: cantidad actual por (variante, depósito). Es un caché del ledger: solo cambia en la misma transacción que inserta el movimiento correspondiente (`registrarMovimiento()` / `transferirStock()` en `stock.service.ts`). La vista **Global** de la app suma todos los depósitos del panel. La carga de stock por escaneo (`cargarStockPorEscaneo()` en `producto.service.ts`) registra un `INGRESO_MANUAL` por sabor en **un** depósito activo elegido, todo en una transacción; sin depósito el servicio la rechaza (`SIN_GALPON`) aunque la llame otro código que no sea la pantalla.
-- **Transferencia** y **TransferenciaItem**: envío de mercadería entre depósitos del mismo panel. Nace `PENDIENTE`, se `COMPLETA` (genera la salida y la entrada) o se `ANULA`.
+- **Transferencia** y **TransferenciaItem**: envío de mercadería entre depósitos del mismo panel. Nace `PENDIENTE`, se `COMPLETA` (genera la salida y la entrada) o se `ANULA`. «Transferir a {otro galpón}» desde la pantalla de Stock (`transferirAhora()`) la crea y la completa en la misma transacción.
+- Lecturas de la pantalla Stock (`stock.service.ts`): `stockPorDeposito()`, `stockGlobal()` (sobre `vw_stock_consolidado`), `movimientos()` (ledger con referencia visible: `VAP-000001`, `VAP-C-000001`, `VAP-D-000001`, «Transferencia #N») y `resumenStock()`.
 
 Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por panel:
 
@@ -778,9 +809,10 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 
 ### Ventas y devoluciones
 
-- **Venta**: cabecera con depósito, cliente opcional, vendedor, totales, costo congelado (`costoTotal`) y ganancia bruta. Se cobra **completa con un único medio de pago** (`medioPago`, obligatorio al confirmar). `redondeo` es siempre cero o negativo (a favor del cliente). Una venta confirmada no se edita: se anula, registrando quién, cuándo y por qué, y el stock vuelve al depósito.
-- **VentaItem**: renglones con precio y costo congelados al momento de vender y descuento por ítem. El precio es el efectivo del sabor (propio o del producto); el costo es un **snapshot** de `Variante.ultimoCosto` (0 si el sabor no tuvo compras; `costoParaVenta()` en `src/lib/precios.ts`), así la ganancia de una venta no cambia con compras posteriores. Costo y ganancia solo se muestran a los dueños.
-- **Devolucion**: devolución vinculada a una venta, con depósito de reingreso, motivo y número correlativo por panel. No tiene campos económicos: queda reservada para las devoluciones por garantía (módulo en preparación). Inmutable.
+- **Venta**: siempre `CONFIRMADA` al crearse (no hay borradores) o `ANULADA`. Tiene `codigo` visible único por panel (`VAP-000001` = `formatearIdVenta(slug, numero)`), galpón, **cliente** y **medio de pago** obligatorios (`EFECTIVO`, `TRANSFERENCIA` o `BINANCE`), `vendedorId`, `tipo` (`UNITARIA` / `MAYORISTA`), descuento global, costo congelado (`costoTotal`) y ganancia bruta. Se cobra completa con un único medio. No se edita: se anula (quién, cuándo, por qué) y el stock vuelve con `VENTA_ANULADA`.
+- **VentaItem**: un renglón por sabor con `productoId` desnormalizado (verificado por trigger), `precioLista` (el precio efectivo al vender), `precioUnitario` (lo cobrado), `esPrecioEspecial` y `costoUnitario` (snapshot de `Variante.ultimoCosto`, 0 si no hubo compras; `costoParaVenta()`). Subtotal = cantidad × precio cobrado. Costo y ganancia solo se muestran a los dueños.
+- **Devolucion** (garantía): cliente obligatorio, venta opcional, galpón del que sale la **unidad nueva** que se entrega (`GARANTIA` por ítem), `observacion` de al menos 10 caracteres, código `VAP-D-000001` (secuencia `DEVOLUCION`). `REGISTRADA` → `ANULADA` (con motivo; el stock vuelve con `GARANTIA_ANULADA`); no se edita ni se borra.
+- **DevolucionItem**: sabor, producto (verificado por trigger) y cantidad > 0. Inmutable.
 
 ## Invariantes garantizadas por la base
 
@@ -789,9 +821,9 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Aislamiento entre paneles
 
 - Toda tabla de negocio tiene `panelId NOT NULL` con FK a `Panel` y `DEFAULT current_setting('app.panel_id', true)`. Nadie setea esa variable, así que el default es `NULL`: un `INSERT` que olvide el panel **falla** por `NOT NULL` en vez de guardar una fila huérfana. (En la app, `dbPara(panelId)` completa el panel en cada create.)
-- `fn_verificar_mismo_panel` (triggers `trg_panel_*`) verifica que cada FK apunte a una fila **del mismo panel**: producto → categoría y marca; variante → producto; precio de proveedor → proveedor y producto; código alternativo → variante; stock y movimiento → variante y depósito; compra → proveedor y depósito; ítems → su documento y su variante; venta → cliente y depósito; devolución → venta y depósito; transferencia → depósitos de origen y destino.
+- `fn_verificar_mismo_panel` (triggers `trg_panel_*`) verifica que cada FK apunte a una fila **del mismo panel**: producto → categoría y marca; variante → producto; precio de proveedor → proveedor y producto; código alternativo → variante; stock y movimiento → variante y depósito; compra → proveedor y depósito; ítems → su documento y su variante; venta → cliente y depósito; devolución → cliente, venta y depósito; transferencia → depósitos de origen y destino.
 - `panelId` **no se puede cambiar** en ninguna tabla de negocio (el mismo trigger lo rechaza en `UPDATE`).
-- Unicidades **por panel**: nombre de depósito, categoría y marca; producto por (marca, modelo, `especificacionNorm`); sabor por (producto, nombre); precio por (proveedor, producto); SKU; código alternativo; número de venta, compra, transferencia y devolución; clave de configuración; (panel, entidad) de secuencia. Índices únicos parciales por panel: un solo depósito principal; código de barras principal, teléfono de proveedor, documento y teléfono de cliente entre los no borrados.
+- Unicidades **por panel**: nombre de depósito, categoría y marca; producto por (marca, modelo, `especificacionNorm`); sabor por (producto, nombre); precio por (proveedor, producto); SKU; código alternativo; número de venta, compra, transferencia y devolución; código de venta y de devolución; clave de configuración; (panel, entidad) de secuencia. Índices únicos parciales por panel: un solo depósito principal; código de barras principal, teléfono de proveedor y teléfono de cliente entre los no borrados.
 - Código de barras único dentro del panel entre `Variante.codigoBarras` y `CodigoBarrasAlternativo.codigo` (trigger con advisory lock por panel y código, porque un índice no abarca dos tablas). El mismo EAN puede existir en dos paneles.
 - `PermisoUsuario.modulo` nunca es `USUARIOS` ni `CONFIGURACION` (son globales, solo para dueños).
 
@@ -803,7 +835,7 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Inmutabilidad y borrado
 
 - `MovimientoStock` y `AuditLog` son inmutables: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`.
-- `IntentoLogin` no se edita; `Backup` no se edita ni se borra; `Devolucion` no se edita ni se borra.
+- `IntentoLogin` no se edita; `Backup` no se edita ni se borra; `Devolucion` no se borra y solo cambia para anularse; `DevolucionItem` es inmutable.
 - Sin `DELETE` físico en `Usuario`, `Producto`, `Variante`, `Cliente` y `Proveedor` (soft delete), `Deposito` y `Panel` (se desactivan) y `Secuencia`.
 - `Venta`, `Compra` y `Transferencia` solo se borran en borrador (o transferencia pendiente): confirmadas, se anulan. Sus transiciones de estado están restringidas (por ejemplo, una venta confirmada solo puede pasar a anulada) y una vez confirmadas no se modifican sus datos ni sus ítems (los ítems de una venta confirmada son inmutables).
 
@@ -826,18 +858,18 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 
 ### Clientes y proveedores
 
-- `Cliente.telefono` es nulo o cumple `^\+54[0-9]{6,13}$` (CHECK `Cliente_telefono_chk`).
-- Teléfono y documento únicos por panel entre los clientes no borrados.
+- `Cliente.telefono` es obligatorio y cumple `^\+54[0-9]{6,13}$` (CHECK `Cliente_telefono_chk`); nombre no vacío (`Cliente_nombre_chk`).
+- Teléfono único por panel entre los clientes no borrados.
 - `Proveedor.telefono` es nulo o cumple el mismo formato (CHECK `Proveedor_telefono_chk`) y es único por panel entre los proveedores no borrados (índice parcial `proveedor_telefono_unico`).
 - `Proveedor.nombreTienda` no vacío (CHECK `Proveedor_nombreTienda_chk`).
 - `ProveedorProducto.precio ≥ 0` y una sola fila por (panel, proveedor, producto).
 
 ### Compras y ventas
 
-- Totales: `total = subtotal − descuento` en compras; en ventas, `total = subtotal − descuento + redondeo` con `redondeo ≤ 0` y `gananciaBruta = total − costoTotal`; subtotal de cada ítem igual a cantidad × precio (menos descuento en ventas). Al COMMIT se verifica que los totales de la cabecera coincidan con la suma de ítems y que el documento tenga ítems.
-- `CompraItem.productoId` es siempre el producto de su variante (trigger `trg_compra_item_producto`).
-- Una venta que no está en borrador tiene medio de pago (CHECK `Venta_medioPago_chk`).
-- Venta anulada ⇔ tiene `anuladaAt` y `anuladaPorId`.
+- Totales: `total = subtotal − descuento` en compras y ventas (`Venta_total_chk`), con `gananciaBruta = total − costoTotal`; subtotal de cada ítem igual a cantidad × precio (`VentaItem_subtotal_chk`: cantidad × precio cobrado). Al COMMIT se verifica que los totales de la cabecera coincidan con la suma de ítems y que el documento tenga ítems.
+- `productoId` de `CompraItem`, `VentaItem` y `DevolucionItem` es siempre el producto de su variante (`trg_fn_item_producto_coherente`).
+- Venta: cliente, galpón y medio de pago `NOT NULL`; código único por panel; confirmada solo pasa a anulada y no se modifica; anulada ⇔ tiene `anuladaAt` y `anuladaPorId`.
+- Devolución: `observacion` ≥ 10 caracteres (`Devolucion_observacion_chk`); anulada ⇔ `anuladaAt` y `anuladaPorId`; cliente, venta y galpón del mismo panel.
 - Transferencias: origen distinto de destino; `completadaAt` coherente con el estado; al menos un ítem.
 
 ### Usuarios y sesiones

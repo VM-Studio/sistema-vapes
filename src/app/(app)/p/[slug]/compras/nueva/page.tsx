@@ -16,7 +16,7 @@ type SP = Record<string, string | string[] | undefined>;
 /**
  * ?proveedor=id preselecciona el proveedor (desde su ficha) · ?deposito=id
  * preselecciona el galpón · ?items=varianteId:cantidad,… precarga ítems
- * (ej: "Registrar como compra" desde /escanear). El costo sugerido se
+ * (ítems precargados por URL). El costo sugerido se
  * completa en el cliente apenas hay proveedor.
  */
 export default async function NuevaCompraPage({ searchParams }: { searchParams: Promise<SP> }) {

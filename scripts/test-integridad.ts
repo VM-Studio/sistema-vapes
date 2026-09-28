@@ -18,9 +18,11 @@ import {
 import { prisma, type Tx } from "../src/lib/db";
 import { costoParaVenta, precioVentaEfectivo } from "../src/lib/precios";
 import * as v from "../src/lib/validations";
+import { registrarDevolucionSchema } from "../src/lib/validations/devolucion";
 import { dbPara, PanelAislamientoError, transaccion } from "../src/server/db/panel-scoped";
 import { siguienteNumero } from "../src/server/db/secuencia";
-import { registrarMovimiento } from "../src/server/services/stock.service";
+import { TIPO_MOVIMIENTO_UI } from "../src/lib/movimientos-ui";
+import { registrarMovimiento, signoMovimiento } from "../src/server/services/stock.service";
 
 const VAPES = "pnl_vapes";
 const COSMETIC = "pnl_cosmetic";
@@ -124,17 +126,25 @@ async function main() {
   const depCosmetic = await dbPara(COSMETIC).deposito.findFirstOrThrow({
     where: { esPrincipal: true },
   });
+  const clienteVapes = await db.cliente.findFirstOrThrow({ where: { deletedAt: null } });
+
+  /** Datos fijos de una venta de Vapes (sin número ni código). */
+  const baseVenta = () => ({
+    depositoId: g1.id,
+    clienteId: clienteVapes.id,
+    vendedorId: owner.id,
+    medioPago: MedioPago.EFECTIVO,
+  });
 
   /** Crea una venta CONFIRMADA consistente y "olvida" que se creó en esta tx. */
   async function ventaConfirmada(tx: Tx) {
     const numero = await siguienteNumero(tx, VAPES, "VENTA");
     const venta = await tx.venta.create({
       data: {
+        ...baseVenta(),
         numero,
-        depositoId: g1.id,
-        usuarioId: owner.id,
+        codigo: `TST-${numero}`,
         estado: EstadoVenta.CONFIRMADA,
-        medioPago: MedioPago.EFECTIVO,
         subtotal: "32000.00",
         descuento: "0",
         total: "32000.00",
@@ -144,7 +154,9 @@ async function main() {
           create: [
             {
               varianteId: va!.id,
+              productoId: va!.productoId,
               cantidad: 2,
+              precioLista: "16000.00",
               precioUnitario: "16000.00",
               costoUnitario: "9500.00",
               subtotal: "32000.00",
@@ -470,7 +482,7 @@ async function main() {
         const venta = await ventaConfirmada(tx);
         await tx.$executeRaw`UPDATE "Venta" SET "medioPago" = NULL WHERE "id" = ${venta.id}`;
       }),
-    /Venta_medioPago_chk|no se modifica/,
+    /medioPago|no se modifica|null value/,
   );
   await rechaza(
     "totales que no cierran con los ítems",
@@ -478,11 +490,10 @@ async function main() {
       transaccion(ctxVapes, async (tx) =>
         tx.venta.create({
           data: {
+            ...baseVenta(),
             numero: await siguienteNumero(tx, VAPES, "VENTA"),
-            depositoId: g1.id,
-            usuarioId: owner.id,
+            codigo: "TST-TOTALES",
             estado: EstadoVenta.CONFIRMADA,
-            medioPago: MedioPago.EFECTIVO,
             subtotal: "99999.00",
             descuento: "0",
             total: "99999.00",
@@ -492,7 +503,9 @@ async function main() {
               create: [
                 {
                   varianteId: va.id,
+                  productoId: va.productoId,
                   cantidad: 1,
+                  precioLista: "16000.00",
                   precioUnitario: "16000.00",
                   costoUnitario: "9500.00",
                   subtotal: "16000.00",
@@ -566,6 +579,256 @@ async function main() {
       }),
     "Transición de estado inválida",
   );
+  await rechaza(
+    "ítem de venta con subtotal ≠ cantidad × precio cobrado",
+    () =>
+      transaccion(ctxVapes, async (tx) =>
+        tx.venta.create({
+          data: {
+            ...baseVenta(),
+            numero: await siguienteNumero(tx, VAPES, "VENTA"),
+            codigo: "TST-SUBTOTAL",
+            subtotal: "30000.00",
+            total: "30000.00",
+            costoTotal: "19000.00",
+            gananciaBruta: "11000.00",
+            items: {
+              create: [
+                {
+                  varianteId: va.id,
+                  productoId: va.productoId,
+                  cantidad: 2,
+                  precioLista: "16000.00",
+                  precioUnitario: "16000.00",
+                  esPrecioEspecial: false,
+                  costoUnitario: "9500.00",
+                  subtotal: "30000.00",
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    "VentaItem_subtotal_chk",
+  );
+  const especial = await enRollback(async (tx) =>
+    tx.venta.create({
+      data: {
+        ...baseVenta(),
+        numero: await siguienteNumero(tx, VAPES, "VENTA"),
+        codigo: "TST-ESPECIAL",
+        subtotal: "30000.00",
+        total: "30000.00",
+        costoTotal: "19000.00",
+        gananciaBruta: "11000.00",
+        items: {
+          create: [
+            {
+              varianteId: va.id,
+              productoId: va.productoId,
+              cantidad: 2,
+              precioLista: "16000.00",
+              precioUnitario: "15000.00",
+              esPrecioEspecial: true,
+              costoUnitario: "9500.00",
+              subtotal: "30000.00",
+            },
+          ],
+        },
+      },
+      include: { items: true },
+    }),
+  );
+  check(
+    especial?.items[0]?.esPrecioEspecial === true && especial.total.toString() === "30000",
+    "precio especial: subtotal = cantidad × precio cobrado (no el de lista): OK",
+  );
+  await rechaza(
+    "ítem de venta con productoId que no es el de la variante",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const otro = await tx.producto.findFirstOrThrow({
+          where: { id: { not: va.productoId }, deletedAt: null },
+        });
+        await tx.venta.create({
+          data: {
+            ...baseVenta(),
+            numero: await siguienteNumero(tx, VAPES, "VENTA"),
+            codigo: "TST-PRODUCTO",
+            subtotal: "16000.00",
+            total: "16000.00",
+            costoTotal: "9500.00",
+            gananciaBruta: "6500.00",
+            items: {
+              create: [
+                {
+                  varianteId: va.id,
+                  productoId: otro.id,
+                  cantidad: 1,
+                  precioLista: "16000.00",
+                  precioUnitario: "16000.00",
+                  costoUnitario: "9500.00",
+                  subtotal: "16000.00",
+                },
+              ],
+            },
+          },
+        });
+      }),
+    "no corresponde a la variante",
+  );
+  await rechaza(
+    "código de venta repetido en el mismo panel",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const venta = await ventaConfirmada(tx);
+        await tx.venta.create({
+          data: {
+            ...baseVenta(),
+            numero: await siguienteNumero(tx, VAPES, "VENTA"),
+            codigo: venta.codigo,
+            subtotal: "16000.00",
+            total: "16000.00",
+            costoTotal: "9500.00",
+            gananciaBruta: "6500.00",
+            items: {
+              create: [
+                {
+                  varianteId: vb.id,
+                  productoId: vb.productoId,
+                  cantidad: 1,
+                  precioLista: "16000.00",
+                  precioUnitario: "16000.00",
+                  costoUnitario: "9500.00",
+                  subtotal: "16000.00",
+                },
+              ],
+            },
+          },
+        });
+      }),
+    "Unique constraint failed",
+  );
+  await rechaza(
+    "venta sin cliente",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const venta = await ventaConfirmada(tx);
+        await tx.$executeRaw`UPDATE "Venta" SET "clienteId" = NULL WHERE "id" = ${venta.id}`;
+      }),
+    /clienteId|null value|no se modifica/,
+  );
+
+  console.log("E2) Devoluciones por garantía");
+  async function devolucion(tx: Tx, observacion: string) {
+    const numero = await siguienteNumero(tx, VAPES, "DEVOLUCION");
+    return tx.devolucion.create({
+      data: {
+        numero,
+        codigo: `TST-D-${numero}`,
+        clienteId: clienteVapes.id,
+        depositoId: g1.id,
+        observacion,
+        usuarioId: owner.id,
+        items: { create: [{ varianteId: va.id, productoId: va.productoId, cantidad: 1 }] },
+      },
+      include: { items: true },
+    });
+  }
+  await rechaza(
+    "observación de devolución con menos de 10 caracteres",
+    () => transaccion(ctxVapes, (tx) => devolucion(tx, "  fallado  ")),
+    "Devolucion_observacion_chk",
+  );
+  const dev = await enRollback((tx) => devolucion(tx, "No enciende desde el primer día"));
+  check(
+    dev?.estado === "REGISTRADA" && dev.ventaId === null && dev.items.length === 1,
+    "devolución con cliente, sin venta vinculada y con ítems: OK",
+  );
+  await rechaza(
+    "modificar la observación de una devolución",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const d = await devolucion(tx, "No enciende desde el primer día");
+        await tx.devolucion.update({
+          where: { id: d.id },
+          data: { observacion: "Otra observación distinta" },
+        });
+      }),
+    "no se modifica: se anula",
+  );
+  await rechaza(
+    "modificar un ítem de devolución",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const d = await devolucion(tx, "No enciende desde el primer día");
+        await tx.devolucionItem.update({ where: { id: d.items[0]!.id }, data: { cantidad: 2 } });
+      }),
+    /inmutable|no se pueden modificar|prevent/i,
+  );
+
+  console.log("E3) Signo de los movimientos (motor = trigger = UI)");
+  const signosSql = await prisma.$queryRaw<{ tipo: string; signo: number }[]>`
+    SELECT t::text AS tipo, fn_signo_movimiento(t) AS signo
+    FROM unnest(enum_range(NULL::"TipoMovimiento")) AS t`;
+  check(
+    signosSql.length === Object.values(TipoMovimiento).length &&
+      signosSql.every(
+        (f) =>
+          signoMovimiento(f.tipo as TipoMovimiento) === f.signo &&
+          TIPO_MOVIMIENTO_UI[f.tipo as TipoMovimiento].signo === f.signo,
+      ),
+    `fn_signo_movimiento coincide con el motor y la UI en los ${signosSql.length} tipos`,
+  );
+  check(
+    signosSql.find((f) => f.tipo === "GARANTIA")?.signo === -1 &&
+      signosSql.find((f) => f.tipo === "GARANTIA_ANULADA")?.signo === 1 &&
+      signosSql.find((f) => f.tipo === "VENTA_ANULADA")?.signo === 1,
+    "GARANTIA resta; GARANTIA_ANULADA y VENTA_ANULADA suman",
+  );
+  const garantia = await enRollback(async (tx) => {
+    const base = { varianteId: va.id, depositoId: g1.id, cantidad: 1, usuarioId: owner.id };
+    await registrarMovimiento(tx, { ...base, tipo: TipoMovimiento.INGRESO_MANUAL, motivo: "t" });
+    const egreso = await registrarMovimiento(tx, { ...base, tipo: TipoMovimiento.GARANTIA });
+    const vuelta = await registrarMovimiento(tx, {
+      ...base,
+      tipo: TipoMovimiento.GARANTIA_ANULADA,
+    });
+    const anulada = await registrarMovimiento(tx, { ...base, tipo: TipoMovimiento.VENTA_ANULADA });
+    return { egreso, vuelta, anulada };
+  });
+  check(
+    garantia !== undefined &&
+      garantia.egreso.stockPosterior === garantia.egreso.stockAnterior - 1 &&
+      garantia.vuelta.stockPosterior === garantia.vuelta.stockAnterior + 1 &&
+      garantia.anulada.stockPosterior === garantia.anulada.stockAnterior + 1,
+    "GARANTIA / GARANTIA_ANULADA / VENTA_ANULADA mueven el stock con el signo que acepta el trigger",
+  );
+  await rechaza(
+    "movimiento GARANTIA registrado como si sumara",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const s = await tx.stock.findUniqueOrThrow({
+          where: {
+            panelId_varianteId_depositoId: { panelId: VAPES, varianteId: va.id, depositoId: g1.id },
+          },
+        });
+        await tx.movimientoStock.create({
+          data: {
+            tipo: TipoMovimiento.GARANTIA,
+            varianteId: va.id,
+            depositoId: g1.id,
+            cantidad: 1,
+            stockAnterior: s.cantidad,
+            stockPosterior: s.cantidad + 1,
+            usuarioId: owner.id,
+          },
+        });
+        await tx.stock.update({ where: { id: s.id }, data: { cantidad: s.cantidad + 1 } });
+      }),
+    /stock|signo|posterior/i,
+  );
+
   const transf = await enRollback(async (tx) => {
     const t = await tx.transferencia.create({
       data: {
@@ -756,8 +1019,11 @@ async function main() {
           data: {
             panelId: COSMETIC,
             numero: 999_999,
+            codigo: "TST-CRUZADA",
             depositoId: g1.id,
-            usuarioId: owner.id,
+            clienteId: clienteVapes.id,
+            vendedorId: owner.id,
+            medioPago: MedioPago.EFECTIVO,
             subtotal: 0,
             total: 0,
             costoTotal: 0,
@@ -814,7 +1080,10 @@ async function main() {
   );
   await rechaza(
     "dbPara(Vapes) con panelId de otro panel",
-    () => db.cliente.create({ data: { panelId: COSMETIC, nombre: "Intruso" } }),
+    () =>
+      db.cliente.create({
+        data: { panelId: COSMETIC, nombre: "Intruso", telefono: "+541100009999" },
+      }),
     "Aislamiento de paneles",
   );
   try {
@@ -837,8 +1106,19 @@ async function main() {
     "PermisoUsuario_modulo_de_panel_chk",
   );
 
-  console.log("I) Clientes: teléfono normalizado y único por panel");
+  console.log("I) Clientes: teléfono obligatorio, normalizado y único por panel");
   const TEL = "+5491100001111";
+  await rechaza(
+    "cliente sin teléfono",
+    () =>
+      prisma.$executeRaw`INSERT INTO "Cliente" ("id","panelId","nombre","updatedAt") VALUES ('x', ${VAPES}, 'Sin tel', now())`,
+    /telefono|null value|23502/,
+  );
+  await rechaza(
+    "cliente sin nombre",
+    () => db.cliente.create({ data: { nombre: "   ", telefono: TEL } }),
+    "Cliente_nombre_chk",
+  );
   await rechaza(
     "teléfono sin normalizar",
     () => db.cliente.create({ data: { nombre: "Tel", telefono: "11 0000-1111" } }),
@@ -1187,21 +1467,49 @@ async function main() {
     "producto sin precio de venta es error",
   );
   check(
-    !v.borradorVentaSchema.safeParse({
+    v.generarVentaSchema.safeParse({
       depositoId: "d",
-      items: [
-        { varianteId: "a", cantidad: 1, precioUnitario: "" },
-        { varianteId: "a", cantidad: 1 },
-      ],
-    }).success,
-    "venta con ítem repetido es error",
+      cliente: { id: "c" },
+      medioPago: "EFECTIVO",
+      items: [{ varianteId: "a", cantidad: 1, precioEspecial: "" }],
+    }).data?.items[0]?.precioEspecial === undefined,
+    'precio especial "" → undefined (se cobra el de lista, no $0)',
   );
   check(
-    v.borradorVentaSchema.safeParse({
+    !v.generarVentaSchema.safeParse({
       depositoId: "d",
-      items: [{ varianteId: "a", cantidad: 1, precioUnitario: "" }],
-    }).data?.items[0]?.precioUnitario === undefined,
-    'precio de ítem "" → undefined (se usa el de lista, no $0)',
+      cliente: { id: "c" },
+      medioPago: "MERCADOPAGO",
+      items: [{ varianteId: "a", cantidad: 1 }],
+    }).success,
+    "medio de pago viejo (Mercado Pago) es error: solo efectivo, transferencia o Binance",
+  );
+  check(
+    v.generarVentaSchema.safeParse({
+      depositoId: "d",
+      cliente: { nuevo: { nombre: "Ana", telefono: "11 5555-0000" } },
+      medioPago: "BINANCE",
+      items: [{ varianteId: "a", cantidad: 1 }],
+    }).data?.tipo === "UNITARIA",
+    "venta con cliente nuevo y Binance; tipo por defecto UNITARIA",
+  );
+  check(
+    !registrarDevolucionSchema.safeParse({
+      clienteId: "c",
+      depositoId: "d",
+      items: [{ varianteId: "a", cantidad: 1 }],
+      observacion: "fallado",
+    }).success,
+    "devolución con observación de menos de 10 caracteres es error",
+  );
+  check(
+    !v.transferenciaRapidaSchema.safeParse({
+      varianteId: "x",
+      depositoOrigenId: "a",
+      depositoDestinoId: "a",
+      cantidad: 5,
+    }).success,
+    "transferir desde la fila al mismo galpón es error",
   );
   check(
     !v.crearTransferenciaSchema.safeParse({

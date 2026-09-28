@@ -1,9 +1,18 @@
 import { Prisma, TipoMovimiento, type MovimientoStock } from "@prisma/client";
+import { z } from "zod";
 
-import type { Tx } from "@/server/db/panel-scoped";
+import { dbPara, type Ctx, type Tx } from "@/server/db/panel-scoped";
+import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { ahora } from "@/lib/reloj";
 import { nombreConSabor } from "@/lib/ventas-ui";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
+import {
+  depositosActivosPanel,
+  filtrosStockSchema,
+  obtenerStock,
+  type DepositoStock,
+  type ResultadoStock,
+} from "@/server/services/inventario.service";
 
 /**
  * MOTOR DE STOCK
@@ -27,6 +36,8 @@ const TIPOS_ENTRADA: ReadonlySet<TipoMovimiento> = new Set([
   TipoMovimiento.DEVOLUCION_CLIENTE,
   TipoMovimiento.AJUSTE_POSITIVO,
   TipoMovimiento.TRANSFERENCIA_ENTRADA,
+  TipoMovimiento.GARANTIA_ANULADA,
+  TipoMovimiento.VENTA_ANULADA,
 ]);
 
 /** +1 si el tipo suma stock, -1 si resta. Espejo de fn_signo_movimiento() en SQL. */
@@ -254,4 +265,322 @@ export async function transferirStock(
 export async function stockTotalVariante(tx: Tx, varianteId: string): Promise<number> {
   const r = await tx.stock.aggregate({ where: { varianteId }, _sum: { cantidad: true } });
   return r._sum.cantidad ?? 0;
+}
+
+// =============================================================================
+// LECTURAS (pantalla Stock): por galpón, global, ledger y resumen.
+// No escriben nada: toda escritura pasa por el motor de arriba.
+// =============================================================================
+
+export interface FiltrosLecturaStock {
+  /** Producto, sabor, SKU o código de barras. */
+  q?: string;
+  marcaId?: string;
+  soloBajoMinimo?: boolean;
+  /** Global: agrupar por producto (pagina por producto). */
+  porProducto?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+function filtrosInventario(f: FiltrosLecturaStock, depositoId?: string) {
+  return filtrosStockSchema.parse({
+    q: f.q || undefined,
+    marcaId: f.marcaId || undefined,
+    depositoId,
+    soloBajoMinimo: f.soloBajoMinimo ?? false,
+    agruparPorProducto: f.porProducto ?? false,
+    page: f.page ?? 1,
+    pageSize: f.pageSize ?? 50,
+  });
+}
+
+/**
+ * Stock de UN galpón del panel: una fila por sabor con la cantidad en ese
+ * galpón, el mínimo y el estado (contra la cantidad del galpón). Un depósito
+ * que no es del panel (o está inactivo) da NotFoundError.
+ */
+export async function stockPorDeposito(
+  ctx: Ctx,
+  depositoId: string,
+  filtros: FiltrosLecturaStock = {},
+): Promise<ResultadoStock & { deposito: DepositoStock }> {
+  const r = await obtenerStock(ctx, filtrosInventario(filtros, depositoId));
+  if (!r.deposito) throw new NotFoundError("El galpón no existe o está inactivo.");
+  return { ...r, deposito: r.deposito };
+}
+
+/**
+ * Stock consolidado del panel (vw_stock_consolidado): por sabor, la cantidad
+ * en cada depósito activo + total + mínimo + estado (contra el total).
+ */
+export async function stockGlobal(
+  ctx: Ctx,
+  filtros: FiltrosLecturaStock = {},
+): Promise<ResultadoStock> {
+  return obtenerStock(ctx, filtrosInventario(filtros));
+}
+
+export interface ResumenStockPanel {
+  porDeposito: (DepositoStock & { unidades: number; bajoMinimo: number })[];
+  /** Unidades en todos los galpones. */
+  total: number;
+  /** Sabores activos con total del panel por debajo del mínimo. */
+  bajoMinimo: number;
+}
+
+const resumenSqlSchema = z.array(
+  z.object({
+    deposito_id: z.string(),
+    unidades: z.union([z.bigint(), z.number()]).transform(Number),
+    bajo: z.union([z.bigint(), z.number()]).transform(Number),
+  }),
+);
+const conteoSqlSchema = z.array(
+  z.object({ bajo: z.union([z.bigint(), z.number()]).transform(Number) }),
+);
+
+/**
+ * Unidades por galpón y total, y cuántos sabores activos están bajo el mínimo
+ * (por galpón: la cantidad del galpón; global: el total del panel).
+ * SQL cruda: filtra el panel a mano.
+ */
+export async function resumenStock(ctx: Ctx): Promise<ResumenStockPanel> {
+  const db = dbPara(ctx.panelId);
+  const depositos = await depositosActivosPanel(ctx);
+  const [porDeposito, global] = await Promise.all([
+    db.$queryRaw`
+      SELECT d."id" AS deposito_id,
+             COALESCE(SUM(COALESCE((s.por_deposito ->> d."id")::int, 0)), 0) AS unidades,
+             COUNT(*) FILTER (
+               WHERE v."activo" AND p."activo"
+                 AND COALESCE((s.por_deposito ->> d."id")::int, 0) < s.stock_minimo
+             ) AS bajo
+      FROM "Deposito" d
+      CROSS JOIN vw_stock_consolidado s
+      JOIN "Variante" v ON v."id" = s.variante_id
+      JOIN "Producto" p ON p."id" = s.producto_id
+      WHERE d."panelId" = ${ctx.panelId} AND d."activo" AND s.panel_id = ${ctx.panelId}
+      GROUP BY d."id"`,
+    db.$queryRaw`
+      SELECT COUNT(*) AS bajo FROM vw_alertas_stock WHERE panel_id = ${ctx.panelId}`,
+  ]);
+  const filas = new Map(resumenSqlSchema.parse(porDeposito).map((f) => [f.deposito_id, f]));
+  const lista = depositos.map((d) => ({
+    ...d,
+    unidades: filas.get(d.id)?.unidades ?? 0,
+    bajoMinimo: filas.get(d.id)?.bajo ?? 0,
+  }));
+  return {
+    porDeposito: lista,
+    total: lista.reduce((a, d) => a + d.unidades, 0),
+    bajoMinimo: conteoSqlSchema.parse(global)[0]?.bajo ?? 0,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Ledger
+// -----------------------------------------------------------------------------
+
+export interface ReferenciaMovimiento {
+  tipo: string;
+  id: string;
+  /** Código visible (VAP-000001, VAP-C-000001, VAP-D-000001, Transferencia #3). */
+  etiqueta: string;
+  /** Ruta completa (/p/{slug}/...) a la pantalla del documento, cuando existe. */
+  href: string | null;
+}
+
+export interface MovimientoListado {
+  id: string;
+  fecha: Date;
+  tipo: TipoMovimiento;
+  /** Cantidad con signo (+ entra, − sale). */
+  cantidad: number;
+  stockAnterior: number;
+  stockPosterior: number;
+  varianteId: string;
+  productoId: string;
+  /** "Producto — sabor" (solo el producto si no tiene sabores). */
+  nombre: string;
+  sku: string;
+  depositoId: string;
+  deposito: string;
+  usuario: string;
+  /** Solo para dueños (opciones.incluirCostos); null para el resto. */
+  costoUnitario: string | null;
+  motivo: string | null;
+  referencia: ReferenciaMovimiento | null;
+}
+
+export interface FiltrosLedger {
+  /** null / undefined = todos los galpones del panel. */
+  depositoId?: string | null;
+  varianteId?: string;
+  productoId?: string;
+  tipo?: TipoMovimiento;
+  usuarioId?: string;
+  referenciaTipo?: ReferenciaTipo;
+  referenciaId?: string;
+  desde?: Date;
+  hasta?: Date;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ResultadoLedger {
+  movimientos: MovimientoListado[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+function whereLedger(f: FiltrosLedger): Prisma.MovimientoStockWhereInput {
+  const where: Prisma.MovimientoStockWhereInput = {};
+  if (f.varianteId) where.varianteId = f.varianteId;
+  if (f.productoId) where.variante = { productoId: f.productoId };
+  if (f.depositoId) where.depositoId = f.depositoId;
+  if (f.usuarioId) where.usuarioId = f.usuarioId;
+  if (f.tipo) where.tipo = f.tipo;
+  if (f.referenciaTipo) where.referenciaTipo = f.referenciaTipo;
+  if (f.referenciaId) where.referenciaId = f.referenciaId;
+  if (f.desde || f.hasta) {
+    where.createdAt = {
+      ...(f.desde ? { gte: f.desde } : {}),
+      ...(f.hasta ? { lte: f.hasta } : {}),
+    };
+  }
+  return where;
+}
+
+/** Códigos visibles y links de las referencias, resueltos en lote (sin N+1). */
+async function resolverReferencias(
+  ctx: Ctx,
+  movs: { referenciaTipo: string | null; referenciaId: string | null }[],
+): Promise<Map<string, ReferenciaMovimiento>> {
+  const mapa = new Map<string, ReferenciaMovimiento>();
+  if (!movs.some((m) => m.referenciaTipo && m.referenciaId)) return mapa;
+  const db = dbPara(ctx.panelId);
+  const ids = (tipo: ReferenciaTipo) => [
+    ...new Set(movs.filter((m) => m.referenciaTipo === tipo).map((m) => m.referenciaId!)),
+  ];
+  const [panel, transferencias, ventas, compras, devoluciones] = await Promise.all([
+    db.panel.findUniqueOrThrow({ where: { id: ctx.panelId }, select: { slug: true } }),
+    db.transferencia.findMany({
+      where: { id: { in: ids("TRANSFERENCIA") } },
+      select: { id: true, numero: true },
+    }),
+    db.venta.findMany({ where: { id: { in: ids("VENTA") } }, select: { id: true, codigo: true } }),
+    db.compra.findMany({
+      where: { id: { in: ids("COMPRA") } },
+      select: { id: true, numero: true },
+    }),
+    db.devolucion.findMany({
+      where: { id: { in: ids("DEVOLUCION") } },
+      select: { id: true, codigo: true },
+    }),
+  ]);
+  const ruta = (r: string) => rutaPanel(panel.slug, r);
+  for (const t of transferencias)
+    mapa.set(`TRANSFERENCIA:${t.id}`, {
+      tipo: "TRANSFERENCIA",
+      id: t.id,
+      etiqueta: `Transferencia #${t.numero}`,
+      href: ruta(`/stock/movimientos/transferencias/${t.id}`),
+    });
+  for (const v of ventas)
+    mapa.set(`VENTA:${v.id}`, {
+      tipo: "VENTA",
+      id: v.id,
+      etiqueta: v.codigo,
+      href: ruta(`/ventas/${v.id}`),
+    });
+  for (const c of compras)
+    mapa.set(`COMPRA:${c.id}`, {
+      tipo: "COMPRA",
+      id: c.id,
+      etiqueta: formatearIdCompra(panel.slug, c.numero),
+      href: ruta(`/compras/${c.id}`),
+    });
+  for (const d of devoluciones)
+    mapa.set(`DEVOLUCION:${d.id}`, {
+      tipo: "DEVOLUCION",
+      id: d.id,
+      etiqueta: d.codigo,
+      href: ruta(`/devoluciones/${d.id}`),
+    });
+  for (const m of movs)
+    if (m.referenciaTipo === "AJUSTE" && m.referenciaId)
+      mapa.set(`AJUSTE:${m.referenciaId}`, {
+        tipo: "AJUSTE",
+        id: m.referenciaId,
+        etiqueta: "Ajuste",
+        href: null,
+      });
+  return mapa;
+}
+
+/**
+ * Ledger del panel paginado, más nuevo primero: producto — sabor, galpón,
+ * cantidad con signo, anterior → posterior, usuario y referencia (código
+ * visible + link). Sin depósito = todos los galpones. El costo unitario solo
+ * viaja con `incluirCostos` (dueños).
+ */
+export async function movimientos(
+  ctx: Ctx,
+  filtros: FiltrosLedger = {},
+  opciones: { incluirCostos?: boolean } = {},
+): Promise<ResultadoLedger> {
+  const db = dbPara(ctx.panelId);
+  const page = Math.max(1, filtros.page ?? 1);
+  const pageSize = Math.min(200, Math.max(1, filtros.pageSize ?? 50));
+  const where = whereLedger(filtros);
+  const [total, filas] = await Promise.all([
+    db.movimientoStock.count({ where }),
+    db.movimientoStock.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        variante: {
+          select: {
+            nombre: true,
+            sku: true,
+            productoId: true,
+            producto: { select: { nombreCompleto: true } },
+          },
+        },
+        deposito: { select: { nombre: true } },
+        usuario: { select: { nombre: true } },
+      },
+    }),
+  ]);
+  const refs = await resolverReferencias(ctx, filas);
+  return {
+    movimientos: filas.map((m) => ({
+      id: m.id,
+      fecha: m.createdAt,
+      tipo: m.tipo,
+      cantidad: signoMovimiento(m.tipo) * m.cantidad,
+      stockAnterior: m.stockAnterior,
+      stockPosterior: m.stockPosterior,
+      varianteId: m.varianteId,
+      productoId: m.variante.productoId,
+      nombre: nombreConSabor(m.variante.producto.nombreCompleto, m.variante.nombre),
+      sku: m.variante.sku,
+      depositoId: m.depositoId,
+      deposito: m.deposito.nombre,
+      usuario: m.usuario.nombre,
+      costoUnitario: opciones.incluirCostos && m.costoUnitario ? m.costoUnitario.toFixed(2) : null,
+      motivo: m.motivo,
+      referencia:
+        m.referenciaTipo && m.referenciaId
+          ? (refs.get(`${m.referenciaTipo}:${m.referenciaId}`) ?? null)
+          : null,
+    })),
+    total,
+    page,
+    pageSize,
+  };
 }

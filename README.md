@@ -5,8 +5,8 @@
 Sistema de gestión para un negocio con varias líneas de productos que funcionan como **sistemas
 independientes** (paneles): **Vapes**, **Cosmetic**, **Especiales** y los que los dueños agreguen desde la
 app. Cada panel tiene su propio catálogo (producto = marca + modelo + especificación, con sus sabores),
-stock por depósito, carga de stock escaneando con pistola lectora o cámara, proveedores con su lista de
-precios, compras, punto de venta y clientes. Los usuarios, la configuración general, los
+stock por galpón y global, carga de stock escaneando con pistola lectora o cámara, proveedores con su lista
+de precios, compras, ventas con cliente obligatorio, clientes y devoluciones por garantía. Los usuarios, la configuración general, los
 backups y la auditoría son globales.
 
 Es una PWA: se instala en el celular o la PC, abre directamente el último panel usado y, sin conexión, el
@@ -125,7 +125,7 @@ Autorización en tres capas:
   3. **Lint**: `eslint.config.mjs` prohíbe importar el cliente crudo `@/lib/db` (y crear otro `PrismaClient`)
      fuera de la capa de datos y de los servicios globales (auth, sesiones, usuarios, paneles, backups, salud,
      auditoría, identidad, exportar todo).
-- **Rutas por panel.** Todo lo de negocio vive en `/p/[slug]/…` (`/p/vapes/ventas/nueva`). El slug es
+- **Rutas por panel.** Todo lo de negocio vive en `/p/[slug]/…` (`/p/vapes/ventas`). El slug es
   kebab-case, único, y define el prefijo de los IDs visibles (tres primeras letras: `vapes` → `VAP`). Las
   rutas globales son `/paneles`, `/usuarios`, `/configuracion`, `/cuenta` y `/ayuda`. `/` redirige a
   `/paneles`, que entra directo al panel si el usuario accede a uno solo; la PWA arranca en
@@ -158,17 +158,21 @@ Autorización en tres capas:
   una carga sin depósito activo aunque no venga de la pantalla. Un código desconocido abre el alta rápida
   (`AltaRapidaSheet`), que crea el producto o le agrega el sabor si marca + modelo + especificación ya
   existen.
-- **Ventas simples.** Una venta se cobra completa en el momento con **un** medio de pago (efectivo,
-  transferencia, débito, crédito, MercadoPago u otro); la base exige el medio al confirmar. Sin cuenta
-  corriente, pagos partidos, caja ni comprobantes. Una venta confirmada no se edita: se anula (el stock
-  vuelve al depósito).
+- **Ventas simples.** Una venta nace confirmada (sin borradores), con código `VAP-000001`, galpón, **cliente**
+  (nombre + teléfono, único por panel) y **un** medio de pago (efectivo, transferencia o Binance), todos
+  obligatorios en la base. Guarda precio de lista, precio cobrado (precio especial) y costo por renglón. Sin
+  cuenta corriente, pagos partidos, caja ni comprobantes. No se edita: se anula (`VENTA_ANULADA` devuelve el
+  stock).
+- **Devoluciones por garantía.** Cliente obligatorio, venta opcional, observación (≥ 10 caracteres): se
+  entrega una unidad nueva del galpón elegido (`GARANTIA`); anularla la devuelve (`GARANTIA_ANULADA`).
 - **Ledger de movimientos inmutable.** Todo cambio de stock es una fila de `MovimientoStock` (tipo, cantidad,
   stock anterior y posterior, costo, referencia). Triggers bloquean `UPDATE`/`DELETE`/`TRUNCATE`; un error se
   corrige con un ajuste inverso. Lo mismo para `AuditLog`.
 - **Stock derivado.** `Stock` es un caché del ledger: solo cambia vía `registrarMovimiento()` /
   `transferirStock()` (`stock.service.ts`). La base rechaza un `UPDATE` a `Stock` sin movimiento en la misma
   transacción, un movimiento cuyo `stockAnterior` no coincide con el stock real y cualquier stock negativo.
-  La vista **Global** de Stock consolida todos los depósitos del panel.
+  La pantalla **Stock** tiene una pestaña por galpón (su stock, transferir a otro galpón en el acto, ajustar
+  y sus movimientos) y **Global** (una columna por galpón + total y los movimientos de todos).
 - **Quién ve costos.** Último costo de los sabores, costo de la venta y ganancia bruta los ven únicamente los
   dueños, en cualquier pantalla y en el dashboard. Costos y totales de compras y precios de proveedores los
   ven los dueños y quien tiene `ver` en Compras (`veCostosCompras()`); el filtro se aplica en el servidor.
@@ -304,8 +308,8 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 ```text
 prisma/
   schema.prisma           Modelo de datos (paneles + tablas de negocio con panelId)
-  migrations/             Migraciones SQL (CHECKs, triggers y vistas incluidos; reformas: 20260928160000_reforma_multipanel y
-                          20260929090000_catalogo_proveedores_compras)
+  migrations/             Migraciones SQL (CHECKs, triggers y vistas incluidos; reformas: 20260928160000_reforma_multipanel,
+                          20260929090000_catalogo_proveedores_compras y 20260930090000_ventas_clientes_devoluciones)
   seed.ts, seed-demo.ts   Seed base y 90 días simulados en Vapes
 src/
   app/
@@ -314,8 +318,8 @@ src/
       page.tsx            Redirige a /paneles
       (global)/           Fuera de los paneles: paneles (selector y «Agregar panel»), usuarios y usuarios/[id],
                           configuracion (negocio, sistemas, backups, auditoria, exportar-todo), cuenta, ayuda, sin-acceso
-      p/[slug]/           Dentro de un panel: inicio (dashboard), ventas, escanear, stock (+ movimientos, ingreso,
-                          ajuste, transferencias), clientes, compras, productos (+ cargar, etiquetas), proveedores,
+      p/[slug]/           Dentro de un panel: inicio (dashboard), ventas, stock (pestañas por galpón y Global +
+                          movimientos, transferencias), clientes, compras, productos (+ cargar, etiquetas), proveedores,
                           devoluciones, cotizador-unitario, cotizador-mayorista, reportes,
                           configuracion (depositos, categorias, marcas, escaner, ventas), sin-acceso
     api/                  Route handlers: auth, p/[slug]/catalogo/offline, p/[slug]/etiquetas, p/[slug]/stock/exportar,
@@ -362,8 +366,8 @@ docs/                     Manual, modelo de datos, deploy
   contraseña, permisos, alta de producto (precio del producto y precio propio de un sabor), carga de stock
   escaneando (sin galpón no se carga nada, alta rápida de códigos desconocidos, stock por galpón), proveedores
   con precios, compra con costo sugerido y «recibir actualizando el precio», catálogo de la empleada (sin
-  costos, sin cargar stock ni entrar a Compras), venta en celular, venta sin stock, transferencia, modo sin
-  conexión (solo consulta), seguridad y paneles (empleada con un solo panel entra directo; dueño crea y
+  costos, sin cargar stock ni entrar a Compras), ventas, transferencia desde la fila del stock, stock por galpón
+  y global (18), modo sin conexión (`/offline`, solo consulta), seguridad y paneles (empleada con un solo panel entra directo; dueño crea y
   desactiva un panel).
 - **Restauración** (`pnpm test:restore`): hace un backup de la base de `DATABASE_URL`, lo restaura en una base
   vacía (`RESTORE_DB`, default `gestion_restore`) y compara `COUNT(*)` de todas las tablas, la suma de stock y

@@ -56,17 +56,33 @@ enum TipoMovimiento {
   INGRESO_COMPRA
   INGRESO_MANUAL
   VENTA
+  /// Histórico (anulación de ventas antes de R3). Nuevas anulaciones: VENTA_ANULADA.
   DEVOLUCION_CLIENTE
   DEVOLUCION_PROVEEDOR
   AJUSTE_POSITIVO
   AJUSTE_NEGATIVO
   TRANSFERENCIA_SALIDA
   TRANSFERENCIA_ENTRADA
+  /// Egreso: la unidad nueva que se le entrega al cliente por una falla (garantía).
+  GARANTIA
+  /// Ingreso: se anuló una devolución por garantía.
+  GARANTIA_ANULADA
+  /// Ingreso: se anuló una venta (vuelve la mercadería).
+  VENTA_ANULADA
 }
 
 enum EstadoVenta {
-  BORRADOR
   CONFIRMADA
+  ANULADA
+}
+
+enum TipoVenta {
+  UNITARIA
+  MAYORISTA
+}
+
+enum EstadoDevolucion {
+  REGISTRADA
   ANULADA
 }
 
@@ -90,10 +106,7 @@ enum Moneda {
 enum MedioPago {
   EFECTIVO
   TRANSFERENCIA
-  DEBITO
-  CREDITO
-  MERCADOPAGO
-  OTRO
+  BINANCE
 }
 
 enum AccionAuditoria {
@@ -127,18 +140,19 @@ model Usuario {
   updatedAt           DateTime   @updatedAt
   deletedAt           DateTime?
 
-  permisos          PermisoUsuario[]
-  paneles           UsuarioPanel[]
-  movimientos       MovimientoStock[]
-  compras           Compra[]
-  ventas            Venta[]             @relation("VentaUsuario")
-  ventasAnuladas    Venta[]             @relation("VentaAnuladaPor")
-  transferencias    Transferencia[]
-  auditLogs         AuditLog[]
-  devoluciones      Devolucion[]
-  preciosProveedor  ProveedorProducto[]
-  sesiones          Sesion[]            @relation("SesionUsuario")
-  sesionesRevocadas Sesion[]            @relation("SesionRevocadaPor")
+  permisos             PermisoUsuario[]
+  paneles              UsuarioPanel[]
+  movimientos          MovimientoStock[]
+  compras              Compra[]
+  ventas               Venta[]             @relation("VentaUsuario")
+  ventasAnuladas       Venta[]             @relation("VentaAnuladaPor")
+  transferencias       Transferencia[]
+  auditLogs            AuditLog[]
+  devoluciones         Devolucion[]        @relation("DevolucionUsuario")
+  devolucionesAnuladas Devolucion[]        @relation("DevolucionAnuladaPor")
+  preciosProveedor     ProveedorProducto[]
+  sesiones             Sesion[]            @relation("SesionUsuario")
+  sesionesRevocadas    Sesion[]            @relation("SesionRevocadaPor")
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -283,6 +297,7 @@ model Panel {
   ventas              Venta[]
   ventaItems          VentaItem[]
   devoluciones        Devolucion[]
+  devolucionItems     DevolucionItem[]
   transferencias      Transferencia[]
   transferenciaItems  TransferenciaItem[]
   configuraciones     Configuracion[]
@@ -413,27 +428,21 @@ model Cliente {
   id        String    @id @default(cuid())
   panelId   String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   nombre    String
-  apellido  String?
-  /// Único por panel entre clientes no borrados (índice único parcial en SQL).
-  documento String?
-  /// Normalizado: "+54" + solo dígitos. Único por panel entre clientes no
+  /// Obligatorio, normalizado "+54" + dígitos. Único por panel entre clientes no
   /// borrados (índice único parcial en SQL + CHECK de formato).
-  telefono  String?
-  email     String?
-  direccion String?
+  telefono  String
   notas     String?
   activo    Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  panel  Panel   @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  ventas Venta[]
+  panel        Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  ventas       Venta[]
+  devoluciones Devolucion[]
 
   @@index([panelId, nombre])
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_nombre_trgm")
-  @@index([apellido(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_apellido_trgm")
-  @@index([documento(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_documento_trgm")
   @@index([telefono(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_telefono_trgm")
 }
 
@@ -465,12 +474,14 @@ model Producto {
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
-  panel       Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  categoria   Categoria?          @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
-  marca       Marca               @relation(fields: [marcaId], references: [id], onDelete: Restrict)
-  variantes   Variante[]
-  proveedores ProveedorProducto[]
-  compraItems CompraItem[]
+  panel           Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  categoria       Categoria?          @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  marca           Marca               @relation(fields: [marcaId], references: [id], onDelete: Restrict)
+  variantes       Variante[]
+  proveedores     ProveedorProducto[]
+  compraItems     CompraItem[]
+  ventaItems      VentaItem[]
+  devolucionItems DevolucionItem[]
 
   @@unique([panelId, marcaId, nombre, especificacionNorm])
   @@index([panelId, categoriaId])
@@ -509,6 +520,7 @@ model Variante {
   movimientos         MovimientoStock[]
   compraItems         CompraItem[]
   ventaItems          VentaItem[]
+  devolucionItems     DevolucionItem[]
   transferenciaItems  TransferenciaItem[]
 
   @@unique([panelId, sku])
@@ -650,29 +662,32 @@ model CompraItem {
 // Ventas (se cobran completas en el momento, con un único medio de pago)
 // -----------------------------------------------------------------------------
 
+/// Venta: se cobra completa en el momento con un solo medio de pago. Sin
+/// galpón, cliente o medio de pago no existe. Inmutable: se anula.
 model Venta {
   id              String      @id @default(cuid())
   panelId         String      @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  /// Correlativo por panel (tabla Secuencia). ID visible: {SLUG}-{000001}.
+  /// Correlativo por panel (Secuencia VENTA).
   numero          Int
+  /// ID de venta visible: "VAP-000001". Único por panel.
+  codigo          String
   fecha           DateTime    @default(now())
-  clienteId       String?
-  /// Depósito de donde sale la mercadería.
+  clienteId       String
   depositoId      String
-  estado          EstadoVenta @default(BORRADOR)
+  /// Quién la hizo (rendimiento por vendedor).
+  vendedorId      String
+  tipo            TipoVenta   @default(UNITARIA)
+  estado          EstadoVenta @default(CONFIRMADA)
+  medioPago       MedioPago
   subtotal        Decimal     @db.Decimal(12, 2)
   descuento       Decimal     @default(0) @db.Decimal(12, 2)
+  /// subtotal − descuento (CHECK en DB).
   total           Decimal     @db.Decimal(12, 2)
-  /// Snapshot: suma de costoUnitario * cantidad de los ítems.
+  /// Σ cantidad × costoUnitario (snapshot del último costo al vender).
   costoTotal      Decimal     @db.Decimal(12, 2)
-  /// total - costoTotal (CHECK en DB).
+  /// total − costoTotal (CHECK en DB).
   gananciaBruta   Decimal     @db.Decimal(12, 2)
-  /// Obligatorio al confirmar (CHECK en DB).
-  medioPago       MedioPago?
-  /// Ajuste por redondear el total (≤ 0: siempre a favor del cliente).
-  redondeo        Decimal     @default(0) @db.Decimal(12, 2)
   notas           String?
-  usuarioId       String
   anuladaPorId    String?
   motivoAnulacion String?
   anuladaAt       DateTime?
@@ -680,70 +695,109 @@ model Venta {
   updatedAt       DateTime    @updatedAt
 
   panel        Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  cliente      Cliente?     @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  cliente      Cliente      @relation(fields: [clienteId], references: [id], onDelete: Restrict)
   deposito     Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-  usuario      Usuario      @relation("VentaUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  vendedor     Usuario      @relation("VentaUsuario", fields: [vendedorId], references: [id], onDelete: Restrict)
   anuladaPor   Usuario?     @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
   items        VentaItem[]
   devoluciones Devolucion[]
 
   @@unique([panelId, numero])
+  @@unique([panelId, codigo])
   @@index([panelId, fecha])
-  @@index([panelId, estado, fecha])
-  @@index([panelId, clienteId, estado])
+  @@index([panelId, vendedorId, fecha])
+  @@index([panelId, clienteId])
+  @@index([panelId, tipo, fecha])
   @@index([panelId, depositoId, fecha])
-  /// Dashboard de un empleado sin REPORTES: solo sus ventas del período.
-  @@index([panelId, usuarioId, fecha])
 }
 
 model VentaItem {
-  id             String   @id @default(cuid())
-  panelId        String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  ventaId        String
-  varianteId     String
-  cantidad       Int
-  /// Snapshot del precio de venta al momento de la venta.
-  precioUnitario Decimal  @db.Decimal(12, 2)
-  /// Snapshot del costo al momento de la venta (ganancia histórica estable).
-  costoUnitario  Decimal  @db.Decimal(12, 2)
-  descuento      Decimal  @default(0) @db.Decimal(12, 2)
-  /// cantidad * precioUnitario - descuento (CHECK en DB).
-  subtotal       Decimal  @db.Decimal(12, 2)
-  /// Ej: "precio modificado por Ana de $16.000 a $15.000".
-  notas          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(cuid())
+  panelId          String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  ventaId          String
+  varianteId       String
+  /// Desnormalizado (= variante.productoId, lo verifica un trigger).
+  productoId       String
+  cantidad         Int
+  /// precioVentaEfectivo al momento de vender.
+  precioLista      Decimal  @db.Decimal(12, 2)
+  /// Lo cobrado por unidad: el de lista salvo precio especial.
+  precioUnitario   Decimal  @db.Decimal(12, 2)
+  esPrecioEspecial Boolean  @default(false)
+  /// Snapshot de Variante.ultimoCosto (0 si nunca se compró).
+  costoUnitario    Decimal  @db.Decimal(12, 2)
+  /// cantidad × precioUnitario (CHECK en DB).
+  subtotal         Decimal  @db.Decimal(12, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
   variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
-  @@unique([ventaId, varianteId])
+  @@unique([panelId, ventaId, varianteId])
   @@index([panelId, varianteId])
+  @@index([panelId, productoId])
 }
 
-/// Devolución de una venta. R3 la redefine (devoluciones por garantía): por
-/// ahora sin campos económicos. Inmutable.
+/// Devolución por GARANTÍA: al cliente se le entrega una unidad nueva, que
+/// sale del stock del galpón elegido (movimiento GARANTIA).
 model Devolucion {
-  id         String   @id @default(cuid())
-  panelId    String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  numero     Int
-  ventaId    String
-  /// Depósito al que vuelve la mercadería.
-  depositoId String
-  fecha      DateTime @default(now())
-  motivo     String
-  usuarioId  String
-  createdAt  DateTime @default(now())
+  id              String           @id @default(cuid())
+  panelId         String           @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Correlativo por panel (Secuencia DEVOLUCION).
+  numero          Int
+  /// ID visible: "VAP-D-000001". Único por panel.
+  codigo          String
+  fecha           DateTime         @default(now())
+  clienteId       String
+  /// La venta original, si se conoce.
+  ventaId         String?
+  /// De dónde sale la unidad nueva que se entrega.
+  depositoId      String
+  /// Por qué se devolvió (mínimo 10 caracteres, CHECK en DB).
+  observacion     String
+  usuarioId       String
+  estado          EstadoDevolucion @default(REGISTRADA)
+  anuladaPorId    String?
+  motivoAnulacion String?
+  anuladaAt       DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
-  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Restrict)
-  deposito Deposito @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  panel      Panel            @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  cliente    Cliente          @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  venta      Venta?           @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  deposito   Deposito         @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  usuario    Usuario          @relation("DevolucionUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  anuladaPor Usuario?         @relation("DevolucionAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+  items      DevolucionItem[]
 
   @@unique([panelId, numero])
-  @@index([panelId, ventaId])
+  @@unique([panelId, codigo])
   @@index([panelId, fecha])
+  @@index([panelId, clienteId])
+  @@index([panelId, ventaId])
+}
+
+model DevolucionItem {
+  id           String   @id @default(cuid())
+  panelId      String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  devolucionId String
+  varianteId   String
+  /// Desnormalizado (= variante.productoId, lo verifica un trigger).
+  productoId   String
+  cantidad     Int
+  createdAt    DateTime @default(now())
+
+  panel      Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  devolucion Devolucion @relation(fields: [devolucionId], references: [id], onDelete: Cascade)
+  variante   Variante   @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  producto   Producto   @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, devolucionId, varianteId])
+  @@index([panelId, varianteId])
 }
 
 // -----------------------------------------------------------------------------

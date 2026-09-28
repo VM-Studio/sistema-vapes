@@ -1,12 +1,14 @@
 /**
  * SEED DEMO — 90 días de operación simulada del panel Vapes (ventas, compras,
- * transferencias, ajustes y clientes) para probar el dashboard y los listados.
+ * transferencias, ajustes, clientes y devoluciones por garantía) para probar
+ * el dashboard y los listados.
  * Separado del seed base (que sigue siendo el mínimo para arrancar). Los
  * paneles Cosmetic y Especiales no se tocan.
  *
  * La operación no inserta filas "a mano": fija el reloj de negocio
  * (src/lib/reloj.ts) en cada momento simulado y llama a los MISMOS servicios
- * que la app (vender, anular, compras, transferencias, ajustes) con
+ * que la app (generarVenta, anularVenta, compras, transferencias, ajustes,
+ * registrarDevolucion) con
  * `ctx = { panelId: Vapes, usuarioId }`. Así los triggers, la numeración por
  * panel, el último costo de cada sabor y el ledger se ejercitan de verdad.
  * El catálogo extra y los proveedores demo se crean con el cliente del panel.
@@ -23,13 +25,15 @@ import { prisma } from "../src/lib/db";
 import { normalizarPermiso } from "../src/lib/permisos";
 import { ahora, fijarReloj } from "../src/lib/reloj";
 import { crearClienteSchema, normalizarTelefono } from "../src/lib/validations/cliente";
-import { borradorVentaSchema, venderSchema } from "../src/lib/validations/venta";
+import { registrarDevolucionSchema } from "../src/lib/validations/devolucion";
+import { generarVentaSchema } from "../src/lib/validations/venta";
 import { diaEn, inicioDia, sumarDias, type DiaISO } from "../src/lib/zona-horaria";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { DomainError } from "../src/server/errors";
 import { crearCliente } from "../src/server/services/cliente.service";
 import { crearCompra, recibirCompra } from "../src/server/services/compra.service";
 import { zonaHorariaNegocio } from "../src/server/services/dashboard.service";
+import { anularDevolucion, registrarDevolucion } from "../src/server/services/devolucion.service";
 import {
   completarTransferencia,
   crearTransferencia,
@@ -37,7 +41,11 @@ import {
 } from "../src/server/services/movimiento.service";
 import { generarSku } from "../src/server/services/producto.service";
 import { registrarMovimiento } from "../src/server/services/stock.service";
-import { anularVenta, crearBorrador, vender } from "../src/server/services/venta.service";
+import {
+  anularVenta,
+  generarVenta,
+  type VentaGenerada,
+} from "../src/server/services/venta.service";
 
 /**
  * En producción el seed NO corre (crea usuarios con contraseñas conocidas):
@@ -53,7 +61,6 @@ if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "true") 
 const PANEL = "pnl_vapes";
 const db = dbPara(PANEL);
 const DIAS = 90;
-const DUENO = { puedeEditar: true };
 const META = { ip: "127.0.0.1", userAgent: "seed-demo" };
 const ctxDe = (u: { id: string }): Ctx => ({ panelId: PANEL, usuarioId: u.id, meta: META });
 
@@ -261,6 +268,7 @@ async function crearUsuariosDemo() {
       [Modulo.STOCK, true],
       [Modulo.PRODUCTOS, false],
       [Modulo.CLIENTES, true],
+      [Modulo.DEVOLUCIONES, true],
       [Modulo.COTIZADOR, false],
     ] as const) {
       const { panelId, ...acciones } = normalizarPermiso({
@@ -282,15 +290,19 @@ async function crearUsuariosDemo() {
   return vendedores;
 }
 
-/** Teléfonos distintos entre sí y del cliente del seed base (+541155550101). */
+/** Clientes habituales: teléfonos distintos entre sí y de los del seed base (+54115555010x). */
 const CLIENTES_DEMO = [
-  { nombre: "Sofía", apellido: "Ramírez", documento: "35111222", telefono: "11 5555-0201" },
-  { nombre: "Julián", apellido: "Pereyra", documento: "33222333", telefono: "11 5555-0202" },
-  { nombre: "Camila", apellido: "Torres", documento: "38333444", telefono: "11 5555-0203" },
-  { nombre: "Kiosco El Paso", documento: "30712222334", telefono: "0351 455-0204" },
-  { nombre: "Matías", apellido: "Luna", documento: "36444555", telefono: "+54 9 11 5555-0205" },
-  { nombre: "Valentina", apellido: "Sosa", documento: "39555666", telefono: "11 5555-0206" },
+  { nombre: "Sofía Ramírez", telefono: "11 5555-0201" },
+  { nombre: "Julián Pereyra", telefono: "11 5555-0202" },
+  { nombre: "Camila Torres", telefono: "11 5555-0203" },
+  { nombre: "Kiosco El Paso", telefono: "0351 455-0204", notas: "Compra por mayor." },
+  { nombre: "Matías Luna", telefono: "+54 9 11 5555-0205" },
+  { nombre: "Valentina Sosa", telefono: "11 5555-0206" },
 ];
+
+/** Nombres para los clientes que se dan de alta en el momento de la venta. */
+const NOMBRES = ["Agustín", "Florencia", "Tomás", "Micaela", "Bruno", "Rocío", "Joaquín", "Paula"];
+const APELLIDOS = ["Benítez", "Castro", "Medina", "Rojas", "Acosta", "Molina", "Suárez", "Ríos"];
 
 /** Proveedores demo, con su lista de precios por producto (nombre completo). */
 const PROVEEDORES_DEMO = [
@@ -317,12 +329,18 @@ const PROVEEDORES_DEMO = [
 ];
 
 const MEDIOS = [
-  { valor: MedioPago.EFECTIVO, peso: 45 },
-  { valor: MedioPago.TRANSFERENCIA, peso: 22 },
-  { valor: MedioPago.MERCADOPAGO, peso: 14 },
-  { valor: MedioPago.DEBITO, peso: 12 },
-  { valor: MedioPago.CREDITO, peso: 7 },
+  { valor: MedioPago.EFECTIVO, peso: 55 },
+  { valor: MedioPago.TRANSFERENCIA, peso: 35 },
+  { valor: MedioPago.BINANCE, peso: 10 },
 ] as const;
+
+/** Fallas típicas que se cambian por garantía (observación ≥ 10 caracteres). */
+const FALLAS = [
+  "No enciende: la luz titila y no tira (demo).",
+  "Vino con pérdida de líquido en la caja (demo).",
+  "No carga con el cable original (demo).",
+  "Sabor a quemado desde la primera pitada (demo).",
+];
 
 // -----------------------------------------------------------------------------
 // Simulación
@@ -371,13 +389,16 @@ async function main() {
   fijarReloj(() => en(sumarDias(primerDia, -1), 10));
   await crearCatalogoDemo(ctxOwner, g1.id, g2.id);
   const [ana, lucas] = await crearUsuariosDemo();
-  const clientes: { id: string }[] = [];
+  const clientes: { id: string }[] = await db.cliente.findMany({
+    where: { deletedAt: null, activo: true },
+    select: { id: true },
+  });
   for (const c of CLIENTES_DEMO) {
     const datos = crearClienteSchema.parse(c);
     const existe = await db.cliente.findFirst({
-      where: { documento: datos.documento, deletedAt: null },
+      where: { telefono: normalizarTelefono(datos.telefono)!, deletedAt: null },
     });
-    clientes.push(existe ?? (await crearCliente(ctxOwner, datos)));
+    if (!existe) clientes.push(await crearCliente(ctxOwner, datos));
   }
   const proveedores: { id: string }[] = [
     await db.proveedor.findFirstOrThrow({ where: { deletedAt: null } }),
@@ -444,7 +465,19 @@ async function main() {
     [g2.id]: [lucas!, owner2],
   };
 
-  const stats = { ventas: 0, anuladas: 0, compras: 0, transferencias: 0, ajustes: 0, fallidas: 0 };
+  const stats = {
+    ventas: 0,
+    anuladas: 0,
+    clientesNuevos: 0,
+    devoluciones: 0,
+    compras: 0,
+    transferencias: 0,
+    ajustes: 0,
+    fallidas: 0,
+  };
+  /** Ventas recientes (para vincular devoluciones por garantía). */
+  const recientes: { venta: VentaGenerada; depositoId: string }[] = [];
+  let altas = 0;
   const agenda = new Map<DiaISO, Evento[]>();
   const esDomingo = (dia: DiaISO) => new Date(`${dia}T12:00:00Z`).getUTCDay() === 0;
   const agendar = (dia: DiaISO, momento: Date, hacer: () => Promise<void>, orden = 5) => {
@@ -485,30 +518,89 @@ async function main() {
       if (disponible >= cant) lineas.set(v.id, (lineas.get(v.id) ?? 0) + cant);
     }
     if (lineas.size === 0) return;
-    const cliente = azar() < 0.25 ? elegir(clientes) : null;
     const medioPago = ponderado(MEDIOS);
-    const datos = venderSchema.parse({
-      venta: {
-        depositoId,
-        clienteId: cliente?.id,
-        items: [...lineas].map(([varianteId, cantidad]) => ({ varianteId, cantidad })),
-      },
+    const esDueno = cajero.id === owner!.id || cajero.id === owner2!.id;
+    const mayorista = azar() < 0.08;
+    // 65%: cliente habitual; el resto se da de alta en la misma venta (nombre + teléfono).
+    let cliente: { id: string } | { nuevo: { nombre: string; telefono: string } };
+    if (azar() < 0.65) cliente = { id: elegir(clientes).id };
+    else {
+      altas++;
+      cliente = {
+        nuevo: {
+          nombre: `${elegir(NOMBRES)} ${elegir(APELLIDOS)}`,
+          telefono: `11 6${String(altas).padStart(3, "0")}-${String(4000 + altas).slice(-4)}`,
+        },
+      };
+    }
+    const items = [...lineas].map(([varianteId, cantidad]) => ({
+      varianteId,
+      cantidad: mayorista ? cantidad * 5 : cantidad,
+      precioEspecial: undefined as string | undefined,
+    }));
+    // Mayorista: si hay stock para multiplicar, precio especial (−12%) que solo da un dueño.
+    for (const it of items) {
+      if (!mayorista) break;
+      if ((await stockEn(it.varianteId, depositoId)) < it.cantidad) it.cantidad /= 5;
+      else if (esDueno) it.precioEspecial = (await precioLista(it.varianteId)).mul(0.88).toFixed(0);
+    }
+    const datos = generarVentaSchema.parse({
+      depositoId,
+      cliente,
+      items,
       medioPago,
-      // En efectivo, a veces se redondea a favor del cliente.
-      redondearA: medioPago === MedioPago.EFECTIVO && azar() < 0.3 ? 100 : 0,
+      tipo: mayorista ? "MAYORISTA" : "UNITARIA",
+      // En efectivo, a veces el dueño redondea a favor del cliente.
+      descuento: esDueno && medioPago === MedioPago.EFECTIVO && azar() < 0.3 ? "500.00" : undefined,
     });
     try {
-      const v = await vender(ctxDe(cajero), datos, DUENO);
+      const v = await generarVenta(ctxDe(cajero), datos, { puedeEditar: esDueno });
       stats.ventas++;
+      if (v.clienteNuevo) {
+        stats.clientesNuevos++;
+        clientes.push({ id: v.cliente.id });
+      }
+      recientes.push({ venta: v, depositoId });
+      if (recientes.length > 20) recientes.shift();
       // ~3%: se anula en el momento (error de carga); la mercadería vuelve al depósito.
       if (azar() < 0.03) {
         await anularVenta(ctxOwner, v.id, "Error de carga: se cobró dos veces");
+        recientes.pop();
         stats.anuladas++;
       }
     } catch (e) {
       if (!(e instanceof DomainError)) throw e;
       stats.fallidas++;
     }
+  }
+
+  async function precioLista(varianteId: string): Promise<Prisma.Decimal> {
+    const v = await db.variante.findUniqueOrThrow({
+      where: { id: varianteId },
+      select: { precioVenta: true, producto: { select: { precioVenta: true } } },
+    });
+    return v.precioVenta ?? v.producto.precioVenta;
+  }
+
+  // --- Devoluciones por garantía: se entrega una unidad nueva del mismo sabor ----
+  async function unaGarantia(anular: boolean) {
+    const candidata = [...recientes].reverse().find((r) => r.venta.items.length > 0);
+    if (!candidata) return;
+    const item = candidata.venta.items[0]!;
+    if ((await stockEn(item.varianteId, candidata.depositoId)) < 1) return;
+    const d = await registrarDevolucion(
+      ctxDe(elegir(cajeros[candidata.depositoId]!)),
+      registrarDevolucionSchema.parse({
+        clienteId: candidata.venta.cliente.id,
+        ventaId: candidata.venta.id,
+        depositoId: candidata.depositoId,
+        items: [{ varianteId: item.varianteId, cantidad: 1 }],
+        observacion: elegir(FALLAS),
+      }),
+    );
+    recientes.splice(recientes.indexOf(candidata), 1);
+    stats.devoluciones++;
+    if (anular) await anularDevolucion(ctxOwner, d.id, "Se registró por error (demo)");
   }
 
   // --- Compras: reponer lo que está bajo ----------------------------------------
@@ -609,6 +701,10 @@ async function main() {
         stats.ajustes++;
       });
     }
+    // Garantías: cada ~9 días (una de ellas se anula).
+    if (abierto && i % 9 === 5) {
+      agendar(dia, en(dia, 18, 15), () => unaGarantia(i === 50), 6);
+    }
     // Transferencias: una completada hace dos meses, una pendiente hace 3 días y otra de hoy.
     if (i === 25 || i === DIAS - 4 || esHoy) {
       agendar(
@@ -642,19 +738,8 @@ async function main() {
     agenda.delete(dia);
   }
 
-  // Pendientes para el dashboard: dos borradores de venta y una compra sin recibir.
+  // Pendiente para el dashboard: una compra sin recibir.
   fijarReloj(() => new Date(ahoraReal.getTime() - 20 * 60_000));
-  for (const v of vendibles.slice(0, 2)) {
-    await crearBorrador(
-      ctxDe(ana!),
-      borradorVentaSchema.parse({
-        depositoId: g1.id,
-        items: [{ varianteId: v.id, cantidad: 1 }],
-        notas: "Presupuesto (demo)",
-      }),
-      DUENO,
-    );
-  }
   await crearCompra(ctxOwner, {
     proveedorId: proveedores[1]!.id,
     depositoId: g1.id,

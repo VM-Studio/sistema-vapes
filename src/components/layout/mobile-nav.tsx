@@ -101,8 +101,9 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
   const pathname = usePathname();
   const [masAbierto, setMasAbierto] = useState(false);
 
-  const principales = items.filter((i) => i.enBottomBar).slice(0, 4);
-  const resto = items.filter((i) => !principales.includes(i));
+  const enOrden = [...items].sort((a, b) => a.ordenMobile - b.ordenMobile);
+  const principales = enOrden.filter((i) => i.enBottomBar).slice(0, 4);
+  const resto = enOrden.filter((i) => !principales.includes(i));
   const masActivo =
     resto.some((i) => esRutaActiva(i.base ?? i.href, pathname)) ||
     esRutaActiva("/cuenta", pathname);

@@ -5,6 +5,47 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.2.0] - 2026-09-30
+
+**Reforma R3: ventas con cliente obligatorio, clientes por teléfono, devoluciones por garantía y stock por
+galpón.** La migración `20260930090000_ventas_clientes_devoluciones` borra los borradores de venta, pasa los
+medios de pago viejos a transferencia, suma el redondeo al descuento, junta apellido/documento/email/dirección
+de los clientes en nombre y notas (teléfono provisorio a quien no tenía) y asigna «Cliente sin datos» a las
+ventas sin cliente: hacer y descargar un backup antes de migrar.
+
+### Added
+
+- **Stock por galpón y global** (`/p/{slug}/stock`): pestañas por galpón + «Global» con el estado en la URL.
+  Por galpón: unidades y bajo mínimo, tabla/cards por sabor, **Transferir a {otro galpón}** (se crea y se
+  completa en el acto, `transferirAhora()`) y **Ajustar**, y «Movimientos de {galpón}» filtrables por tipo y
+  fechas. Global: total, tarjeta por galpón, columnas dinámicas por galpón + Total, vista por producto,
+  movimientos de todos los galpones y exportar CSV (dueños).
+- Lecturas en `stock.service.ts`: `stockPorDeposito`, `stockGlobal`, `movimientos` (referencia con código
+  visible y link a venta, compra, devolución o transferencia) y `resumenStock`.
+- Tipos de movimiento `GARANTIA`, `GARANTIA_ANULADA` y `VENTA_ANULADA` (etiqueta y signo en
+  `TIPO_MOVIMIENTO_UI`, igual al motor y a `fn_signo_movimiento()`).
+- Dashboard: cobrado por medio de pago y últimas ventas con código, cliente, medio y vendedor.
+- Exportar todo: ventas con código, tipo, medio, cliente, vendedor y descuento; ítems con precio de lista,
+  cobrado y especial; clientes con nombre, teléfono y notas; hojas de devoluciones y sus ítems.
+- Seed: clientes con teléfono; seed demo con `generarVenta` (clientes nuevos en la venta, mayoristas, precio
+  especial, descuento), `registrarDevolucion` y una devolución anulada.
+- Tests: signos de los tipos nuevos, `VentaItem_subtotal_chk`, código de venta único, observación ≥ 10,
+  cliente con teléfono obligatorio, lecturas de stock y transferencia en el acto; E2E `18-stock`.
+
+### Changed
+
+- Navegación: bottom bar Inicio · Ventas · Productos · Stock · Más; sidebar Operación (Ventas, Stock,
+  Productos, Devoluciones, Clientes) / Compras (Proveedores, Compras) / Análisis (cotizadores, Reportes) /
+  Administración.
+- E2E de transferencia y de modo sin conexión adaptados (fila del stock y `/offline`).
+
+### Removed
+
+- Hub `/p/{slug}/escanear`: el escáner vive dentro de cada flujo (venta, carga de stock, compras,
+  devoluciones, etiquetas). `/offline` sigue para consultar sin señal.
+- Pantallas viejas de Stock: ingreso manual, ajuste/recuento y «Nueva transferencia» (se transfiere desde la
+  fila).
+
 ## [2.1.0] - 2026-09-29
 
 **Reforma R2: catálogo simplificado, proveedores con precios y compras por sabor.** Un producto pasa a ser

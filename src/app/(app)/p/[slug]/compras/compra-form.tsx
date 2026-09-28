@@ -155,7 +155,7 @@ export function CompraForm({
   }, []);
 
   // Al elegir (o cambiar) el proveedor: sugerir el costo de todo lo que no se cargó a mano
-  // (también los ítems precargados, ej: desde /escanear).
+  // (también los ítems precargados por URL).
   useEffect(() => {
     const sinCosto = itemsRef.current
       .filter((i) => i.origenCosto !== "manual")

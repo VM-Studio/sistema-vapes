@@ -584,17 +584,19 @@ async function seedProveedores(productos: Map<string, string>, usuarioId: string
   }
 }
 
-async function seedCliente() {
+/** Clientes de ejemplo de Vapes: nombre + teléfono (obligatorio y único por panel). */
+async function seedClientes() {
   const db = dbPara(PANEL_VAPES);
-  if (!(await db.cliente.findFirst({ where: { telefono: "+541155550101", deletedAt: null } }))) {
-    await db.cliente.create({
-      data: {
-        nombre: "Martín",
-        apellido: "Gómez",
-        documento: "30111222",
-        telefono: "+541155550101",
-      },
-    });
+  const clientes = [
+    { nombre: "Martín Gómez", telefono: "11 5555-0101", notas: "Compra por mayor los viernes." },
+    { nombre: "Lucía Fernández", telefono: "11 5555-0102", notas: null },
+    { nombre: "Nicolás Pereyra", telefono: "221 555-0103", notas: null },
+  ];
+  for (const c of clientes) {
+    const telefono = normalizarTelefono(c.telefono)!;
+    if (!(await db.cliente.findFirst({ where: { telefono, deletedAt: null } }))) {
+      await db.cliente.create({ data: { nombre: c.nombre, telefono, notas: c.notas } });
+    }
   }
 }
 
@@ -606,7 +608,7 @@ async function main() {
   const refs = await seedCatalogoBase();
   const productos = await seedProductos(refs, depositos, ownerId);
   await seedProveedores(productos, ownerId);
-  await seedCliente();
+  await seedClientes();
 
   const [usuarios, paneles, variantes, movimientos, stockTotal] = await Promise.all([
     prisma.usuario.count(),

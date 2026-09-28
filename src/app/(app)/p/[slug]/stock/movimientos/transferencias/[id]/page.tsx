@@ -32,7 +32,7 @@ export default async function TransferenciaPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <StockTabs panel={ctx.panel} usuario={ctx.usuario} actual="transferencias" />
+      <StockTabs panel={ctx.panel} actual="transferencias" />
       <PageHeader
         title={`Transferencia #${t.numero}`}
         subtitle={

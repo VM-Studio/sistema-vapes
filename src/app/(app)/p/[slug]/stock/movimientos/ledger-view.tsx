@@ -1,26 +1,23 @@
 "use client";
 
-import { TipoMovimiento } from "@prisma/client";
-import { History, X } from "lucide-react";
-import Link from "next/link";
+import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { VariantePicker } from "@/components/catalogo/variante-picker";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useRutaPanel } from "@/components/layout/panel-context";
-import { Badge } from "@/components/ui/badge";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { controlClass } from "@/components/ui/field";
-import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { useUrlParams } from "@/hooks/use-url-params";
 import { RANGO_LABEL, RANGOS, type Rango } from "@/lib/fechas";
-import { conSigno, formatearPesos } from "@/lib/format";
-import { TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
-import { cn, formatearFechaHora } from "@/lib/utils";
-import type { MovimientoListado } from "@/server/services/movimiento.service";
+import { TIPO_MOVIMIENTO_UI, TIPOS_MOVIMIENTO_FILTRO } from "@/lib/movimientos-ui";
+import { cn } from "@/lib/utils";
+import type { MovimientoListado } from "@/server/services/stock.service";
+
+import { TablaMovimientos } from "../tabla-movimientos";
 
 interface Props {
   resultado: { movimientos: MovimientoListado[]; total: number; page: number; pageSize: number };
@@ -34,17 +31,6 @@ interface Props {
   usuarios: { id: string; nombre: string; activo: boolean }[];
   varianteFiltro: VarianteEncontrada | null;
   productoFiltro: { id: string; nombre: string } | null;
-}
-
-function Referencia({ m }: { m: MovimientoListado }) {
-  if (!m.referencia) return <span className="text-muted">—</span>;
-  return m.referencia.href ? (
-    <Link href={m.referencia.href} className="text-primary hover:underline">
-      {m.referencia.etiqueta}
-    </Link>
-  ) : (
-    <span className="text-muted">{m.referencia.etiqueta}</span>
-  );
 }
 
 export function LedgerView({
@@ -133,7 +119,7 @@ export function LedgerView({
             aria-label="Tipo"
             options={[
               { value: "", label: "Todos los tipos" },
-              ...Object.values(TipoMovimiento).map((t) => ({
+              ...TIPOS_MOVIMIENTO_FILTRO.map((t) => ({
                 value: t,
                 label: TIPO_MOVIMIENTO_UI[t].label,
               })),
@@ -180,143 +166,15 @@ export function LedgerView({
         </div>
       </div>
 
-      {movimientos.length === 0 ? (
-        <EmptyState icon={History} title="No hay movimientos con esos filtros" />
-      ) : (
-        <>
-          {/* Desktop */}
-          <div className="border-border bg-surface hidden overflow-x-auto rounded-2xl border md:block">
-            <table className="w-full text-sm">
-              <caption className="sr-only">Movimientos de stock</caption>
-              <thead className="border-border bg-surface-2/60 text-muted border-b text-xs tracking-wide uppercase">
-                <tr>
-                  {[
-                    "Fecha",
-                    "Tipo",
-                    "Producto",
-                    "Depósito",
-                    "Cantidad",
-                    "Stock",
-                    "Usuario",
-                    "Referencia",
-                    "Motivo",
-                  ].map((h, i) => (
-                    <th
-                      key={h}
-                      scope="col"
-                      className={cn(
-                        "px-3 py-3 font-medium",
-                        i === 4 || i === 5 ? "text-right" : "text-left",
-                      )}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-border divide-y">
-                {movimientos.map((m) => (
-                  <tr key={m.id} className="hover:bg-surface-2/40 align-top">
-                    <td className="text-muted px-3 py-2.5 whitespace-nowrap">
-                      {formatearFechaHora(m.fecha)}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant={TIPO_MOVIMIENTO_UI[m.tipo].variante}>
-                        {TIPO_MOVIMIENTO_UI[m.tipo].label}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <Link
-                        href={ruta(`/productos/${m.productoId}`)}
-                        className="font-medium hover:underline"
-                      >
-                        {m.nombre}
-                      </Link>
-                      <span className="text-muted block font-mono text-xs">{m.sku}</span>
-                    </td>
-                    <td className="px-3 py-2.5">{m.deposito}</td>
-                    <td
-                      className={cn(
-                        "px-3 py-2.5 text-right font-semibold tabular-nums",
-                        m.cantidad > 0 ? "text-success" : "text-danger",
-                      )}
-                    >
-                      {conSigno(m.cantidad)}
-                    </td>
-                    <td className="text-muted px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
-                      {m.stockAnterior} →{" "}
-                      <strong className="text-foreground">{m.stockPosterior}</strong>
-                    </td>
-                    <td className="px-3 py-2.5">{m.usuario}</td>
-                    <td className="px-3 py-2.5">
-                      <Referencia m={m} />
-                    </td>
-                    <td className="text-muted max-w-56 px-3 py-2.5">
-                      {m.motivo ?? "—"}
-                      {m.costoUnitario && (
-                        <span className="block text-xs">
-                          Costo {formatearPesos(m.costoUnitario)}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile */}
-          <ul className="flex flex-col gap-2 md:hidden">
-            {movimientos.map((m) => (
-              <li key={m.id} className="border-border bg-surface rounded-2xl border p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Badge variant={TIPO_MOVIMIENTO_UI[m.tipo].variante}>
-                      {TIPO_MOVIMIENTO_UI[m.tipo].label}
-                    </Badge>
-                    <p className="mt-1.5 font-medium">{m.nombre}</p>
-                    <p className="text-muted text-xs">
-                      {m.deposito} · {formatearFechaHora(m.fecha)} · {m.usuario}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p
-                      className={cn(
-                        "text-2xl font-bold tabular-nums",
-                        m.cantidad > 0 ? "text-success" : "text-danger",
-                      )}
-                    >
-                      {conSigno(m.cantidad)}
-                    </p>
-                    <p className="text-muted text-xs tabular-nums">
-                      {m.stockAnterior} → {m.stockPosterior}
-                    </p>
-                  </div>
-                </div>
-                {(m.motivo || m.referencia) && (
-                  <p className="border-border text-muted mt-2 border-t pt-2 text-sm">
-                    {m.referencia && (
-                      <>
-                        <Referencia m={m} />
-                        {m.motivo && " · "}
-                      </>
-                    )}
-                    {m.motivo}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-          <Pagination
-            className="mt-4"
-            page={resultado.page}
-            pageSize={resultado.pageSize}
-            total={resultado.total}
-            pathname={PATH}
-            params={params}
-          />
-        </>
-      )}
+      <TablaMovimientos movimientos={movimientos} conDeposito={!deposito} />
+      <Pagination
+        className="mt-4"
+        page={resultado.page}
+        pageSize={resultado.pageSize}
+        total={resultado.total}
+        pathname={PATH}
+        params={params}
+      />
     </>
   );
 }

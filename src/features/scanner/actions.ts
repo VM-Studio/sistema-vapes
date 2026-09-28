@@ -18,7 +18,13 @@ import {
 import type { ResultadoResolucion, VarianteEncontrada, VarianteEscaneada } from "./tipos";
 
 /** Módulos desde los que se escanea (cualquiera con "ver" en el panel alcanza para resolver un código). */
-const MODULOS_ESCANEO = [Modulo.STOCK, Modulo.COMPRAS, Modulo.PRODUCTOS, Modulo.VENTAS];
+const MODULOS_ESCANEO = [
+  Modulo.STOCK,
+  Modulo.COMPRAS,
+  Modulo.PRODUCTOS,
+  Modulo.VENTAS,
+  Modulo.DEVOLUCIONES,
+];
 
 /**
  * resolverCodigo(codigo): lo usa todo escaneo (pistola, cámara o manual).

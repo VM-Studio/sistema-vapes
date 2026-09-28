@@ -1,22 +1,23 @@
 /**
  * Concurrencia de ventas en el panel Vapes (crea datos: correr sobre una base
  * recién sembrada).
- *  1. 10 confirmaciones SIMULTÁNEAS de borradores de 1 unidad de una variante
- *     con stock 5 → exactamente 5 confirman, 5 fallan por stock, stock 0.
- *  2. 10 cajas venden A LA VEZ la última unidad (vender: borrador + confirmación
- *     en una tx) → exactamente una gana; las que pierden no consumen número.
- *  3. 20 borradores simultáneos → números de venta del panel únicos y
- *     consecutivos (sin huecos ni repetidos); otro panel no se ve afectado.
+ *  1. 10 generarVenta SIMULTÁNEAS de 1 unidad de un sabor con stock 5 →
+ *     exactamente 5 confirman, 5 fallan por stock, stock 0.
+ *  2. Los códigos de las confirmadas son consecutivos y sin huecos: las que
+ *     fallan no consumen número.
+ *  3. 10 ventas simultáneas de sabores distintos (con stock) → todas confirman,
+ *     números únicos y consecutivos; otro panel no se ve afectado.
  * Uso: pnpm test:ventas:concurrencia
  */
-import { EstadoVenta, MedioPago, RolUsuario } from "@prisma/client";
+import { EstadoVenta, RolUsuario } from "@prisma/client";
 
 import { prisma } from "../src/lib/db";
 import { formatearIdVenta } from "../src/lib/paneles";
-import { borradorVentaSchema, venderSchema } from "../src/lib/validations/venta";
-import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
+import { generarVentaSchema } from "../src/lib/validations/venta";
+import { dbPara, type Ctx } from "../src/server/db/panel-scoped";
+import { crearCliente } from "../src/server/services/cliente.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
-import { confirmarVenta, crearBorrador, vender } from "../src/server/services/venta.service";
+import { generarVenta } from "../src/server/services/venta.service";
 
 const PANEL = "pnl_vapes";
 const db = dbPara(PANEL);
@@ -35,6 +36,10 @@ const ultimoNumero = async (panelId: string) =>
   ).ultimoNumero;
 
 const mensaje = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const consecutivos = (ns: number[]) => {
+  const o = [...ns].sort((a, b) => a - b);
+  return o.every((n, i) => i === 0 || n === o[i - 1]! + 1);
+};
 
 async function main() {
   const owner = await prisma.usuario.findFirstOrThrow({
@@ -51,162 +56,120 @@ async function main() {
     where: { nombre: "Grape Ice", producto: { nombre: "V80", marca: { nombre: "Ignite" } } },
     include: { producto: { select: { nombreCompleto: true } } },
   });
-  const stockActual = async () =>
-    (
-      await db.stock.findUniqueOrThrow({
-        where: {
-          panelId_varianteId_depositoId: {
-            panelId: PANEL,
-            varianteId: variante.id,
-            depositoId: deposito.id,
-          },
-        },
-      })
-    ).cantidad;
-  /**
-   * Borrador de 1 unidad. Varias cajas creando borradores a la vez compiten por
-   * la fila de Secuencia (FOR UPDATE, Serializable): la tx se reintenta.
-   */
-  const nuevoBorrador = () =>
-    transaccion(
-      ctx,
-      (tx) =>
-        crearBorrador(
-          ctx,
-          borradorVentaSchema.parse({
-            depositoId: deposito.id,
-            items: [{ varianteId: variante.id, cantidad: 1 }],
-          }),
-          { puedeEditar: false },
-          tx,
-        ),
-      { maxRetries: 30 },
-    );
-  const dejarStock = async (cantidadReal: number) => {
-    if ((await stockActual()) === cantidadReal) return;
+  const suf = String(Date.now()).slice(-6);
+  const cliente = await crearCliente(ctx, {
+    nombre: "Cliente concurrencia",
+    telefono: `11${suf}${Math.floor(Math.random() * 90) + 10}`,
+  });
+  const stockDe = async (varianteId: string) =>
+    (await db.stock.findFirst({ where: { varianteId, depositoId: deposito.id } }))?.cantidad ?? 0;
+  const dejarStock = async (varianteId: string, cantidadReal: number) => {
+    if ((await stockDe(varianteId)) === cantidadReal) return;
     await registrarAjuste(ctx, {
       depositoId: deposito.id,
-      varianteId: variante.id,
+      varianteId,
       cantidadReal,
       motivo: "Prueba de concurrencia",
     });
   };
+  const venta = (varianteId: string) =>
+    generarVenta(
+      ctx,
+      generarVentaSchema.parse({
+        depositoId: deposito.id,
+        cliente: { id: cliente.id },
+        items: [{ varianteId, cantidad: 1 }],
+        medioPago: "EFECTIVO",
+      }),
+      { puedeEditar: false },
+    );
 
   // ---------------------------------------------------------------------------
   console.log(
-    `\n1) ${variante.producto.nombreCompleto} — ${variante.nombre} con stock 5 en ${deposito.nombre}: 10 confirmaciones simultáneas`,
+    `\n1) ${variante.producto.nombreCompleto} — ${variante.nombre} con stock 5 en ${deposito.nombre}: 10 ventas simultáneas`,
   );
-  await dejarStock(5);
-  check((await stockActual()) === 5, "stock inicial 5");
-
-  const borradores = await Promise.all(Array.from({ length: 10 }, () => nuevoBorrador()));
-  check(
-    new Set(borradores.map((b) => b.numero)).size === 10,
-    `10 borradores con números distintos (${borradores.map((b) => b.idVenta).sort()[0]}…)`,
-  );
+  await dejarStock(variante.id, 5);
+  check((await stockDe(variante.id)) === 5, "stock inicial 5");
+  const numeroAntes = await ultimoNumero(PANEL);
+  const cosmeticAntes = await ultimoNumero("pnl_cosmetic");
 
   const t0 = performance.now();
-  const resultados = await Promise.allSettled(
-    borradores.map((b) => confirmarVenta(ctx, b.id, { medioPago: MedioPago.EFECTIVO })),
-  );
+  const resultados = await Promise.allSettled(Array.from({ length: 10 }, () => venta(variante.id)));
   const ms = Math.round(performance.now() - t0);
   const ok = resultados.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
   const errores = resultados.flatMap((r) => (r.status === "rejected" ? [mensaje(r.reason)] : []));
-  const otros = errores.filter((e) => !/Stock insuficiente/.test(e));
+  const otros = errores.filter((e) => !/^No hay stock de /.test(e));
   check(ok.length === 5, `${ok.length} confirmadas (en ${ms} ms)`);
   check(
     errores.length === 5 && otros.length === 0,
     `${errores.length} rechazadas por stock: «${errores[0]}»${otros.length ? ` · OTROS: ${otros.join(" | ")}` : ""}`,
   );
-  check((await stockActual()) === 0, "stock final 0 (nunca negativo)");
-  const estados = await db.venta.groupBy({
-    by: ["estado"],
-    where: { id: { in: borradores.map((b) => b.id) } },
-    _count: true,
-  });
+  check((await stockDe(variante.id)) === 0, "stock final 0 (nunca negativo)");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n2) Códigos consecutivos, sin huecos ni repetidos");
+  const numeros = ok.map((v) => v.numero);
   check(
-    estados.find((e) => e.estado === EstadoVenta.CONFIRMADA)?._count === 5 &&
-      estados.find((e) => e.estado === EstadoVenta.BORRADOR)?._count === 5,
-    `ventas: ${estados.map((e) => `${e._count} ${e.estado}`).join(", ")} (las rechazadas siguen en borrador, sin descontar nada)`,
+    new Set(numeros).size === 5 && consecutivos(numeros),
+    `números ${[...numeros].sort((a, b) => a - b).join(", ")}`,
   );
   check(
-    ok.every((v) => v.idVenta === formatearIdVenta("vapes", v.numero)),
-    `IDs de venta del panel: ${ok
-      .map((v) => v.idVenta)
+    Math.min(...numeros) === numeroAntes + 1 && (await ultimoNumero(PANEL)) === numeroAntes + 5,
+    `la secuencia avanzó exactamente 5 (${numeroAntes} → ${await ultimoNumero(PANEL)})`,
+  );
+  check(
+    ok.every((v) => v.codigo === formatearIdVenta("vapes", v.numero)),
+    `códigos ${ok
+      .map((v) => v.codigo)
       .sort()
       .join(", ")}`,
   );
-  const ledger = await db.movimientoStock.count({
+  const movimientos = await db.movimientoStock.count({
+    where: { referenciaTipo: "VENTA", referenciaId: { in: ok.map((v) => v.id) } },
+  });
+  check(movimientos === 5, "un movimiento VENTA por venta confirmada");
+  const huerfanos = await db.venta.count({
     where: {
-      tipo: "VENTA",
-      referenciaTipo: "VENTA",
-      referenciaId: { in: borradores.map((b) => b.id) },
+      numero: { gt: numeroAntes },
+      estado: EstadoVenta.CONFIRMADA,
+      id: { notIn: ok.map((v) => v.id) },
     },
   });
-  check(ledger === 5, `ledger: ${ledger} movimientos VENTA de estas 10 ventas`);
+  check(huerfanos === 0, "ninguna venta de más");
 
   // ---------------------------------------------------------------------------
-  console.log("\n2) La última unidad: 10 cajas venden a la vez");
-  await dejarStock(1);
-  const antesUltima = await ultimoNumero(PANEL);
-  const carrera = await Promise.allSettled(
-    Array.from({ length: 10 }, () =>
-      vender(
-        ctx,
-        venderSchema.parse({
-          venta: { depositoId: deposito.id, items: [{ varianteId: variante.id, cantidad: 1 }] },
-          medioPago: MedioPago.TRANSFERENCIA,
-        }),
-        { puedeEditar: false },
-      ),
-    ),
-  );
-  const ganadoras = carrera.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-  const perdedoras = carrera.flatMap((r) => (r.status === "rejected" ? [mensaje(r.reason)] : []));
+  console.log("\n3) 10 ventas simultáneas de sabores distintos (con stock)");
+  const sabores = await db.variante.findMany({
+    where: { deletedAt: null, activo: true, producto: { activo: true, deletedAt: null } },
+    orderBy: { id: "asc" },
+    take: 10,
+  });
+  for (const s of sabores) if ((await stockDe(s.id)) < 2) await dejarStock(s.id, 5);
+  const antes3 = await ultimoNumero(PANEL);
+  const r3 = await Promise.allSettled(sabores.map((s) => venta(s.id)));
+  const ok3 = r3.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  const err3 = r3.flatMap((r) => (r.status === "rejected" ? [mensaje(r.reason)] : []));
   check(
-    ganadoras.length === 1,
-    `exactamente una venta gana (${ganadoras.map((g) => g.idVenta).join(", ")})`,
+    ok3.length === sabores.length,
+    `${ok3.length}/${sabores.length} confirmadas${err3.length ? ` · ${err3.join(" | ")}` : ""}`,
   );
   check(
-    perdedoras.length === 9 && perdedoras.every((e) => /Stock insuficiente/.test(e)),
-    `9 rechazadas por stock${perdedoras.some((e) => !/Stock insuficiente/.test(e)) ? ` · OTROS: ${perdedoras.filter((e) => !/Stock insuficiente/.test(e)).join(" | ")}` : ""}`,
+    consecutivos(ok3.map((v) => v.numero)) &&
+      new Set(ok3.map((v) => v.numero)).size === ok3.length &&
+      (await ultimoNumero(PANEL)) === antes3 + ok3.length,
+    "números únicos y consecutivos",
   );
-  check((await stockActual()) === 0, "stock final 0");
-  const despuesUltima = await ultimoNumero(PANEL);
   check(
-    despuesUltima === antesUltima + 1 && ganadoras[0]?.numero === despuesUltima,
-    `la secuencia avanzó exactamente 1 (${antesUltima} → ${despuesUltima}): las ventas fallidas no consumieron número`,
+    (await ultimoNumero("pnl_cosmetic")) === cosmeticAntes,
+    "la numeración de Cosmetic no se tocó",
   );
 
-  // ---------------------------------------------------------------------------
-  console.log("\n3) Numeración: 20 borradores simultáneos");
-  await dejarStock(3);
-  const antes = await ultimoNumero(PANEL);
-  const otroPanelAntes = await ultimoNumero("pnl_cosmetic");
-  const nuevos = await Promise.all(Array.from({ length: 20 }, () => nuevoBorrador()));
-  const numeros = nuevos.map((n) => n.numero).sort((a, b) => a - b);
-  const esperados = Array.from({ length: 20 }, (_, i) => antes + 1 + i);
-  check(
-    JSON.stringify(numeros) === JSON.stringify(esperados),
-    `números ${numeros[0]}..${numeros.at(-1)}: consecutivos desde ${antes + 1}, sin huecos ni repetidos`,
-  );
-  check((await ultimoNumero(PANEL)) === antes + 20, "la secuencia avanzó exactamente 20");
-  check(
-    (await ultimoNumero("pnl_cosmetic")) === otroPanelAntes,
-    "la numeración de Cosmetic no se movió",
-  );
-  const duplicados = await prisma.$queryRaw<{ n: bigint }[]>`
-    SELECT COUNT(*) AS n FROM (
-      SELECT "numero" FROM "Venta" WHERE "panelId" = ${PANEL} GROUP BY "numero" HAVING COUNT(*) > 1
-    ) x`;
-  check(Number(duplicados[0]?.n) === 0, "ningún número de venta repetido en el panel");
-
-  console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);
-  process.exitCode = fallos === 0 ? 0 : 1;
+  console.log(fallos ? `\n✘ ${fallos} verificaciones fallaron` : "\n✔ Todo OK");
+  process.exitCode = fallos ? 1 : 0;
 }
 
 main()
-  .catch((e: unknown) => {
+  .catch((e) => {
     console.error(e);
     process.exitCode = 1;
   })

@@ -1,7 +1,7 @@
 /**
  * Simula una pistola lectora (keyboard wedge) desde la consola del navegador.
- * Pegalo en DevTools → Console en cualquier pantalla con escáner (/escanear,
- * /compras/nueva, /movimientos/ingreso…) y llamá, por ejemplo:
+ * Pegalo en DevTools → Console en cualquier pantalla con escáner (carga de stock, ventas,
+ * compras, devoluciones) y llamá, por ejemplo:
  *
  *   simularPistola("7790001000019")            // Ignite V80 — Mango Ice (seed)
  *   simularPistola("7790001000019", { veces: 3 })

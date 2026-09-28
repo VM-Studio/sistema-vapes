@@ -1,10 +1,9 @@
 import { Modulo } from "@prisma/client";
-import { Plus, ShoppingCart } from "lucide-react";
+import { ShoppingCart } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -12,25 +11,46 @@ import { Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
 import { esFechaISO, fechasDeRango, RANGOS, type Rango } from "@/lib/fechas";
 import { formatearNumero, formatearPesos } from "@/lib/format";
-import { formatearIdVenta, rutaPanel } from "@/lib/paneles";
+import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
-import { formatearFechaHora } from "@/lib/utils";
+import { cn, formatearFechaHora } from "@/lib/utils";
 import { listarVentasSchema } from "@/lib/validations/venta";
-import { ESTADO_VENTA_UI, ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
+import {
+  CLASE_MEDIO_PAGO,
+  ESTADO_VENTA_UI,
+  ETIQUETA_MEDIO_PAGO,
+  ETIQUETA_TIPO_VENTA,
+  telefonoVisible,
+} from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
+import { obtenerClienteBasico } from "@/server/services/cliente.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import {
   listarVentas,
+  unidadesPorDeposito,
   vendedoresDelPanel,
   type VentaListada,
 } from "@/server/services/venta.service";
 
 import { FiltrosVentas } from "./filtros-ventas";
-import { VentasTabs } from "./ventas-tabs";
+import { GenerarVenta } from "./generar-venta";
 
 export const metadata: Metadata = { title: "Ventas" };
 
 type SP = Record<string, string | string[] | undefined>;
+
+function MedioPagoBadge({ medio }: { medio: VentaListada["medioPago"] }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs leading-none font-medium whitespace-nowrap",
+        CLASE_MEDIO_PAGO[medio],
+      )}
+    >
+      {ETIQUETA_MEDIO_PAGO[medio]}
+    </span>
+  );
+}
 
 export default async function VentasPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanel(Modulo.VENTAS, "ver");
@@ -38,46 +58,75 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
   const plano = Object.fromEntries(
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
-  const rango = RANGOS.includes(plano.rango as Rango) ? (plano.rango as Rango) : null;
-  const fechas = rango
-    ? fechasDeRango(rango)
-    : { desde: plano.desde ?? "", hasta: plano.hasta ?? "" };
+  // Por defecto: las ventas de hoy (salvo que se busque un ID o un cliente).
+  const sinFechas = !plano.rango && !plano.desde && !plano.hasta && !plano.q;
+  const rango: Rango | null = RANGOS.includes(plano.rango as Rango)
+    ? (plano.rango as Rango)
+    : sinFechas
+      ? "hoy"
+      : null;
+  const todo =
+    plano.rango === "todo" || (!plano.rango && !plano.desde && !plano.hasta && !!plano.q);
+  const fechas = todo
+    ? { desde: "", hasta: "" }
+    : rango
+      ? fechasDeRango(rango)
+      : { desde: plano.desde ?? "", hasta: plano.hasta ?? "" };
   const filtros = listarVentasSchema.parse({ ...plano, desde: fechas.desde, hasta: fechas.hasta });
   const verGanancia = esOwner(ctx.usuario);
-  const [r, depositos, vendedores] = await Promise.all([
+  const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear");
+  const [r, depositos, vendedores, unidades] = await Promise.all([
     listarVentas(ctx, filtros, { verCostos: verGanancia }),
     listarDepositosActivos(ctx),
     vendedoresDelPanel(ctx),
+    puedeCrear ? unidadesPorDeposito(ctx) : Promise.resolve({}),
   ]);
-  const borradores = filtros.estado === "BORRADOR";
 
-  const href = (v: VentaListada) =>
-    rutaPanel(slug, v.estado === "BORRADOR" ? `/ventas/nueva?borrador=${v.id}` : `/ventas/${v.id}`);
-  const badge = (v: VentaListada) => (
+  // Links "vender a este cliente" / "vender desde este galpón" desde otros módulos.
+  const abrirAlCargar =
+    puedeCrear && plano.nueva === "1"
+      ? {
+          depositoId: plano.deposito ?? null,
+          cliente: plano.cliente ? await obtenerClienteBasico(ctx, plano.cliente) : null,
+        }
+      : null;
+
+  const href = (v: VentaListada) => rutaPanel(slug, `/ventas/${v.id}`);
+  const estado = (v: VentaListada) => (
     <Badge variant={ESTADO_VENTA_UI[v.estado].variante}>{ESTADO_VENTA_UI[v.estado].label}</Badge>
   );
 
   return (
     <>
-      <VentasTabs ctx={ctx} actual={borradores ? "borradores" : "listado"} />
       <PageHeader
-        title={borradores ? "Borradores" : "Ventas"}
-        subtitle={
-          borradores
-            ? "Presupuestos y ventas sin cobrar: tocá uno para retomarlo en el punto de venta."
-            : undefined
-        }
+        title="Ventas"
         actions={
-          puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear") && (
-            <Link href={rutaPanel(slug, "/ventas/nueva")} className={buttonVariants()}>
-              <Plus strokeWidth={1.75} /> Nueva venta
-            </Link>
+          puedeCrear && (
+            <GenerarVenta
+              depositos={depositos}
+              unidades={unidades}
+              puedeEditar={puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "editar")}
+              abrirAlCargar={abrirAlCargar}
+            />
           )
         }
       />
+      <section
+        aria-label="Totales del período"
+        className={cn(
+          "mb-4 grid gap-3",
+          r.resumen.gananciaBruta !== null ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2",
+        )}
+      >
+        <StatCard label="Ventas" value={formatearNumero(r.resumen.cantidad)} />
+        <StatCard label="Total vendido" value={formatearPesos(r.resumen.total)} />
+        {r.resumen.gananciaBruta !== null && (
+          <StatCard label="Ganancia bruta" value={formatearPesos(r.resumen.gananciaBruta)} />
+        )}
+      </section>
       <FiltrosVentas
         params={plano}
-        rango={rango}
+        rango={todo ? "todo" : rango}
         fechas={{
           desde: esFechaISO(fechas.desde) ? fechas.desde : "",
           hasta: esFechaISO(fechas.hasta) ? fechas.hasta : "",
@@ -85,92 +134,94 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         depositos={depositos.map((d) => ({ id: d.id, nombre: d.nombre }))}
         vendedores={vendedores}
       />
-      {!borradores && (
-        <section
-          aria-label="Totales del rango"
-          className={`mb-4 grid gap-3 ${r.resumen.gananciaBruta !== null ? "grid-cols-3" : "grid-cols-2"}`}
-        >
-          <StatCard label="Ventas confirmadas" value={formatearNumero(r.resumen.cantidad)} />
-          <StatCard label="Total vendido" value={formatearPesos(r.resumen.total)} />
-          {r.resumen.gananciaBruta !== null && (
-            <StatCard label="Ganancia bruta" value={formatearPesos(r.resumen.gananciaBruta)} />
-          )}
-        </section>
-      )}
       <DataTable
         caption="Ventas"
         rows={r.ventas}
         getRowKey={(v) => v.id}
-        empty={
-          <EmptyState
-            icon={ShoppingCart}
-            title={borradores ? "No hay borradores" : "No hay ventas con esos filtros"}
-          />
-        }
+        empty={<EmptyState icon={ShoppingCart} title="No hay ventas con esos filtros" />}
         columns={[
           {
-            key: "numero",
-            header: "ID",
+            key: "codigo",
+            header: "ID de venta",
             cell: (v) => (
               <Link
                 href={href(v)}
                 className="text-primary font-semibold tabular-nums hover:underline"
               >
-                {formatearIdVenta(slug, v.numero)}
+                {v.codigo}
               </Link>
             ),
           },
           {
             key: "fecha",
-            header: "Fecha",
+            header: "Fecha y hora",
             cell: (v) => <span className="text-muted">{formatearFechaHora(v.fecha)}</span>,
           },
           {
             key: "cliente",
             header: "Cliente",
-            cell: (v) => v.cliente ?? <span className="text-muted">—</span>,
+            cell: (v) => (
+              <span className="flex flex-col">
+                <span>{v.cliente.nombre}</span>
+                <span className="text-muted text-xs tabular-nums">
+                  {telefonoVisible(v.cliente.telefono)}
+                </span>
+              </span>
+            ),
           },
           { key: "vendedor", header: "Vendedor", cell: (v) => v.vendedor },
-          { key: "deposito", header: "Depósito", cell: (v) => v.deposito },
-          {
-            key: "medio",
-            header: "Pago",
-            cell: (v) =>
-              v.medioPago ? (
-                ETIQUETA_MEDIO_PAGO[v.medioPago]
-              ) : (
-                <span className="text-muted">—</span>
-              ),
-          },
+          { key: "deposito", header: "Galpón", cell: (v) => v.deposito },
           {
             key: "items",
             header: "Ítems",
             className: "text-right tabular-nums",
-            cell: (v) => `${v.items} (${v.unidades} u.)`,
+            cell: (v) => `${v.unidades} u.`,
           },
+          { key: "medio", header: "Pago", cell: (v) => <MedioPagoBadge medio={v.medioPago} /> },
+          { key: "tipo", header: "Tipo", cell: (v) => ETIQUETA_TIPO_VENTA[v.tipo] },
           {
             key: "total",
             header: "Total",
             className: "text-right tabular-nums font-medium",
-            cell: (v) => formatearPesos(v.total),
+            cell: (v) => (
+              <span className={cn(v.estado === "ANULADA" && "text-muted line-through")}>
+                {formatearPesos(v.total)}
+              </span>
+            ),
           },
-          { key: "estado", header: "Estado", cell: badge },
+          { key: "estado", header: "Estado", cell: estado },
         ]}
         renderMobile={(v) => (
-          <Link href={href(v)} className="border-border bg-surface block rounded-2xl border p-4">
+          <Link
+            href={href(v)}
+            className="border-border bg-surface shadow-card flex flex-col gap-2 rounded-2xl border p-4"
+          >
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold tabular-nums">
-                {formatearIdVenta(slug, v.numero)}
-                {v.cliente && <span className="text-muted font-normal"> · {v.cliente}</span>}
+              <span className="text-primary font-semibold tabular-nums">{v.codigo}</span>
+              <span
+                className={cn(
+                  "font-semibold tabular-nums",
+                  v.estado === "ANULADA" && "text-muted line-through",
+                )}
+              >
+                {formatearPesos(v.total)}
               </span>
-              <span className="font-semibold tabular-nums">{formatearPesos(v.total)}</span>
             </div>
-            <div className="mt-1 flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate">
+                {v.cliente.nombre}{" "}
+                <span className="text-muted tabular-nums">
+                  · {telefonoVisible(v.cliente.telefono)}
+                </span>
+              </span>
+              <MedioPagoBadge medio={v.medioPago} />
+            </div>
+            <div className="flex items-center justify-between gap-2">
               <p className="text-muted text-xs">
-                {formatearFechaHora(v.fecha)} · {v.vendedor} · {v.unidades} u.
-                {v.medioPago && ` · ${ETIQUETA_MEDIO_PAGO[v.medioPago]}`}
+                {formatearFechaHora(v.fecha)} · {v.vendedor} · {v.deposito} · {v.unidades} u.
+                {v.tipo === "MAYORISTA" && " · Mayorista"}
               </p>
-              {badge(v)}
+              {estado(v)}
             </div>
           </Link>
         )}
