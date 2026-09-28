@@ -1,6 +1,6 @@
 import { Prisma, TipoMovimiento, type MovimientoStock } from "@prisma/client";
 
-import type { Tx } from "@/lib/db";
+import type { Tx } from "@/server/db/panel-scoped";
 import { ahora } from "@/lib/reloj";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
 
@@ -8,7 +8,8 @@ import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/err
  * MOTOR DE STOCK
  *
  * Única puerta de entrada para modificar stock. Garantías:
- * - Siempre dentro de una transacción (recibe `tx`; usar withTransaction()).
+ * - Siempre dentro de una transacción del panel (recibe el `tx` de
+ *   `transaccion(ctx, ...)`, que ya confina toda query al panel).
  * - SELECT ... FOR UPDATE sobre la fila de Stock: dos operaciones concurrentes
  *   sobre la misma variante/depósito se serializan, no se pisan.
  * - Inserta el MovimientoStock (ledger) y actualiza Stock (caché) en la misma tx.
@@ -66,7 +67,7 @@ function assertEnTransaccion(tx: Tx): void {
   // El cliente raíz expone $transaction; el cliente de una transacción interactiva no.
   if (typeof (tx as { $transaction?: unknown }).$transaction === "function") {
     throw new Error(
-      "El motor de stock solo puede usarse dentro de una transacción (withTransaction).",
+      "El motor de stock solo puede usarse dentro de una transacción (transaccion(ctx, ...)).",
     );
   }
 }
@@ -84,9 +85,12 @@ function assertCantidad(cantidad: number): void {
  *
  * Para operaciones con muchos ítems (ventas, compras), llamar antes a esta
  * función con los ítems ordenados por varianteId por el mismo motivo.
+ *
+ * SQL cruda: no pasa por dbPara, así que filtra por `panelId` a mano.
  */
 export async function bloquearStock(
   tx: Tx,
+  panelId: string,
   varianteId: string,
   depositoIds: string[],
 ): Promise<Map<string, FilaStockBloqueada>> {
@@ -95,7 +99,8 @@ export async function bloquearStock(
   const seleccionarParaActualizar = () => tx.$queryRaw<FilaStockBloqueada[]>`
     SELECT "id", "depositoId", "cantidad"
     FROM "Stock"
-    WHERE "varianteId" = ${varianteId}
+    WHERE "panelId" = ${panelId}
+      AND "varianteId" = ${varianteId}
       AND "depositoId" IN (${Prisma.join(ids)})
     ORDER BY "depositoId"
     FOR UPDATE
@@ -108,6 +113,8 @@ export async function bloquearStock(
     // ON CONFLICT DO NOTHING tolera que otra transacción la cree en paralelo.
     // (Se hace solo si falta: bajo Serializable, el INSERT sobre una fila que
     // otra tx está modificando provoca conflictos de serialización evitables.)
+    // panelId lo completa el tx del panel; los triggers verifican que variante
+    // y depósito sean de ese mismo panel.
     await tx.stock.createMany({
       data: ids.map((depositoId) => ({ varianteId, depositoId, cantidad: 0 })),
       skipDuplicates: true,
@@ -118,11 +125,16 @@ export async function bloquearStock(
   return new Map(filas.map((f) => [f.depositoId, f]));
 }
 
+/** Nombres para los mensajes y el panel de la variante (el tx ya garantiza que es del panel). */
 async function describir(tx: Tx, varianteId: string, depositoId: string) {
   const [variante, deposito] = await Promise.all([
     tx.variante.findUnique({
       where: { id: varianteId },
-      select: { nombre: true, producto: { select: { nombre: true, tieneVariantes: true } } },
+      select: {
+        panelId: true,
+        nombre: true,
+        producto: { select: { nombre: true, tieneVariantes: true } },
+      },
     }),
     tx.deposito.findUnique({ where: { id: depositoId }, select: { nombre: true, activo: true } }),
   ]);
@@ -132,7 +144,7 @@ async function describir(tx: Tx, varianteId: string, depositoId: string) {
   const nombreVariante = variante.producto.tieneVariantes
     ? `${variante.producto.nombre} - ${variante.nombre}`
     : variante.producto.nombre;
-  return { nombreVariante, nombreDeposito: deposito.nombre };
+  return { panelId: variante.panelId, nombreVariante, nombreDeposito: deposito.nombre };
 }
 
 /**
@@ -149,13 +161,13 @@ export async function registrarMovimiento(
     throw new DomainError("referenciaTipo y referenciaId van juntos.");
   }
 
-  const { nombreVariante, nombreDeposito } = await describir(
+  const { panelId, nombreVariante, nombreDeposito } = await describir(
     tx,
     input.varianteId,
     input.depositoId,
   );
 
-  const filas = await bloquearStock(tx, input.varianteId, [input.depositoId]);
+  const filas = await bloquearStock(tx, panelId, input.varianteId, [input.depositoId]);
   const fila = filas.get(input.depositoId);
   if (!fila) throw new Error("No se pudo bloquear la fila de stock."); // no debería ocurrir
 
@@ -206,7 +218,11 @@ export async function transferirStock(
   }
 
   // Bloqueo de ambas filas en orden determinístico antes de mover nada.
-  await bloquearStock(tx, input.varianteId, [input.depositoOrigenId, input.depositoDestinoId]);
+  const { panelId } = await describir(tx, input.varianteId, input.depositoOrigenId);
+  await bloquearStock(tx, panelId, input.varianteId, [
+    input.depositoOrigenId,
+    input.depositoDestinoId,
+  ]);
 
   const referencia = input.referenciaId
     ? { referenciaTipo: "TRANSFERENCIA" as const, referenciaId: input.referenciaId }
@@ -235,10 +251,8 @@ export async function transferirStock(
   return { salida, entrada };
 }
 
-/** Stock total de una variante sumando todos los depósitos (fn_stock_por_variante). */
+/** Stock total de una variante sumando todos los depósitos del panel del `tx`. */
 export async function stockTotalVariante(tx: Tx, varianteId: string): Promise<number> {
-  const [fila] = await tx.$queryRaw<{ total: number }[]>`
-    SELECT fn_stock_por_variante(${varianteId}) AS total
-  `;
-  return fila?.total ?? 0;
+  const r = await tx.stock.aggregate({ where: { varianteId }, _sum: { cantidad: true } });
+  return r._sum.cantidad ?? 0;
 }

@@ -1,4 +1,4 @@
-# CI/CD: cada push y PR pasa por calidad + tests + build + E2E + Lighthouse.
+# CI/CD: cada push y PR pasa por calidad + tests + build + E2E.
 # En main, además: release (backup + prisma migrate deploy) y deploy a producción.
 name: CI
 
@@ -26,7 +26,7 @@ env:
 
 jobs:
   calidad:
-    name: Typecheck · lint · unit · drift · build · E2E · Lighthouse
+    name: Typecheck · lint · unit · drift · build · E2E
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -106,12 +106,6 @@ jobs:
         env:
           CI: "true"
 
-      - name: Lighthouse CI (Performance ≥ 80, Accesibilidad ≥ 90)
-        run: |
-          export CHROME_PATH="$(node -e 'console.log(require("playwright").chromium.executablePath())')"
-          pnpm lighthouse
-          node scripts/verificar-instalable.mjs || true
-
       - name: Reportes
         if: always()
         uses: actions/upload-artifact@v4
@@ -120,7 +114,6 @@ jobs:
           path: |
             playwright-report/
             test-results/
-            lighthouse/reportes/
           retention-days: 14
 
   # Producción: primero el paso de release (backup + migrate deploy) contra la

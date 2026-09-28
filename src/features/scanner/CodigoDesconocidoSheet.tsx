@@ -5,8 +5,9 @@ import { Link2, PackagePlus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { agregarCodigoAlternativoAction } from "@/app/(app)/productos/actions";
+import { agregarCodigoAlternativoAction } from "@/app/(app)/p/[slug]/productos/actions";
 import { VariantePicker, type VarianteBuscada } from "@/components/catalogo/variante-picker";
+import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
@@ -33,6 +34,7 @@ export function CodigoDesconocidoSheet({
   volverA: string;
 }) {
   const toast = useToast();
+  const ruta = useRutaPanel();
   const puedeAsociar = usePuede(Modulo.PRODUCTOS, "editar");
   const puedeCrear = usePuede(Modulo.PRODUCTOS, "crear");
   const [elegida, setElegida] = useState<VarianteBuscada | null>(null);
@@ -67,7 +69,7 @@ export function CodigoDesconocidoSheet({
   }
 
   const hrefCrear = codigo
-    ? `/productos/nuevo?codigo=${encodeURIComponent(codigo)}&volver=${encodeURIComponent(volverA)}`
+    ? `${ruta("/productos/nuevo")}?codigo=${encodeURIComponent(codigo)}&volver=${encodeURIComponent(volverA)}`
     : "#";
 
   return (

@@ -9,4 +9,4 @@ export DATABASE_URL="postgresql://app:app@localhost:${DB_PORT:-5433}/$DB?schema=
 export DIRECT_URL="$DATABASE_URL"
 npx prisma migrate deploy >/dev/null
 PRISMA_LOG=silent npx tsx prisma/seed.ts
-if [ "${2:-}" = "--demo" ]; then PRISMA_LOG=silent npx tsx --conditions=react-server prisma/seed-demo.ts; fi
+if [ "${2:-}" = "--demo" ]; then PRISMA_LOG=silent LOG_LEVEL="${LOG_LEVEL:-warn}" npx tsx --conditions=react-server prisma/seed-demo.ts; fi

@@ -3,7 +3,7 @@
 import { Loader2, Search } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
-import { buscarVariantesAction } from "@/app/(app)/movimientos/actions";
+import { buscarVariantesAction } from "@/app/(app)/p/[slug]/stock/movimientos/actions";
 import { controlClass } from "@/components/ui/field";
 import { formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";

@@ -1,6 +1,5 @@
 import { AccionAuditoria, Prisma } from "@prisma/client";
 
-import { prisma, withTransaction, type Tx } from "@/lib/db";
 import type {
   ActualizarCategoria,
   ActualizarMarca,
@@ -8,12 +7,13 @@ import type {
   CrearMarca,
 } from "@/lib/validations/clasificacion";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
-import type { Actor } from "@/server/services/actor";
+import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { registrarAuditoria } from "@/server/services/audit.service";
 
 /**
  * Categorías y marcas: mismo comportamiento (CRUD + activo), por eso comparten
  * implementación. `categoria.service` y `marca.service` exponen la API de cada una.
+ * Son POR PANEL: el nombre es único dentro del panel.
  */
 
 export type TipoClasificacion = "Categoria" | "Marca";
@@ -47,12 +47,14 @@ function filtroProductos(tipo: TipoClasificacion, id: string): Prisma.ProductoWh
 }
 
 export async function listarClasificaciones(
+  ctx: Pick<Ctx, "panelId">,
   tipo: TipoClasificacion,
 ): Promise<ClasificacionListada[]> {
-  const filas = await delegado(prisma, tipo).findMany({
+  const db = dbPara(ctx.panelId);
+  const filas = await delegado(db, tipo).findMany({
     orderBy: [{ activo: "desc" }, { nombre: "asc" }],
   });
-  const conteos = await prisma.producto.groupBy({
+  const conteos = await db.producto.groupBy({
     by: [tipo === "Categoria" ? "categoriaId" : "marcaId"],
     where: { activo: true, deletedAt: null },
     _count: true,
@@ -70,9 +72,10 @@ export async function listarClasificaciones(
 }
 
 export async function listarClasificacionesActivas(
+  ctx: Pick<Ctx, "panelId">,
   tipo: TipoClasificacion,
 ): Promise<ClasificacionBasica[]> {
-  return delegado(prisma, tipo).findMany({
+  return delegado(dbPara(ctx.panelId), tipo).findMany({
     where: { activo: true },
     select: { id: true, nombre: true },
     orderBy: { nombre: "asc" },
@@ -96,12 +99,12 @@ async function assertPuedeDesactivar(tx: Tx, tipo: TipoClasificacion, id: string
 }
 
 export async function crearClasificacion(
+  ctx: Ctx,
   tipo: TipoClasificacion,
   input: CrearCategoria | CrearMarca,
-  actor: Actor,
 ): Promise<{ id: string }> {
   try {
-    return await withTransaction(async (tx) => {
+    return await transaccion(ctx, async (tx) => {
       const data =
         tipo === "Categoria"
           ? {
@@ -112,12 +115,12 @@ export async function crearClasificacion(
           : { nombre: input.nombre, activo: input.activo };
       const fila = await delegado(tx, tipo).create({ data });
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.CREATE,
         entidad: tipo,
         entidadId: fila.id,
         datosDespues: data,
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { id: fila.id };
     });
@@ -128,12 +131,12 @@ export async function crearClasificacion(
 }
 
 export async function actualizarClasificacion(
+  ctx: Ctx,
   tipo: TipoClasificacion,
   input: ActualizarCategoria | ActualizarMarca,
-  actor: Actor,
 ): Promise<{ id: string }> {
   try {
-    return await withTransaction(async (tx) => {
+    return await transaccion(ctx, async (tx) => {
       const antes = await delegado(tx, tipo).findUnique({ where: { id: input.id } });
       if (!antes) throw new NotFoundError(`La ${ETIQUETA[tipo]} no existe`);
       if (antes.activo && !input.activo)
@@ -148,13 +151,13 @@ export async function actualizarClasificacion(
           : { nombre: input.nombre, activo: input.activo };
       await delegado(tx, tipo).update({ where: { id: input.id }, data });
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.UPDATE,
         entidad: tipo,
         entidadId: input.id,
         datosAntes: { nombre: antes.nombre, activo: antes.activo },
         datosDespues: data,
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { id: input.id };
     });
@@ -165,40 +168,25 @@ export async function actualizarClasificacion(
 }
 
 export async function cambiarActivoClasificacion(
+  ctx: Ctx,
   tipo: TipoClasificacion,
   id: string,
   activo: boolean,
-  actor: Actor,
 ): Promise<void> {
-  await withTransaction(async (tx) => {
+  await transaccion(ctx, async (tx) => {
     const antes = await delegado(tx, tipo).findUnique({ where: { id } });
     if (!antes) throw new NotFoundError(`La ${ETIQUETA[tipo]} no existe`);
     if (antes.activo === activo) return;
     if (!activo) await assertPuedeDesactivar(tx, tipo, id, antes.nombre);
     await delegado(tx, tipo).update({ where: { id }, data: { activo } });
     await registrarAuditoria(tx, {
-      usuarioId: actor.id,
+      usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.UPDATE,
       entidad: tipo,
       entidadId: id,
       datosAntes: { activo: antes.activo },
       datosDespues: { activo },
-      meta: actor.meta,
+      meta: ctx.meta,
     });
   });
-}
-
-/** Busca por nombre sin distinguir mayúsculas; si no existe, la crea (importación CSV). */
-export async function obtenerOCrearClasificacion(
-  tx: Tx,
-  tipo: TipoClasificacion,
-  nombre: string,
-): Promise<string> {
-  const existente = await delegado(tx, tipo).findFirst({
-    where: { nombre: { equals: nombre, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (existente) return existente.id;
-  const creada = await delegado(tx, tipo).create({ data: { nombre, activo: true } });
-  return creada.id;
 }

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { ajusteAction } from "@/app/(app)/movimientos/actions";
+import { ajusteAction } from "@/app/(app)/p/[slug]/stock/movimientos/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";

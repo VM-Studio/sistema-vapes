@@ -13,7 +13,10 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { crearProveedorSchema, type CrearProveedor } from "@/lib/validations/proveedor";
 
-import { actualizarProveedorAction, crearProveedorAction } from "@/app/(app)/proveedores/actions";
+import {
+  actualizarProveedorAction,
+  crearProveedorAction,
+} from "@/app/(app)/p/[slug]/proveedores/actions";
 
 export interface ProveedorEditable {
   id: string;

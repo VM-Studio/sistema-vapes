@@ -1,5 +1,5 @@
 // =============================================================================
-// Sistema de gestión — capa de datos
+// Sistema de gestión multipanel — capa de datos
 //
 // Reglas de diseño (ver también prisma/migrations/*_constraints/migration.sql):
 // - Dinero: Decimal(12,2). Cantidades: Int. IDs: cuid().
@@ -35,22 +35,21 @@ enum RolUsuario {
   EMPLEADO
 }
 
+/// Por panel: DASHBOARD..REPORTES (PermisoUsuario con panelId).
+/// Globales (solo OWNER, sin filas de permiso): USUARIOS, CONFIGURACION.
 enum Modulo {
   DASHBOARD
-  PRODUCTOS
-  INVENTARIO
-  MOVIMIENTOS
-  VENTAS
-  COMPRAS
-  CLIENTES
   PROVEEDORES
+  PRODUCTOS
+  STOCK
+  VENTAS
+  CLIENTES
+  DEVOLUCIONES
+  COMPRAS
+  COTIZADOR
   REPORTES
   USUARIOS
   CONFIGURACION
-  /// Costos, ganancias, valorización (se suma a REPORTES / DASHBOARD).
-  FINANZAS
-  GASTOS
-  CAJA
 }
 
 enum TipoMovimiento {
@@ -90,55 +89,6 @@ enum MedioPago {
   CREDITO
   MERCADOPAGO
   OTRO
-  /// Saldo a favor del cliente (devoluciones acreditadas a su cuenta).
-  CREDITO_CLIENTE
-}
-
-enum EstadoPago {
-  PAGADA
-  PARCIAL
-  PENDIENTE
-}
-
-enum EstadoComprobante {
-  EMITIDO
-  ANULADO
-}
-
-enum TipoComprobante {
-  TICKET
-  FACTURA_A
-  FACTURA_B
-  FACTURA_C
-  PRESUPUESTO
-}
-
-enum EstadoCaja {
-  ABIERTA
-  CERRADA
-}
-
-/// Signo del monto: APERTURA ≥ 0, VENTA/PAGO_CLIENTE/INGRESO_EXTRA > 0,
-/// DEVOLUCION/GASTO/RETIRO < 0, CIERRE ≤ 0 (= −montoContado). CHECK en DB.
-enum TipoMovimientoCaja {
-  APERTURA
-  VENTA
-  PAGO_CLIENTE
-  DEVOLUCION
-  GASTO
-  RETIRO
-  INGRESO_EXTRA
-  CIERRE
-}
-
-enum TipoNotificacion {
-  STOCK_BAJO
-  SIN_STOCK
-  CAJA_DIFERENCIA
-  TRANSFERENCIA_PENDIENTE
-  DEUDA_CLIENTE
-  /// El backup diario falló o no corrió en 36 h.
-  BACKUP_FALLIDO
 }
 
 enum AccionAuditoria {
@@ -151,12 +101,6 @@ enum AccionAuditoria {
   /// Intento de hacer algo sin permiso (Forbidden).
   ACCESO_DENEGADO
   SESION_REVOCADA
-}
-
-enum EstadoOperacionSync {
-  PROCESANDO
-  APLICADA
-  RECHAZADA
 }
 
 // -----------------------------------------------------------------------------
@@ -179,24 +123,16 @@ model Usuario {
   deletedAt           DateTime?
 
   permisos          PermisoUsuario[]
+  paneles           UsuarioPanel[]
   movimientos       MovimientoStock[]
   compras           Compra[]
-  ventas            Venta[]                 @relation("VentaUsuario")
-  ventasAnuladas    Venta[]                 @relation("VentaAnuladaPor")
+  ventas            Venta[]           @relation("VentaUsuario")
+  ventasAnuladas    Venta[]           @relation("VentaAnuladaPor")
   transferencias    Transferencia[]
-  gastos            Gasto[]
   auditLogs         AuditLog[]
-  historialPrecios  HistorialPrecio[]
-  pagosVenta        PagoVenta[]             @relation("PagoUsuario")
-  pagosAnulados     PagoVenta[]             @relation("PagoAnuladoPor")
   devoluciones      Devolucion[]
-  cajasAbiertas     Caja[]                  @relation("CajaAbiertaPor")
-  cajasCerradas     Caja[]                  @relation("CajaCerradaPor")
-  movimientosCaja   MovimientoCaja[]
-  notificaciones    Notificacion[]
-  sesiones          Sesion[]                @relation("SesionUsuario")
-  sesionesRevocadas Sesion[]                @relation("SesionRevocadaPor")
-  operacionesSync   OperacionSincronizada[]
+  sesiones          Sesion[]          @relation("SesionUsuario")
+  sesionesRevocadas Sesion[]          @relation("SesionRevocadaPor")
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -219,29 +155,6 @@ model Sesion {
 
   @@index([usuarioId, revocadaAt])
   @@index([expiraAt])
-}
-
-/// Operaciones hechas sin conexión (escáner) y sincronizadas después. El
-/// `idOperacion` (UUID del cliente) es único: reenviarla devuelve el resultado
-/// guardado sin repetir movimientos.
-model OperacionSincronizada {
-  id              String              @id @default(cuid())
-  idOperacion     String              @unique
-  /// "INGRESO" | "RECUENTO" | "TRANSFERENCIA"
-  tipo            String
-  usuarioId       String
-  estado          EstadoOperacionSync
-  payload         Json
-  resultado       Json?
-  motivo          String?
-  /// Cuándo se hizo en el celular (sin red).
-  creadaEnCliente DateTime
-  createdAt       DateTime            @default(now())
-  procesadaAt     DateTime?
-
-  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-
-  @@index([usuarioId, estado])
 }
 
 /// Registro de cada backup (pg_dump) y su verificación.
@@ -284,10 +197,12 @@ model IntentoLogin {
   @@index([ip, createdAt])
 }
 
-/// Los OWNER tienen acceso total por rol y no necesitan filas acá.
+/// Permisos de un EMPLEADO por panel y módulo. Los OWNER tienen acceso total
+/// por rol y no necesitan filas acá (ni en UsuarioPanel).
 model PermisoUsuario {
   id            String   @id @default(cuid())
   usuarioId     String
+  panelId       String
   modulo        Modulo
   puedeVer      Boolean  @default(false)
   puedeCrear    Boolean  @default(false)
@@ -297,24 +212,109 @@ model PermisoUsuario {
   updatedAt     DateTime @updatedAt
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  panel   Panel   @relation(fields: [panelId], references: [id], onDelete: Restrict)
 
-  @@unique([usuarioId, modulo])
+  @@unique([usuarioId, panelId, modulo])
+  @@index([panelId])
+}
+
+/// Paneles a los que accede un EMPLEADO (los OWNER acceden a todos sin filas).
+model UsuarioPanel {
+  id        String   @id @default(cuid())
+  usuarioId String
+  panelId   String
+  createdAt DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  panel   Panel   @relation(fields: [panelId], references: [id], onDelete: Restrict)
+
+  @@unique([usuarioId, panelId])
+  @@index([panelId])
 }
 
 // -----------------------------------------------------------------------------
-// Maestros
+// Paneles: sistemas independientes dentro de la app (Vapes, Cosmetic, ...).
+// Toda tabla de negocio tiene panelId; los servicios la consultan SOLO con
+// dbPara(panelId) (src/server/db/panel-scoped.ts). La DB además verifica que
+// cada fila apunte a filas de su mismo panel (trigger fn_verificar_mismo_panel)
+// y que panelId no cambie nunca.
+//
+// panelId tiene DEFAULT current_setting('app.panel_id'): nadie la setea, así
+// que un INSERT que olvide el panel falla por NOT NULL en vez de guardar datos
+// huérfanos (y, de paso, Prisma lo tipa como opcional: lo inyecta dbPara).
+// -----------------------------------------------------------------------------
+
+model Panel {
+  id                     String   @id @default(cuid())
+  nombre                 String   @unique
+  /// kebab-case: /p/{slug}. El prefijo del ID de venta sale de acá (VAP-000001).
+  slug                   String   @unique
+  logoUrl                String?
+  /// Hex (#RRGGBB): tiñe botón primario e ítems activos dentro del panel.
+  colorAcento            String?
+  /// Cómo llama el panel al atributo principal de sus productos ("Pitadas", "Contenido"...).
+  etiquetaEspecificacion String
+  orden                  Int      @default(0)
+  activo                 Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  usuarios            UsuarioPanel[]
+  permisos            PermisoUsuario[]
+  depositos           Deposito[]
+  categorias          Categoria[]
+  marcas              Marca[]
+  proveedores         Proveedor[]
+  clientes            Cliente[]
+  productos           Producto[]
+  variantes           Variante[]
+  codigosAlternativos CodigoBarrasAlternativo[]
+  stocks              Stock[]
+  movimientos         MovimientoStock[]
+  compras             Compra[]
+  compraItems         CompraItem[]
+  ventas              Venta[]
+  ventaItems          VentaItem[]
+  devoluciones        Devolucion[]
+  transferencias      Transferencia[]
+  transferenciaItems  TransferenciaItem[]
+  configuraciones     Configuracion[]
+  secuencias          Secuencia[]
+  auditLogs           AuditLog[]
+
+  @@index([activo, orden])
+}
+
+/// Numeración correlativa por panel y entidad ("VENTA", "COMPRA", "TRANSFERENCIA",
+/// "DEVOLUCION"). Se toma con SELECT ... FOR UPDATE dentro de la transacción.
+model Secuencia {
+  id           String   @id @default(cuid())
+  panelId      String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  entidad      String
+  ultimoNumero Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, entidad])
+}
+
+// -----------------------------------------------------------------------------
+// Maestros (por panel)
 // -----------------------------------------------------------------------------
 
 model Deposito {
   id          String   @id @default(cuid())
-  nombre      String   @unique
+  panelId     String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  nombre      String
   direccion   String?
   activo      Boolean  @default(true)
-  /// Solo un depósito puede ser principal (índice único parcial en SQL).
+  /// Un solo depósito principal por panel (índice único parcial en SQL).
   esPrincipal Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  panel                 Panel             @relation(fields: [panelId], references: [id], onDelete: Restrict)
   stocks                Stock[]
   movimientos           MovimientoStock[]
   compras               Compra[]
@@ -322,36 +322,44 @@ model Deposito {
   transferenciasOrigen  Transferencia[]   @relation("TransferenciaOrigen")
   transferenciasDestino Transferencia[]   @relation("TransferenciaDestino")
   devoluciones          Devolucion[]
-  gastos                Gasto[]
-  cajas                 Caja[]
-  resumenes             ResumenDiario[]
+
+  @@unique([panelId, nombre])
 }
 
 model Categoria {
   id          String   @id @default(cuid())
-  nombre      String   @unique
+  panelId     String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  nombre      String
   descripcion String?
   activo      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  panel     Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
   productos Producto[]
+
+  @@unique([panelId, nombre])
 }
 
 model Marca {
   id        String   @id @default(cuid())
-  nombre    String   @unique
+  panelId   String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  nombre    String
   activo    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  panel     Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
   productos Producto[]
+
+  @@unique([panelId, nombre])
 }
 
 model Proveedor {
   id        String    @id @default(cuid())
+  panelId   String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   nombre    String
-  /// Único entre proveedores no borrados (índice único parcial en SQL).
+  /// Único por panel entre proveedores no borrados (índice único parcial en SQL).
   cuit      String?
   telefono  String?
   email     String?
@@ -362,32 +370,34 @@ model Proveedor {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  panel   Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   compras Compra[]
+
+  @@index([panelId, nombre])
 }
 
 model Cliente {
-  id            String    @id @default(cuid())
-  nombre        String
-  apellido      String?
-  /// Único entre clientes no borrados (índice único parcial en SQL).
-  documento     String?
-  telefono      String?
-  email         String?
-  direccion     String?
-  notas         String?
-  activo        Boolean   @default(true)
-  /// null = no se le vende fiado. Solo el OWNER lo edita.
-  limiteCredito Decimal?  @db.Decimal(12, 2)
-  /// Caché: Σ saldoPendiente de sus ventas confirmadas (verificado por trigger diferido).
-  saldoDeudor   Decimal   @default(0) @db.Decimal(12, 2)
-  /// Crédito por devoluciones acreditadas a cuenta; se usa como medio CREDITO_CLIENTE.
-  saldoAFavor   Decimal   @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id        String    @id @default(cuid())
+  panelId   String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  nombre    String
+  apellido  String?
+  /// Único por panel entre clientes no borrados (índice único parcial en SQL).
+  documento String?
+  /// Normalizado: "+54" + solo dígitos. Único por panel entre clientes no
+  /// borrados (índice único parcial en SQL + CHECK de formato).
+  telefono  String?
+  email     String?
+  direccion String?
+  notas     String?
+  activo    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
+  panel  Panel   @relation(fields: [panelId], references: [id], onDelete: Restrict)
   ventas Venta[]
 
+  @@index([panelId, nombre])
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_nombre_trgm")
   @@index([apellido(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_apellido_trgm")
   @@index([documento(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_documento_trgm")
@@ -400,6 +410,7 @@ model Cliente {
 
 model Producto {
   id             String    @id @default(cuid())
+  panelId        String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   nombre         String
   descripcion    String?
   categoriaId    String
@@ -412,25 +423,29 @@ model Producto {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
+  panel     Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
   categoria Categoria  @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
   marca     Marca?     @relation(fields: [marcaId], references: [id], onDelete: Restrict)
   variantes Variante[]
 
-  @@unique([nombre, marcaId])
-  @@index([categoriaId])
-  @@index([marcaId])
+  @@unique([panelId, nombre, marcaId])
+  @@index([panelId, categoriaId])
+  @@index([panelId, marcaId])
   /// Trigram (pg_trgm) para búsquedas ILIKE '%texto%'.
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "producto_nombre_trgm")
 }
 
 model Variante {
   id           String    @id @default(cuid())
+  /// Desnormalizado (= Producto.panelId, lo verifica un trigger): buscar por
+  /// código de barras dentro de un panel no necesita join.
+  panelId      String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   productoId   String
   /// Ej: "Mango Ice". "Único" para productos sin variantes.
   nombre       String
-  /// Formato PRD-XXXXXX si no se provee.
-  sku          String    @unique
-  /// Único (junto con CodigoBarrasAlternativo.codigo) entre variantes no borradas.
+  /// Formato PRD-XXXXXX si no se provee. Único por panel.
+  sku          String
+  /// Único por panel (junto con CodigoBarrasAlternativo.codigo) entre variantes no borradas.
   codigoBarras String?
   precioCosto  Decimal   @db.Decimal(12, 2)
   precioVenta  Decimal   @db.Decimal(12, 2)
@@ -440,6 +455,7 @@ model Variante {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
+  panel               Panel                     @relation(fields: [panelId], references: [id], onDelete: Restrict)
   producto            Producto                  @relation(fields: [productoId], references: [id], onDelete: Restrict)
   codigosAlternativos CodigoBarrasAlternativo[]
   stocks              Stock[]
@@ -447,45 +463,27 @@ model Variante {
   compraItems         CompraItem[]
   ventaItems          VentaItem[]
   transferenciaItems  TransferenciaItem[]
-  historialPrecios    HistorialPrecio[]
 
+  @@unique([panelId, sku])
   @@unique([productoId, nombre])
   /// Trigram (pg_trgm) para búsquedas ILIKE '%texto%'.
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "variante_nombre_trgm")
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin, map: "variante_sku_trgm")
 }
 
-/// INMUTABLE. Una fila por cada cambio de precio de una variante. La DB exige
-/// que todo cambio de precio de Variante venga con su fila acá (misma tx).
-model HistorialPrecio {
-  id                  String   @id @default(cuid())
-  varianteId          String
-  precioCostoAnterior Decimal  @db.Decimal(12, 2)
-  precioCostoNuevo    Decimal  @db.Decimal(12, 2)
-  precioVentaAnterior Decimal  @db.Decimal(12, 2)
-  precioVentaNuevo    Decimal  @db.Decimal(12, 2)
-  usuarioId           String
-  motivo              String?
-  createdAt           DateTime @default(now())
-
-  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
-  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-
-  @@index([varianteId, createdAt])
-  @@index([createdAt])
-  @@index([usuarioId])
-}
-
 /// Un mismo producto puede venir con más de un código según lote/importador.
 model CodigoBarrasAlternativo {
   id          String   @id @default(cuid())
+  panelId     String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   varianteId  String
-  codigo      String   @unique
+  codigo      String
   descripcion String?
   createdAt   DateTime @default(now())
 
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
 
+  @@unique([panelId, codigo])
   @@index([varianteId])
 }
 
@@ -497,21 +495,24 @@ model CodigoBarrasAlternativo {
 /// Un trigger rechaza cualquier cambio de cantidad sin movimiento en la misma tx.
 model Stock {
   id         String   @id @default(cuid())
+  panelId    String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   varianteId String
   depositoId String
   cantidad   Int      @default(0)
   updatedAt  DateTime @updatedAt
 
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
   deposito Deposito @relation(fields: [depositoId], references: [id], onDelete: Restrict)
 
-  @@unique([varianteId, depositoId])
-  @@index([depositoId])
+  @@unique([panelId, varianteId, depositoId])
+  @@index([panelId, depositoId])
 }
 
 /// Ledger INMUTABLE. Sin updatedAt. Los errores se corrigen con AJUSTE inverso.
 model MovimientoStock {
   id             String         @id @default(cuid())
+  panelId        String         @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   tipo           TipoMovimiento
   varianteId     String
   depositoId     String
@@ -521,20 +522,21 @@ model MovimientoStock {
   stockPosterior Int
   costoUnitario  Decimal?       @db.Decimal(12, 2)
   motivo         String?
-  /// "VENTA" | "COMPRA" | "TRANSFERENCIA" | "AJUSTE" (CHECK en DB).
+  /// "VENTA" | "COMPRA" | "TRANSFERENCIA" | "AJUSTE" | "DEVOLUCION" (CHECK en DB).
   referenciaTipo String?
   referenciaId   String?
   usuarioId      String
   createdAt      DateTime       @default(now())
 
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
   deposito Deposito @relation(fields: [depositoId], references: [id], onDelete: Restrict)
   usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
-  @@index([varianteId, depositoId, createdAt])
-  @@index([createdAt])
+  @@index([panelId, varianteId, depositoId, createdAt])
+  @@index([panelId, createdAt])
+  @@index([panelId, depositoId, createdAt])
   @@index([referenciaTipo, referenciaId])
-  @@index([depositoId])
   @@index([usuarioId])
 }
 
@@ -544,7 +546,9 @@ model MovimientoStock {
 
 model Compra {
   id          String       @id @default(cuid())
-  numero      Int          @unique @default(autoincrement())
+  panelId     String       @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Correlativo por panel (tabla Secuencia).
+  numero      Int
   proveedorId String?
   /// Depósito donde ingresa la mercadería.
   depositoId  String
@@ -558,19 +562,22 @@ model Compra {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
+  panel     Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
   proveedor Proveedor?   @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
   deposito  Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
   usuario   Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
   items     CompraItem[]
 
-  @@index([fecha])
-  @@index([proveedorId])
-  @@index([depositoId])
+  @@unique([panelId, numero])
+  @@index([panelId, fecha])
+  @@index([panelId, proveedorId])
+  @@index([panelId, depositoId])
   @@index([usuarioId])
 }
 
 model CompraItem {
   id            String   @id @default(cuid())
+  panelId       String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   compraId      String
   varianteId    String
   cantidad      Int
@@ -579,20 +586,23 @@ model CompraItem {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   compra   Compra   @relation(fields: [compraId], references: [id], onDelete: Cascade)
   variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
 
   @@unique([compraId, varianteId])
-  @@index([varianteId])
+  @@index([panelId, varianteId])
 }
 
 // -----------------------------------------------------------------------------
-// Ventas y facturación interna
+// Ventas (se cobran completas en el momento, con un único medio de pago)
 // -----------------------------------------------------------------------------
 
 model Venta {
   id              String      @id @default(cuid())
-  numero          Int         @unique @default(autoincrement())
+  panelId         String      @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Correlativo por panel (tabla Secuencia). ID visible: {SLUG}-{000001}.
+  numero          Int
   fecha           DateTime    @default(now())
   clienteId       String?
   /// Depósito de donde sale la mercadería.
@@ -605,13 +615,8 @@ model Venta {
   costoTotal      Decimal     @db.Decimal(12, 2)
   /// total - costoTotal (CHECK en DB).
   gananciaBruta   Decimal     @db.Decimal(12, 2)
-  /// Medio principal (el de mayor monto), informativo: la verdad son los PagoVenta.
+  /// Obligatorio al confirmar (CHECK en DB).
   medioPago       MedioPago?
-  estadoPago      EstadoPago  @default(PENDIENTE)
-  /// Σ pagos vigentes (verificado por trigger diferido).
-  montoPagado     Decimal     @default(0) @db.Decimal(12, 2)
-  /// total − montoPagado (lo que queda en cuenta corriente).
-  saldoPendiente  Decimal     @default(0) @db.Decimal(12, 2)
   /// Ajuste por redondear el total (≤ 0: siempre a favor del cliente).
   redondeo        Decimal     @default(0) @db.Decimal(12, 2)
   notas           String?
@@ -622,94 +627,82 @@ model Venta {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
+  panel        Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
   cliente      Cliente?     @relation(fields: [clienteId], references: [id], onDelete: Restrict)
   deposito     Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
   usuario      Usuario      @relation("VentaUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
   anuladaPor   Usuario?     @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
   items        VentaItem[]
-  comprobante  Comprobante?
-  pagos        PagoVenta[]
   devoluciones Devolucion[]
 
-  @@index([fecha])
-  @@index([estado, fecha])
-  @@index([clienteId, estado])
-  @@index([depositoId, fecha])
+  @@unique([panelId, numero])
+  @@index([panelId, fecha])
+  @@index([panelId, estado, fecha])
+  @@index([panelId, clienteId, estado])
+  @@index([panelId, depositoId, fecha])
   /// Dashboard de un empleado sin REPORTES: solo sus ventas del período.
-  @@index([usuarioId, fecha])
+  @@index([panelId, usuarioId, fecha])
 }
 
 model VentaItem {
-  id               String   @id @default(cuid())
-  ventaId          String
-  varianteId       String
-  cantidad         Int
+  id             String   @id @default(cuid())
+  panelId        String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  ventaId        String
+  varianteId     String
+  cantidad       Int
   /// Snapshot del precio de venta al momento de la venta.
-  precioUnitario   Decimal  @db.Decimal(12, 2)
+  precioUnitario Decimal  @db.Decimal(12, 2)
   /// Snapshot del costo al momento de la venta (ganancia histórica estable).
-  costoUnitario    Decimal  @db.Decimal(12, 2)
-  descuento        Decimal  @default(0) @db.Decimal(12, 2)
+  costoUnitario  Decimal  @db.Decimal(12, 2)
+  descuento      Decimal  @default(0) @db.Decimal(12, 2)
   /// cantidad * precioUnitario - descuento (CHECK en DB).
-  subtotal         Decimal  @db.Decimal(12, 2)
-  /// Caché: Σ DevolucionItem.cantidad (verificado por trigger diferido).
-  cantidadDevuelta Int      @default(0)
+  subtotal       Decimal  @db.Decimal(12, 2)
   /// Ej: "precio modificado por Ana de $16.000 a $15.000".
-  notas            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  notas          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  venta        Venta            @relation(fields: [ventaId], references: [id], onDelete: Cascade)
-  variante     Variante         @relation(fields: [varianteId], references: [id], onDelete: Restrict)
-  devoluciones DevolucionItem[]
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  variante Variante @relation(fields: [varianteId], references: [id], onDelete: Restrict)
 
   @@unique([ventaId, varianteId])
-  @@index([varianteId])
+  @@index([panelId, varianteId])
 }
 
-/// Facturación interna. Preparado para AFIP (cae, caeVencimiento).
-model Comprobante {
-  id             String            @id @default(cuid())
-  ventaId        String            @unique
-  tipo           TipoComprobante
-  puntoVenta     Int               @default(1)
-  numero         Int
-  fecha          DateTime          @default(now())
-  razonSocial    String?
-  cuit           String?
-  condicionIva   String?
-  total          Decimal           @db.Decimal(12, 2)
-  estado         EstadoComprobante @default(EMITIDO)
-  anuladoAt      DateTime?
-  pdfUrl         String?
-  /// AFIP (factura electrónica): se completan al integrar WSFE. Hoy sin uso.
-  cae            String?
-  caeVencimiento DateTime?
-  createdAt      DateTime          @default(now())
+/// Devolución de una venta. R3 la redefine (devoluciones por garantía): por
+/// ahora sin campos económicos. Inmutable.
+model Devolucion {
+  id         String   @id @default(cuid())
+  panelId    String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  numero     Int
+  ventaId    String
+  /// Depósito al que vuelve la mercadería.
+  depositoId String
+  fecha      DateTime @default(now())
+  motivo     String
+  usuarioId  String
+  createdAt  DateTime @default(now())
 
-  venta Venta @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  deposito Deposito @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
-  @@unique([tipo, puntoVenta, numero])
-}
-
-/// Numeración correlativa por (tipo, puntoVenta). Se toma con SELECT ... FOR UPDATE.
-model SecuenciaComprobante {
-  id           String          @id @default(cuid())
-  tipo         TipoComprobante
-  puntoVenta   Int             @default(1)
-  ultimoNumero Int             @default(0)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-
-  @@unique([tipo, puntoVenta])
+  @@unique([panelId, numero])
+  @@index([panelId, ventaId])
+  @@index([panelId, fecha])
 }
 
 // -----------------------------------------------------------------------------
-// Transferencias entre depósitos
+// Transferencias entre depósitos (del mismo panel)
 // -----------------------------------------------------------------------------
 
 model Transferencia {
   id                String              @id @default(cuid())
-  numero            Int                 @unique @default(autoincrement())
+  panelId           String              @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Correlativo por panel (tabla Secuencia).
+  numero            Int
   depositoOrigenId  String
   depositoDestinoId String
   estado            EstadoTransferencia @default(PENDIENTE)
@@ -720,12 +713,15 @@ model Transferencia {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
+  panel           Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
   depositoOrigen  Deposito            @relation("TransferenciaOrigen", fields: [depositoOrigenId], references: [id], onDelete: Restrict)
   depositoDestino Deposito            @relation("TransferenciaDestino", fields: [depositoDestinoId], references: [id], onDelete: Restrict)
   usuario         Usuario             @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
   items           TransferenciaItem[]
 
-  @@index([fecha])
+  @@unique([panelId, numero])
+  @@index([panelId, fecha])
+  @@index([panelId, estado])
   @@index([depositoOrigenId])
   @@index([depositoDestinoId])
   @@index([usuarioId])
@@ -733,188 +729,51 @@ model Transferencia {
 
 model TransferenciaItem {
   id              String   @id @default(cuid())
+  panelId         String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   transferenciaId String
   varianteId      String
   cantidad        Int
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  panel         Panel         @relation(fields: [panelId], references: [id], onDelete: Restrict)
   transferencia Transferencia @relation(fields: [transferenciaId], references: [id], onDelete: Cascade)
   variante      Variante      @relation(fields: [varianteId], references: [id], onDelete: Restrict)
 
   @@unique([transferenciaId, varianteId])
-  @@index([varianteId])
+  @@index([panelId, varianteId])
 }
 
 // -----------------------------------------------------------------------------
-// Gastos, configuración y auditoría
+// Configuración y auditoría
 // -----------------------------------------------------------------------------
 
-model CategoriaGasto {
-  id     String  @id @default(cuid())
-  nombre String  @unique
-  activo Boolean @default(true)
-
-  gastos Gasto[]
-}
-
-/// Para calcular ganancia neta. Soft delete. Si se pagó en efectivo desde una
-/// caja abierta, `cajaId` apunta a ella (y hay un MovimientoCaja GASTO).
-model Gasto {
-  id               String    @id @default(cuid())
-  fecha            DateTime  @default(now())
-  categoriaGastoId String
-  descripcion      String
-  monto            Decimal   @db.Decimal(12, 2)
-  medioPago        MedioPago
-  /// Gasto atribuible a un galpón (null = general del negocio).
-  depositoId       String?
-  cajaId           String?
-  /// Foto del ticket (StorageProvider).
-  comprobanteUrl   String?
-  /// Solo recordatorio: aparece en "recurrentes sin cargar" el mes siguiente.
-  recurrente       Boolean   @default(false)
-  usuarioId        String
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime?
-
-  categoria CategoriaGasto @relation(fields: [categoriaGastoId], references: [id], onDelete: Restrict)
-  deposito  Deposito?      @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-  caja      Caja?          @relation(fields: [cajaId], references: [id], onDelete: Restrict)
-  usuario   Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-
-  @@index([fecha])
-  @@index([usuarioId])
-  @@index([categoriaGastoId, fecha])
-  @@index([depositoId, fecha])
-  @@index([cajaId])
-}
-
-// -----------------------------------------------------------------------------
-// Caja (efectivo físico por depósito)
-// -----------------------------------------------------------------------------
-
-/// Una sola ABIERTA por depósito (índice único parcial). Cerrada = inmutable.
-model Caja {
-  id               String     @id @default(cuid())
-  depositoId       String
-  estado           EstadoCaja @default(ABIERTA)
-  abiertaPorId     String
-  abiertaAt        DateTime   @default(now())
-  montoInicial     Decimal    @db.Decimal(12, 2)
-  cerradaPorId     String?
-  cerradaAt        DateTime?
-  /// Σ movimientos (sin el CIERRE) al momento de cerrar.
-  montoEsperado    Decimal?   @db.Decimal(12, 2)
-  /// Arqueo real.
-  montoContado     Decimal?   @db.Decimal(12, 2)
-  /// contado − esperado.
-  diferencia       Decimal?   @db.Decimal(12, 2)
-  observaciones    String?
-  /// |diferencia| > toleranciaArqueo.
-  requiereRevision Boolean    @default(false)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-
-  deposito    Deposito         @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-  abiertaPor  Usuario          @relation("CajaAbiertaPor", fields: [abiertaPorId], references: [id], onDelete: Restrict)
-  cerradaPor  Usuario?         @relation("CajaCerradaPor", fields: [cerradaPorId], references: [id], onDelete: Restrict)
-  movimientos MovimientoCaja[]
-  pagos       PagoVenta[]
-  gastos      Gasto[]
-
-  @@index([depositoId, abiertaAt])
-  @@index([estado])
-  @@index([abiertaAt])
-}
-
-/// INMUTABLE. Solo efectivo: la caja es la caja física.
-model MovimientoCaja {
-  id             String             @id @default(cuid())
-  cajaId         String
-  tipo           TipoMovimientoCaja
-  /// Con signo (ver TipoMovimientoCaja).
-  monto          Decimal            @db.Decimal(12, 2)
-  /// "VENTA" | "PAGO" | "DEVOLUCION" | "GASTO".
-  referenciaTipo String?
-  referenciaId   String?
-  descripcion    String?
-  usuarioId      String
-  createdAt      DateTime           @default(now())
-
-  caja    Caja    @relation(fields: [cajaId], references: [id], onDelete: Restrict)
-  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-
-  @@index([cajaId, createdAt])
-  @@index([referenciaTipo, referenciaId])
-}
-
-// -----------------------------------------------------------------------------
-// Reportes y notificaciones
-// -----------------------------------------------------------------------------
-
-/// Agregados por día (zona horaria configurada) para que el dashboard no
-/// recorra años de ventas. depositoId null = consolidado. Se recalcula
-/// (upsert) dentro de cada transacción que afecta un día; `pnpm reportes:rebuild`
-/// la reconstruye entera. UNIQUE (fecha, depositoId) NULLS NOT DISTINCT.
-model ResumenDiario {
-  id                String   @id @default(cuid())
-  fecha             DateTime @db.Date
-  depositoId        String?
-  cantidadVentas    Int      @default(0)
-  unidadesVendidas  Int      @default(0)
-  totalVentas       Decimal  @default(0) @db.Decimal(14, 2)
-  costoVentas       Decimal  @default(0) @db.Decimal(14, 2)
-  /// totalVentas − costoVentas.
-  gananciaBruta     Decimal  @default(0) @db.Decimal(14, 2)
-  totalGastos       Decimal  @default(0) @db.Decimal(14, 2)
-  /// gananciaBruta − (devoluciones − costoDevoluciones) − totalGastos.
-  gananciaNeta      Decimal  @default(0) @db.Decimal(14, 2)
-  /// Cobrado ese día por medio: { "EFECTIVO": "1000.00", ... }.
-  totalPorMedioPago Json     @default("{}")
-  /// Importe devuelto ese día.
-  devoluciones      Decimal  @default(0) @db.Decimal(14, 2)
-  /// Costo de la mercadería devuelta (vuelve al stock): la devolución solo resta su margen.
-  costoDevoluciones Decimal  @default(0) @db.Decimal(14, 2)
-  updatedAt         DateTime @updatedAt
-
-  deposito Deposito? @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-
-  @@unique([fecha, depositoId])
-  @@index([depositoId, fecha])
-}
-
-model Notificacion {
-  id        String           @id @default(cuid())
-  tipo      TipoNotificacion
-  titulo    String
-  mensaje   String
-  /// { clave, href, ... }. `clave` deduplica (no se repite mientras haya una sin leer).
-  datos     Json?
-  leida     Boolean          @default(false)
-  /// Destinatario (null = todos los dueños).
-  usuarioId String?
-  createdAt DateTime         @default(now())
-
-  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-
-  @@index([usuarioId, leida, createdAt])
-  @@index([createdAt])
-}
-
-/// Key-value. Claves: nombreNegocio, moneda, alertaStockMinimo, prefijoSku, escaner, ventas,
-/// timezone, exigirCajaAbierta, toleranciaArqueo, diasCobertura, rotacion, ultimasAlertas.
+/// Key-value POR PANEL. Claves: escaner, ventas, alertaStockMinimo, prefijoSku.
 model Configuracion {
+  id        String   @id @default(cuid())
+  panelId   String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  clave     String
+  valor     Json
+  updatedAt DateTime @updatedAt
+
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, clave])
+}
+
+/// Key-value GLOBAL (fuera de los paneles). Claves: nombreNegocio, iconoApp, timezone.
+model ConfiguracionGlobal {
   id        String   @id @default(cuid())
   clave     String   @unique
   valor     Json
   updatedAt DateTime @updatedAt
 }
 
-/// INMUTABLE (trigger bloquea UPDATE/DELETE).
+/// INMUTABLE (trigger bloquea UPDATE/DELETE). panelId null = acción global
+/// (login, usuarios, configuración).
 model AuditLog {
   id           String          @id @default(cuid())
+  panelId      String?
   usuarioId    String?
   accion       AccionAuditoria
   /// Nombre de la tabla afectada.
@@ -926,82 +785,11 @@ model AuditLog {
   userAgent    String?
   createdAt    DateTime        @default(now())
 
+  panel   Panel?   @relation(fields: [panelId], references: [id], onDelete: Restrict)
   usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
   @@index([entidad, entidadId])
   @@index([usuarioId, createdAt])
+  @@index([panelId, createdAt])
   @@index([createdAt])
-}
-
-/// Un pago de una venta (pago partido y cobros posteriores de cuenta corriente).
-/// No se borra ni se edita: se anula (solo cambian los campos de anulación).
-model PagoVenta {
-  id              String    @id @default(cuid())
-  ventaId         String
-  medioPago       MedioPago
-  monto           Decimal   @db.Decimal(12, 2)
-  /// Nro de operación (transferencia / MercadoPago) o "Devolución #N".
-  referencia      String?
-  fecha           DateTime  @default(now())
-  usuarioId       String
-  anulado         Boolean   @default(false)
-  anuladoPorId    String?
-  anuladoAt       DateTime?
-  motivoAnulacion String?
-  /// Efectivo cobrado con la caja del depósito abierta (null = fuera de caja o no efectivo).
-  cajaId          String?
-  createdAt       DateTime  @default(now())
-
-  venta      Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
-  caja       Caja?    @relation(fields: [cajaId], references: [id], onDelete: Restrict)
-  usuario    Usuario  @relation("PagoUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
-  anuladoPor Usuario? @relation("PagoAnuladoPor", fields: [anuladoPorId], references: [id], onDelete: Restrict)
-
-  @@index([ventaId])
-  @@index([fecha, medioPago])
-  @@index([cajaId])
-}
-
-/// Devolución (parcial o total) de productos de una venta confirmada.
-model Devolucion {
-  id                 String     @id @default(cuid())
-  numero             Int        @unique @default(autoincrement())
-  ventaId            String
-  /// Depósito al que vuelve la mercadería.
-  depositoId         String
-  fecha              DateTime   @default(now())
-  motivo             String
-  total              Decimal    @db.Decimal(12, 2)
-  reintegroMedioPago MedioPago?
-  reintegroMonto     Decimal    @default(0) @db.Decimal(12, 2)
-  /// Parte acreditada al cliente (cancela deuda y el resto queda como saldo a favor).
-  aCuentaCorriente   Decimal    @default(0) @db.Decimal(12, 2)
-  usuarioId          String
-  createdAt          DateTime   @default(now())
-
-  venta    Venta            @relation(fields: [ventaId], references: [id], onDelete: Restrict)
-  deposito Deposito         @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-  usuario  Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
-  items    DevolucionItem[]
-
-  @@index([ventaId])
-  @@index([fecha])
-  /// Recalcular ResumenDiario de un depósito y un día.
-  @@index([depositoId, fecha])
-}
-
-model DevolucionItem {
-  id             String  @id @default(cuid())
-  devolucionId   String
-  ventaItemId    String
-  cantidad       Int
-  /// Snapshot del precio efectivo del ítem (con el descuento global prorrateado).
-  precioUnitario Decimal @db.Decimal(12, 2)
-  subtotal       Decimal @db.Decimal(12, 2)
-
-  devolucion Devolucion @relation(fields: [devolucionId], references: [id], onDelete: Cascade)
-  ventaItem  VentaItem  @relation(fields: [ventaItemId], references: [id], onDelete: Restrict)
-
-  @@index([devolucionId])
-  @@index([ventaItemId])
 }

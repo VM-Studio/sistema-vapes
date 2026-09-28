@@ -25,25 +25,26 @@ export function StatCard({
 }: StatCardProps) {
   const contenido = (
     <>
-      <p className="text-muted text-xs font-medium tracking-wide uppercase">{label}</p>
+      <p className="text-muted text-sm font-medium">{label}</p>
       <p
         className={cn(
           // Montos grandes ("$ 12.136.400") tienen que entrar en media pantalla de 375px.
-          "text-xl font-semibold tabular-nums sm:text-2xl lg:text-3xl",
+          "text-2xl leading-tight font-semibold tracking-tight tabular-nums lg:text-3xl",
           tono === "alerta" && "text-danger",
           tono === "ok" && "text-success",
         )}
       >
         {value}
       </p>
-      {hint && <p className="text-muted text-xs">{hint}</p>}
+      {hint && <p className="text-muted text-sm">{hint}</p>}
       {children}
     </>
   );
   const clase = cn(
-    "flex flex-col gap-1 rounded-xl border bg-surface p-4",
-    tono === "alerta" ? "border-danger/40 bg-danger-soft/40" : "border-border",
-    href && "transition-colors hover:border-primary/40",
+    "flex flex-col gap-1.5 rounded-2xl border bg-surface p-5 shadow-card",
+    tono === "alerta" ? "border-danger/30 bg-danger-soft" : "border-border",
+    href &&
+      "transition-[border-color,box-shadow] duration-150 hover:border-input hover:shadow-card-hover",
     className,
   );
   return href ? (

@@ -1,46 +1,43 @@
 /**
- * SEED DEMO — 90 días de operación simulada para probar dashboard y reportes.
- * Separado del seed base (que sigue siendo el mínimo para arrancar).
+ * SEED DEMO — 90 días de operación simulada del panel Vapes (ventas, compras,
+ * transferencias, ajustes y clientes) para probar el dashboard y los listados.
+ * Separado del seed base (que sigue siendo el mínimo para arrancar). Los
+ * paneles Cosmetic y Especiales no se tocan.
  *
  * No inserta filas "a mano": fija el reloj de negocio (src/lib/reloj.ts) en
  * cada momento simulado y llama a los MISMOS servicios que la app (vender,
- * cobrar, devolver, anular, compras, gastos, cajas). Así los triggers, la caja
- * y el ResumenDiario incremental se ejercitan de verdad.
+ * anular, compras, transferencias, ajustes) con `ctx = { panelId: Vapes, usuarioId }`.
+ * Así los triggers, la numeración por panel y el ledger se ejercitan de verdad.
  *
  * Uso (sobre una DB con el seed base): pnpm db:seed-demo
- * Idempotente: si ya corrió (Configuracion.seedDemo), no hace nada.
+ * Si la demo ya está cargada (existe su catálogo en Vapes), no hace nada.
  * Determinístico: PRNG con semilla fija.
  */
 import { MedioPago, Modulo, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { generarEan13 } from "../src/lib/barcode";
-import { prisma, withTransaction } from "../src/lib/db";
+import { prisma } from "../src/lib/db";
+import { normalizarPermiso } from "../src/lib/permisos";
 import { ahora, fijarReloj } from "../src/lib/reloj";
-import type { GastoInput } from "../src/lib/validations/finanzas";
-import { borradorVentaSchema } from "../src/lib/validations/venta";
+import { crearClienteSchema } from "../src/lib/validations/cliente";
+import { crearProveedorSchema } from "../src/lib/validations/proveedor";
+import { borradorVentaSchema, venderSchema } from "../src/lib/validations/venta";
 import { diaEn, inicioDia, sumarDias, type DiaISO } from "../src/lib/zona-horaria";
+import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { DomainError } from "../src/server/errors";
-import type { Actor } from "../src/server/services/actor";
-import { abrirCaja, cerrarCaja, obtenerCajaAbierta } from "../src/server/services/caja.service";
+import { crearCliente } from "../src/server/services/cliente.service";
 import { crearCompra, recibirCompra } from "../src/server/services/compra.service";
-import { obtenerZonaHoraria } from "../src/server/services/configuracion.service";
-import { crearGasto } from "../src/server/services/gasto.service";
+import { zonaHorariaNegocio } from "../src/server/services/dashboard.service";
 import {
-  crearTransferencia,
   completarTransferencia,
+  crearTransferencia,
   registrarAjuste,
 } from "../src/server/services/movimiento.service";
 import { actualizarPrecios, generarSku } from "../src/server/services/producto.service";
+import { crearProveedor } from "../src/server/services/proveedor.service";
 import { registrarMovimiento } from "../src/server/services/stock.service";
-import {
-  anularVenta,
-  crearBorrador,
-  crearDevolucion,
-  pagarACuenta,
-  registrarPago,
-  vender,
-} from "../src/server/services/venta.service";
+import { anularVenta, crearBorrador, vender } from "../src/server/services/venta.service";
 
 /**
  * En producción el seed NO corre (crea usuarios con contraseñas conocidas):
@@ -53,8 +50,12 @@ if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "true") 
   process.exit(1);
 }
 
+const PANEL = "pnl_vapes";
+const db = dbPara(PANEL);
 const DIAS = 90;
 const DUENO = { puedeEditar: true };
+const META = { ip: "127.0.0.1", userAgent: "seed-demo" };
+const ctxDe = (u: { id: string }): Ctx => ({ panelId: PANEL, usuarioId: u.id, meta: META });
 
 // -----------------------------------------------------------------------------
 // PRNG determinístico (mulberry32)
@@ -87,6 +88,7 @@ interface ProductoDemo {
   costo: string;
   venta: string;
   minimo: number;
+  /** stock: [Ayres Plaza, Mercedes]. */
   sabores: { nombre: string; ean12: string; peso: number; stock: [number, number] }[];
 }
 
@@ -104,7 +106,7 @@ const PRODUCTOS_DEMO: ProductoDemo[] = [
       { nombre: "Watermelon", ean12: "779000400002", peso: 7, stock: [18, 8] },
       { nombre: "Grape", ean12: "779000400003", peso: 4, stock: [12, 6] },
       { nombre: "Peach Ice", ean12: "779000400004", peso: 3, stock: [10, 4] },
-      // Nunca se vende: tiene que aparecer como SIN_MOVIMIENTO.
+      // Nunca se vende: queda como producto sin movimiento.
       { nombre: "Café Tabaco", ean12: "779000400005", peso: 0, stock: [15, 0] },
     ],
   },
@@ -154,55 +156,62 @@ interface VarianteDemo {
   peso: number;
 }
 
-async function crearCatalogoDemo(ownerId: string, g1: string, g2: string) {
+async function crearCatalogoDemo(ctx: Ctx, g1: string, g2: string) {
   for (const p of PRODUCTOS_DEMO) {
-    const categoria = await prisma.categoria.findUniqueOrThrow({ where: { nombre: p.categoria } });
-    const marca = await prisma.marca.upsert({
-      where: { nombre: p.marca },
+    const categoria = await db.categoria.findUniqueOrThrow({
+      where: { panelId_nombre: { panelId: PANEL, nombre: p.categoria } },
+    });
+    const marca = await db.marca.upsert({
+      where: { panelId_nombre: { panelId: PANEL, nombre: p.marca } },
       update: {},
       create: { nombre: p.marca },
     });
-    await withTransaction(async (tx) => {
-      const producto = await tx.producto.create({
-        data: {
-          nombre: p.nombre,
-          categoriaId: categoria.id,
-          marcaId: marca.id,
-          tieneVariantes: p.tieneVariantes,
-          descripcion: `${p.nombre} (demo)`,
-        },
-      });
-      for (const s of p.sabores) {
-        const variante = await tx.variante.create({
+    await transaccion(
+      ctx,
+      async (tx) => {
+        const producto = await tx.producto.create({
           data: {
-            productoId: producto.id,
-            nombre: s.nombre,
-            sku: await generarSku(tx),
-            codigoBarras: generarEan13(s.ean12),
-            precioCosto: p.costo,
-            precioVenta: p.venta,
-            stockMinimo: p.minimo,
+            nombre: p.nombre,
+            categoriaId: categoria.id,
+            marcaId: marca.id,
+            tieneVariantes: p.tieneVariantes,
+            descripcion: `${p.nombre} (demo)`,
           },
         });
-        for (const [i, dep] of [g1, g2].entries()) {
-          const cantidad = s.stock[i] ?? 0;
-          if (cantidad > 0) {
-            await registrarMovimiento(tx, {
-              tipo: TipoMovimiento.INGRESO_MANUAL,
-              varianteId: variante.id,
-              depositoId: dep,
-              cantidad,
-              costoUnitario: p.costo,
-              motivo: "Stock inicial (demo)",
-              usuarioId: ownerId,
-            });
+        for (const s of p.sabores) {
+          const variante = await tx.variante.create({
+            data: {
+              productoId: producto.id,
+              nombre: s.nombre,
+              sku: await generarSku(tx, PANEL),
+              codigoBarras: generarEan13(s.ean12),
+              precioCosto: p.costo,
+              precioVenta: p.venta,
+              stockMinimo: p.minimo,
+            },
+          });
+          for (const [i, dep] of [g1, g2].entries()) {
+            const cantidad = s.stock[i] ?? 0;
+            if (cantidad > 0) {
+              await registrarMovimiento(tx, {
+                tipo: TipoMovimiento.INGRESO_MANUAL,
+                varianteId: variante.id,
+                depositoId: dep,
+                cantidad,
+                costoUnitario: p.costo,
+                motivo: "Stock inicial (demo)",
+                usuarioId: ctx.usuarioId,
+              });
+            }
           }
         }
-      }
-    });
+      },
+      { timeout: 60_000 },
+    );
   }
 }
 
+/** Empleados demo: acceso SOLO a Vapes, con permisos de vendedor. */
 async function crearUsuariosDemo() {
   const passwordHash = await bcrypt.hash("Cambiar123!", 12);
   const vendedores = [];
@@ -215,16 +224,31 @@ async function crearUsuariosDemo() {
       update: {},
       create: { ...u, rol: RolUsuario.EMPLEADO, passwordHash, debeCambiarPassword: true },
     });
+    await prisma.usuarioPanel.upsert({
+      where: { usuarioId_panelId: { usuarioId: usuario.id, panelId: PANEL } },
+      update: {},
+      create: { usuarioId: usuario.id, panelId: PANEL },
+    });
     for (const [modulo, crear] of [
+      [Modulo.DASHBOARD, false],
       [Modulo.VENTAS, true],
-      [Modulo.INVENTARIO, true],
-      [Modulo.CLIENTES, false],
-      [Modulo.CAJA, true],
+      [Modulo.STOCK, true],
+      [Modulo.PRODUCTOS, false],
+      [Modulo.CLIENTES, true],
+      [Modulo.COTIZADOR, false],
     ] as const) {
+      const { panelId, ...acciones } = normalizarPermiso({
+        panelId: PANEL,
+        modulo,
+        puedeVer: true,
+        puedeCrear: crear,
+        puedeEditar: false,
+        puedeEliminar: false,
+      });
       await prisma.permisoUsuario.upsert({
-        where: { usuarioId_modulo: { usuarioId: usuario.id, modulo } },
+        where: { usuarioId_panelId_modulo: { usuarioId: usuario.id, panelId, modulo } },
         update: {},
-        create: { usuarioId: usuario.id, modulo, puedeVer: true, puedeCrear: crear },
+        create: { usuarioId: usuario.id, panelId, ...acciones },
       });
     }
     vendedores.push(usuario);
@@ -232,55 +256,28 @@ async function crearUsuariosDemo() {
   return vendedores;
 }
 
+/** Teléfonos distintos entre sí y del cliente del seed base (+541155550101). */
 const CLIENTES_DEMO = [
-  {
-    nombre: "Sofía",
-    apellido: "Ramírez",
-    documento: "35111222",
-    telefono: "11 5555-0201",
-    limiteCredito: "60000.00",
-  },
-  {
-    nombre: "Julián",
-    apellido: "Pereyra",
-    documento: "33222333",
-    telefono: "11 5555-0202",
-    limiteCredito: "40000.00",
-  },
-  {
-    nombre: "Camila",
-    apellido: "Torres",
-    documento: "38333444",
-    telefono: "11 5555-0203",
-    limiteCredito: null,
-  },
-  {
-    nombre: "Kiosco El Paso",
-    apellido: null,
-    documento: "30712222334",
-    telefono: "11 5555-0204",
-    limiteCredito: "150000.00",
-  },
-  {
-    nombre: "Matías",
-    apellido: "Luna",
-    documento: "36444555",
-    telefono: "11 5555-0205",
-    limiteCredito: "30000.00",
-  },
-  {
-    nombre: "Valentina",
-    apellido: "Sosa",
-    documento: "39555666",
-    telefono: "11 5555-0206",
-    limiteCredito: null,
-  },
+  { nombre: "Sofía", apellido: "Ramírez", documento: "35111222", telefono: "11 5555-0201" },
+  { nombre: "Julián", apellido: "Pereyra", documento: "33222333", telefono: "11 5555-0202" },
+  { nombre: "Camila", apellido: "Torres", documento: "38333444", telefono: "11 5555-0203" },
+  { nombre: "Kiosco El Paso", documento: "30712222334", telefono: "0351 455-0204" },
+  { nombre: "Matías", apellido: "Luna", documento: "36444555", telefono: "+54 9 11 5555-0205" },
+  { nombre: "Valentina", apellido: "Sosa", documento: "39555666", telefono: "11 5555-0206" },
 ];
 
 const PROVEEDORES_DEMO = [
-  { nombre: "Importadora Vapor Sur SA", cuit: "30716543218" },
-  { nombre: "TechPro Mayorista", cuit: "30709876543" },
+  { nombre: "Importadora Vapor Sur SA", cuit: "30716543214", telefono: "+541144440001" },
+  { nombre: "TechPro Mayorista", cuit: "30709876542", telefono: "+541144440002" },
 ];
+
+const MEDIOS = [
+  { valor: MedioPago.EFECTIVO, peso: 45 },
+  { valor: MedioPago.TRANSFERENCIA, peso: 22 },
+  { valor: MedioPago.MERCADOPAGO, peso: 14 },
+  { valor: MedioPago.DEBITO, peso: 12 },
+  { valor: MedioPago.CREDITO, peso: 7 },
+] as const;
 
 // -----------------------------------------------------------------------------
 // Simulación
@@ -289,50 +286,63 @@ const PROVEEDORES_DEMO = [
 type Evento = { momento: Date; orden: number; hacer: () => Promise<void> };
 
 async function main() {
-  if (await prisma.configuracion.findUnique({ where: { clave: "seedDemo" } })) {
-    console.log("seed-demo ya se corrió en esta base: no hago nada.");
+  if (await db.producto.findFirst({ where: { nombre: PRODUCTOS_DEMO[0]!.nombre } })) {
+    console.log(
+      "seed-demo ya se corrió en esta base (el catálogo demo existe en Vapes): no hago nada.",
+    );
     return;
   }
-  const tz = await obtenerZonaHoraria();
+
+  const [owner, owner2] = await prisma.usuario.findMany({
+    where: { rol: RolUsuario.OWNER, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+  });
+  const g1 = await db.deposito.findUnique({
+    where: { panelId_nombre: { panelId: PANEL, nombre: "Ayres Plaza" } },
+  });
+  const g2 = await db.deposito.findUnique({
+    where: { panelId_nombre: { panelId: PANEL, nombre: "Mercedes" } },
+  });
+  if (!owner || !owner2 || !g1 || !g2)
+    throw new Error("Corré primero el seed base (pnpm db:seed).");
+  // Empleados del seed base con acceso a Vapes (Trinidad) también venden.
+  const empleadosBase = await prisma.usuario.findMany({
+    where: { rol: RolUsuario.EMPLEADO, deletedAt: null, paneles: { some: { panelId: PANEL } } },
+    orderBy: { createdAt: "asc" },
+    take: 1,
+  });
+
+  const ctxOwner = ctxDe(owner);
+  const tz = await zonaHorariaNegocio(ctxOwner);
   const ahoraReal = new Date();
   const hoy = diaEn(ahoraReal, tz);
   const primerDia = sumarDias(hoy, -(DIAS - 1));
   const en = (dia: DiaISO, hh: number, mm = 0) =>
     new Date(inicioDia(dia, tz).getTime() + (hh * 60 + mm) * 60_000);
 
-  const [owner, owner2] = await prisma.usuario.findMany({
-    where: { rol: RolUsuario.OWNER },
-    orderBy: { email: "asc" },
-  });
-  const empleado = await prisma.usuario.findUniqueOrThrow({
-    where: { email: "empleado@negocio.com" },
-  });
-  const depositos = await prisma.deposito.findMany({
-    orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
-  });
-  const [g1, g2] = depositos as [(typeof depositos)[number], (typeof depositos)[number]];
-  if (!owner || !owner2 || !g1 || !g2)
-    throw new Error("Corré primero el seed base (pnpm db:seed).");
-
-  // El catálogo y el stock inicial "existen" desde antes del primer día.
+  // El catálogo, los clientes y el stock inicial "existen" desde antes del primer día.
   fijarReloj(() => en(sumarDias(primerDia, -1), 10));
-  await crearCatalogoDemo(owner.id, g1.id, g2.id);
+  await crearCatalogoDemo(ctxOwner, g1.id, g2.id);
   const [ana, lucas] = await crearUsuariosDemo();
-  const clientes: { id: string; nombre: string; limiteCredito: Prisma.Decimal | null }[] = [];
+  const clientes: { id: string }[] = [];
   for (const c of CLIENTES_DEMO) {
-    const existe = await prisma.cliente.findFirst({
-      where: { documento: c.documento, deletedAt: null },
+    const datos = crearClienteSchema.parse(c);
+    const existe = await db.cliente.findFirst({
+      where: { documento: datos.documento, deletedAt: null },
     });
-    clientes.push(existe ?? (await prisma.cliente.create({ data: c })));
+    clientes.push(existe ?? (await crearCliente(ctxOwner, datos)));
   }
-  const proveedores = [
-    await prisma.proveedor.findFirstOrThrow({ where: { deletedAt: null } }),
-    ...(await Promise.all(PROVEEDORES_DEMO.map((p) => prisma.proveedor.create({ data: p })))),
+  const proveedores: { id: string }[] = [
+    await db.proveedor.findFirstOrThrow({ where: { deletedAt: null } }),
   ];
-  const fiables = clientes.filter((c) => c.limiteCredito !== null);
+  for (const p of PROVEEDORES_DEMO) {
+    const datos = crearProveedorSchema.parse(p);
+    const existe = await db.proveedor.findFirst({ where: { cuit: datos.cuit, deletedAt: null } });
+    proveedores.push(existe ?? (await crearProveedor(ctxOwner, datos)));
+  }
 
   const variantes: VarianteDemo[] = (
-    await prisma.variante.findMany({
+    await db.variante.findMany({
       where: { deletedAt: null },
       include: { producto: { select: { nombre: true } } },
     })
@@ -345,27 +355,12 @@ async function main() {
   });
   const vendibles = variantes.filter((v) => v.peso > 0);
 
-  const actorDe = (u: { id: string }): Actor => ({
-    id: u.id,
-    meta: { ip: "127.0.0.1", userAgent: "seed-demo" },
-  });
-  const cajeros = { [g1.id]: [owner, ana!, empleado], [g2.id]: [lucas!, owner2] } as Record<
-    string,
-    { id: string }[]
-  >;
-
-  const stats = {
-    ventas: 0,
-    fiadas: 0,
-    anuladas: 0,
-    devoluciones: 0,
-    cobros: 0,
-    compras: 0,
-    gastos: 0,
-    cajas: 0,
-    fallidas: 0,
+  const cajeros: Record<string, { id: string }[]> = {
+    [g1.id]: [owner, ana!, ...empleadosBase],
+    [g2.id]: [lucas!, owner2],
   };
-  const ventasFiadas: { id: string; dia: DiaISO; clienteId: string; depositoId: string }[] = [];
+
+  const stats = { ventas: 0, anuladas: 0, compras: 0, transferencias: 0, ajustes: 0, fallidas: 0 };
   const agenda = new Map<DiaISO, Evento[]>();
   const esDomingo = (dia: DiaISO) => new Date(`${dia}T12:00:00Z`).getUTCDay() === 0;
   const agendar = (dia: DiaISO, momento: Date, hacer: () => Promise<void>, orden = 5) => {
@@ -381,25 +376,21 @@ async function main() {
   };
   const stockEn = async (varianteId: string, depositoId: string) =>
     (
-      await prisma.stock.findUnique({
-        where: { varianteId_depositoId: { varianteId, depositoId } },
+      await db.stock.findUnique({
+        where: { panelId_varianteId_depositoId: { panelId: PANEL, varianteId, depositoId } },
       })
     )?.cantidad ?? 0;
 
-  // --- Ventas ------------------------------------------------------------------
-  async function unaVenta(dia: DiaISO, depositoId: string, soloEfectivo = false) {
+  // --- Ventas: se cobran completas en el momento con un único medio de pago ------
+  async function unaVenta(depositoId: string) {
     const cajero = elegir(cajeros[depositoId]!);
     const lineas = new Map<string, number>();
-    for (
-      let i = 0,
-        n = ponderado([
-          { valor: 1, peso: 6 },
-          { valor: 2, peso: 3 },
-          { valor: 3, peso: 1 },
-        ]);
-      i < n;
-      i++
-    ) {
+    const n = ponderado([
+      { valor: 1, peso: 6 },
+      { valor: 2, peso: 3 },
+      { valor: 3, peso: 1 },
+    ]);
+    for (let i = 0; i < n; i++) {
       const v = ponderado(vendibles.map((x) => ({ valor: x, peso: x.peso })));
       const cant = ponderado([
         { valor: 1, peso: 7 },
@@ -410,134 +401,25 @@ async function main() {
       if (disponible >= cant) lineas.set(v.id, (lineas.get(v.id) ?? 0) + cant);
     }
     if (lineas.size === 0) return;
-    const tipo = soloEfectivo
-      ? "efectivo"
-      : ponderado([
-          { valor: "efectivo", peso: 45 },
-          { valor: "transferencia", peso: 18 },
-          { valor: "mercadopago", peso: 12 },
-          { valor: "debito", peso: 10 },
-          { valor: "partido", peso: 8 },
-          { valor: "fiado", peso: 9 },
-        ] as const);
-    const cliente = tipo === "fiado" ? elegir(fiables) : azar() < 0.2 ? elegir(clientes) : null;
-    const borrador = borradorVentaSchema.parse({
-      depositoId,
-      clienteId: cliente?.id,
-      items: [...lineas].map(([varianteId, cantidad]) => ({ varianteId, cantidad })),
+    const cliente = azar() < 0.25 ? elegir(clientes) : null;
+    const medioPago = ponderado(MEDIOS);
+    const datos = venderSchema.parse({
+      venta: {
+        depositoId,
+        clienteId: cliente?.id,
+        items: [...lineas].map(([varianteId, cantidad]) => ({ varianteId, cantidad })),
+      },
+      medioPago,
+      // En efectivo, a veces se redondea a favor del cliente.
+      redondearA: medioPago === MedioPago.EFECTIVO && azar() < 0.3 ? 100 : 0,
     });
-    const precios = await prisma.variante.findMany({
-      where: { id: { in: [...lineas.keys()] } },
-      select: { id: true, precioVenta: true },
-    });
-    const total = precios.reduce(
-      (a, p) => a.plus(p.precioVenta.mul(lineas.get(p.id)!)),
-      new Prisma.Decimal(0),
-    );
-    const pagos =
-      tipo === "efectivo"
-        ? [{ medioPago: MedioPago.EFECTIVO, monto: total.toNumber() }]
-        : tipo === "transferencia"
-          ? [
-              {
-                medioPago: MedioPago.TRANSFERENCIA,
-                monto: total.toNumber(),
-                referencia: `OP-${entre(100000, 999999)}`,
-              },
-            ]
-          : tipo === "mercadopago"
-            ? [{ medioPago: MedioPago.MERCADOPAGO, monto: total.toNumber() }]
-            : tipo === "debito"
-              ? [{ medioPago: MedioPago.DEBITO, monto: total.toNumber() }]
-              : tipo === "partido"
-                ? [
-                    { medioPago: MedioPago.EFECTIVO, monto: 10000 },
-                    { medioPago: MedioPago.TRANSFERENCIA, monto: total.minus(10000).toNumber() },
-                  ].filter((p) => p.monto > 0)
-                : azar() < 0.5
-                  ? [
-                      {
-                        medioPago: MedioPago.EFECTIVO,
-                        monto: Math.floor(total.toNumber() / 3 / 100) * 100,
-                      },
-                    ].filter((p) => p.monto > 0)
-                  : [];
     try {
-      const v = await vender({ venta: borrador, pagos, redondearA: 0 }, actorDe(cajero), DUENO);
+      const v = await vender(ctxDe(cajero), datos, DUENO);
       stats.ventas++;
-      if (tipo === "fiado" && cliente) {
-        stats.fiadas++;
-        ventasFiadas.push({ id: v.id, dia, clienteId: cliente.id, depositoId });
-        // 70% se cobra entre 3 y 25 días después.
-        if (azar() < 0.7) {
-          const diaCobro = sumarDias(dia, entre(3, 25));
-          agendar(diaCobro, en(diaCobro, entre(11, 19), entre(0, 59)), async () => {
-            const venta = await prisma.venta.findUniqueOrThrow({ where: { id: v.id } });
-            if (venta.estado !== "CONFIRMADA" || venta.saldoPendiente.lte(0)) return;
-            await registrarPago(
-              v.id,
-              {
-                medioPago: azar() < 0.6 ? MedioPago.EFECTIVO : MedioPago.TRANSFERENCIA,
-                monto: venta.saldoPendiente.toNumber(),
-              },
-              actorDe(elegir(cajeros[depositoId]!)),
-            );
-            stats.cobros++;
-          });
-        }
-      }
-      // ~2%: se anula en el momento (error de carga).
-      if (azar() < 0.035) {
-        await anularVenta(v.id, "Error de carga: se cobró dos veces", actorDe(owner!));
+      // ~3%: se anula en el momento (error de carga); la mercadería vuelve al depósito.
+      if (azar() < 0.03) {
+        await anularVenta(ctxOwner, v.id, "Error de carga: se cobró dos veces");
         stats.anuladas++;
-      } else if (azar() < 0.05) {
-        // ~5%: el cliente vuelve a devolver algo entre 1 y 6 días después.
-        const diaDev = sumarDias(dia, entre(1, 6));
-        agendar(diaDev, en(diaDev, entre(12, 18), entre(0, 59)), async () => {
-          const venta = await prisma.venta.findUniqueOrThrow({
-            where: { id: v.id },
-            include: { items: true },
-          });
-          if (venta.estado !== "CONFIRMADA") return;
-          const item = venta.items[0]!;
-          const dinero = venta.montoPagado.greaterThan(0);
-          const devolver = (medioPago: "EFECTIVO" | "TRANSFERENCIA") =>
-            crearDevolucion(
-              {
-                ventaId: v.id,
-                depositoId,
-                motivo: elegir(["Vino fallado", "No le gustó el sabor", "Cambio de opinión"]),
-                items: [{ ventaItemId: item.id, cantidad: 1 }],
-                reintegro:
-                  dinero || !venta.clienteId
-                    ? { tipo: "dinero", medioPago }
-                    : { tipo: "cuentaCorriente" },
-              },
-              actorDe(owner!),
-            );
-          try {
-            await devolver(MedioPago.EFECTIVO);
-          } catch (e) {
-            if (!(e instanceof DomainError)) throw e;
-            if (e.code === "EFECTIVO_INSUFICIENTE") {
-              // En la caja no alcanza: se le devuelve por transferencia.
-              await devolver(MedioPago.TRANSFERENCIA);
-            } else if (venta.clienteId) {
-              // Fiado a medio pagar: se acredita a su cuenta.
-              await crearDevolucion(
-                {
-                  ventaId: v.id,
-                  depositoId,
-                  motivo: "Vino fallado",
-                  items: [{ ventaItemId: item.id, cantidad: 1 }],
-                  reintegro: { tipo: "cuentaCorriente" },
-                },
-                actorDe(owner!),
-              );
-            } else return;
-          }
-          stats.devoluciones++;
-        });
       }
     } catch (e) {
       if (!(e instanceof DomainError)) throw e;
@@ -546,8 +428,8 @@ async function main() {
   }
 
   // --- Compras: reponer lo que está bajo ----------------------------------------
-  async function unaCompra(dia: DiaISO, depositoId: string) {
-    const objetivo = depositoId === g1.id ? 30 : 15;
+  async function unaCompra(depositoId: string) {
+    const objetivo = depositoId === g1!.id ? 30 : 15;
     // Estos dos el importador no los trae más: van a quedar bajo mínimo / sin stock.
     const discontinuados = ["Ignite V80|Grape Ice", "Elf Bar BC5000|Lemon Mint"];
     const stocks = await Promise.all(
@@ -560,154 +442,25 @@ async function main() {
     if (reponer.length === 0) reponer = stocks.sort((a, b) => a.s - b.s).slice(0, 3);
     const items = [];
     for (const { v, s } of reponer) {
-      const costo = (await prisma.variante.findUniqueOrThrow({ where: { id: v.id } })).precioCosto;
+      const costo = (await db.variante.findUniqueOrThrow({ where: { id: v.id } })).precioCosto;
       items.push({
         varianteId: v.id,
         cantidad: Math.max(objetivo - s, 6),
         costoUnitario: costo.toNumber(),
       });
     }
-    const proveedor = elegir(proveedores);
-    const c = await crearCompra(
-      {
-        proveedorId: proveedor.id,
-        depositoId,
-        fecha: ahora(),
-        descuento: 0,
-        notas: undefined,
-        items,
-      },
-      actorDe(owner!),
-    );
-    await recibirCompra(c.id, actorDe(owner!), { actualizarCostos: false });
+    const c = await crearCompra(ctxOwner, {
+      proveedorId: elegir(proveedores).id,
+      depositoId,
+      fecha: ahora(),
+      descuento: 0,
+      notas: undefined,
+      items,
+    });
+    await recibirCompra(ctxOwner, c.id, { actualizarCostos: false });
     stats.compras++;
   }
 
-  // --- Gastos -------------------------------------------------------------------
-  const GASTOS_FIJOS: {
-    dia: number;
-    cat: string;
-    desc: string;
-    monto: number;
-    medio: GastoInput["medioPago"];
-    dep: string | null;
-    rec: boolean;
-  }[] = [
-    {
-      dia: 1,
-      cat: "cgasto_alquiler",
-      desc: "Alquiler Galpón 1",
-      monto: 220000,
-      medio: MedioPago.TRANSFERENCIA,
-      dep: g1.id,
-      rec: true,
-    },
-    {
-      dia: 1,
-      cat: "cgasto_alquiler",
-      desc: "Alquiler Galpón 2",
-      monto: 140000,
-      medio: MedioPago.TRANSFERENCIA,
-      dep: g2.id,
-      rec: true,
-    },
-    {
-      dia: 5,
-      cat: "cgasto_servicios",
-      desc: "Luz Galpón 1",
-      monto: 26000,
-      medio: MedioPago.DEBITO,
-      dep: g1.id,
-      rec: true,
-    },
-    {
-      dia: 6,
-      cat: "cgasto_servicios",
-      desc: "Internet Galpón 2",
-      monto: 15000,
-      medio: MedioPago.DEBITO,
-      dep: g2.id,
-      rec: true,
-    },
-    {
-      dia: 4,
-      cat: "cgasto_sueldos",
-      desc: "Comisión Ana",
-      monto: 65000,
-      medio: MedioPago.TRANSFERENCIA,
-      dep: null,
-      rec: true,
-    },
-    {
-      dia: 4,
-      cat: "cgasto_sueldos",
-      desc: "Comisión Lucas",
-      monto: 55000,
-      medio: MedioPago.TRANSFERENCIA,
-      dep: null,
-      rec: true,
-    },
-    {
-      dia: 10,
-      cat: "cgasto_impuestos",
-      desc: "Monotributo",
-      monto: 45000,
-      medio: MedioPago.DEBITO,
-      dep: null,
-      rec: true,
-    },
-  ];
-  const variables: {
-    cat: string;
-    desc: string;
-    min: number;
-    max: number;
-    medio: GastoInput["medioPago"];
-  }[] = [
-    ...Array.from({ length: 8 }, () => ({
-      cat: "cgasto_envios",
-      desc: elegir(["Envío moto a cliente", "Flete mercadería", "Cadete"]),
-      min: 3500,
-      max: 9000,
-      medio: MedioPago.EFECTIVO,
-    })),
-    ...Array.from({ length: 6 }, () => ({
-      cat: "cgasto_insumos",
-      desc: elegir(["Bolsas y cinta", "Etiquetas térmicas", "Artículos de limpieza"]),
-      min: 2500,
-      max: 12000,
-      medio: MedioPago.EFECTIVO,
-    })),
-    ...Array.from({ length: 4 }, () => ({
-      cat: "cgasto_marketing",
-      desc: "Publicidad Instagram",
-      min: 15000,
-      max: 40000,
-      medio: MedioPago.CREDITO,
-    })),
-    ...Array.from({ length: 2 }, () => ({
-      cat: "cgasto_otros",
-      desc: "Reparación mostrador",
-      min: 8000,
-      max: 20000,
-      medio: MedioPago.EFECTIVO,
-    })),
-  ];
-  const diasVariables = new Map<DiaISO, (typeof variables)[number][]>();
-  for (const g of variables) {
-    const d = sumarDias(primerDia, entre(0, DIAS - 1));
-    diasVariables.set(d, [...(diasVariables.get(d) ?? []), g]);
-  }
-
-  // --- Días -----------------------------------------------------------------------
-  const DIFERENCIAS: Record<number, { monto: number; obs?: string }> = {
-    12: { monto: -500 },
-    27: { monto: -1200, obs: "Faltante: se dio mal un vuelto" },
-    41: { monto: 300 },
-    58: { monto: -2000, obs: "Faltan $2.000, se revisan las cámaras" },
-    73: { monto: -100 },
-    84: { monto: 800, obs: "Sobrante: cobro de un fiado sin registrar" },
-  };
   let precioActualizado = false;
 
   for (let i = 0; i < DIAS; i++) {
@@ -716,41 +469,17 @@ async function main() {
     const dow = new Date(`${dia}T12:00:00Z`).getUTCDay(); // 0 domingo
     const abierto = dow !== 0 || esHoy; // los domingos está cerrado
 
-    // Aumento de lista a mitad del período (HistorialPrecio).
+    // Aumento de lista del importador a mitad del período.
     if (!precioActualizado && i >= DIAS / 2) {
       fijarReloj(() => en(dia, 8, 30));
       const ignite = variantes.filter((v) => v.nombre.startsWith("Ignite V80|")).map((v) => v.id);
       await actualizarPrecios(
+        ctxOwner,
         ignite,
         { precioCosto: 10200, precioVenta: 17500 },
-        actorDe(owner!),
         "Aumento del importador",
       );
       precioActualizado = true;
-    }
-
-    // Apertura de cajas (hoy, la del Galpón 2 todavía no abrió).
-    const apertura = esHoy
-      ? new Date(Math.min(en(dia, 9).getTime(), ahoraReal.getTime() - 3 * 3600_000))
-      : en(dia, 9);
-    for (const dep of !abierto ? [] : esHoy ? [g1] : [g1, g2]) {
-      // Algunos días el Galpón 2 abre la caja a las 15: lo cobrado antes queda "fuera de caja".
-      const abrir = async () => {
-        await abrirCaja(
-          { depositoId: dep.id, montoInicial: dep.id === g1.id ? 20000 : 10000 },
-          actorDe(cajeros[dep.id]![0]!),
-        );
-        stats.cajas++;
-      };
-      if (dep.id === g2.id && i % 9 === 4) {
-        agendar(dia, en(dia, 15), abrir, 0);
-        // Mientras tanto se vende igual: ese efectivo queda fuera de caja.
-        for (const hh of [11, 13])
-          agendar(dia, en(dia, hh, entre(0, 59)), () => unaVenta(dia, g2.id, true));
-      } else {
-        fijarReloj(() => apertura);
-        await abrir();
-      }
     }
 
     // Ventas del día: más los viernes y sábados.
@@ -764,71 +493,27 @@ async function main() {
         { valor: entre(17, 20), peso: 5 },
       ]);
       const dep = esHoy || azar() < 0.65 ? g1 : g2;
-      agendar(dia, en(dia, hh, entre(0, 59)), () => unaVenta(dia, dep.id));
+      agendar(dia, en(dia, hh, entre(0, 59)), () => unaVenta(dep.id));
     }
-    // Compras cada ~4-5 días, alternando galpones.
+    // Compras cada ~4 días, alternando depósitos.
     if (i % 4 === 2) {
       const dep = (i / 4) % 2 < 1 ? g1 : g2;
-      agendar(dia, en(dia, 9, 30), () => unaCompra(dia, dep.id), 1);
+      agendar(dia, en(dia, 9, 30), () => unaCompra(dep.id), 1);
     }
-    // Gastos fijos del mes (en Septiembre, Internet todavía no se cargó: recordatorio).
-    for (const g of GASTOS_FIJOS) {
-      if (Number(dia.slice(8)) !== g.dia) continue;
-      if (dia.slice(0, 7) === hoy.slice(0, 7) && g.desc === "Internet Galpón 2") continue;
-      agendar(dia, en(dia, 10, 15), async () => {
-        await crearGasto(
-          {
-            fecha: dia,
-            categoriaGastoId: g.cat,
-            descripcion: g.desc,
-            monto: g.monto,
-            medioPago: g.medio,
-            depositoId: g.dep ?? undefined,
-            recurrente: g.rec,
-          },
-          null,
-          actorDe(owner!),
-        );
-        stats.gastos++;
-      });
-    }
-    for (const g of diasVariables.get(dia) ?? []) {
-      agendar(dia, en(dia, entre(11, 18), entre(0, 59)), async () => {
-        const datos: GastoInput = {
-          fecha: dia,
-          categoriaGastoId: g.cat,
-          descripcion: g.desc,
-          monto: Math.round(entre(g.min, g.max) / 100) * 100,
-          medioPago: g.medio,
-          depositoId: azar() < 0.7 ? g1.id : g2.id,
-          recurrente: false,
-        };
-        try {
-          await crearGasto(datos, null, actorDe(owner!));
-        } catch (e) {
-          // En la caja no alcanzaba: lo paga el dueño con débito.
-          if (!(e instanceof DomainError)) throw e;
-          await crearGasto({ ...datos, medioPago: MedioPago.DEBITO }, null, actorDe(owner!));
-        }
-        stats.gastos++;
-      });
-    }
-    // Ajustes de inventario (auditoría): roturas y faltantes.
+    // Ajustes de inventario: roturas y faltantes.
     if ([15, 38, 52, 66, 80].includes(i)) {
       agendar(dia, en(dia, 20, 30), async () => {
         const v = elegir(vendibles);
         const dep = i === 52 ? g2 : g1;
         const s = await stockEn(v.id, dep.id);
         if (s < 2) return;
-        await registrarAjuste(
-          {
-            depositoId: dep.id,
-            varianteId: v.id,
-            cantidadReal: i === 66 ? s + 1 : s - entre(1, 2),
-            motivo: i === 66 ? "Apareció en el recuento" : "Faltante en recuento semanal",
-          },
-          actorDe(i === 52 ? lucas! : ana!),
-        );
+        await registrarAjuste(ctxDe(i === 52 ? lucas! : ana!), {
+          depositoId: dep.id,
+          varianteId: v.id,
+          cantidadReal: i === 66 ? s + 1 : s - entre(1, 2),
+          motivo: i === 66 ? "Apareció en el recuento" : "Faltante en recuento semanal",
+        });
+        stats.ajustes++;
       });
     }
     // Transferencias: una completada hace dos meses, una pendiente hace 3 días y otra de hoy.
@@ -839,39 +524,18 @@ async function main() {
         async () => {
           const v = vendibles.find((x) => x.nombre === "Ignite V80|Mango Ice")!;
           if ((await stockEn(v.id, g1.id)) < 6) return;
-          const t = await crearTransferencia(
-            {
-              depositoOrigenId: g1.id,
-              depositoDestinoId: g2.id,
-              fecha: ahora(),
-              notas: "Reposición Galpón 2",
-              items: [{ varianteId: v.id, cantidad: 4 }],
-            },
-            actorDe(owner!),
-          );
-          if (i === 25) await completarTransferencia(t.id, actorDe(lucas!));
+          const t = await crearTransferencia(ctxOwner, {
+            depositoOrigenId: g1.id,
+            depositoDestinoId: g2.id,
+            fecha: ahora(),
+            notas: "Reposición Mercedes",
+            items: [{ varianteId: v.id, cantidad: 4 }],
+          });
+          if (i === 25) await completarTransferencia(ctxDe(lucas!), t.id);
+          stats.transferencias++;
         },
         2,
       );
-    }
-    // Un pago a cuenta grande del kiosco (efectivo) a mitad de período.
-    if (i === 60) {
-      agendar(dia, en(dia, 16, 20), async () => {
-        const kiosco = clientes.find((c) => c.nombre === "Kiosco El Paso")!;
-        const deuda = (await prisma.cliente.findUniqueOrThrow({ where: { id: kiosco.id } }))
-          .saldoDeudor;
-        if (deuda.lte(0)) return;
-        await pagarACuenta(
-          {
-            clienteId: kiosco.id,
-            medioPago: MedioPago.EFECTIVO,
-            monto: Math.min(deuda.toNumber(), 25000),
-            depositoId: g1.id,
-          },
-          actorDe(owner!),
-        );
-        stats.cobros++;
-      });
     }
 
     // Ejecutar el día en orden cronológico.
@@ -883,64 +547,38 @@ async function main() {
       await ev.hacer();
     }
     agenda.delete(dia);
-
-    // Cierre (hoy la caja del Galpón 1 queda abierta).
-    if (!esHoy) {
-      for (const dep of [g1, g2]) {
-        fijarReloj(() => en(dia, 21, 30));
-        const caja = await obtenerCajaAbierta(dep.id);
-        if (!caja) continue;
-        const dif = dep.id === g1.id ? DIFERENCIAS[i] : undefined;
-        await cerrarCaja(
-          caja.id,
-          {
-            montoContado: Math.max(0, Number(caja.totales.esperado) + (dif?.monto ?? 0)),
-            observaciones: dif?.obs,
-          },
-          actorDe(cajeros[dep.id]![0]!),
-        );
-      }
-    }
   }
 
   // Pendientes para el dashboard: dos borradores de venta y una compra sin recibir.
   fijarReloj(() => new Date(ahoraReal.getTime() - 20 * 60_000));
   for (const v of vendibles.slice(0, 2)) {
     await crearBorrador(
+      ctxDe(ana!),
       borradorVentaSchema.parse({
         depositoId: g1.id,
         items: [{ varianteId: v.id, cantidad: 1 }],
         notas: "Presupuesto (demo)",
       }),
-      actorDe(ana!),
       DUENO,
     );
   }
-  await crearCompra(
-    {
-      proveedorId: proveedores[1]!.id,
-      depositoId: g1.id,
-      descuento: 0,
-      items: [{ varianteId: vendibles[0]!.id, cantidad: 10, costoUnitario: 9000 }],
-      notas: "Pedido a confirmar (demo)",
-    },
-    actorDe(owner!),
-  );
+  await crearCompra(ctxOwner, {
+    proveedorId: proveedores[1]!.id,
+    depositoId: g1.id,
+    descuento: 0,
+    items: [{ varianteId: vendibles[0]!.id, cantidad: 10, costoUnitario: 9000 }],
+    notas: "Pedido a confirmar (demo)",
+  });
   fijarReloj(null);
 
-  await prisma.configuracion.create({
-    data: { clave: "seedDemo", valor: { fecha: ahoraReal.toISOString(), ...stats } },
-  });
-  const [ventas, resumenes, cajas] = await Promise.all([
-    prisma.venta.groupBy({ by: ["estado"], _count: true }),
-    prisma.resumenDiario.count(),
-    prisma.caja.groupBy({ by: ["estado"], _count: true }),
+  const [ventas, total] = await Promise.all([
+    db.venta.groupBy({ by: ["estado"], _count: true }),
+    db.venta.aggregate({ where: { estado: "CONFIRMADA" }, _sum: { total: true } }),
   ]);
-  console.log("seed-demo OK", {
+  console.log("seed-demo OK (panel Vapes)", {
     ...stats,
     ventasPorEstado: Object.fromEntries(ventas.map((v) => [v.estado, v._count])),
-    cajasPorEstado: Object.fromEntries(cajas.map((c) => [c.estado, c._count])),
-    filasResumenDiario: resumenes,
+    facturado: (total._sum.total ?? new Prisma.Decimal(0)).toString(),
     desde: primerDia,
     hasta: hoy,
   });

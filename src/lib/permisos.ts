@@ -11,6 +11,8 @@ export type Accion = "ver" | "crear" | "editar" | "eliminar";
 export const ACCIONES: readonly Accion[] = ["ver", "crear", "editar", "eliminar"];
 
 export interface PermisoModulo {
+  /** Los permisos son por panel: Ventas en Vapes no habilita Ventas en Cosmetic. */
+  panelId: string;
   modulo: Modulo;
   puedeVer: boolean;
   puedeCrear: boolean;
@@ -22,6 +24,8 @@ export interface PermisoModulo {
 export interface SujetoPermisos {
   rol: RolUsuario;
   permisos: readonly PermisoModulo[];
+  /** Ids de los paneles habilitados (EMPLEADO). Un OWNER accede a todos. */
+  paneles: readonly string[];
 }
 
 /** Usuario de la sesión tal como lo ve la UI (serializable: viaja del servidor al cliente). */
@@ -31,9 +35,10 @@ export interface UsuarioSesion extends SujetoPermisos {
   email: string;
   debeCambiarPassword: boolean;
   permisos: PermisoModulo[];
+  paneles: string[];
 }
 
-const CAMPO: Record<Accion, keyof Omit<PermisoModulo, "modulo">> = {
+const CAMPO: Record<Accion, keyof Omit<PermisoModulo, "modulo" | "panelId">> = {
   ver: "puedeVer",
   crear: "puedeCrear",
   editar: "puedeEditar",
@@ -41,46 +46,53 @@ const CAMPO: Record<Accion, keyof Omit<PermisoModulo, "modulo">> = {
 };
 
 /**
- * Módulos que existen solo para dueños: no se asignan a empleados aunque el
- * enum Modulo los incluya (administrar usuarios = poder darse permisos a uno mismo).
+ * Módulos globales (fuera de los paneles): solo dueños. No se asignan a
+ * empleados (administrar usuarios = poder darse permisos a uno mismo).
  */
-export const MODULOS_SOLO_OWNER: ReadonlySet<Modulo> = new Set([Modulo.USUARIOS]);
+export const MODULOS_GLOBALES: ReadonlySet<Modulo> = new Set([
+  Modulo.USUARIOS,
+  Modulo.CONFIGURACION,
+]);
 
-/** Módulos que un OWNER puede habilitar a un EMPLEADO, en orden de pantalla. */
-export const MODULOS_ASIGNABLES: readonly Modulo[] = Object.values(Modulo).filter(
-  (m) => !MODULOS_SOLO_OWNER.has(m),
-);
+/** Módulos de un panel que un OWNER puede habilitar a un EMPLEADO, en orden de pantalla. */
+export const MODULOS_DE_PANEL: readonly Modulo[] = [
+  Modulo.DASHBOARD,
+  Modulo.PROVEEDORES,
+  Modulo.PRODUCTOS,
+  Modulo.STOCK,
+  Modulo.VENTAS,
+  Modulo.CLIENTES,
+  Modulo.DEVOLUCIONES,
+  Modulo.COMPRAS,
+  Modulo.COTIZADOR,
+  Modulo.REPORTES,
+];
 
 export const MODULO_LABEL: Record<Modulo, string> = {
   DASHBOARD: "Dashboard",
-  PRODUCTOS: "Productos",
-  INVENTARIO: "Inventario",
-  MOVIMIENTOS: "Movimientos",
-  VENTAS: "Ventas",
-  COMPRAS: "Compras",
-  CLIENTES: "Clientes",
   PROVEEDORES: "Proveedores",
+  PRODUCTOS: "Productos",
+  STOCK: "Stock",
+  VENTAS: "Ventas",
+  CLIENTES: "Clientes",
+  DEVOLUCIONES: "Devoluciones",
+  COMPRAS: "Compras",
+  COTIZADOR: "Cotizador",
   REPORTES: "Reportes",
   USUARIOS: "Usuarios",
   CONFIGURACION: "Configuración",
-  FINANZAS: "Finanzas",
-  GASTOS: "Gastos",
-  CAJA: "Caja",
 };
-
-/** Módulos que son solo un "permiso de lectura" extra (no tienen nada que crear/editar). */
-export const MODULOS_SOLO_VER: ReadonlySet<Modulo> = new Set([Modulo.FINANZAS]);
 
 /** Acciones que tienen sentido para el módulo (la grilla muestra solo esas). */
 export function accionesDe(modulo: Modulo): readonly Accion[] {
-  return MODULOS_SOLO_VER.has(modulo) ? ["ver"] : ACCIONES;
+  return modulo === Modulo.DASHBOARD || modulo === Modulo.REPORTES ? ["ver"] : ACCIONES;
 }
 
 /** Aclaración que se muestra en la grilla de permisos. */
 export const MODULO_AYUDA: Partial<Record<Modulo, string>> = {
-  FINANZAS: "Costos, ganancias, valorización y resumen mensual (solo «Ver»).",
-  REPORTES: "Reportes de ventas, stock y caja (sin costos ni ganancias).",
-  CAJA: "Crear: abrir y cerrar la caja. Retiros e histórico de diferencias: solo dueños.",
+  STOCK: "Stock por depósito, movimientos, ingresos, ajustes y transferencias.",
+  COTIZADOR: "Cotizador unitario y mayorista.",
+  REPORTES: "Solo «Ver». Los costos y ganancias los ven únicamente los dueños.",
 };
 
 export const ACCION_LABEL: Record<Accion, string> = {
@@ -94,11 +106,29 @@ export function esOwner(usuario: Pick<SujetoPermisos, "rol">): boolean {
   return usuario.rol === RolUsuario.OWNER;
 }
 
-/** ¿El usuario puede hacer `accion` en `modulo`? OWNER: siempre. EMPLEADO: según sus filas. */
-export function puede(usuario: SujetoPermisos, modulo: Modulo, accion: Accion): boolean {
+/** ¿Accede al panel? OWNER: a todos. EMPLEADO: solo a los habilitados. */
+export function accedeAPanel(
+  usuario: Pick<SujetoPermisos, "rol" | "paneles">,
+  panelId: string,
+): boolean {
+  return esOwner(usuario) || usuario.paneles.includes(panelId);
+}
+
+/**
+ * ¿El usuario puede hacer `accion` en `modulo` del panel `panelId`?
+ * OWNER: siempre. EMPLEADO: nunca en módulos globales; en los de panel, según
+ * sus filas de ese panel (y solo si el panel le está habilitado).
+ * `panelId` null = módulo global.
+ */
+export function puede(
+  usuario: SujetoPermisos,
+  panelId: string | null,
+  modulo: Modulo,
+  accion: Accion,
+): boolean {
   if (esOwner(usuario)) return true;
-  if (MODULOS_SOLO_OWNER.has(modulo)) return false;
-  const permiso = usuario.permisos.find((p) => p.modulo === modulo);
+  if (MODULOS_GLOBALES.has(modulo) || !panelId || !accedeAPanel(usuario, panelId)) return false;
+  const permiso = usuario.permisos.find((p) => p.panelId === panelId && p.modulo === modulo);
   return permiso?.[CAMPO[accion]] ?? false;
 }
 
@@ -110,7 +140,7 @@ export function puede(usuario: SujetoPermisos, modulo: Modulo, accion: Accion): 
  */
 export function normalizarPermiso(permiso: PermisoModulo, cambio?: Accion): PermisoModulo {
   const p = { ...permiso };
-  if (MODULOS_SOLO_VER.has(p.modulo)) {
+  if (accionesDe(p.modulo).length === 1) {
     p.puedeCrear = false;
     p.puedeEditar = false;
     p.puedeEliminar = false;

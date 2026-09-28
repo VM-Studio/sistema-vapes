@@ -1,12 +1,8 @@
 import { AccionAuditoria, Prisma, RolUsuario, type Modulo } from "@prisma/client";
 
 import { prisma, withTransaction, type Tx } from "@/lib/db";
-import { MODULOS_ASIGNABLES, type PermisoModulo } from "@/lib/permisos";
-import type {
-  ActualizarPermisos,
-  ActualizarUsuario,
-  CrearUsuario,
-} from "@/lib/validations/usuario";
+import { MODULOS_DE_PANEL, type PermisoModulo } from "@/lib/permisos";
+import type { ActualizarAcceso, ActualizarUsuario, CrearUsuario } from "@/lib/validations/usuario";
 import {
   assertPasswordNoComun,
   generarPasswordTemporal,
@@ -19,6 +15,14 @@ import { registrarAuditoria, snapshotUsuario } from "@/server/services/audit.ser
 
 export type { Actor };
 
+export interface PanelDeUsuario {
+  id: string;
+  nombre: string;
+  slug: string;
+  logoUrl: string | null;
+  colorAcento: string | null;
+}
+
 export interface UsuarioListado {
   id: string;
   nombre: string;
@@ -28,6 +32,8 @@ export interface UsuarioListado {
   debeCambiarPassword: boolean;
   ultimoLogin: Date | null;
   createdAt: Date;
+  /** Paneles habilitados (EMPLEADO). Un OWNER accede a todos: lista vacía. */
+  paneles: PanelDeUsuario[];
 }
 
 const selectListado = {
@@ -39,15 +45,49 @@ const selectListado = {
   debeCambiarPassword: true,
   ultimoLogin: true,
   createdAt: true,
+  paneles: {
+    select: {
+      panel: {
+        select: {
+          id: true,
+          nombre: true,
+          slug: true,
+          logoUrl: true,
+          colorAcento: true,
+          orden: true,
+        },
+      },
+    },
+  },
 } satisfies Prisma.UsuarioSelect;
+
+type FilaListado = Prisma.UsuarioGetPayload<{ select: typeof selectListado }>;
+
+function aListado(u: FilaListado): UsuarioListado {
+  const { paneles, ...resto } = u;
+  return {
+    ...resto,
+    paneles: paneles
+      .map((p) => p.panel)
+      .sort((a, b) => a.orden - b.orden)
+      .map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        slug: p.slug,
+        logoUrl: p.logoUrl,
+        colorAcento: p.colorAcento,
+      })),
+  };
+}
 
 /** Usuarios no dados de baja: dueños primero, después por nombre. */
 export async function listarUsuarios(): Promise<UsuarioListado[]> {
-  return prisma.usuario.findMany({
+  const filas = await prisma.usuario.findMany({
     where: { deletedAt: null },
     select: selectListado,
     orderBy: [{ rol: "asc" }, { nombre: "asc" }],
   });
+  return filas.map(aListado);
 }
 
 export async function obtenerUsuario(id: string): Promise<UsuarioListado> {
@@ -56,7 +96,7 @@ export async function obtenerUsuario(id: string): Promise<UsuarioListado> {
     select: selectListado,
   });
   if (!usuario) throw new NotFoundError("El usuario no existe o fue dado de baja");
-  return usuario;
+  return aListado(usuario);
 }
 
 // -----------------------------------------------------------------------------
@@ -93,7 +133,7 @@ function conflictoEmail(error: unknown): never | void {
 // ABM
 // -----------------------------------------------------------------------------
 
-export async function crearUsuario(actor: Actor, input: CrearUsuario): Promise<UsuarioListado> {
+export async function crearUsuario(actor: Actor, input: CrearUsuario): Promise<{ id: string }> {
   await assertPasswordNoComun(input.password, "password");
   const passwordHash = await hashPassword(input.password);
   try {
@@ -126,7 +166,7 @@ export async function crearUsuario(actor: Actor, input: CrearUsuario): Promise<U
 export async function actualizarUsuario(
   actor: Actor,
   input: ActualizarUsuario,
-): Promise<UsuarioListado> {
+): Promise<{ id: string }> {
   if (input.id === actor.id) {
     if (!input.activo) throw new DomainError("No podés desactivar tu propio usuario.");
     if (input.rol !== RolUsuario.OWNER)
@@ -147,6 +187,11 @@ export async function actualizarUsuario(
         data: { nombre: input.nombre, email: input.email, rol: input.rol, activo: input.activo },
       });
       if (afectaOwners) await assertQuedaOwnerActivo(tx);
+      // Un dueño accede a todo por rol: sus filas de acceso/permisos no significan nada.
+      if (despues.rol === RolUsuario.OWNER) {
+        await tx.permisoUsuario.deleteMany({ where: { usuarioId: despues.id } });
+        await tx.usuarioPanel.deleteMany({ where: { usuarioId: despues.id } });
+      }
 
       await registrarAuditoria(tx, {
         usuarioId: actor.id,
@@ -238,20 +283,10 @@ export async function darDeBajaUsuario(actor: Actor, usuarioId: string): Promise
 }
 
 // -----------------------------------------------------------------------------
-// Permisos
+// Acceso por panel y permisos
 // -----------------------------------------------------------------------------
 
-/** Grilla completa (un registro por módulo asignable, en orden), con lo guardado. */
-export async function obtenerPermisos(
-  usuarioId: string,
-  tx: Tx = prisma,
-): Promise<PermisoModulo[]> {
-  const filas = await tx.permisoUsuario.findMany({ where: { usuarioId } });
-  const porModulo = new Map(filas.map((f) => [f.modulo, f]));
-  return MODULOS_ASIGNABLES.map((modulo) => ({ modulo, ...acciones(porModulo.get(modulo)) }));
-}
-
-type Acciones = Omit<PermisoModulo, "modulo">;
+type Acciones = Omit<PermisoModulo, "modulo" | "panelId">;
 
 function acciones(p: Partial<Acciones> | undefined): Acciones {
   return {
@@ -262,50 +297,119 @@ function acciones(p: Partial<Acciones> | undefined): Acciones {
   };
 }
 
-function mapaPermisos(permisos: PermisoModulo[]): Record<string, Acciones> {
-  return Object.fromEntries(permisos.map((p) => [p.modulo, acciones(p)]));
+export interface AccesoUsuario {
+  /** Paneles habilitados. */
+  paneles: string[];
+  /** Grilla completa (todos los módulos de panel) de cada panel habilitado. */
+  permisos: PermisoModulo[];
 }
 
-/** Upsert de la grilla completa + AuditLog PERMISO_CAMBIADO con antes/después. */
-export async function actualizarPermisos(
+/** Acceso actual de un usuario: paneles + grilla módulo × acción por panel. */
+export async function obtenerAcceso(usuarioId: string, tx: Tx = prisma): Promise<AccesoUsuario> {
+  const [paneles, filas] = await Promise.all([
+    tx.usuarioPanel.findMany({ where: { usuarioId }, select: { panelId: true } }),
+    tx.permisoUsuario.findMany({ where: { usuarioId } }),
+  ]);
+  const ids = paneles.map((p) => p.panelId);
+  const clave = (panelId: string, modulo: Modulo) => `${panelId}:${modulo}`;
+  const guardados = new Map(filas.map((f) => [clave(f.panelId, f.modulo), f]));
+  return {
+    paneles: ids,
+    permisos: ids.flatMap((panelId) =>
+      MODULOS_DE_PANEL.map((modulo) => ({
+        panelId,
+        modulo,
+        ...acciones(guardados.get(clave(panelId, modulo))),
+      })),
+    ),
+  };
+}
+
+function resumenAcceso(acceso: AccesoUsuario): Prisma.InputJsonObject {
+  return {
+    paneles: acceso.paneles,
+    permisos: Object.fromEntries(
+      acceso.permisos
+        .filter((p) => p.puedeVer)
+        .map((p) => [
+          `${p.panelId}:${p.modulo}`,
+          [
+            p.puedeVer && "ver",
+            p.puedeCrear && "crear",
+            p.puedeEditar && "editar",
+            p.puedeEliminar && "eliminar",
+          ]
+            .filter(Boolean)
+            .join(","),
+        ]),
+    ),
+  };
+}
+
+/**
+ * Reemplaza el acceso de un EMPLEADO: qué paneles puede abrir y, en cada uno,
+ * qué puede hacer en cada módulo. Un panel no marcado pierde también sus
+ * permisos. AuditLog PERMISO_CAMBIADO con antes/después. El middleware toma el
+ * cambio al instante (se invalida el caché de sus sesiones).
+ */
+export async function actualizarAcceso(
   actor: Actor,
-  input: ActualizarPermisos,
-): Promise<PermisoModulo[]> {
-  return withTransaction(async (tx) => {
+  input: ActualizarAcceso,
+): Promise<AccesoUsuario> {
+  const r = await withTransaction(async (tx) => {
     const usuario = await tx.usuario.findFirst({
       where: { id: input.usuarioId, deletedAt: null },
       select: { id: true, rol: true },
     });
     if (!usuario) throw new NotFoundError("El usuario no existe o fue dado de baja");
     if (usuario.rol === RolUsuario.OWNER) {
-      throw new DomainError("Los dueños tienen acceso total: no se les asignan permisos.");
+      throw new DomainError(
+        "Los dueños acceden a todos los paneles y módulos: no se les asignan permisos.",
+      );
     }
+    const panelIds = input.paneles.map((p) => p.panelId);
+    const existentes = await tx.panel.count({ where: { id: { in: panelIds } } });
+    if (existentes !== panelIds.length) throw new NotFoundError("Alguno de los paneles no existe");
 
-    const antes = await tx.permisoUsuario.findMany({ where: { usuarioId: usuario.id } });
-    const nuevos = new Map<Modulo, PermisoModulo>(input.permisos.map((p) => [p.modulo, p]));
+    const antes = await obtenerAcceso(usuario.id, tx);
 
-    for (const modulo of MODULOS_ASIGNABLES) {
-      const datos = acciones(nuevos.get(modulo)); // módulo omitido => todo apagado
-      await tx.permisoUsuario.upsert({
-        where: { usuarioId_modulo: { usuarioId: usuario.id, modulo } },
-        create: { usuarioId: usuario.id, modulo, ...datos },
-        update: datos,
+    await tx.permisoUsuario.deleteMany({
+      where: { usuarioId: usuario.id, panelId: { notIn: panelIds } },
+    });
+    await tx.usuarioPanel.deleteMany({
+      where: { usuarioId: usuario.id, panelId: { notIn: panelIds } },
+    });
+    for (const { panelId, permisos } of input.paneles) {
+      await tx.usuarioPanel.upsert({
+        where: { usuarioId_panelId: { usuarioId: usuario.id, panelId } },
+        create: { usuarioId: usuario.id, panelId },
+        update: {},
       });
+      const nuevos = new Map(permisos.map((p) => [p.modulo, p]));
+      for (const modulo of MODULOS_DE_PANEL) {
+        const datos = acciones(nuevos.get(modulo)); // módulo omitido => todo apagado
+        await tx.permisoUsuario.upsert({
+          where: { usuarioId_panelId_modulo: { usuarioId: usuario.id, panelId, modulo } },
+          create: { usuarioId: usuario.id, panelId, modulo, ...datos },
+          update: datos,
+        });
+      }
     }
 
-    const despues = await tx.permisoUsuario.findMany({ where: { usuarioId: usuario.id } });
+    const despues = await obtenerAcceso(usuario.id, tx);
     await registrarAuditoria(tx, {
       usuarioId: actor.id,
       accion: AccionAuditoria.PERMISO_CAMBIADO,
       entidad: "PermisoUsuario",
       entidadId: usuario.id,
-      datosAntes: mapaPermisos(antes),
-      datosDespues: mapaPermisos(despues),
+      datosAntes: resumenAcceso(antes),
+      datosDespues: resumenAcceso(despues),
       meta: actor.meta,
     });
-
-    return obtenerPermisos(usuario.id, tx);
+    return despues;
   });
+  invalidarCacheSesiones(input.usuarioId);
+  return r;
 }
 
 /** Nombres de usuarios (incluye dados de baja: aparecen en el historial) para filtros. */

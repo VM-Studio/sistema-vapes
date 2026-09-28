@@ -59,9 +59,10 @@ export function esErrorReintentable(error: unknown): boolean {
 }
 
 /**
- * Ejecuta `fn` en una transacción interactiva con isolation level explícito
- * (Serializable por defecto) y la reintenta ante conflictos de serialización.
- * Toda operación que mueve stock DEBE pasar por acá.
+ * Ejecuta `fn` en una transacción interactiva (cliente crudo, sin panel) con
+ * isolation level explícito (Serializable por defecto) y reintentos. Solo para
+ * servicios GLOBALES (usuarios, paneles, identidad): lo de negocio usa
+ * transaccion(ctx, …) de @/server/db/panel-scoped.
  */
 export async function withTransaction<T>(
   fn: (tx: Tx) => Promise<T>,
@@ -86,17 +87,4 @@ export async function withTransaction<T>(
       throw error;
     }
   }
-}
-
-/**
- * Usa la transacción que recibe (si la hay) o abre una propia. Para servicios
- * que a veces se componen dentro de otra operación atómica (ej. /api/sync:
- * registrar la operación offline y aplicarla en la MISMA transacción).
- */
-export function enTransaccion<T>(
-  tx: Tx | undefined,
-  fn: (tx: Tx) => Promise<T>,
-  options?: TransactionOptions,
-): Promise<T> {
-  return tx ? fn(tx) : withTransaction(fn, options);
 }

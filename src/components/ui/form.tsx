@@ -107,12 +107,12 @@ export function Form<TIn extends FieldValues, TOut>({
         id={id}
         noValidate
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn("flex flex-col gap-4", className)}
+        className={cn("flex flex-col gap-5", className)}
       >
         {errorGeneral && (
           <div
             role="alert"
-            className="bg-danger-soft text-danger-soft-foreground rounded-lg px-3 py-2.5 text-sm"
+            className="bg-danger-soft text-danger-soft-foreground border-danger/20 rounded-xl border px-4 py-3 text-sm"
           >
             {errorGeneral}
           </div>

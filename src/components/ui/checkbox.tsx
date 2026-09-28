@@ -20,11 +20,11 @@ export function Checkbox({ label, hint, error, id, className, ...props }: Checkb
         <input
           id={checkboxId}
           type="checkbox"
-          className="border-input accent-primary size-5 shrink-0 cursor-pointer rounded"
+          className="border-input accent-primary size-5 shrink-0 cursor-pointer rounded-md"
           aria-invalid={error ? true : undefined}
           {...props}
         />
-        {label && <span className="text-sm">{label}</span>}
+        {label && <span className="text-foreground text-sm">{label}</span>}
       </label>
       {error ? (
         <p className="text-danger text-sm" role="alert">

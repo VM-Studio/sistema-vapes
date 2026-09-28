@@ -1,31 +1,65 @@
 # Manual de uso
 
-Este manual es para el dueño y para los empleados. Explica cómo usar cada parte del sistema en el día a día. No hace falta leerlo entero: buscá la sección que necesitás en el índice.
+Este manual es para los dueños y para los empleados. Explica cómo usar cada parte del sistema en el día a día. No hace falta leerlo entero: buscá la sección que necesitás en el índice.
 
 Algunas cosas que conviene saber desde el principio:
 
+- **La app tiene varios sistemas.** Vapes, Cosmetic, Especiales (y los que agreguen los dueños) funcionan cada uno por separado: tienen sus propios productos, stock, depósitos, ventas, clientes, compras y proveedores. Lo que cargás en un sistema no aparece en otro.
 - **Cada persona tiene su usuario.** No compartas tu contraseña: todo lo que se hace queda registrado con el nombre de quien lo hizo.
-- **No todos ven lo mismo.** El dueño ve todo. Cada empleado ve solo las secciones que el dueño le habilitó. Si no ves un botón o una sección que esperabas, pedile al dueño el permiso.
-- **Nada se borra a escondidas.** Una venta, una compra o un pago no se borran: se anulan, y queda registrado quién lo hizo, cuándo y por qué.
+- **No todos ven lo mismo.** Los dueños ven todo. Cada empleado ve solo los sistemas y las secciones que un dueño le habilitó. Si no ves un sistema, una sección o un botón que esperabas, pedile el permiso a un dueño.
+- **Nada se borra a escondidas.** Una venta o una compra no se borran: se anulan, y queda registrado quién lo hizo, cuándo y por qué.
 
 ## Iniciar sesión y cambiar la contraseña inicial
 
 1. Entrá a la dirección del sistema (o abrí la app instalada).
 2. Escribí tu **email** y tu **contraseña** y tocá **Ingresar**. Con el ojito del campo de contraseña podés verla mientras la escribís.
-3. **La primera vez** (o cuando el dueño te resetea la contraseña) el sistema te lleva a **Mi cuenta** y no te deja usar nada más hasta que la cambies. Escribí la contraseña temporal que te dieron y la nueva dos veces.
+3. **La primera vez** (o cuando un dueño te resetea la contraseña) el sistema te lleva a **Mi cuenta** y no te deja usar nada más hasta que la cambies. Escribí la contraseña temporal que te dieron y la nueva dos veces.
 
 Reglas para la contraseña nueva:
 
 - Mínimo 8 caracteres, con al menos una letra y un número.
 - No puede ser una de las contraseñas más usadas del mundo (tipo `12345678` o `password1`): el sistema las rechaza.
 
-Si te equivocás 5 veces seguidas, el sistema bloquea los intentos con ese email durante 15 minutos. Si te olvidaste la contraseña, pedile al dueño que te la resetee desde **Usuarios**: te va a dar una temporal.
+Si te equivocás 5 veces seguidas, el sistema bloquea los intentos con ese email durante 15 minutos. Si te olvidaste la contraseña, pedile a un dueño que te la resetee desde **Usuarios**: te va a dar una temporal.
 
-La sesión dura 7 días y se renueva sola mientras uses el sistema. Para salir, abrí el menú de tu cuenta (tu inicial, arriba a la derecha en el celular, o el menú lateral en la computadora) y tocá **Cerrar sesión**.
+La sesión dura 7 días y se renueva sola mientras uses el sistema. Para salir, abrí el menú de tu cuenta (tu inicial, arriba a la derecha en el celular, o abajo del menú lateral en la computadora) y tocá **Cerrar sesión**.
+
+## Elegir un sistema
+
+Después de iniciar sesión aparece la pantalla **Sistemas** («¿Qué sistema querés abrir?»), con una tarjeta por cada sistema al que tenés acceso: su logo, su nombre y, si podés ver ventas o el inicio, cuántas ventas hubo hoy y cuántas alertas de stock tiene.
+
+- Tocá la tarjeta para entrar a ese sistema.
+- **Si tenés acceso a un solo sistema**, el sistema te lleva directo a ese, sin pasar por esta pantalla.
+- Si no tenés ningún sistema habilitado, vas a ver el aviso «Todavía no tenés ningún sistema habilitado»: pedile acceso a un dueño.
+- Si intentás abrir un sistema al que no tenés acceso (por ejemplo, con un link que te pasaron), volvés a esta pantalla con un aviso.
+
+La **app instalada** abre directamente el último sistema que usaste.
+
+Cada sistema tiene su **color**: el botón principal y la sección en la que estás se pintan con el color del sistema, para que sepas siempre dónde estás.
+
+### Agregar un sistema (solo dueños)
+
+Los dueños ven al final de la lista la tarjeta **Agregar panel** («Un sistema nuevo, completo y vacío»). Se completa:
+
+- **Nombre** del sistema.
+- **Dirección**: se arma sola con el nombre (por ejemplo, `/p/regaleria`). De ahí salen las tres letras de los números de venta (`REG-000001`). No puede empezar con las mismas tres letras que otro sistema.
+- **Atributo principal de los productos**: cómo se llama en este sistema el dato principal de cada producto («Pitadas» en Vapes, «Contenido» en Cosmetic, «Detalle» en Especiales).
+- **Color de acento** y **Logo** (opcionales).
+
+El sistema nuevo arranca vacío, con un depósito llamado «Principal». Los productos, categorías, marcas y depósitos se cargan desde adentro del sistema. Para dejar de usar un sistema, ver [Configuración general](#configuracion-general).
+
+## Cambiar de sistema
+
+Desde cualquier pantalla de un sistema:
+
+- **En la computadora**: arriba del menú lateral, tocá **Cambiar de sistema**.
+- **En el celular**: abrí el menú de tu cuenta (tu inicial) y tocá **Cambiar de sistema**.
+
+Volvés a la pantalla **Sistemas** y elegís otro. Lo que tenías a medio hacer en el sistema anterior (por ejemplo, una venta en el carrito) queda guardado en ese sistema.
 
 ## Instalar la app en Android, iPhone o PC
 
-El sistema se puede instalar como una app: queda con su ícono en la pantalla de inicio, abre a pantalla completa y el escáner funciona aunque se corte internet. A partir del segundo inicio de sesión, el sistema te muestra un aviso **Instalá la app** (si tocás **Ahora no**, no vuelve a aparecer por 14 días).
+El sistema se puede instalar como una app: queda con su ícono en la pantalla de inicio, abre a pantalla completa y el escáner puede consultar productos aunque se corte internet. A partir del segundo inicio de sesión, el sistema te muestra un aviso **Instalá la app** (si tocás **Ahora no**, no vuelve a aparecer por 14 días).
 
 ### Android (Chrome)
 
@@ -51,106 +85,105 @@ Cuando hay una versión nueva, la app muestra el aviso **Hay una versión nueva*
 
 ## Navegación
 
-- **En el celular** hay una barra abajo con **Inicio**, **Ventas**, el botón central **Escanear** e **Inventario**, y un botón **Más** con el resto de las secciones. Arriba ves el nombre de la sección, el indicador de conexión, la campana de notificaciones y tu inicial (menú de cuenta).
-- **En la computadora** hay un menú lateral con todas las secciones agrupadas en **Operación**, **Catálogo** y **Administración**.
-- Solo aparecen las secciones que tenés permitidas. Si entrás a una dirección sin permiso, ves la pantalla **Sin acceso**.
+Dentro de un sistema:
 
-Secciones del sistema:
+- **En el celular** hay una barra abajo con **Inicio**, **Ventas**, **Productos** y **Stock**, y un botón **Más** con el resto de las secciones. Arriba ves el nombre de la sección y tu inicial (menú de cuenta).
+- **En la computadora** hay un menú lateral con el logo del sistema, **Cambiar de sistema** y las secciones agrupadas en **Operación**, **Catálogo**, **Cotizadores** y **Administración**.
+- Solo aparecen las secciones que tenés permitidas **en ese sistema**. Si entrás a una dirección sin permiso, ves la pantalla **Sin acceso**.
 
-| Sección       | Para qué sirve                                      |
-| ------------- | --------------------------------------------------- |
-| Inicio        | Resumen del negocio (dashboard)                     |
-| Ventas        | Cobrar (punto de venta) y consultar ventas          |
-| Escanear      | Consultar, ingresar, contar y transferir escaneando |
-| Inventario    | Stock por depósito                                  |
-| Productos     | Productos, sabores y precios                        |
-| Movimientos   | Ingresos, ajustes y transferencias                  |
-| Compras       | Mercadería recibida de proveedores                  |
-| Caja          | Apertura, movimientos y arqueo del efectivo         |
-| Clientes      | Cuenta corriente, compras y saldos                  |
-| Proveedores   | Proveedores e importadores                          |
-| Reportes      | Ganancias, ventas y rotación                        |
-| Gastos        | Alquiler, servicios, sueldos y otros gastos         |
-| Usuarios      | Accesos y permisos del equipo                       |
-| Configuración | Datos del negocio y preferencias                    |
+Secciones de cada sistema:
+
+| Sección             | Para qué sirve                                                               |
+| ------------------- | ---------------------------------------------------------------------------- |
+| Inicio              | Resumen del sistema (dashboard) y accesos rápidos                            |
+| Ventas              | Cobrar (punto de venta) y consultar ventas                                   |
+| Escanear            | Consultar, ingresar, contar y transferir escaneando                          |
+| Stock               | Stock por depósito y global, movimientos, ingresos, ajustes y transferencias |
+| Clientes            | Datos de contacto e historial de compras                                     |
+| Devoluciones        | Devoluciones por garantía (próximamente)                                     |
+| Compras             | Mercadería recibida de proveedores                                           |
+| Productos           | Productos, variantes, precios y etiquetas                                    |
+| Proveedores         | Proveedores e importadores                                                   |
+| Cotizador unitario  | Presupuestos por unidad (próximamente)                                       |
+| Cotizador mayorista | Presupuestos por mayor (próximamente)                                        |
+| Reportes            | Ventas, stock y rendimiento (próximamente)                                   |
+| Ajustes del panel   | Depósitos, categorías, marcas, escáner, ventas y catálogo (solo dueños)      |
+
+Además, fuera de los sistemas: **Usuarios** y **Configuración** (solo dueños), **Mi cuenta** y **Ayuda** (este manual). Los dueños los ven en el menú lateral; también están en el menú de tu cuenta.
+
+## Inicio
+
+**Inicio** es la primera pantalla de cada sistema. Si tenés permiso para ver el **Dashboard**, muestra:
+
+- **Ventas** de hoy, de los últimos 7 días y del mes: cantidad y total.
+- Los **5 productos más vendidos** del mes.
+- Productos con **stock bajo** (por debajo del stock mínimo).
+- Las **últimas ventas**.
+
+El **costo** y la **ganancia bruta** los ven solo los dueños.
+
+Debajo están los **accesos rápidos** a las secciones que podés usar en ese sistema. Sin permiso de Dashboard, el inicio muestra solo los accesos rápidos.
 
 ## Vender
 
-El punto de venta (POS) se abre desde **Ventas** en la barra de abajo (o **Ventas → Nueva venta**). Si solo tenés permiso para ver ventas, **Ventas** te muestra el listado.
+El punto de venta (POS) se abre desde **Ventas** (en la barra de abajo o en el menú lateral). Si solo tenés permiso para ver ventas, **Ventas** te muestra el listado.
 
 ### Armar la venta
 
 1. Revisá el **depósito de venta** (de dónde sale la mercadería).
 2. Agregá productos de cualquiera de estas formas:
    - **Pistola lectora**: está siempre activa en el POS; no hace falta tocar ningún campo. Cada lectura suma una unidad.
-   - **Cámara**: tocá el botón de cámara y apuntá al código de barras.
-   - **Buscador**: escribí nombre, sabor o SKU (en la computadora, `F2` lleva al buscador).
-   - **Más vendidos**: la grilla con los 12 productos más vendidos; tocá uno para agregarlo. Si el producto tiene varios sabores, te pide que elijas.
-3. En el carrito podés cambiar cantidades o quitar productos. Si tenés permiso para editar ventas, también podés cambiar el precio o aplicar un descuento (queda anotado quién lo modificó).
-4. Opcional: elegí un **cliente** (buscalo por nombre, DNI o teléfono, o crealo ahí mismo). Es obligatorio para vender fiado y útil para mandarle el comprobante por WhatsApp.
+   - **Cámara**: tocá **Cámara** y apuntá al código de barras.
+   - **Buscador**: escribí nombre, variante o SKU (en la computadora, `F2` lleva al buscador).
+   - **Más vendidos**: la grilla con los productos más vendidos; tocá uno para agregarlo. Si tiene varias variantes, te pide que elijas.
+3. En el carrito podés cambiar cantidades o quitar productos. Si tenés permiso para editar ventas, también podés cambiar el precio de un producto (queda anotado quién lo modificó).
+4. Opcional: elegí un **cliente** (buscalo por nombre, documento o teléfono, o crealo ahí mismo con **Nuevo cliente**).
+5. Opcional: agregá **notas** a la venta.
 
-El carrito queda guardado: si se cierra la pantalla o se corta la luz, al volver lo encontrás como estaba.
+No se puede vender más de lo que hay en el depósito elegido: el sistema no permite vender sin stock.
+
+El carrito queda guardado: si se cierra la pantalla o se corta la luz, al volver al POS de ese sistema lo encontrás como estaba.
 
 ### Cobrar
 
-Tocá **Cobrar** (en la computadora, `F9`). En el panel de cobro:
+Tocá **Cobrar** (en la computadora, `F9`). Cada venta se cobra **completa y con un solo medio de pago**:
 
-- Elegí el **medio de pago**: efectivo, transferencia, débito, crédito, MercadoPago u otro. Para transferencias y MercadoPago podés anotar el **n.º de operación**.
+- Elegí el **medio de pago**: efectivo, transferencia, débito, crédito, MercadoPago u otro.
 - **Efectivo**: escribí cuánto te dio el cliente y el sistema calcula el **vuelto**.
-- **Descuento** (con permiso): en porcentaje o en pesos, sobre el total.
-- **Redondeo**: si está activado en la configuración, podés redondear el total. Siempre redondea **a favor del cliente** (para abajo).
-- Si el cliente tiene saldo a favor por una devolución, lo podés usar como medio de pago.
+- **Descuento** (si tenés permiso para editar ventas): en porcentaje o en pesos, sobre el total.
+- **Redondeo**: si está activado en los ajustes del sistema, el total se redondea. Siempre redondea **a favor del cliente** (para abajo).
 
-### Pagos partidos
+Al confirmar aparece **Venta confirmada** con su número, por ejemplo **VAP-000123**: las tres letras son del sistema y el número es correlativo dentro de ese sistema. Desde ahí seguís con la venta siguiente.
 
-Un cliente puede pagar con más de un medio (por ejemplo, una parte en efectivo y el resto con transferencia). Agregá un medio de pago por cada parte con su monto. El panel te muestra cuánto **falta cobrar** hasta llegar al total.
+### Consultar y anular ventas
 
-### Cuenta corriente (fiado)
+En **Ventas** está el listado de las ventas del sistema. Podés buscar una venta por su número (`VAP-000123`, o solo `123`). En el detalle ves fecha, vendedor, depósito, medio de pago, notas, ítems y totales.
 
-Si la venta tiene un cliente con **límite de crédito** y tenés permiso para editar ventas, aparece **Vender fiado**: lo que falta cobrar queda en la cuenta corriente del cliente. El sistema no te deja pasar el límite de crédito del cliente. Un cliente sin límite de crédito cargado no puede comprar fiado.
-
-Para cobrar después una deuda (con permiso para editar ventas), entrá a la venta (desde **Ventas**) o a la ficha del cliente en **Clientes** y registrá el pago: podés cobrar en partes hasta saldar.
-
-### Comprobante por WhatsApp
-
-Al confirmar la venta aparece la pantalla de venta confirmada con el número, el ticket y dos botones:
-
-- **Enviar por WhatsApp**: abre WhatsApp con un mensaje listo con el link al ticket en PDF. Si la venta tiene un cliente con teléfono, va directo a su chat.
-- **Nueva venta**: para seguir cobrando.
-
-Desde el detalle de cualquier venta también podés ver el comprobante en formato ticket (80 mm) o A4.
-
-### Devoluciones
-
-Necesitás permiso para editar ventas.
-
-1. Abrí la venta (**Ventas** → la venta).
-2. Tocá **Devolución**.
-3. Elegí qué productos y cuántas unidades vuelven, el **depósito** al que vuelve la mercadería y el **motivo**.
-4. Elegí cómo se reintegra el dinero: en efectivo u otro **medio**, o **a la cuenta del cliente** (primero cancela lo que debe y lo que sobra le queda como saldo a favor para una próxima compra).
-
-El importe se calcula con el precio que realmente pagó el cliente (incluidos los descuentos). Se pueden hacer varias devoluciones parciales de una misma venta, hasta devolver todo lo vendido.
-
-### Anular una venta o un pago
-
-- **Anular una venta** (con permiso para eliminar en Ventas) revierte todo: la mercadería vuelve al stock, los pagos se anulan y el comprobante queda anulado. Te pide el motivo.
-- **Anular un pago** (solo el dueño) deja la venta debiendo ese monto; si tiene cliente, se suma a su cuenta corriente.
+**Anular una venta** (con permiso para eliminar en Ventas): la mercadería vuelve al depósito de donde salió. Te pide el motivo, y queda registrado quién la anuló y cuándo. Una venta confirmada no se edita: si hubo un error, se anula y se hace de nuevo.
 
 ### Si no hay conexión
 
-**Las ventas necesitan conexión para validar stock y registrar el pago.** Sin internet el POS no deja cobrar y muestra ese mensaje. Ver [Trabajar sin conexión](#trabajar-sin-conexión).
+**Las ventas necesitan conexión para validar stock y registrar el pago.** Sin internet el POS no deja cobrar y muestra ese mensaje. Ver [Trabajar sin conexión](#trabajar-sin-conexion).
+
+## Clientes
+
+En **Clientes** cargás los datos de contacto (nombre y apellido, documento, teléfono, email, dirección y notas) y ves el historial de compras de cada uno: cantidad de compras, total comprado y última compra.
+
+- El **teléfono** se guarda siempre con el formato `+54` seguido de los números, sin espacios ni guiones, aunque lo escribas de otra forma (por ejemplo, `011 15-1234-5678` o `+54 9 11…`).
+- En un mismo sistema no puede haber dos clientes con el mismo teléfono ni con el mismo documento. El mismo cliente puede estar cargado en otro sistema sin problema.
+- Los clientes también se pueden crear desde el POS, al elegir el cliente de una venta.
 
 ## Escanear
 
-**Escanear** (el botón central de la barra de abajo) reúne todo lo que se hace con la pistola o la cámara. Arriba elegís el modo y el depósito; después escaneás. Los modos que no tenés permitidos aparecen bloqueados.
+**Escanear** reúne todo lo que se hace con la pistola o la cámara dentro del sistema. Arriba elegís el modo y el depósito; después escaneás. Los modos que no tenés permitidos aparecen bloqueados.
 
-| Modo           | Qué hace                                                                    | Permiso que necesita                       |
-| -------------- | --------------------------------------------------------------------------- | ------------------------------------------ |
-| **Consultar**  | Muestra el producto, el precio y el stock en cada depósito                  | Ver inventario                             |
-| **Ingresar**   | Suma mercadería que entra sin compra (carga inicial, reposición)            | Crear en Movimientos                       |
-| **Contar**     | Recuento: escribís lo que hay en realidad y el sistema ajusta la diferencia | Editar en Movimientos                      |
-| **Transferir** | Arma una transferencia de un depósito (origen) a otro (destino)             | Crear en Movimientos (completarla: editar) |
-| **Vender**     | Abre el punto de venta con el mismo depósito                                | Crear en Ventas                            |
+| Modo           | Qué hace                                                                    | Permiso que necesita                 |
+| -------------- | --------------------------------------------------------------------------- | ------------------------------------ |
+| **Consultar**  | Muestra el producto, el precio y el stock en cada depósito                  | Ver en Stock o en Ventas             |
+| **Ingresar**   | Suma mercadería que entra (carga inicial, reposición o una compra)          | Crear en Stock o en Compras          |
+| **Contar**     | Recuento: escribís lo que hay en realidad y el sistema ajusta la diferencia | Editar en Stock                      |
+| **Transferir** | Arma una transferencia de un depósito (origen) a otro (destino)             | Crear en Stock (completarla: editar) |
+| **Vender**     | Abre el punto de venta con el mismo depósito                                | Crear en Ventas                      |
 
 Cómo se usa:
 
@@ -160,206 +193,139 @@ Cómo se usa:
 
 La lista queda guardada: si salís y volvés, el sistema te ofrece retomar la sesión que dejaste a medias.
 
-**Código desconocido**: si escaneás un código que no está cargado, podés **asociarlo a un producto existente** (queda como código alternativo) o, si es un producto nuevo, crearlo y volver a donde estabas.
+**Código desconocido**: si escaneás un código que no está cargado en este sistema, podés **asociarlo a un producto existente** (queda como código alternativo) o, si es un producto nuevo, crearlo y volver a donde estabas.
 
 ## Trabajar sin conexión
 
-La app instalada sigue funcionando si se corta internet (por ejemplo, en un depósito sin señal). Para eso guarda en el celular una copia del catálogo (productos, códigos y stock), que se actualiza sola al iniciar sesión y cada 15 minutos mientras hay conexión.
+La app guarda en el dispositivo una copia del catálogo **del sistema en el que estás** (productos, códigos, precios y stock), que se actualiza sola al entrar y cada 15 minutos mientras hay conexión. Arriba de **Escanear** ves cuándo se actualizó por última vez.
 
 ### Qué funciona sin conexión
 
-- **Consultar**: productos, precios y stock según la última actualización del catálogo.
-- **Ingresar**, **Contar** y **Transferir** desde Escanear: se guardan en el celular y **se sincronizan solos** cuando vuelve la conexión, aunque la app esté cerrada (en iPhone, al volver a abrirla).
+- **Consultar** en Escanear: productos, precios y stock según la última actualización del catálogo. La pantalla lo indica con «Sin conexión: solo se puede consultar (catálogo guardado)».
 
 ### Qué NO funciona sin conexión
 
-- **Vender.** Las ventas necesitan conexión para validar stock y registrar el pago. Tampoco se abren las demás pantallas (reportes, caja, usuarios…): si intentás abrir una sin red, ves la pantalla **Sin conexión**, que igual te deja escanear.
+- **Vender.** Las ventas necesitan conexión para validar stock y registrar el pago.
+- **Ingresar**, **Contar** y **Transferir**: quedan bloqueados con el aviso «Sin conexión: esta acción necesita señal». Nada se guarda para enviar después: cuando vuelva la señal, hacelo de nuevo.
+- Las demás pantallas: si intentás abrir una sin red, ves la pantalla **Sin conexión**, que igual te deja consultar escaneando.
 
-### Indicador de red
+## Productos
 
-Al lado de la campana (celular) o en el menú lateral (computadora) hay un puntito:
-
-- **Verde**: hay conexión.
-- **Gris con «Sin red»**: no hay conexión; el escáner sigue funcionando.
-- Un **número** al lado indica operaciones hechas sin conexión que todavía no se sincronizaron (amarillo) o que fueron rechazadas (rojo). Tocándolo vas a la lista de pendientes.
-
-### Pendientes y rechazadas
-
-En **Escanear → Pendientes de sincronización** ves todo lo que se hizo sin conexión y todavía no llegó al sistema:
-
-- **Esperando señal** / **Enviando…**: se van a mandar solas. Con **Sincronizar ahora** forzás el envío.
-- **Rechazada**: el sistema no la pudo aplicar y te dice por qué (por ejemplo, querías transferir 10 unidades pero mientras no había señal alguien vendió y quedan 8). Nada se descarta solo: podés **reintentar** (se envía como operación nueva, después de corregir lo necesario) o **descartar**.
-
-Una operación nunca se aplica dos veces, aunque se envíe más de una vez por problemas de señal.
-
-## Productos, variantes e inventario
-
-### Productos y variantes
-
-En **Productos** está el catálogo. Cada producto tiene nombre, categoría, marca e imagen, y una o más **variantes** (sabores, colores). Lo que se vende y se cuenta es la variante. Si un producto no tiene variantes, igual tiene una sola llamada «Único».
+En **Productos** está el catálogo del sistema. Cada producto tiene nombre, categoría, marca, descripción e imagen, y una o más **variantes** (sabores, colores, tamaños). Lo que se vende y se cuenta es la variante. Si un producto no tiene variantes, igual tiene una sola llamada «Único».
 
 Cada variante tiene:
 
-- **SKU**: código interno; si no lo cargás, el sistema lo genera.
-- **Código de barras** de fábrica y **códigos alternativos** (un mismo producto puede venir con distintos códigos según el lote o el importador). Un código no puede estar en dos productos.
-- **Precio de costo** y **precio de venta**. Cada cambio de precio queda en un historial con quién lo hizo.
-- **Stock mínimo**: por debajo de ese número el sistema avisa (ver [Notificaciones y alertas](#notificaciones-y-alertas)).
+- **SKU**: código interno; si no lo cargás, el sistema lo genera con el prefijo configurado en el sistema.
+- **Código de barras** de fábrica y **códigos alternativos** (un mismo producto puede venir con distintos códigos según el lote o el importador). Dentro de un sistema, un código no puede estar en dos productos; en otro sistema sí puede repetirse.
+- **Precio de venta** y **precio de costo**. El costo lo ven y lo cargan solo los dueños.
+- **Stock mínimo**: por debajo de ese número el producto aparece como **stock bajo** en el inicio y en Stock.
 
-Otras herramientas de **Productos**:
-
-- **Importar productos**: carga masiva desde una planilla (descargá la plantilla primero). Si una fila tiene un error no se importa nada, así no queda a medias. El stock no se importa: se carga después con un ingreso.
-- **Exportar** el catálogo.
-- **Aumento masivo de precios**: aumento (o rebaja) porcentual con previsualización antes de aplicar.
-- **Etiquetas**: ver [Compras, proveedores y etiquetas](#compras-proveedores-y-etiquetas).
-
-### Inventario
-
-**Inventario** muestra el stock de cada variante por depósito y el total. Podés filtrar productos bajo mínimo o sin stock y exportarlo. El dueño (o quien tenga permiso de Finanzas) ve además la valorización a costo.
-
-### Depósitos
-
-Los depósitos (galpones, locales) se administran en **Configuración → Depósitos**. Uno es el principal. Un depósito no se puede desactivar si todavía tiene mercadería: primero transferila o ajustala.
-
-### Movimientos
-
-El stock nunca se «pisa» a mano: cada entrada o salida queda registrada como un **movimiento** (quién, cuándo, cuánto había antes y después). En **Movimientos** ves el historial completo y podés filtrarlo por producto, depósito, tipo o usuario. Desde ahí también:
-
-- **Ingreso manual**: mercadería que entra sin compra a proveedor (por ejemplo, la carga inicial).
-- **Ajuste**: **ajuste simple** de un producto, o **recuento** («contá cuántas hay en realidad: el sistema ajusta la diferencia»). Solo se ajusta lo que no coincide.
-- **Transferencias** entre depósitos: se crean **pendientes** y el stock se mueve recién al **completarlas** (cuando la mercadería llegó). Una pendiente se puede anular. Si una transferencia queda pendiente más de 24 horas, el sistema avisa.
-
-Si te equivocaste en un movimiento, no se edita: se corrige con otro ajuste en sentido contrario.
-
-## Compras, proveedores y etiquetas
-
-### Proveedores
-
-En **Proveedores** cargás los datos de cada proveedor o importador (nombre, CUIT, teléfono, email, dirección, notas). El CUIT se valida y no puede repetirse.
-
-### Compras
-
-En **Compras** registrás la mercadería que llega de un proveedor:
-
-1. **Nueva compra**: elegí proveedor y depósito, y agregá los productos escaneándolos (pistola o cámara) o buscándolos, con cantidad y costo.
-2. Mientras está en **borrador** la podés editar.
-3. **Recibir**: el stock entra recién ahí. Si el costo cambió, el sistema te pregunta si querés actualizar el precio de costo del producto (queda en el historial de precios).
-4. Una compra recibida no se edita: si hubo un error, se **anula** y la mercadería sale del stock como devolución al proveedor.
+Desde el detalle de un producto podés **editar precios** de todas sus variantes juntas, administrar los **códigos alternativos** y ver sus movimientos de stock.
 
 ### Etiquetas
 
 En **Productos → Etiquetas** imprimís códigos de barras (Code128) en PDF para productos sin código de fábrica o para re-etiquetar. Formatos: A4 de 65 por hoja, 3×8, 2×7 y rollo de 50×30 mm, con o sin precio de venta. A los productos que no tienen código el sistema les asigna uno interno.
 
-## Caja
+## Stock
 
-La caja es el **efectivo físico** de cada depósito. Solo el efectivo pasa por la caja: transferencias, débito y MercadoPago se ven en los reportes.
+**Stock** muestra cuánto hay de cada variante:
 
-### Apertura
+- **Global**: todos los depósitos del sistema, con una columna por depósito y el total. En Vapes, por ejemplo, **Ayres Plaza** y **Mercedes**.
+- **Un depósito**: elegilo arriba para ver solo ese.
 
-En **Caja**, tocá **Abrir caja** en el depósito, contá el efectivo con el que arrancás (el cambio) y confirmá. Hay una sola caja abierta por depósito.
+Podés filtrar productos **bajo mínimo** o **sin stock** y exportar el listado. Desde cada fila podés **ajustar stock**, **transferir** o **ver movimientos**.
 
-Mientras la caja está abierta, cada cobro en efectivo, devolución en efectivo o gasto pagado en efectivo se registra solo en la caja. También podés cargar a mano:
+### Movimientos
 
-- **Ingreso extra**: efectivo que entra por otro motivo (por ejemplo, más cambio).
-- **Retiro**: efectivo que sale (por ejemplo, el dueño se lleva la recaudación). No se puede retirar más de lo que hay.
+El stock nunca se «pisa» a mano: cada entrada o salida queda registrada como un **movimiento** (quién, cuándo, cuánto había antes y después). En **Stock → Movimientos** ves el historial completo (global o de un depósito) y podés filtrarlo por producto, tipo o usuario. Desde ahí también:
 
-Si no hay caja abierta, el efectivo cobrado queda registrado como «fuera de caja» y se ve en los reportes. El dueño puede configurar que no se pueda cobrar en efectivo sin caja abierta.
+- **Ingreso**: mercadería que entra sin compra a proveedor (por ejemplo, la carga inicial).
+- **Ajuste**: **ajuste simple** de un producto, o **recuento** («contá cuántas hay en realidad: el sistema ajusta la diferencia»). Solo se ajusta lo que no coincide.
+- **Transferencias** entre depósitos del mismo sistema: se crean **pendientes** y el stock se mueve recién al **completarlas** (cuando la mercadería llegó). Una pendiente se puede anular.
 
-### Arqueo y cierre
+Si te equivocaste en un movimiento, no se edita: se corrige con otro ajuste en sentido contrario.
 
-1. Tocá **Cerrar caja**.
-2. **Contá los billetes**: cargás cuántos hay de cada denominación y el total se suma solo (más el total en monedas).
-3. El sistema muestra el **esperado** (lo que debería haber según los movimientos), el **contado** y la **diferencia**. Si hay diferencia, anotá una observación.
-4. Confirmá. Una caja cerrada no se modifica.
+## Compras
 
-Si la diferencia supera la tolerancia configurada, la caja queda marcada para revisión y el dueño recibe una notificación. Del cierre se puede descargar el PDF y **compartirlo por WhatsApp**.
+En **Compras** registrás la mercadería que llega de un proveedor:
 
-## Gastos
+1. **Nueva compra**: elegí proveedor y depósito, y agregá los productos escaneándolos (pistola o cámara) o buscándolos, con cantidad y costo.
+2. Mientras está en **borrador** la podés editar.
+3. **Recibir**: el stock entra recién ahí. Si el costo cambió, el sistema te pregunta si querés actualizar el precio de costo del producto.
+4. Una compra recibida no se edita: si hubo un error, se **anula** y la mercadería sale del stock como devolución al proveedor.
 
-En **Gastos** registrás lo que sale del negocio (alquiler, servicios, sueldos, etc.) para calcular la ganancia neta:
+## Proveedores
 
-1. **Nuevo gasto**: fecha, categoría, descripción, monto, medio de pago y, si corresponde, el depósito al que se atribuye.
-2. Opcional: sacale una **foto al ticket** y adjuntala.
-3. Marcá **Es recurrente (todos los meses)** si se repite. Es solo un recordatorio: el mes siguiente aparece en «recurrentes pendientes», no se carga solo.
+En **Proveedores** cargás los datos de cada proveedor o importador del sistema (nombre, CUIT, teléfono, email, dirección, notas). El CUIT se valida y no puede repetirse dentro del mismo sistema. Desde el detalle de un proveedor ves sus compras (si tenés permiso para ver Compras).
 
-Si lo pagás en efectivo con la caja abierta, sale de la caja automáticamente.
+## Devoluciones, cotizadores y reportes
 
-## Reportes y exportación
+Estas secciones ya aparecen en el menú (para quien tenga el permiso) pero todavía están **en preparación**: al abrirlas ves qué van a incluir.
 
-En **Reportes** están:
+- **Devoluciones**: devoluciones por garantía a partir del número de venta, con reposición del producto al cliente y su movimiento de stock.
+- **Cotizador unitario** y **Cotizador mayorista**: presupuestos por unidad y por mayor, con el stock a la vista, para compartir por WhatsApp o pasar a venta.
+- **Reportes**: ventas por período, producto, categoría y vendedor; stock por depósito y productos sin movimiento; costos y ganancias (solo para dueños).
 
-| Reporte                        | Qué muestra                                                                                    |
-| ------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Ventas                         | Por día, semana o mes; por medio de pago, vendedor, depósito, hora y día de la semana; detalle |
-| Ganancias por producto y sabor | Qué deja más plata                                                                             |
-| Stock por galpón y sabor       | Stock actual por depósito                                                                      |
-| Rotación de inventario         | Qué se mueve y qué no (sabores sin ventas con stock)                                           |
-| Valorización de inventario     | Cuánto vale el stock a costo                                                                   |
-| Movimientos de stock           | Historial de entradas y salidas                                                                |
-| Compras y costos               | Lo comprado y la evolución de costos                                                           |
-| Gastos por categoría y mes     | En qué se va la plata                                                                          |
-| Cuentas por cobrar             | Quién debe y desde hace cuánto                                                                 |
-| Cierres de caja                | Aperturas, cierres y diferencias                                                               |
-| Resumen mensual                | El mes completo en una página, con botón de WhatsApp                                           |
+## Ajustes del panel
 
-Elegí el período (y el depósito, si aplica) y el reporte se ve en pantalla. Cada uno se puede descargar en **PDF** o **Excel** con los mismos datos.
+Cada sistema tiene sus propios ajustes, en **Ajustes del panel** (menú lateral, grupo Administración). **Solo los dueños** los ven. Lo que se configura acá vale únicamente para ese sistema.
 
-Los reportes con costos y ganancias requieren el permiso **Finanzas**. Un empleado con acceso a Reportes pero sin Finanzas ve los reportes de ventas, stock y rotación sin columnas de costo ni ganancia.
+- **Categorías**: cómo se agrupan los productos. No se puede desactivar una categoría con productos activos.
+- **Marcas**: fabricantes de los productos. No se puede desactivar una marca con productos activos.
+- **Depósitos**: dónde se guarda la mercadería (locales, galpones) y cuál es el **principal**. Hay un solo principal por sistema. Un depósito no se puede desactivar si todavía tiene mercadería (primero transferila o ajustala) ni si es el principal.
+- **Escáner**: parámetros de la pistola lectora y prueba (ver [Configurar la pistola lectora](#configurar-la-pistola-lectora)).
+- **Ventas y catálogo**: **redondeo** del total al cobrar, **prefijo de SKU** y de códigos internos, y si se avisa cuando un producto queda por debajo del **stock mínimo**.
 
-## Dashboard
+## Usuarios y acceso por sistema
 
-**Inicio** muestra el resumen del período elegido: total vendido, cantidad de ventas, ticket promedio y unidades, y (con permiso de Finanzas) ganancia bruta y ganancia neta. Según tus permisos, también ves tarjetas de medios de pago, ventas por vendedor, top 10 sabores, sabores lentos y sin ventas en 30 días, stock por galpón, caja, cuentas por cobrar y pendientes.
+Solo los dueños administran el equipo, en **Usuarios**.
 
-Un empleado sin permiso de Reportes ve en el inicio solo **sus propias ventas**.
-
-## Notificaciones y alertas
-
-La **campana** (arriba) muestra cuántas notificaciones sin leer tenés; en **Notificaciones** está la lista completa. Todos los días el sistema revisa el negocio y avisa cuando algo necesita atención:
-
-- **Sin stock** y **stock bajo** (por debajo del mínimo), con una sugerencia de cuánto reponer según lo que se vende.
-- **Caja con diferencia** al cerrar.
-- **Transferencia sin completar** hace más de 24 horas.
-- **Cliente que debe** hace más de 30 días.
-- **Backup fallido**: la copia de seguridad diaria falló o no corrió.
-
-Una misma alerta no se repite mientras haya otra igual sin leer.
-
-## Usuarios y permisos
-
-Solo el dueño (o quien tenga permiso sobre Usuarios) administra el equipo en **Usuarios**.
-
-- **Nuevo usuario**: nombre, email y rol (**Dueño** o **Empleado**). El sistema genera una **contraseña inicial** que tenés que copiar y pasarle a la persona; la va a tener que cambiar al entrar.
-- **Permisos**: para cada empleado y cada sección (Dashboard, Productos, Inventario, Movimientos, Ventas, Compras, Clientes, Proveedores, Reportes, Usuarios, Configuración, Finanzas, Gastos, Caja) elegís si puede **ver**, **crear**, **editar** y **eliminar**. Para crear, editar o eliminar primero tiene que poder ver. Los cambios aplican al instante. Los dueños tienen acceso total.
+- **Nuevo usuario**: nombre, email y rol (**Dueño** o **Empleado**). El sistema genera una **contraseña temporal** que tenés que copiar y pasarle a la persona; la va a tener que cambiar al entrar.
+- **Editar**: nombre, email y rol.
 - **Resetear contraseña**: genera una temporal nueva (por ejemplo, si se la olvidó).
 - **Cerrar sus sesiones**: lo desconecta de todos sus dispositivos al instante (por ejemplo, si perdió el celular).
 - **Dar de baja**: ya no puede entrar, pero todo lo que hizo queda registrado con su nombre.
 
 Siempre tiene que quedar al menos un dueño activo: el sistema no deja dar de baja ni cambiar de rol al último.
 
+### Acceso y permisos
+
+Entrando a un usuario (**Acceso y sesiones**) ves:
+
+- **Acceso por sistema**: marcá los sistemas que puede abrir. Para cada sistema marcado aparece una grilla con los módulos (Dashboard, Proveedores, Productos, Stock, Ventas, Clientes, Devoluciones, Compras, Cotizador y Reportes) y las acciones **Ver**, **Crear**, **Editar** y **Eliminar**. Dashboard y Reportes solo tienen **Ver**.
+  - Para crear, editar o eliminar primero tiene que poder ver: si prendés una acción, se prende **Ver**; si apagás **Ver**, se apaga todo el módulo.
+  - Los permisos son **por sistema**: poder vender en Vapes no habilita vender en Cosmetic.
+  - Los costos y las ganancias los ven solo los dueños, aunque el empleado tenga permiso de Reportes o Dashboard.
+  - **Usuarios**, **Configuración** y los **Ajustes del panel** son solo para dueños: no se pueden dar a un empleado.
+  - Los dueños tienen acceso total a todos los sistemas; no hace falta marcarles nada.
+- **Sesiones activas**: en qué dispositivos tiene la sesión abierta, desde cuándo, cuándo se usó por última vez y desde qué IP. Con **Cerrar sesiones** lo desconectás de todos.
+
+Los cambios de acceso y permisos aplican al instante (a lo sumo, la persona tiene que recargar la página).
+
 ## Mi cuenta
 
 En **Mi cuenta** (menú de tu cuenta → **Mi cuenta**) podés:
 
 - Ver tus datos.
-- **Cambiar tu contraseña**.
-- Ver tus **sesiones activas**: en qué dispositivos tenés la sesión abierta, desde qué IP y cuándo se usaron por última vez.
+- **Cambiar tu contraseña** (te pide la actual).
+- Ver tus **sesiones abiertas**: en qué dispositivos tenés la sesión abierta, desde qué IP y cuándo se usaron por última vez.
 - **Cerrar sesión en todos los dispositivos** (incluido el que estás usando). Si perdiste el celular o alguien vio tu contraseña, hacé esto y después cambiala.
 
-## Configuración
+## Configuración general
 
-En **Configuración** hay varias secciones. Las marcadas «solo dueño» no las ven los empleados aunque tengan permiso de Configuración.
+**Configuración** tiene lo que vale para todos los sistemas. **Solo los dueños** la ven.
 
-- **Depósitos**, **Categorías** y **Marcas**.
-- **Ventas y comprobante** (solo dueño): datos del negocio que salen en el comprobante (incluido el nombre de la app instalada), numeración y redondeo.
-- **Caja y reportes** (solo dueño): zona horaria, si se exige caja abierta para cobrar en efectivo, tolerancia de arqueo, días de cobertura para las sugerencias de reposición y parámetros de rotación.
-- **Negocio y app** (solo dueño): el **ícono** de la app instalada. Subí una imagen (JPG, PNG o WebP, hasta 5 MB) y el sistema arma los íconos.
-- **Backups** (solo dueño): el sistema hace una copia completa de la base **todos los días a las 4:00** y la verifica. Se guardan 30 diarias, 12 semanales y 12 mensuales. Ves la lista con fecha, estado (**Verificado** o **Falló**), origen, tamaño y duración; podés **descargar** cualquiera y hacer un backup en el momento.
-- **Auditoría** (solo dueño): registro que no se puede modificar de quién hizo qué, cuándo y desde dónde, incluidos los intentos de hacer algo sin permiso. Se puede filtrar.
-- **Exportar todo**: descarga un Excel con todos los datos del negocio (productos y sabores con costos y códigos, stock por depósito, movimientos, ventas con ítems y pagos, compras, clientes, proveedores, gastos y cajas). Es tu negocio: llevate tus datos cuando quieras.
-- **Escáner**: parámetros de la pistola lectora y prueba (ver la sección siguiente).
+- **Negocio y app**: el **ícono** de la app instalada. Subí una imagen (JPG, PNG o WebP, hasta 5 MB) y el sistema arma los íconos.
+- **Sistemas**: la lista de sistemas, con cuáles están activos. **Desactivar** un sistema lo saca del selector y nadie puede entrar, pero sus productos, ventas y stock se conservan (no se borra nada). Para crear uno nuevo, usá **Agregar panel** en la pantalla **Sistemas**.
+- **Backups**: el sistema hace una copia completa de la base **todos los días a las 4:00** y la verifica. Se guardan 30 diarias, 12 semanales y 12 mensuales. Ves la lista con fecha, estado (**Verificado** o **Falló**), origen, tamaño y duración; podés **descargar** cualquiera y hacer un backup en el momento. Conviene mirar esta pantalla de vez en cuando: si un backup falla, aparece acá como **Falló**.
+- **Auditoría**: registro que no se puede modificar de quién hizo qué, cuándo, desde dónde y en qué sistema, incluidos los intentos de hacer algo sin permiso. Se puede filtrar.
+- **Exportar todo**: descarga un Excel con todos los datos de todos los sistemas (productos y variantes con costos y códigos, stock por depósito, movimientos, ventas con ítems, compras, clientes y proveedores). Es tu negocio: llevate tus datos cuando quieras.
 
 ## Configurar la pistola lectora
 
 El sistema funciona con pistolas lectoras **USB o Bluetooth** que trabajan en **modo teclado** (HID): la pistola «escribe» el código muy rápido, como si fuera un teclado. El sistema reconoce la velocidad y sabe que es una lectura, sin que tengas que tocar ningún campo. No hace falta instalar nada.
+
+Los parámetros del escáner se guardan **por sistema**, en **Ajustes del panel → Escáner** (solo dueños). Si usás la misma pistola en varios sistemas, revisalos en cada uno.
 
 ### 1. Conectar la pistola
 
@@ -370,7 +336,7 @@ Si la pistola tiene varios modos de conexión, tiene que estar en **modo HID / t
 
 ### 2. Sufijo Enter
 
-La pistola tiene que mandar **Enter** (o Tab) al terminar cada código. Es lo que viene de fábrica en la mayoría; si no, se configura escaneando el código «Add CR» / «Enter suffix» del manual de la pistola. En **Configuración → Escáner**, en **Sufijo que manda la pistola al terminar**, tienen que estar marcados los que usa tu pistola (por defecto, Enter y Tab).
+La pistola tiene que mandar **Enter** (o Tab) al terminar cada código. Es lo que viene de fábrica en la mayoría; si no, se configura escaneando el código «Add CR» / «Enter suffix» del manual de la pistola. En **Ajustes del panel → Escáner**, en **Sufijo que manda la pistola al terminar**, tienen que estar marcados los que usa tu pistola (por defecto, Enter y Tab).
 
 ### 3. Idioma del teclado
 
@@ -378,48 +344,46 @@ La pistola «tipea» con la distribución de teclado que tenga configurada, y el
 
 ### 4. Probar
 
-1. Entrá a **Configuración → Escáner** y usá **Probar pistola**: escaneá un producto y fijate que el código aparezca completo y correcto.
-2. Después andá a **Escanear**, en modo **Consultar**, y escaneá un producto cargado: tiene que aparecer su ficha con el stock.
+1. Entrá a **Ajustes del panel → Escáner** y usá **Probar pistola**: escaneá un producto y fijate que el código aparezca completo y correcto.
+2. Después andá a **Escanear**, en modo **Consultar**, y escaneá un producto cargado en ese sistema: tiene que aparecer su ficha con el stock.
 
 ### Si no lee bien
 
 - **No pasa nada al escanear**: verificá que esté en modo teclado y conectada (probá escanear dentro de un bloc de notas: tiene que escribir el código).
-- **El código llega partido o incompleto**: en **Configuración → Escáner** subí un poco **Máx. entre teclas (ms)** (por defecto 50); ayuda con pistolas Bluetooth lentas o celulares ocupados.
+- **El código llega partido o incompleto**: en **Ajustes del panel → Escáner** subí un poco **Máx. entre teclas (ms)** (por defecto 50); ayuda con pistolas Bluetooth lentas o celulares ocupados.
 - **Códigos muy cortos no se detectan**: revisá **Largo mínimo** (por defecto 4).
 - **La pistola agrega un prefijo** antes del código: cargalo en **Prefijo (opcional)** para que el sistema lo quite.
 - **Sonidos y vibración al escanear** se activan o desactivan en la misma pantalla.
+- **El producto «no existe» pero sé que está cargado**: fijate en qué sistema estás. Cada sistema tiene su propio catálogo.
 
 ## Preguntas frecuentes
 
 **¿Por qué no puedo vender sin internet si el escáner funciona?**
-Porque una venta tiene que verificar en el momento que haya stock (otro vendedor puede estar vendiendo lo mismo) y registrar el pago. Sin conexión podés consultar, ingresar, contar y transferir; esas operaciones se sincronizan solas cuando vuelve la señal.
+Porque una venta tiene que verificar en el momento que haya stock (otro vendedor puede estar vendiendo lo mismo) y registrar el pago. Sin conexión solo podés consultar productos, precios y stock.
 
-**Hice un recuento sin señal y salió «Rechazada». ¿Se perdió?**
-No. Queda en **Escanear → Pendientes de sincronización** con el motivo. Revisalo, corregí lo que haga falta y reintentá, o descartala si ya no corresponde.
+**¿Puedo cobrar una venta con dos medios de pago o dejar una parte para después?**
+No. Cada venta se cobra completa en el momento, con un solo medio de pago. Si el cliente quiere pagar de dos formas, hacé dos ventas.
 
 **Me equivoqué en una venta. ¿Cómo la borro?**
-Las ventas no se borran. Si fue un error completo, **anulala** (el stock vuelve y el comprobante queda anulado). Si el cliente devolvió algo, hacé una **devolución**.
+Las ventas no se borran. Si fue un error, **anulala** desde el detalle de la venta (el stock vuelve al depósito) y hacela de nuevo.
 
 **Cargué mal un ingreso de mercadería. ¿Lo edito?**
-No: hacé un **ajuste** en sentido contrario desde **Movimientos → Ajuste**. Así el historial muestra qué pasó.
+No: hacé un **ajuste** en sentido contrario desde **Stock → Movimientos → Ajuste**. Así el historial muestra qué pasó.
 
-**¿Por qué no veo una sección o un botón?**
-Porque no tenés el permiso. Pedíselo al dueño; el cambio aplica al instante (a lo sumo, recargá la página).
+**Cargué un producto en Vapes y no lo encuentro en Cosmetic.**
+Es lo esperado: cada sistema tiene su propio catálogo, stock, clientes y proveedores. Si el producto también se vende en otro sistema, hay que cargarlo ahí.
+
+**¿Por qué no veo un sistema, una sección o un botón?**
+Porque no tenés el acceso o el permiso en ese sistema. Pedíselo a un dueño; el cambio aplica al instante (a lo sumo, recargá la página).
 
 **¿Por qué me pide cambiar la contraseña al entrar?**
-Porque es la primera vez que entrás o el dueño te la reseteó. Hasta que la cambies no podés usar el resto del sistema.
+Porque es la primera vez que entrás o un dueño te la reseteó. Hasta que la cambies no podés usar el resto del sistema.
 
 **Perdí el celular con la app abierta. ¿Qué hago?**
-Desde otro dispositivo entrá a **Mi cuenta → Cerrar sesión en todos los dispositivos** y cambiá la contraseña. Si no podés entrar, pedile al dueño que use **Cerrar sus sesiones** en **Usuarios**.
-
-**La caja me dio diferencia. ¿Qué pasa?**
-Queda registrada con tu observación. Si supera la tolerancia configurada, se marca para revisión y el dueño recibe una notificación.
-
-**¿Un cliente puede pagar una parte ahora y el resto después?**
-Sí, si tiene límite de crédito cargado: la parte que falta queda en su cuenta corriente (fiado). Después se cobra desde la venta o desde su ficha en **Clientes**.
+Desde otro dispositivo entrá a **Mi cuenta → Cerrar sesión en todos los dispositivos** y cambiá la contraseña. Si no podés entrar, pedile a un dueño que use **Cerrar sesiones** en **Usuarios**.
 
 **¿Dónde están mis datos si algún día quiero cambiar de sistema?**
 En **Configuración → Exportar todo** descargás un Excel con todo. Además, el sistema hace un backup completo todos los días.
 
 **¿El stock que veo en el celular sin conexión está actualizado?**
-Es el de la última vez que el celular tuvo señal (se actualiza al iniciar sesión y cada 15 minutos con conexión). Con conexión, el stock que ves es siempre el real.
+Es el de la última vez que el celular tuvo señal en ese sistema (se actualiza al entrar y cada 15 minutos con conexión). Con conexión, el stock que ves es siempre el real.

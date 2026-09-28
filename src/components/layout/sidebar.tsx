@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleHelp, PanelLeftClose, PanelLeftOpen, Store } from "lucide-react";
+import { CircleHelp, LayoutGrid, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -11,8 +11,9 @@ import { cn } from "@/lib/utils";
 
 import { IndicadorRed } from "@/components/pwa/sincronizacion-offline";
 
-import { Campana } from "./campana";
+import { LogoPanel } from "./logo-panel";
 import { LogoutButton } from "./logout-button";
+import { usePanel, useRutaPanel } from "./panel-context";
 import { useUsuario } from "./usuario-context";
 
 interface SidebarProps {
@@ -25,6 +26,8 @@ interface SidebarProps {
 export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const usuario = useUsuario();
+  const panel = usePanel();
+  const ruta = useRutaPanel();
   const sueltos = items.filter((i) => i.grupo === null);
 
   const renderItem = (item: ItemNavegacion) => {
@@ -44,7 +47,7 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
             colapsado && "justify-center px-0",
           )}
         >
-          <Icono className="size-5 shrink-0" aria-hidden />
+          <Icono className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
           <span className={cn(colapsado && "sr-only")}>{item.label}</span>
         </Link>
       </li>
@@ -65,13 +68,12 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
         )}
       >
         {!colapsado && (
-          <Link href="/" className="flex min-w-0 flex-1 items-center gap-2 font-semibold">
-            <Store className="text-primary size-5 shrink-0" aria-hidden />
-            <span className="truncate">Gestión</span>
+          <Link href={ruta()} className="flex min-w-0 flex-1 items-center gap-2.5 font-semibold">
+            <LogoPanel panel={panel} size={32} />
+            <span className="truncate">{panel.nombre}</span>
           </Link>
         )}
         {!colapsado && <IndicadorRed className="px-1" />}
-        {!colapsado && <Campana />}
         <button
           type="button"
           onClick={onToggle}
@@ -81,6 +83,20 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
         >
           {colapsado ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
         </button>
+      </div>
+
+      <div className="px-3 pb-2">
+        <Link
+          href="/paneles"
+          title={colapsado ? "Cambiar de sistema" : undefined}
+          className={cn(
+            "border-border text-muted hover:bg-surface-2 hover:text-foreground flex min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-medium",
+            colapsado && "justify-center px-0",
+          )}
+        >
+          <LayoutGrid className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+          <span className={cn(colapsado && "sr-only")}>Cambiar de sistema</span>
+        </Link>
       </div>
 
       <nav aria-label="Menú lateral" className="flex-1 overflow-y-auto px-3 pb-3">

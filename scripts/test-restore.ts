@@ -24,7 +24,7 @@ async function conteos(db: PrismaClient) {
     r[t] = Number(f!.n);
   }
   const [s] = await db.$queryRaw<{ s: bigint | null }[]>`SELECT SUM("cantidad") AS s FROM "Stock"`;
-  // Las protecciones también se restauran: triggers (ledger inmutable, caja, etc.) y vistas.
+  // Las protecciones también se restauran: triggers (ledger inmutable, aislamiento entre paneles, etc.) y vistas.
   const [t] = await db.$queryRaw<
     { n: bigint }[]
   >`SELECT COUNT(*) AS n FROM pg_trigger WHERE NOT tgisinternal`;

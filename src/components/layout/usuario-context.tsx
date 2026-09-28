@@ -5,6 +5,8 @@ import { createContext, useContext, type ReactNode } from "react";
 
 import { puede, type Accion, type UsuarioSesion } from "@/lib/permisos";
 
+import { usePanelOpcional } from "./panel-context";
+
 /**
  * El usuario llega desde el servidor ((app)/layout.tsx lo lee de la DB en
  * cada request) — nunca de un token leído en el cliente. Esto solo decide
@@ -28,11 +30,13 @@ export function useUsuario(): UsuarioSesion {
   return usuario;
 }
 
+/** ¿Puede `accion` en `modulo` del panel actual? (Fuera de un panel: solo módulos globales.) */
 export function usePuede(modulo: Modulo, accion: Accion): boolean {
-  return puede(useUsuario(), modulo, accion);
+  const panel = usePanelOpcional();
+  return puede(useUsuario(), panel?.id ?? null, modulo, accion);
 }
 
-/** Renderiza `children` solo si el usuario puede hacer `accion` en `modulo`. */
+/** Renderiza `children` solo si el usuario puede hacer `accion` en `modulo` (del panel actual). */
 export function Puede({
   modulo,
   accion,

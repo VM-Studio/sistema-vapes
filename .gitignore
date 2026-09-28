@@ -49,9 +49,7 @@ verificacion/
 # archivos generados (PDF de comprobantes) en desarrollo
 .storage/
 
-# Lighthouse CI y Playwright
-lighthouse/reportes/
-.lighthouseci/
+# Playwright
 test-results/
 playwright-report/
 .storage-e2e/

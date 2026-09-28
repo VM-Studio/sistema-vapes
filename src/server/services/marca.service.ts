@@ -1,5 +1,5 @@
 import type { ActualizarMarca, CrearMarca } from "@/lib/validations/clasificacion";
-import type { Actor } from "@/server/services/actor";
+import type { Ctx } from "@/server/db/panel-scoped";
 
 import {
   actualizarClasificacion,
@@ -9,11 +9,12 @@ import {
   listarClasificacionesActivas,
 } from "./clasificacion.service";
 
-export const listarMarcas = () => listarClasificaciones("Marca");
-export const listarMarcasActivas = () => listarClasificacionesActivas("Marca");
-export const crearMarca = (input: CrearMarca, actor: Actor) =>
-  crearClasificacion("Marca", input, actor);
-export const actualizarMarca = (input: ActualizarMarca, actor: Actor) =>
-  actualizarClasificacion("Marca", input, actor);
-export const cambiarActivoMarca = (id: string, activo: boolean, actor: Actor) =>
-  cambiarActivoClasificacion("Marca", id, activo, actor);
+type CtxPanel = Pick<Ctx, "panelId">;
+
+export const listarMarcas = (ctx: CtxPanel) => listarClasificaciones(ctx, "Marca");
+export const listarMarcasActivas = (ctx: CtxPanel) => listarClasificacionesActivas(ctx, "Marca");
+export const crearMarca = (ctx: Ctx, input: CrearMarca) => crearClasificacion(ctx, "Marca", input);
+export const actualizarMarca = (ctx: Ctx, input: ActualizarMarca) =>
+  actualizarClasificacion(ctx, "Marca", input);
+export const cambiarActivoMarca = (ctx: Ctx, id: string, activo: boolean) =>
+  cambiarActivoClasificacion(ctx, "Marca", id, activo);

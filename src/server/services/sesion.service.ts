@@ -18,6 +18,7 @@ const selectUsuarioSesion = {
   debeCambiarPassword: true,
   permisos: {
     select: {
+      panelId: true,
       modulo: true,
       puedeVer: true,
       puedeCrear: true,
@@ -25,22 +26,25 @@ const selectUsuarioSesion = {
       puedeEliminar: true,
     },
   },
+  paneles: { select: { panelId: true } },
 } satisfies Prisma.UsuarioSelect;
 
-/** Usuario + permisos, solo si puede operar (activo y no dado de baja). */
+/** Usuario + permisos + paneles habilitados, solo si puede operar (activo y no dado de baja). */
 export async function obtenerUsuarioSesion(id: string): Promise<UsuarioConPermisos | null> {
-  return prisma.usuario.findFirst({
+  const u = await prisma.usuario.findFirst({
     where: { id, activo: true, deletedAt: null },
     select: selectUsuarioSesion,
   });
+  return u ? { ...u, paneles: u.paneles.map((p) => p.panelId) } : null;
 }
 
 /** Lo mínimo que necesita el middleware en cada request. null = la sesión no vale. */
 export async function estadoSesion(
   id: string,
-): Promise<{ rol: RolUsuario; debeCambiarPassword: boolean } | null> {
-  return prisma.usuario.findFirst({
+): Promise<{ rol: RolUsuario; debeCambiarPassword: boolean; paneles: string[] } | null> {
+  const u = await prisma.usuario.findFirst({
     where: { id, activo: true, deletedAt: null },
-    select: { rol: true, debeCambiarPassword: true },
+    select: { rol: true, debeCambiarPassword: true, paneles: { select: { panelId: true } } },
   });
+  return u ? { ...u, paneles: u.paneles.map((p) => p.panelId) } : null;
 }

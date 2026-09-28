@@ -34,22 +34,24 @@ export function Dialog({
       onClick={onBackdropClick}
       aria-labelledby="dialog-title"
       className={cn(
-        "anim-dialog bg-surface text-foreground m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl p-0 shadow-2xl",
+        "anim-dialog bg-surface text-foreground shadow-sheet m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl p-0",
         "mb-[calc(1rem+env(safe-area-inset-bottom))] md:mb-auto",
         className,
       )}
     >
       {open && (
-        <div className="flex flex-col gap-4 p-5">
+        <div className="flex flex-col gap-5 p-6">
           <div className="flex flex-col gap-1.5">
-            <h2 id="dialog-title" className="text-lg font-semibold">
+            <h2 id="dialog-title" className="text-xl leading-tight font-semibold tracking-tight">
               {title}
             </h2>
             {description && <div className="text-muted text-sm">{description}</div>}
           </div>
           {children}
           {footer && (
-            <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">{footer}</div>
+            <div className="flex flex-col-reverse gap-3 pt-1 md:flex-row md:justify-end">
+              {footer}
+            </div>
           )}
         </div>
       )}

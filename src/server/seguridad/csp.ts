@@ -10,8 +10,6 @@ export interface OpcionesCsp {
   dev: boolean;
   /** Orígenes del storage (R2 público y endpoint S3 para URLs firmadas). */
   storage: string[];
-  /** Ingesta de Sentry, si está configurado. */
-  sentry?: string | null;
   /** La app corre sobre https (NEXT_PUBLIC_APP_URL): se fuerza https en todo. */
   https?: boolean;
 }
@@ -27,7 +25,6 @@ const origen = (url: string | undefined | null): string | null => {
 
 export function construirCsp(o: OpcionesCsp): string {
   const storage = o.storage.map(origen).filter((x): x is string => Boolean(x));
-  const sentry = origen(o.sentry ? o.sentry.replace(/\/\/[^@]*@/, "//") : null);
   const directivas: Record<string, string[]> = {
     "default-src": ["'self'"],
     // En dev, React Refresh usa eval.
@@ -42,12 +39,7 @@ export function construirCsp(o: OpcionesCsp): string {
     "img-src": ["'self'", "data:", "blob:", ...storage],
     "media-src": ["'self'", "blob:"],
     "font-src": ["'self'", "data:"],
-    "connect-src": [
-      "'self'",
-      ...storage,
-      ...(sentry ? [sentry] : []),
-      ...(o.dev ? ["ws:", "wss:"] : []),
-    ],
+    "connect-src": ["'self'", ...storage, ...(o.dev ? ["ws:", "wss:"] : [])],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],
     "frame-src": ["'self'", "blob:"],

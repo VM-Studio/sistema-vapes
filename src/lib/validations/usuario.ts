@@ -1,7 +1,7 @@
 import { Modulo, RolUsuario } from "@prisma/client";
 import { z } from "zod";
 
-import { MODULOS_SOLO_OWNER, normalizarPermiso } from "@/lib/permisos";
+import { MODULOS_GLOBALES, normalizarPermiso } from "@/lib/permisos";
 
 import { email, id, texto } from "./common";
 
@@ -14,9 +14,7 @@ export const password = z
   .regex(/\d/, "Debe incluir al menos un número");
 
 export const permisoModuloSchema = z.object({
-  modulo: z
-    .enum(Modulo)
-    .refine((m) => !MODULOS_SOLO_OWNER.has(m), "Este módulo es solo para dueños"),
+  modulo: z.enum(Modulo).refine((m) => !MODULOS_GLOBALES.has(m), "Este módulo es solo para dueños"),
   puedeVer: z.boolean().default(false),
   puedeCrear: z.boolean().default(false),
   puedeEditar: z.boolean().default(false),
@@ -56,13 +54,21 @@ export const cambiarPasswordSchema = z
     path: ["passwordNueva"],
   });
 
-export const actualizarPermisosSchema = z.object({
+/** Acceso de un EMPLEADO: paneles habilitados y, en cada uno, la grilla de permisos. */
+export const actualizarAccesoSchema = z.object({
   usuarioId: id,
-  permisos: z
-    .array(permisoModuloSchema)
-    .refine((ps) => new Set(ps.map((p) => p.modulo)).size === ps.length, "Módulo repetido")
-    // Cualquier acción implica ver (misma regla que el CHECK en la DB).
-    .transform((ps) => ps.map((p) => normalizarPermiso(p))),
+  paneles: z
+    .array(
+      z.object({
+        panelId: id,
+        permisos: z
+          .array(permisoModuloSchema)
+          .refine((ps) => new Set(ps.map((p) => p.modulo)).size === ps.length, "Módulo repetido")
+          // Cualquier acción implica ver.
+          .transform((ps) => ps.map((p) => normalizarPermiso({ ...p, panelId: "" }))),
+      }),
+    )
+    .refine((ps) => new Set(ps.map((p) => p.panelId)).size === ps.length, "Panel repetido"),
 });
 
 export const loginSchema = z.object({
@@ -73,6 +79,6 @@ export const loginSchema = z.object({
 export type CrearUsuarioInput = z.input<typeof crearUsuarioSchema>;
 export type CrearUsuario = z.output<typeof crearUsuarioSchema>;
 export type ActualizarUsuario = z.output<typeof actualizarUsuarioSchema>;
-export type ActualizarPermisos = z.output<typeof actualizarPermisosSchema>;
+export type ActualizarAcceso = z.output<typeof actualizarAccesoSchema>;
 export type CambiarPassword = z.output<typeof cambiarPasswordSchema>;
 export type LoginInput = z.output<typeof loginSchema>;

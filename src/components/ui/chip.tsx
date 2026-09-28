@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 const base =
-  "inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium whitespace-nowrap transition-colors";
+  "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
 
 /** Filtro rápido (link): activo = relleno con el primario. */
 export function ChipLink({
@@ -26,8 +26,8 @@ export function ChipLink({
       className={cn(
         base,
         activo
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-surface text-foreground hover:bg-surface-2",
+          ? "border-accent bg-accent text-accent-foreground"
+          : "border-border bg-surface text-foreground hover:border-input hover:bg-surface-2",
         className,
       )}
     >
@@ -51,7 +51,7 @@ export function ChipRow({
       role="group"
       aria-label={ariaLabel}
       className={cn(
-        "-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0",
+        "-mx-4 flex gap-2 overflow-x-auto px-4 py-1 md:mx-0 md:flex-wrap md:px-0",
         className,
       )}
     >

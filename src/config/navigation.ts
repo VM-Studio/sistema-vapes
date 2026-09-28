@@ -1,59 +1,69 @@
 import { Modulo } from "@prisma/client";
 import {
-  ArrowLeftRight,
   BarChart3,
   Boxes,
   Building2,
+  Calculator,
   Home,
   Package,
-  Receipt,
+  PackageOpen,
   ScanBarcode,
   Settings,
   ShoppingCart,
+  SlidersHorizontal,
   Truck,
+  Undo2,
   UserCog,
   Users,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
-import { puede, type SujetoPermisos } from "@/lib/permisos";
+import { esOwner, puede, type SujetoPermisos } from "@/lib/permisos";
+import { rutaPanel } from "@/lib/paneles";
 
 /**
- * ÚNICA fuente de la navegación: sidebar (desktop), bottom bar y sheet "Más"
- * (mobile), accesos rápidos del inicio y título de la barra superior.
- * Todo se filtra con navegacionPermitida(): lo que el usuario no puede ver, no
- * aparece. (Ocultarlo es solo UX: cada página y acción valida en el servidor.)
+ * ÚNICA fuente de la navegación DENTRO de un panel: sidebar (desktop),
+ * bottom bar y sheet "Más" (mobile), accesos rápidos del inicio y título de
+ * la barra superior. Los `href` son relativos al panel ("/productos" →
+ * "/p/{slug}/productos"); navegacionPermitida() los resuelve y filtra con los
+ * permisos del usuario EN ESE PANEL. (Ocultarlo es solo UX: cada página y
+ * acción valida en el servidor.)
  */
 
-export type GrupoNavegacion = "Operación" | "Catálogo" | "Administración";
+export type GrupoNavegacion = "Operación" | "Catálogo" | "Cotizadores" | "Administración";
 
-export const GRUPOS: readonly GrupoNavegacion[] = ["Operación", "Catálogo", "Administración"];
+export const GRUPOS: readonly GrupoNavegacion[] = [
+  "Operación",
+  "Catálogo",
+  "Cotizadores",
+  "Administración",
+];
 
 export interface ItemNavegacion {
   /**
    * Módulo que hay que poder "ver". null = siempre visible (Inicio).
-   * Array = alcanza con poder ver cualquiera de ellos (Escanear sirve para
-   * vender y para inventario).
+   * Array = alcanza con poder ver cualquiera (Escanear sirve para vender y para stock).
+   * "OWNER" = solo dueños (configuración del panel).
    */
-  modulo: Modulo | readonly Modulo[] | null;
+  modulo: Modulo | readonly Modulo[] | "OWNER" | null;
   label: string;
+  /** Relativo al panel ("/" = inicio del panel), o absoluto si `global`. */
   href: string;
   icon: LucideIcon;
   /** null = fuera de grupos (arriba de todo en el sidebar). */
   grupo: GrupoNavegacion | null;
-  /** Bottom navigation mobile (máx. 4 + "Más"): Inicio, Ventas, [Escanear], Inventario. */
+  /** Bottom navigation mobile: Inicio, Ventas, Productos, Stock (+ "Más"). */
   enBottomBar: boolean;
   /** Texto corto para los accesos rápidos del inicio. */
   descripcion: string;
-  /** Botón central elevado de la bottom bar (Escanear). */
-  destacado?: boolean;
+  /** Ruta global (fuera del panel): /usuarios, /configuracion. */
+  global?: boolean;
   /**
    * Destino directo si el usuario puede hacer `accion` en el módulo (Ventas abre el POS);
    * si no, `href`. El ítem queda activo en todo `href/*` igual.
    */
   accionPrincipal?: { href: string; accion: "crear" };
-  /** Prefijo de ruta para marcar el ítem activo (lo completa navegacionPermitida). */
+  /** Prefijo de ruta absoluto para marcar el ítem activo (lo completa navegacionPermitida). */
   base?: string;
 }
 
@@ -65,7 +75,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Home,
     grupo: null,
     enBottomBar: true,
-    descripcion: "Resumen del negocio",
+    descripcion: "Resumen del sistema",
   },
   {
     modulo: Modulo.VENTAS,
@@ -75,44 +85,43 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: ShoppingCart,
     grupo: "Operación",
     enBottomBar: true,
-    descripcion: "Cobrar (punto de venta) y consultar ventas",
+    descripcion: "Cobrar y consultar ventas",
   },
   {
-    modulo: Modulo.INVENTARIO,
+    modulo: [Modulo.STOCK, Modulo.VENTAS],
     label: "Escanear",
     href: "/escanear",
     icon: ScanBarcode,
     grupo: "Operación",
-    enBottomBar: true,
-    destacado: true,
+    enBottomBar: false,
     descripcion: "Consultar, ingresar, contar y transferir escaneando",
   },
   {
-    modulo: Modulo.INVENTARIO,
-    label: "Inventario",
-    href: "/inventario",
+    modulo: Modulo.STOCK,
+    label: "Stock",
+    href: "/stock",
     icon: Boxes,
     grupo: "Operación",
     enBottomBar: true,
-    descripcion: "Stock por depósito",
+    descripcion: "Stock por depósito y global, movimientos y transferencias",
   },
   {
-    modulo: Modulo.PRODUCTOS,
-    label: "Productos",
-    href: "/productos",
-    icon: Package,
-    grupo: "Catálogo",
-    enBottomBar: false,
-    descripcion: "Productos, sabores y precios",
-  },
-  {
-    modulo: Modulo.MOVIMIENTOS,
-    label: "Movimientos",
-    href: "/movimientos",
-    icon: ArrowLeftRight,
+    modulo: Modulo.CLIENTES,
+    label: "Clientes",
+    href: "/clientes",
+    icon: Users,
     grupo: "Operación",
     enBottomBar: false,
-    descripcion: "Ingresos, ajustes y transferencias",
+    descripcion: "Clientes y sus compras",
+  },
+  {
+    modulo: Modulo.DEVOLUCIONES,
+    label: "Devoluciones",
+    href: "/devoluciones",
+    icon: Undo2,
+    grupo: "Operación",
+    enBottomBar: false,
+    descripcion: "Devoluciones por garantía",
   },
   {
     modulo: Modulo.COMPRAS,
@@ -124,31 +133,40 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     descripcion: "Mercadería recibida de proveedores",
   },
   {
-    modulo: Modulo.CAJA,
-    label: "Caja",
-    href: "/caja",
-    icon: Wallet,
-    grupo: "Operación",
-    enBottomBar: false,
-    descripcion: "Apertura, movimientos y arqueo del efectivo",
-  },
-  {
-    modulo: Modulo.CLIENTES,
-    label: "Clientes",
-    href: "/clientes",
-    icon: Users,
-    grupo: "Operación",
-    enBottomBar: false,
-    descripcion: "Cuenta corriente, compras y saldos",
+    modulo: Modulo.PRODUCTOS,
+    label: "Productos",
+    href: "/productos",
+    icon: Package,
+    grupo: "Catálogo",
+    enBottomBar: true,
+    descripcion: "Productos, variantes y precios",
   },
   {
     modulo: Modulo.PROVEEDORES,
     label: "Proveedores",
     href: "/proveedores",
     icon: Building2,
-    grupo: "Operación",
+    grupo: "Catálogo",
     enBottomBar: false,
     descripcion: "Proveedores e importadores",
+  },
+  {
+    modulo: Modulo.COTIZADOR,
+    label: "Cotizador unitario",
+    href: "/cotizador-unitario",
+    icon: Calculator,
+    grupo: "Cotizadores",
+    enBottomBar: false,
+    descripcion: "Presupuestos por unidad",
+  },
+  {
+    modulo: Modulo.COTIZADOR,
+    label: "Cotizador mayorista",
+    href: "/cotizador-mayorista",
+    icon: PackageOpen,
+    grupo: "Cotizadores",
+    enBottomBar: false,
+    descripcion: "Presupuestos por mayor",
   },
   {
     modulo: Modulo.REPORTES,
@@ -157,16 +175,16 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: BarChart3,
     grupo: "Administración",
     enBottomBar: false,
-    descripcion: "Ganancias, ventas y rotación",
+    descripcion: "Ventas, stock y rendimiento",
   },
   {
-    modulo: Modulo.GASTOS,
-    label: "Gastos",
-    href: "/gastos",
-    icon: Receipt,
+    modulo: "OWNER",
+    label: "Ajustes del panel",
+    href: "/configuracion",
+    icon: SlidersHorizontal,
     grupo: "Administración",
     enBottomBar: false,
-    descripcion: "Alquiler, servicios, sueldos y otros gastos",
+    descripcion: "Depósitos, categorías, marcas, escáner y ventas",
   },
   {
     modulo: Modulo.USUARIOS,
@@ -175,6 +193,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: UserCog,
     grupo: "Administración",
     enBottomBar: false,
+    global: true,
     descripcion: "Accesos y permisos del equipo",
   },
   {
@@ -184,45 +203,65 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Settings,
     grupo: "Administración",
     enBottomBar: false,
-    descripcion: "Datos del negocio y preferencias",
+    global: true,
+    descripcion: "Negocio, backups, auditoría",
   },
 ];
 
-/** Rutas que no son módulos pero necesitan título en la barra superior. */
-const TITULOS_EXTRA: Record<string, string> = {
-  "/cuenta": "Mi cuenta",
-  "/sin-acceso": "Sin acceso",
-  "/notificaciones": "Notificaciones",
-};
-
-export function puedeVerItem(usuario: SujetoPermisos, item: ItemNavegacion): boolean {
+export function puedeVerItem(
+  usuario: SujetoPermisos,
+  panelId: string,
+  item: ItemNavegacion,
+): boolean {
   if (item.modulo === null) return true;
+  if (item.modulo === "OWNER") return esOwner(usuario);
   const modulos: readonly Modulo[] = Array.isArray(item.modulo)
     ? item.modulo
     : [item.modulo as Modulo];
-  return modulos.some((m) => puede(usuario, m, "ver"));
+  return modulos.some((m) => puede(usuario, item.global ? null : panelId, m, "ver"));
 }
 
-/** Ítems que el usuario puede ver, en el orden declarado. */
-export function navegacionPermitida(usuario: SujetoPermisos): ItemNavegacion[] {
-  return NAVEGACION.filter((item) => puedeVerItem(usuario, item)).map((item) => {
+/** Ítems que el usuario puede ver en el panel, con `href` y `base` absolutos. */
+export function navegacionPermitida(
+  usuario: SujetoPermisos,
+  panel: { id: string; slug: string },
+): ItemNavegacion[] {
+  const abs = (item: ItemNavegacion, href: string) =>
+    item.global ? href : rutaPanel(panel.slug, href);
+  return NAVEGACION.filter((item) => puedeVerItem(usuario, panel.id, item)).map((item) => {
     const principal = item.accionPrincipal;
-    const modulo = Array.isArray(item.modulo) ? null : (item.modulo as Modulo | null);
-    return principal && modulo && puede(usuario, modulo, principal.accion)
-      ? { ...item, href: principal.href, base: item.href }
-      : { ...item, base: item.href };
+    const modulo =
+      Array.isArray(item.modulo) || item.modulo === "OWNER" ? null : (item.modulo as Modulo | null);
+    const base = abs(item, item.href);
+    return principal && modulo && puede(usuario, panel.id, modulo, principal.accion)
+      ? { ...item, href: abs(item, principal.href), base }
+      : { ...item, href: base, base };
   });
 }
 
-/** ¿`href` corresponde a la ruta actual? ("/" solo exacto; el resto por prefijo). */
+/** ¿`href` corresponde a la ruta actual? (inicio del panel solo exacto; el resto por prefijo). */
 export function esRutaActiva(href: string, pathname: string): boolean {
-  if (href === "/") return pathname === "/";
+  if (/^\/p\/[^/]+$/.test(href) || href === "/") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/** Rutas globales que necesitan título en la barra superior. */
+const TITULOS_GLOBALES: Record<string, string> = {
+  "/paneles": "Sistemas",
+  "/cuenta": "Mi cuenta",
+  "/usuarios": "Usuarios",
+  "/configuracion": "Configuración",
+  "/ayuda": "Ayuda",
+  "/sin-acceso": "Sin acceso",
+};
+
 export function tituloDeRuta(pathname: string): string {
-  const item = NAVEGACION.find((i) => i.href !== "/" && esRutaActiva(i.href, pathname));
-  if (item) return item.label;
-  const extra = Object.entries(TITULOS_EXTRA).find(([href]) => esRutaActiva(href, pathname));
+  const m = pathname.match(/^\/p\/[^/]+(\/.*)?$/);
+  if (m) {
+    const resto = m[1] ?? "/";
+    const item = NAVEGACION.find((i) => !i.global && i.href !== "/" && esRutaActiva(i.href, resto));
+    return item?.label ?? "Inicio";
+  }
+  const extra = Object.entries(TITULOS_GLOBALES).find(([href]) => esRutaActiva(href, pathname));
   return extra?.[1] ?? "Inicio";
 }

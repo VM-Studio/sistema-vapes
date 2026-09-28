@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 
 import { PwaProvider } from "@/components/pwa/pwa-provider";
@@ -7,8 +7,8 @@ import { ToastProvider } from "@/components/ui/toast";
 
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// Inter self-hosteada por next/font; la variable alimenta --font-sans (globals.css).
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
 
 /** Pantallas de inicio de iOS (las genera `pnpm iconos`): iPhone SE, 8, X/11 Pro, 12–15, Pro Max. */
 const SPLASH = [
@@ -50,10 +50,8 @@ export const viewport: Viewport = {
   // cover: la app ocupa toda la pantalla (notch incluido); los paddings
   // env(safe-area-inset-*) evitan que el contenido quede debajo.
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#15151c" },
-  ],
+  themeColor: "#ffffff",
+  colorScheme: "light",
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -61,8 +59,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // su propio nonce de CSP (lo pone el middleware y Next lo aplica a sus scripts).
   await headers();
   return (
-    <html lang="es">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html lang="es" className={inter.variable}>
+      <body className="bg-background text-foreground font-sans antialiased">
         <PwaProvider>
           <ToastProvider>{children}</ToastProvider>
         </PwaProvider>

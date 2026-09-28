@@ -28,14 +28,28 @@ export async function login(page: Page, email: string, password: string) {
   await page.waitForLoadState("networkidle");
 }
 
-export const loginDueno = (page: Page) => login(page, "dueno1@negocio.com", PASSWORD_DUENO);
+/** Dueño del seed (Juan Cruz). La contraseña la fija el global-setup. */
+export const EMAIL_DUENO = "juancruz@negocio.com";
+export const loginDueno = (page: Page) => login(page, EMAIL_DUENO, PASSWORD_DUENO);
+
+export const PANEL_VAPES = "pnl_vapes";
+export const PANEL_COSMETIC = "pnl_cosmetic";
 
 /** Usuario propio del test (aislado de los demás specs). */
 export async function crearUsuario(opciones: {
   rol?: RolUsuario;
   password?: string;
   debeCambiarPassword?: boolean;
-  permisos?: { modulo: Modulo; ver?: boolean; crear?: boolean; editar?: boolean }[];
+  /** Paneles habilitados (EMPLEADO). Default: solo Vapes. */
+  paneles?: string[];
+  /** Permisos en Vapes (o en `panelId` si se indica). */
+  permisos?: {
+    modulo: Modulo;
+    ver?: boolean;
+    crear?: boolean;
+    editar?: boolean;
+    panelId?: string;
+  }[];
 }) {
   const sufijo = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const password = opciones.password ?? "Probando2026x";
@@ -46,8 +60,13 @@ export async function crearUsuario(opciones: {
       rol: opciones.rol ?? RolUsuario.EMPLEADO,
       passwordHash: await bcrypt.hash(password, 10),
       debeCambiarPassword: opciones.debeCambiarPassword ?? false,
+      paneles:
+        (opciones.rol ?? RolUsuario.EMPLEADO) === RolUsuario.EMPLEADO
+          ? { create: (opciones.paneles ?? [PANEL_VAPES]).map((panelId) => ({ panelId })) }
+          : undefined,
       permisos: {
         create: (opciones.permisos ?? []).map((p) => ({
+          panelId: p.panelId ?? PANEL_VAPES,
           modulo: p.modulo,
           puedeVer: p.ver ?? true,
           puedeCrear: p.crear ?? false,
@@ -75,7 +94,7 @@ export async function pistola(page: Page, codigo: string) {
 
 export async function codigoDe(producto: string, variante: string): Promise<string> {
   const v = await db.variante.findFirstOrThrow({
-    where: { nombre: variante, producto: { nombre: producto } },
+    where: { panelId: PANEL_VAPES, nombre: variante, producto: { nombre: producto } },
   });
   return v.codigoBarras!;
 }
@@ -83,6 +102,7 @@ export async function codigoDe(producto: string, variante: string): Promise<stri
 export async function stock(producto: string, variante: string, deposito: string): Promise<number> {
   const s = await db.stock.findFirst({
     where: {
+      panelId: PANEL_VAPES,
       variante: { nombre: variante, producto: { nombre: producto } },
       deposito: { nombre: deposito },
     },
@@ -91,11 +111,14 @@ export async function stock(producto: string, variante: string, deposito: string
 }
 
 export async function depositoId(nombre: string): Promise<string> {
-  return (await db.deposito.findFirstOrThrow({ where: { nombre } })).id;
+  return (await db.deposito.findFirstOrThrow({ where: { panelId: PANEL_VAPES, nombre } })).id;
 }
 
-/** Llama a una Server Action por su id (como lo haría alguien con la sesión, salteando la UI). */
-export async function llamarAccion(page: Page, nombre: string, args: unknown) {
+/**
+ * Llama a una Server Action por su id (como lo haría alguien con la sesión,
+ * salteando la UI). `ruta`: página desde la que "se invoca" (define el panel).
+ */
+export async function llamarAccion(page: Page, nombre: string, args: unknown, ruta = "/p/vapes") {
   const manifest = JSON.parse(
     readFileSync(".next/server/server-reference-manifest.json", "utf8"),
   ) as {
@@ -104,8 +127,8 @@ export async function llamarAccion(page: Page, nombre: string, args: unknown) {
   const id = Object.entries(manifest.node).find(([, v]) => v.exportedName === nombre)?.[0];
   if (!id) throw new Error(`No existe la Server Action ${nombre}`);
   return page.evaluate(
-    async ([actionId, a]) => {
-      const r = await fetch("/", {
+    async ([actionId, a, url]) => {
+      const r = await fetch(url, {
         method: "POST",
         headers: {
           "Next-Action": actionId,
@@ -116,27 +139,29 @@ export async function llamarAccion(page: Page, nombre: string, args: unknown) {
       });
       return (await r.text()).split("\n").find((l) => l.includes('"ok"')) ?? "";
     },
-    [id, args] as const,
+    [id, args, ruta] as const,
   );
 }
 
-export async function esperarCatalogoOffline(page: Page) {
+/** Espera a que el catálogo offline del panel (Vapes por defecto) esté en IndexedDB. */
+export async function esperarCatalogoOffline(page: Page, panelId = PANEL_VAPES) {
   await expect
     .poll(
       () =>
         page.evaluate(
-          () =>
+          (id) =>
             new Promise<number>((ok) => {
               const req = indexedDB.open("gestion-offline");
               req.onsuccess = () => {
                 const d = req.result;
-                if (!d.objectStoreNames.contains("meta")) return ok(0);
-                const g = d.transaction("meta").objectStore("meta").get("catalogo");
+                if (!d.objectStoreNames.contains("catalogos")) return ok(0);
+                const g = d.transaction("catalogos").objectStore("catalogos").get(id);
                 g.onsuccess = () =>
                   ok((g.result as { cantidad?: number } | undefined)?.cantidad ?? 0);
               };
               req.onerror = () => ok(0);
             }),
+          panelId,
         ),
       { timeout: 20_000 },
     )

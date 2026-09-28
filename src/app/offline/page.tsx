@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Sin conexión" };
 /**
  * /offline — la precachea el service worker y la muestra cuando una página no
  * se puede cargar por falta de red. No tiene datos del negocio en el HTML: el
- * escáner lee el catálogo que ya está en el celular (IndexedDB).
+ * escáner lee el catálogo que ya está en el celular (IndexedDB), solo para consultar.
  */
 export default function OfflinePage() {
   return (
@@ -15,9 +15,9 @@ export default function OfflinePage() {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Sin conexión</h1>
         <p className="text-muted text-sm">
-          No hay señal para abrir esa pantalla. Mientras tanto podés escanear: consultar stock y
-          registrar ingresos, recuentos y transferencias, que se sincronizan solos al volver la red.
-          Las ventas necesitan conexión.
+          No hay señal para abrir esa pantalla. Mientras tanto podés escanear para consultar
+          producto, precio y stock del último catálogo guardado. Ventas, ingresos, recuentos y
+          transferencias necesitan conexión.
         </p>
       </header>
       <EscanerOffline />

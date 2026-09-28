@@ -10,7 +10,7 @@ import { registrarAuditoria } from "@/server/services/audit.service";
 
 /**
  * Sesiones revocables. El middleware llama a `validarSesion` en cada request:
- * el resultado se cachea 60 s en memoria por `sid` para no consultar la DB
+ * el resultado se cachea 60 s en memoria por `sid` + hash del token para no consultar la DB
  * siempre. Revocar, desactivar un usuario o cambiar su contraseña invalida el
  * caché de ESTA instancia al instante; otras instancias lo ven en ≤ 60 s.
  */
@@ -19,6 +19,8 @@ export interface EstadoSesion {
   usuarioId: string;
   rol: RolUsuario;
   debeCambiarPassword: boolean;
+  /** Paneles habilitados (EMPLEADO). Cambiarlos invalida este caché. */
+  paneles: string[];
 }
 
 const TTL_MS = 60_000;
@@ -50,7 +52,9 @@ export async function crearSesion(
 
 /** null = la sesión no existe, fue revocada, venció, o el usuario ya no puede entrar. */
 export async function validarSesion(sid: string, tok: string): Promise<EstadoSesion | null> {
-  const c = cache.get(sid);
+  // La clave incluye el hash del secreto: un sid con otro tok nunca usa el caché de la sesión real.
+  const clave = `${sid}:${hash(tok)}`;
+  const c = cache.get(clave);
   if (c && Date.now() - c.t < TTL_MS) return c.estado;
   const s = await prisma.sesion.findUnique({
     where: { id: sid },
@@ -59,7 +63,14 @@ export async function validarSesion(sid: string, tok: string): Promise<EstadoSes
       revocadaAt: true,
       expiraAt: true,
       usuario: {
-        select: { id: true, rol: true, debeCambiarPassword: true, activo: true, deletedAt: true },
+        select: {
+          id: true,
+          rol: true,
+          debeCambiarPassword: true,
+          activo: true,
+          deletedAt: true,
+          paneles: { select: { panelId: true } },
+        },
       },
     },
   });
@@ -75,9 +86,10 @@ export async function validarSesion(sid: string, tok: string): Promise<EstadoSes
         usuarioId: s.usuario.id,
         rol: s.usuario.rol,
         debeCambiarPassword: s.usuario.debeCambiarPassword,
+        paneles: s.usuario.paneles.map((p) => p.panelId),
       }
     : null;
-  cache.set(sid, { t: Date.now(), estado, usuarioId: s?.usuario.id ?? null });
+  cache.set(clave, { t: Date.now(), estado, usuarioId: s?.usuario.id ?? null });
   if (cache.size > 5000) cache.delete(cache.keys().next().value!);
   return estado;
 }
@@ -93,7 +105,7 @@ export async function extenderSesion(sid: string): Promise<void> {
 /** Olvida lo cacheado (de un usuario, o todo). */
 export function invalidarCacheSesiones(usuarioId?: string): void {
   if (!usuarioId) return cache.clear();
-  for (const [sid, v] of cache) if (v.usuarioId === usuarioId) cache.delete(sid);
+  for (const [clave, v] of cache) if (v.usuarioId === usuarioId) cache.delete(clave);
 }
 
 export async function revocarSesion(sid: string, porId: string | null): Promise<void> {
@@ -106,7 +118,7 @@ export async function revocarSesion(sid: string, porId: string | null): Promise<
     where: { id: sid },
     data: { revocadaAt: new Date(), revocadaPorId: porId },
   });
-  cache.delete(sid);
+  for (const clave of cache.keys()) if (clave.startsWith(`${sid}:`)) cache.delete(clave);
 }
 
 /** "Cerrar sesión en todos los dispositivos" (o un dueño echando a un empleado). */

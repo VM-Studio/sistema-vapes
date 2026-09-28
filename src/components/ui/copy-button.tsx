@@ -24,13 +24,17 @@ export function CopyButton({
         setTimeout(() => setCopiado(false), 1500);
       }}
       className={cn(
-        "text-muted hover:bg-surface-2 hover:text-foreground inline-flex size-8 items-center justify-center rounded-md",
+        "text-muted hover:bg-surface-2 hover:text-foreground inline-flex size-9 items-center justify-center rounded-lg transition-colors",
         className,
       )}
       aria-label={copiado ? "Copiado" : `${etiqueta} ${valor}`}
       title={copiado ? "Copiado" : etiqueta}
     >
-      {copiado ? <Check className="text-success size-4" /> : <Copy className="size-4" />}
+      {copiado ? (
+        <Check className="text-success size-4" strokeWidth={1.75} aria-hidden />
+      ) : (
+        <Copy className="size-4" strokeWidth={1.75} aria-hidden />
+      )}
     </button>
   );
 }

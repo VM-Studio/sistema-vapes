@@ -9,8 +9,6 @@ import {
   type SerwistGlobalConfig,
 } from "serwist";
 
-import { sincronizarCola, TAG_SYNC } from "@/features/offline/cola";
-
 /**
  * SERVICE WORKER (Serwist). Reglas de caché — datos privados del negocio:
  *  - Shell (JS/CSS del build, fuentes, íconos): PRECACHE (inyectado en el build).
@@ -18,8 +16,8 @@ import { sincronizarCola, TAG_SYNC } from "@/features/offline/cola";
  *    HTML autenticado ni una mutación. Sin red, una navegación cae en /offline.
  *  - Imágenes de productos y PDFs (/api/publico/archivos): stale-while-revalidate,
  *    200 entradas / 30 días.
- *  - Background Sync: al volver la red, envía la cola del escáner (/api/sync,
- *    idempotente) aunque la app esté cerrada.
+ *  - Sin cola offline: sin señal, el escáner solo CONSULTA el catálogo que la
+ *    app guardó en IndexedDB (lo baja /api/p/{slug}/catalogo/offline).
  *  - Actualización: el SW nuevo queda ESPERANDO; la app muestra "Hay una
  *    versión nueva" y el usuario decide (nunca en medio de una venta).
  */
@@ -66,7 +64,7 @@ const serwist = new Serwist({
         plugins: [new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 30 * 24 * 3600 })],
       }),
     },
-    // Resto de la API (catálogo offline, sync, reportes…): siempre a la red.
+    // Resto de la API (catálogo offline, etiquetas…): siempre a la red.
     { matcher: ({ url }) => url.pathname.startsWith("/api/"), handler: new NetworkOnly() },
     // Íconos, splash y capturas del manifest.
     {
@@ -83,20 +81,3 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
-
-// --- Background Sync de la cola del escáner ---------------------------------
-interface SyncEvent extends ExtendableEvent {
-  readonly tag: string;
-}
-
-self.addEventListener("sync", ((evento: SyncEvent) => {
-  if (evento.tag !== TAG_SYNC) return;
-  evento.waitUntil(
-    sincronizarCola((...a) => fetch(...a)).then(async (r) => {
-      const clientes = await self.clients.matchAll({ includeUncontrolled: true });
-      for (const c of clientes) c.postMessage({ tipo: "cola-sincronizada", ...r });
-      // Si quedó algo (sin red de nuevo), que el SO vuelva a intentar.
-      if (r.sinRed) throw new Error("Sin red: se reintenta");
-    }),
-  );
-}) as EventListener);

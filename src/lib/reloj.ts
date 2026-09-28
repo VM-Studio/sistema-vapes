@@ -1,9 +1,9 @@
 /**
- * Hora "de negocio" de los servicios (fecha de una venta, de un pago, de un
- * movimiento de stock o de caja). En la app es siempre `new Date()`.
+ * Hora "de negocio" de los servicios (fecha de una venta, de una compra o de
+ * un movimiento de stock). En la app es siempre `new Date()`.
  *
  * Existe para que `prisma/seed-demo.ts` pueda simular 90 días de operación
- * pasando por los servicios REALES (con sus triggers, caja y ResumenDiario)
+ * pasando por los servicios REALES (con sus triggers)
  * en vez de insertar filas a mano. En producción no se puede fijar.
  */
 let reloj: (() => Date) | null = null;

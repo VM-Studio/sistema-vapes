@@ -1,4 +1,3 @@
-import { withSentryConfig } from "@sentry/nextjs/config";
 import { withSerwist } from "@serwist/turbopack";
 import type { NextConfig } from "next";
 
@@ -61,22 +60,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-const conSerwist = withSerwist(nextConfig);
-
-/**
- * Sentry es opcional: sin SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN la app anda igual
- * (el SDK queda deshabilitado). Los source maps se suben solo si hay
- * SENTRY_AUTH_TOKEN en el build.
- */
-export default withSentryConfig(conSerwist, {
-  silent: true,
-  telemetry: false,
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
-  release: {
-    name: process.env.APP_VERSION ?? process.env.VERCEL_GIT_COMMIT_SHA,
-    create: Boolean(process.env.SENTRY_AUTH_TOKEN),
-  },
-});
+export default withSerwist(nextConfig);

@@ -1,18 +1,19 @@
 # Modelo de datos
 
-Base PostgreSQL 16 manejada con Prisma 6. La fuente de verdad es `prisma/schema.prisma`; las reglas que Prisma no sabe expresar (CHECKs, índices únicos parciales, triggers, vistas) viven en las migraciones SQL de `prisma/migrations/`.
+Base PostgreSQL 16 manejada con Prisma 6. La fuente de verdad es `prisma/schema.prisma`; las reglas que Prisma no sabe expresar (CHECKs, índices únicos parciales, triggers, vistas) viven en las migraciones SQL de `prisma/migrations/` (la reforma multipanel es `20260928160000_reforma_multipanel`).
 
 Convenciones generales:
 
-- **IDs**: `cuid()` en texto. Los documentos que ve el usuario (ventas, compras, transferencias, devoluciones) tienen además un `numero` autoincremental.
-- **Dinero**: `Decimal(12,2)` (los agregados de `ResumenDiario`, `Decimal(14,2)`). **Cantidades**: enteros.
-- **Fechas**: `timestamp` en UTC sin zona. Los rangos de días se calculan en la zona horaria del negocio (`Configuracion.timezone`, por defecto `America/Argentina/Buenos_Aires`).
-- **Nada se borra físicamente** en las tablas de negocio: los maestros usan soft delete (`deletedAt`) o `activo = false`, y los documentos confirmados se **anulan**.
-- **Cachés verificados**: `Stock`, `Cliente.saldoDeudor`, `Venta.montoPagado` y `VentaItem.cantidadDevuelta` son derivados; la base verifica al COMMIT que coincidan con su fuente.
+- **Paneles**: la app son varios sistemas independientes (`Panel`: Vapes, Cosmetic, Especiales y los que se agreguen). Toda tabla de negocio tiene `panelId` y solo puede apuntar a filas de su mismo panel. Lo global (usuarios, sesiones, `ConfiguracionGlobal`, backups, rate limit, auditoría) no pertenece a ningún panel.
+- **IDs**: `cuid()` en texto (los paneles, depósitos y secuencias creados por la migración tienen ids fijos: `pnl_vapes`, `pnl_cosmetic`, `pnl_especiales`). Los documentos que ve el usuario (ventas, compras, transferencias, devoluciones) tienen además un `numero` **correlativo por panel** (tabla `Secuencia`). El ID de venta visible es `{3 letras del slug}-{número con 6 dígitos}`: `VAP-000001`.
+- **Dinero**: `Decimal(12,2)`. **Cantidades**: enteros.
+- **Fechas**: `timestamp` en UTC sin zona. Los rangos de días se calculan en la zona horaria del negocio (`ConfiguracionGlobal.timezone`, por defecto `America/Argentina/Buenos_Aires`).
+- **Nada se borra físicamente** en las tablas de negocio: los maestros usan soft delete (`deletedAt`) o `activo = false` (también los paneles), y los documentos confirmados se **anulan**.
+- **Caché verificado**: `Stock` es derivado del ledger `MovimientoStock`; la base verifica que solo cambie junto con su movimiento.
 
 ## Diagrama (DBML)
 
-Se puede pegar en [dbdiagram.io](https://dbdiagram.io) para verlo como diagrama. Generado a partir de `prisma/schema.prisma`: las relaciones inversas de Prisma (listas) no aparecen porque están implícitas en los `Ref`.
+Se puede pegar en [dbdiagram.io](https://dbdiagram.io) para verlo como diagrama. Generado a partir de `prisma/schema.prisma`: las relaciones inversas de Prisma (listas) no aparecen porque están implícitas en los `Ref`. `panelId` con `default: \`current_setting('app.panel_id', true)\`` es la red de seguridad del aislamiento (ver invariantes).
 
 ```dbml
 // Generado a partir de prisma/schema.prisma
@@ -24,19 +25,17 @@ Enum RolUsuario {
 
 Enum Modulo {
   DASHBOARD
-  PRODUCTOS
-  INVENTARIO
-  MOVIMIENTOS
-  VENTAS
-  COMPRAS
-  CLIENTES
   PROVEEDORES
+  PRODUCTOS
+  STOCK
+  VENTAS
+  CLIENTES
+  DEVOLUCIONES
+  COMPRAS
+  COTIZADOR
   REPORTES
-  USUARIOS
-  CONFIGURACION
-  FINANZAS [note: 'Costos, ganancias, valorización (se suma a REPORTES / DASHBOARD).']
-  GASTOS
-  CAJA
+  USUARIOS [note: 'Global, solo OWNER: sin filas de permiso']
+  CONFIGURACION [note: 'Global, solo OWNER: sin filas de permiso']
 }
 
 Enum TipoMovimiento {
@@ -76,51 +75,6 @@ Enum MedioPago {
   CREDITO
   MERCADOPAGO
   OTRO
-  CREDITO_CLIENTE [note: 'Saldo a favor del cliente (devoluciones acreditadas a su cuenta).']
-}
-
-Enum EstadoPago {
-  PAGADA
-  PARCIAL
-  PENDIENTE
-}
-
-Enum EstadoComprobante {
-  EMITIDO
-  ANULADO
-}
-
-Enum TipoComprobante {
-  TICKET
-  FACTURA_A
-  FACTURA_B
-  FACTURA_C
-  PRESUPUESTO
-}
-
-Enum EstadoCaja {
-  ABIERTA
-  CERRADA
-}
-
-Enum TipoMovimientoCaja {
-  APERTURA [note: 'Signo del monto: APERTURA ≥ 0, VENTA/PAGO_CLIENTE/INGRESO_EXTRA > 0, DEVOLUCION/GASTO/RETIRO < 0, CIERRE ≤ 0 (= −montoContado). CHECK en DB.']
-  VENTA
-  PAGO_CLIENTE
-  DEVOLUCION
-  GASTO
-  RETIRO
-  INGRESO_EXTRA
-  CIERRE
-}
-
-Enum TipoNotificacion {
-  STOCK_BAJO
-  SIN_STOCK
-  CAJA_DIFERENCIA
-  TRANSFERENCIA_PENDIENTE
-  DEUDA_CLIENTE
-  BACKUP_FALLIDO [note: 'El backup diario falló o no corrió en 36 h.']
 }
 
 Enum AccionAuditoria {
@@ -130,24 +84,22 @@ Enum AccionAuditoria {
   LOGIN
   LOGOUT
   PERMISO_CAMBIADO
-  ACCESO_DENEGADO [note: 'Intento de hacer algo sin permiso (Forbidden).']
+  ACCESO_DENEGADO
   SESION_REVOCADA
 }
 
-Enum EstadoOperacionSync {
-  PROCESANDO
-  APLICADA
-  RECHAZADA
-}
+// ---------------------------------------------------------------------------
+// Usuarios, sesiones y seguridad (globales)
+// ---------------------------------------------------------------------------
 
 Table Usuario {
   id text [pk, default: `cuid()`]
   nombre text [not null]
-  email text [unique, not null, note: 'Siempre en minúsculas (CHECK en DB + toLowerCase() en Zod).']
+  email text [not null, unique, note: 'Siempre en minúsculas (CHECK)']
   passwordHash text [not null]
   rol RolUsuario [not null]
   activo boolean [not null, default: true]
-  debeCambiarPassword boolean [not null, default: false, note: 'true => al iniciar sesión se lo obliga a ir a /cuenta a cambiarla.']
+  debeCambiarPassword boolean [not null, default: false]
   ultimoLogin timestamp
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
@@ -155,9 +107,9 @@ Table Usuario {
 }
 
 Table Sesion {
-  id text [pk, default: `cuid()`]
+  id text [pk, default: `cuid()`, note: 'Viaja en el JWT como sid']
   usuarioId text [not null]
-  tokenHash text [not null, note: 'sha256 del secreto aleatorio que viaja en el JWT (`tok`): un sid solo no alcanza.']
+  tokenHash text [not null, note: 'sha256 del secreto tok del JWT']
   userAgent text
   ip text
   createdAt timestamp [not null, default: `now()`]
@@ -170,79 +122,13 @@ Table Sesion {
     (usuarioId, revocadaAt)
     expiraAt
   }
-
-  Note: 'Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso en el próximo request (el middleware la consulta con caché de 60 s).'
-}
-
-Table OperacionSincronizada {
-  id text [pk, default: `cuid()`]
-  idOperacion text [unique, not null]
-  tipo text [not null, note: '"INGRESO" | "RECUENTO" | "TRANSFERENCIA"']
-  usuarioId text [not null]
-  estado EstadoOperacionSync [not null]
-  payload jsonb [not null]
-  resultado jsonb
-  motivo text
-  creadaEnCliente timestamp [not null, note: 'Cuándo se hizo en el celular (sin red).']
-  createdAt timestamp [not null, default: `now()`]
-  procesadaAt timestamp
-
-  indexes {
-    (usuarioId, estado)
-  }
-
-  Note: 'Operaciones hechas sin conexión (escáner) y sincronizadas después. El `idOperacion` (UUID del cliente) es único: reenviarla devuelve el resultado guardado sin repetir movimientos.'
-}
-
-Table Backup {
-  id text [pk, default: `cuid()`]
-  archivo text [not null, note: 'Clave en el bucket de backups (backups/backup-YYYY-MM-DD-HHmm.dump).']
-  tamanio bigint
-  duracionMs int [not null]
-  ok boolean [not null]
-  error text
-  origen text [not null, default: 'cron', note: '"cron" | "manual" | "release"']
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    createdAt
-  }
-
-  Note: 'Registro de cada backup (pg_dump) y su verificación.'
-}
-
-Table RateLimit {
-  clave text [not null]
-  ventana timestamp [not null]
-  contador int [not null, default: 0]
-
-  indexes {
-    (clave, ventana) [pk]
-    ventana
-  }
-
-  Note: 'Rate limit con ventana deslizante aproximada (ventanas de 1 minuto).'
-}
-
-Table IntentoLogin {
-  id text [pk, default: `cuid()`]
-  email text [not null, note: 'Normalizado (trim + minúsculas). No es FK: se registran emails inexistentes.']
-  ip text
-  exitoso boolean [not null]
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (email, createdAt)
-    (ip, createdAt)
-  }
-
-  Note: 'Registro de intentos de login para rate limit (persistente: sobrevive a redeploys y funciona con múltiples instancias, a diferencia de memoria).'
 }
 
 Table PermisoUsuario {
   id text [pk, default: `cuid()`]
   usuarioId text [not null]
-  modulo Modulo [not null]
+  panelId text [not null]
+  modulo Modulo [not null, note: 'Nunca USUARIOS ni CONFIGURACION (CHECK)']
   puedeVer boolean [not null, default: false]
   puedeCrear boolean [not null, default: false]
   puedeEditar boolean [not null, default: false]
@@ -251,71 +137,218 @@ Table PermisoUsuario {
   updatedAt timestamp [not null]
 
   indexes {
-    (usuarioId, modulo) [unique]
+    (usuarioId, panelId, modulo) [unique]
+    panelId
   }
-
-  Note: 'Los OWNER tienen acceso total por rol y no necesitan filas acá.'
 }
+
+Table UsuarioPanel {
+  id text [pk, default: `cuid()`]
+  usuarioId text [not null]
+  panelId text [not null]
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (usuarioId, panelId) [unique]
+    panelId
+  }
+  Note: 'Paneles a los que accede un EMPLEADO. Los OWNER acceden a todos sin filas.'
+}
+
+Table IntentoLogin {
+  id text [pk, default: `cuid()`]
+  email text [not null, note: 'Normalizado; no es FK (se registran emails inexistentes)']
+  ip text
+  exitoso boolean [not null]
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (email, createdAt)
+    (ip, createdAt)
+  }
+}
+
+Table RateLimit {
+  clave text [not null, note: 'u:<usuarioId> o ip:<ip>']
+  ventana timestamp [not null, note: 'Ventana de 1 minuto']
+  contador int [not null, default: 0]
+
+  indexes {
+    (clave, ventana) [pk]
+    ventana
+  }
+}
+
+Table Backup {
+  id text [pk, default: `cuid()`]
+  archivo text [not null, note: 'backups/backup-YYYY-MM-DD-HHmm.dump']
+  tamanio bigint
+  duracionMs int [not null]
+  ok boolean [not null]
+  error text
+  origen text [not null, default: 'cron', note: 'cron | manual | release']
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    createdAt
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Paneles, numeración y configuración
+// ---------------------------------------------------------------------------
+
+Table Panel {
+  id text [pk, default: `cuid()`]
+  nombre text [not null, unique]
+  slug text [not null, unique, note: 'kebab-case, 2 a 40: /p/{slug}; prefijo del ID de venta']
+  logoUrl text
+  colorAcento text [note: '#RRGGBB']
+  etiquetaEspecificacion text [not null, note: 'Pitadas, Contenido, Detalle…']
+  orden int [not null, default: 0]
+  activo boolean [not null, default: true]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (activo, orden)
+  }
+}
+
+Table Secuencia {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  entidad text [not null, note: 'VENTA | COMPRA | TRANSFERENCIA | DEVOLUCION']
+  ultimoNumero int [not null, default: 0]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, entidad) [unique]
+  }
+}
+
+Table Configuracion {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  clave text [not null, note: 'escaner, ventas, alertaStockMinimo, prefijoSku']
+  valor jsonb [not null]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, clave) [unique]
+  }
+}
+
+Table ConfiguracionGlobal {
+  id text [pk, default: `cuid()`]
+  clave text [not null, unique, note: 'nombreNegocio, iconoApp, timezone, moneda']
+  valor jsonb [not null]
+  updatedAt timestamp [not null]
+}
+
+Table AuditLog {
+  id text [pk, default: `cuid()`]
+  panelId text [note: 'null = acción global (login, usuarios, configuración)']
+  usuarioId text
+  accion AccionAuditoria [not null]
+  entidad text [not null]
+  entidadId text
+  datosAntes jsonb
+  datosDespues jsonb
+  ip text
+  userAgent text
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (entidad, entidadId)
+    (usuarioId, createdAt)
+    (panelId, createdAt)
+    createdAt
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Maestros (por panel)
+// ---------------------------------------------------------------------------
 
 Table Deposito {
   id text [pk, default: `cuid()`]
-  nombre text [unique, not null]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  nombre text [not null]
   direccion text
   activo boolean [not null, default: true]
-  esPrincipal boolean [not null, default: false, note: 'Solo un depósito puede ser principal (índice único parcial en SQL).']
+  esPrincipal boolean [not null, default: false, note: 'Uno solo por panel (único parcial)']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, nombre) [unique]
+  }
 }
 
 Table Categoria {
   id text [pk, default: `cuid()`]
-  nombre text [unique, not null]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  nombre text [not null]
   descripcion text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, nombre) [unique]
+  }
 }
 
 Table Marca {
   id text [pk, default: `cuid()`]
-  nombre text [unique, not null]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  nombre text [not null]
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, nombre) [unique]
+  }
 }
 
 Table Proveedor {
   id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
   nombre text [not null]
-  cuit text [note: 'Único entre proveedores no borrados (índice único parcial en SQL).']
+  cuit text [note: 'Único por panel entre no borrados (único parcial)']
   telefono text
   email text
   direccion text
   notas text
   activo boolean [not null, default: true]
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-  deletedAt timestamp
-}
-
-Table Cliente {
-  id text [pk, default: `cuid()`]
-  nombre text [not null]
-  apellido text
-  documento text [note: 'Único entre clientes no borrados (índice único parcial en SQL).']
-  telefono text
-  email text
-  direccion text
-  notas text
-  activo boolean [not null, default: true]
-  limiteCredito decimal(12,2) [note: 'null = no se le vende fiado. Solo el OWNER lo edita.']
-  saldoDeudor decimal(12,2) [not null, default: 0, note: 'Caché: Σ saldoPendiente de sus ventas confirmadas (verificado por trigger diferido).']
-  saldoAFavor decimal(12,2) [not null, default: 0, note: 'Crédito por devoluciones acreditadas a cuenta; se usa como medio CREDITO_CLIENTE.']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
   deletedAt timestamp
 
   indexes {
+    (panelId, nombre)
+  }
+}
+
+Table Cliente {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  nombre text [not null]
+  apellido text
+  documento text [note: 'Único por panel entre no borrados (único parcial)']
+  telefono text [note: '+54 + dígitos (CHECK); único por panel entre no borrados']
+  email text
+  direccion text
+  notas text
+  activo boolean [not null, default: true]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+  deletedAt timestamp
+
+  indexes {
+    (panelId, nombre)
     nombre [type: gin, name: 'cliente_nombre_trgm']
     apellido [type: gin, name: 'cliente_apellido_trgm']
     documento [type: gin, name: 'cliente_documento_trgm']
@@ -323,13 +356,18 @@ Table Cliente {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Catálogo (por panel)
+// ---------------------------------------------------------------------------
+
 Table Producto {
   id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
   nombre text [not null]
   descripcion text
   categoriaId text [not null]
   marcaId text
-  tieneVariantes boolean [not null, default: false, note: 'false => existe exactamente una variante "Único".']
+  tieneVariantes boolean [not null, default: false, note: 'false => exactamente una variante "Único"']
   imagenUrl text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -337,19 +375,20 @@ Table Producto {
   deletedAt timestamp
 
   indexes {
-    (nombre, marcaId) [unique]
-    categoriaId
-    marcaId
+    (panelId, nombre, marcaId) [unique]
+    (panelId, categoriaId)
+    (panelId, marcaId)
     nombre [type: gin, name: 'producto_nombre_trgm']
   }
 }
 
 Table Variante {
   id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`, note: '= Producto.panelId (trigger)']
   productoId text [not null]
-  nombre text [not null, note: 'Ej: "Mango Ice". "Único" para productos sin variantes.']
-  sku text [unique, not null, note: 'Formato PRD-XXXXXX si no se provee.']
-  codigoBarras text [note: 'Único (junto con CodigoBarrasAlternativo.codigo) entre variantes no borradas.']
+  nombre text [not null]
+  sku text [not null]
+  codigoBarras text [note: 'Único por panel entre no borradas y frente a los alternativos']
   precioCosto decimal(12,2) [not null]
   precioVenta decimal(12,2) [not null]
   stockMinimo int [not null, default: 0]
@@ -359,223 +398,76 @@ Table Variante {
   deletedAt timestamp
 
   indexes {
+    (panelId, sku) [unique]
     (productoId, nombre) [unique]
     nombre [type: gin, name: 'variante_nombre_trgm']
     sku [type: gin, name: 'variante_sku_trgm']
   }
 }
 
-Table HistorialPrecio {
-  id text [pk, default: `cuid()`]
-  varianteId text [not null]
-  precioCostoAnterior decimal(12,2) [not null]
-  precioCostoNuevo decimal(12,2) [not null]
-  precioVentaAnterior decimal(12,2) [not null]
-  precioVentaNuevo decimal(12,2) [not null]
-  usuarioId text [not null]
-  motivo text
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (varianteId, createdAt)
-    createdAt
-    usuarioId
-  }
-
-  Note: 'INMUTABLE. Una fila por cada cambio de precio de una variante. La DB exige que todo cambio de precio de Variante venga con su fila acá (misma tx).'
-}
-
 Table CodigoBarrasAlternativo {
   id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
   varianteId text [not null]
-  codigo text [unique, not null]
+  codigo text [not null]
   descripcion text
   createdAt timestamp [not null, default: `now()`]
 
   indexes {
+    (panelId, codigo) [unique]
     varianteId
   }
-
-  Note: 'Un mismo producto puede venir con más de un código según lote/importador.'
 }
+
+// ---------------------------------------------------------------------------
+// Inventario (por panel)
+// ---------------------------------------------------------------------------
 
 Table Stock {
   id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
   varianteId text [not null]
   depositoId text [not null]
   cantidad int [not null, default: 0]
   updatedAt timestamp [not null]
 
   indexes {
-    (varianteId, depositoId) [unique]
-    depositoId
+    (panelId, varianteId, depositoId) [unique]
+    (panelId, depositoId)
   }
-
-  Note: 'Caché del ledger. NUNCA se actualiza directo: solo vía registrarMovimiento(). Un trigger rechaza cualquier cambio de cantidad sin movimiento en la misma tx.'
+  Note: 'Caché del ledger: solo cambia vía registrarMovimiento()'
 }
 
 Table MovimientoStock {
   id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
   tipo TipoMovimiento [not null]
   varianteId text [not null]
   depositoId text [not null]
-  cantidad int [not null, note: 'Siempre > 0: el signo lo define el tipo.']
+  cantidad int [not null, note: 'Siempre > 0: el signo lo define el tipo']
   stockAnterior int [not null]
   stockPosterior int [not null]
   costoUnitario decimal(12,2)
   motivo text
-  referenciaTipo text [note: '"VENTA" | "COMPRA" | "TRANSFERENCIA" | "AJUSTE" (CHECK en DB).']
+  referenciaTipo text [note: 'VENTA | COMPRA | TRANSFERENCIA | AJUSTE | DEVOLUCION']
   referenciaId text
   usuarioId text [not null]
   createdAt timestamp [not null, default: `now()`]
 
   indexes {
-    (varianteId, depositoId, createdAt)
-    createdAt
+    (panelId, varianteId, depositoId, createdAt)
+    (panelId, createdAt)
+    (panelId, depositoId, createdAt)
     (referenciaTipo, referenciaId)
-    depositoId
     usuarioId
   }
-
-  Note: 'Ledger INMUTABLE. Sin updatedAt. Los errores se corrigen con AJUSTE inverso.'
-}
-
-Table Compra {
-  id text [pk, default: `cuid()`]
-  numero int [unique, not null, increment]
-  proveedorId text
-  depositoId text [not null, note: 'Depósito donde ingresa la mercadería.']
-  fecha timestamp [not null, default: `now()`]
-  estado EstadoCompra [not null, default: 'BORRADOR']
-  subtotal decimal(12,2) [not null]
-  descuento decimal(12,2) [not null, default: 0]
-  total decimal(12,2) [not null]
-  notas text
-  usuarioId text [not null]
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    fecha
-    proveedorId
-    depositoId
-    usuarioId
-  }
-}
-
-Table CompraItem {
-  id text [pk, default: `cuid()`]
-  compraId text [not null]
-  varianteId text [not null]
-  cantidad int [not null]
-  costoUnitario decimal(12,2) [not null]
-  subtotal decimal(12,2) [not null]
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    (compraId, varianteId) [unique]
-    varianteId
-  }
-}
-
-Table Venta {
-  id text [pk, default: `cuid()`]
-  numero int [unique, not null, increment]
-  fecha timestamp [not null, default: `now()`]
-  clienteId text
-  depositoId text [not null, note: 'Depósito de donde sale la mercadería.']
-  estado EstadoVenta [not null, default: 'BORRADOR']
-  subtotal decimal(12,2) [not null]
-  descuento decimal(12,2) [not null, default: 0]
-  total decimal(12,2) [not null]
-  costoTotal decimal(12,2) [not null, note: 'Snapshot: suma de costoUnitario * cantidad de los ítems.']
-  gananciaBruta decimal(12,2) [not null, note: 'total - costoTotal (CHECK en DB).']
-  medioPago MedioPago [note: 'Medio principal (el de mayor monto), informativo: la verdad son los PagoVenta.']
-  estadoPago EstadoPago [not null, default: 'PENDIENTE']
-  montoPagado decimal(12,2) [not null, default: 0, note: 'Σ pagos vigentes (verificado por trigger diferido).']
-  saldoPendiente decimal(12,2) [not null, default: 0, note: 'total − montoPagado (lo que queda en cuenta corriente).']
-  redondeo decimal(12,2) [not null, default: 0, note: 'Ajuste por redondear el total (≤ 0: siempre a favor del cliente).']
-  notas text
-  usuarioId text [not null]
-  anuladaPorId text
-  motivoAnulacion text
-  anuladaAt timestamp
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    fecha
-    (estado, fecha)
-    (clienteId, estado)
-    (depositoId, fecha)
-    (usuarioId, fecha)
-  }
-}
-
-Table VentaItem {
-  id text [pk, default: `cuid()`]
-  ventaId text [not null]
-  varianteId text [not null]
-  cantidad int [not null]
-  precioUnitario decimal(12,2) [not null, note: 'Snapshot del precio de venta al momento de la venta.']
-  costoUnitario decimal(12,2) [not null, note: 'Snapshot del costo al momento de la venta (ganancia histórica estable).']
-  descuento decimal(12,2) [not null, default: 0]
-  subtotal decimal(12,2) [not null, note: 'cantidad * precioUnitario - descuento (CHECK en DB).']
-  cantidadDevuelta int [not null, default: 0, note: 'Caché: Σ DevolucionItem.cantidad (verificado por trigger diferido).']
-  notas text [note: 'Ej: "precio modificado por Ana de $16.000 a $15.000".']
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    (ventaId, varianteId) [unique]
-    varianteId
-  }
-}
-
-Table Comprobante {
-  id text [pk, default: `cuid()`]
-  ventaId text [unique, not null]
-  tipo TipoComprobante [not null]
-  puntoVenta int [not null, default: 1]
-  numero int [not null]
-  fecha timestamp [not null, default: `now()`]
-  razonSocial text
-  cuit text
-  condicionIva text
-  total decimal(12,2) [not null]
-  estado EstadoComprobante [not null, default: 'EMITIDO']
-  anuladoAt timestamp
-  pdfUrl text
-  cae text [note: 'AFIP (factura electrónica): se completan al integrar WSFE. Hoy sin uso.']
-  caeVencimiento timestamp
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (tipo, puntoVenta, numero) [unique]
-  }
-
-  Note: 'Facturación interna. Preparado para AFIP (cae, caeVencimiento).'
-}
-
-Table SecuenciaComprobante {
-  id text [pk, default: `cuid()`]
-  tipo TipoComprobante [not null]
-  puntoVenta int [not null, default: 1]
-  ultimoNumero int [not null, default: 0]
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    (tipo, puntoVenta) [unique]
-  }
-
-  Note: 'Numeración correlativa por (tipo, puntoVenta). Se toma con SELECT ... FOR UPDATE.'
+  Note: 'Ledger INMUTABLE'
 }
 
 Table Transferencia {
   id text [pk, default: `cuid()`]
-  numero int [unique, not null, increment]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  numero int [not null, note: 'Correlativo por panel (Secuencia)']
   depositoOrigenId text [not null]
   depositoDestinoId text [not null]
   estado EstadoTransferencia [not null, default: 'PENDIENTE']
@@ -587,7 +479,9 @@ Table Transferencia {
   updatedAt timestamp [not null]
 
   indexes {
-    fecha
+    (panelId, numero) [unique]
+    (panelId, fecha)
+    (panelId, estado)
     depositoOrigenId
     depositoDestinoId
     usuarioId
@@ -596,6 +490,7 @@ Table Transferencia {
 
 Table TransferenciaItem {
   id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
   transferenciaId text [not null]
   varianteId text [not null]
   cantidad int [not null]
@@ -604,347 +499,279 @@ Table TransferenciaItem {
 
   indexes {
     (transferenciaId, varianteId) [unique]
-    varianteId
+    (panelId, varianteId)
   }
 }
 
-Table CategoriaGasto {
+// ---------------------------------------------------------------------------
+// Compras (por panel)
+// ---------------------------------------------------------------------------
+
+Table Compra {
   id text [pk, default: `cuid()`]
-  nombre text [unique, not null]
-  activo boolean [not null, default: true]
-}
-
-Table Gasto {
-  id text [pk, default: `cuid()`]
-  fecha timestamp [not null, default: `now()`]
-  categoriaGastoId text [not null]
-  descripcion text [not null]
-  monto decimal(12,2) [not null]
-  medioPago MedioPago [not null]
-  depositoId text [note: 'Gasto atribuible a un galpón (null = general del negocio).']
-  cajaId text
-  comprobanteUrl text [note: 'Foto del ticket (StorageProvider).']
-  recurrente boolean [not null, default: false, note: 'Solo recordatorio: aparece en "recurrentes sin cargar" el mes siguiente.']
-  usuarioId text [not null]
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-  deletedAt timestamp
-
-  indexes {
-    fecha
-    usuarioId
-    (categoriaGastoId, fecha)
-    (depositoId, fecha)
-    cajaId
-  }
-
-  Note: 'Para calcular ganancia neta. Soft delete. Si se pagó en efectivo desde una caja abierta, `cajaId` apunta a ella (y hay un MovimientoCaja GASTO).'
-}
-
-Table Caja {
-  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  numero int [not null, note: 'Correlativo por panel (Secuencia)']
+  proveedorId text
   depositoId text [not null]
-  estado EstadoCaja [not null, default: 'ABIERTA']
-  abiertaPorId text [not null]
-  abiertaAt timestamp [not null, default: `now()`]
-  montoInicial decimal(12,2) [not null]
-  cerradaPorId text
-  cerradaAt timestamp
-  montoEsperado decimal(12,2) [note: 'Σ movimientos (sin el CIERRE) al momento de cerrar.']
-  montoContado decimal(12,2) [note: 'Arqueo real.']
-  diferencia decimal(12,2) [note: 'contado − esperado.']
-  observaciones text
-  requiereRevision boolean [not null, default: false, note: '|diferencia| > toleranciaArqueo.']
-  createdAt timestamp [not null, default: `now()`]
-  updatedAt timestamp [not null]
-
-  indexes {
-    (depositoId, abiertaAt)
-    estado
-    abiertaAt
-  }
-
-  Note: 'Una sola ABIERTA por depósito (índice único parcial). Cerrada = inmutable.'
-}
-
-Table MovimientoCaja {
-  id text [pk, default: `cuid()`]
-  cajaId text [not null]
-  tipo TipoMovimientoCaja [not null]
-  monto decimal(12,2) [not null, note: 'Con signo (ver TipoMovimientoCaja).']
-  referenciaTipo text [note: '"VENTA" | "PAGO" | "DEVOLUCION" | "GASTO".']
-  referenciaId text
-  descripcion text
-  usuarioId text [not null]
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (cajaId, createdAt)
-    (referenciaTipo, referenciaId)
-  }
-
-  Note: 'INMUTABLE. Solo efectivo: la caja es la caja física.'
-}
-
-Table ResumenDiario {
-  id text [pk, default: `cuid()`]
-  fecha date [not null]
-  depositoId text
-  cantidadVentas int [not null, default: 0]
-  unidadesVendidas int [not null, default: 0]
-  totalVentas decimal(14,2) [not null, default: 0]
-  costoVentas decimal(14,2) [not null, default: 0]
-  gananciaBruta decimal(14,2) [not null, default: 0, note: 'totalVentas − costoVentas.']
-  totalGastos decimal(14,2) [not null, default: 0]
-  gananciaNeta decimal(14,2) [not null, default: 0, note: 'gananciaBruta − (devoluciones − costoDevoluciones) − totalGastos.']
-  totalPorMedioPago jsonb [not null, default: '{}', note: 'Cobrado ese día por medio: { "EFECTIVO": "1000.00", ... }.']
-  devoluciones decimal(14,2) [not null, default: 0, note: 'Importe devuelto ese día.']
-  costoDevoluciones decimal(14,2) [not null, default: 0, note: 'Costo de la mercadería devuelta (vuelve al stock): la devolución solo resta su margen.']
-  updatedAt timestamp [not null]
-
-  indexes {
-    (fecha, depositoId) [unique]
-    (depositoId, fecha)
-  }
-
-  Note: 'Agregados por día (zona horaria configurada) para que el dashboard no recorra años de ventas. depositoId null = consolidado. Se recalcula (upsert) dentro de cada transacción que afecta un día; `pnpm reportes:rebuild` la reconstruye entera. UNIQUE (fecha, depositoId) NULLS NOT DISTINCT.'
-}
-
-Table Notificacion {
-  id text [pk, default: `cuid()`]
-  tipo TipoNotificacion [not null]
-  titulo text [not null]
-  mensaje text [not null]
-  datos jsonb [note: '{ clave, href, ... }. `clave` deduplica (no se repite mientras haya una sin leer).']
-  leida boolean [not null, default: false]
-  usuarioId text [note: 'Destinatario (null = todos los dueños).']
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (usuarioId, leida, createdAt)
-    createdAt
-  }
-}
-
-Table Configuracion {
-  id text [pk, default: `cuid()`]
-  clave text [unique, not null]
-  valor jsonb [not null]
-  updatedAt timestamp [not null]
-
-  Note: 'Key-value. Claves: nombreNegocio, moneda, alertaStockMinimo, prefijoSku, escaner, ventas, timezone, exigirCajaAbierta, toleranciaArqueo, diasCobertura, rotacion, ultimasAlertas.'
-}
-
-Table AuditLog {
-  id text [pk, default: `cuid()`]
-  usuarioId text
-  accion AccionAuditoria [not null]
-  entidad text [not null, note: 'Nombre de la tabla afectada.']
-  entidadId text
-  datosAntes jsonb
-  datosDespues jsonb
-  ip text
-  userAgent text
-  createdAt timestamp [not null, default: `now()`]
-
-  indexes {
-    (entidad, entidadId)
-    (usuarioId, createdAt)
-    createdAt
-  }
-
-  Note: 'INMUTABLE (trigger bloquea UPDATE/DELETE).'
-}
-
-Table PagoVenta {
-  id text [pk, default: `cuid()`]
-  ventaId text [not null]
-  medioPago MedioPago [not null]
-  monto decimal(12,2) [not null]
-  referencia text [note: 'Nro de operación (transferencia / MercadoPago) o "Devolución #N".']
   fecha timestamp [not null, default: `now()`]
+  estado EstadoCompra [not null, default: 'BORRADOR']
+  subtotal decimal(12,2) [not null]
+  descuento decimal(12,2) [not null, default: 0]
+  total decimal(12,2) [not null]
+  notas text
   usuarioId text [not null]
-  anulado boolean [not null, default: false]
-  anuladoPorId text
-  anuladoAt timestamp
-  motivoAnulacion text
-  cajaId text [note: 'Efectivo cobrado con la caja del depósito abierta (null = fuera de caja o no efectivo).']
   createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
 
   indexes {
-    ventaId
-    (fecha, medioPago)
-    cajaId
+    (panelId, numero) [unique]
+    (panelId, fecha)
+    (panelId, proveedorId)
+    (panelId, depositoId)
+    usuarioId
   }
+}
 
-  Note: 'Un pago de una venta (pago partido y cobros posteriores de cuenta corriente). No se borra ni se edita: se anula (solo cambian los campos de anulación).'
+Table CompraItem {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  compraId text [not null]
+  varianteId text [not null]
+  cantidad int [not null]
+  costoUnitario decimal(12,2) [not null]
+  subtotal decimal(12,2) [not null]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (compraId, varianteId) [unique]
+    (panelId, varianteId)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ventas (por panel): se cobran completas con un único medio de pago
+// ---------------------------------------------------------------------------
+
+Table Venta {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  numero int [not null, note: 'Correlativo por panel; ID visible VAP-000001']
+  fecha timestamp [not null, default: `now()`]
+  clienteId text
+  depositoId text [not null]
+  estado EstadoVenta [not null, default: 'BORRADOR']
+  subtotal decimal(12,2) [not null]
+  descuento decimal(12,2) [not null, default: 0]
+  total decimal(12,2) [not null]
+  costoTotal decimal(12,2) [not null, note: 'Snapshot: Σ costoUnitario × cantidad']
+  gananciaBruta decimal(12,2) [not null, note: 'total − costoTotal (CHECK)']
+  medioPago MedioPago [note: 'Obligatorio salvo en BORRADOR (CHECK)']
+  redondeo decimal(12,2) [not null, default: 0, note: '≤ 0: a favor del cliente']
+  notas text
+  usuarioId text [not null]
+  anuladaPorId text
+  motivoAnulacion text
+  anuladaAt timestamp
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, numero) [unique]
+    (panelId, fecha)
+    (panelId, estado, fecha)
+    (panelId, clienteId, estado)
+    (panelId, depositoId, fecha)
+    (panelId, usuarioId, fecha)
+  }
+}
+
+Table VentaItem {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  ventaId text [not null]
+  varianteId text [not null]
+  cantidad int [not null]
+  precioUnitario decimal(12,2) [not null, note: 'Snapshot del precio de venta']
+  costoUnitario decimal(12,2) [not null, note: 'Snapshot del costo']
+  descuento decimal(12,2) [not null, default: 0]
+  subtotal decimal(12,2) [not null, note: 'cantidad × precioUnitario − descuento (CHECK)']
+  notas text
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (ventaId, varianteId) [unique]
+    (panelId, varianteId)
+  }
 }
 
 Table Devolucion {
   id text [pk, default: `cuid()`]
-  numero int [unique, not null, increment]
+  panelId text [not null, default: `current_setting('app.panel_id', true)`]
+  numero int [not null, note: 'Correlativo por panel (Secuencia)']
   ventaId text [not null]
-  depositoId text [not null, note: 'Depósito al que vuelve la mercadería.']
+  depositoId text [not null]
   fecha timestamp [not null, default: `now()`]
   motivo text [not null]
-  total decimal(12,2) [not null]
-  reintegroMedioPago MedioPago
-  reintegroMonto decimal(12,2) [not null, default: 0]
-  aCuentaCorriente decimal(12,2) [not null, default: 0, note: 'Parte acreditada al cliente (cancela deuda y el resto queda como saldo a favor).']
   usuarioId text [not null]
   createdAt timestamp [not null, default: `now()`]
 
   indexes {
-    ventaId
-    fecha
-    (depositoId, fecha)
+    (panelId, numero) [unique]
+    (panelId, ventaId)
+    (panelId, fecha)
   }
-
-  Note: 'Devolución (parcial o total) de productos de una venta confirmada.'
+  Note: 'Sin campos económicos (devoluciones por garantía, próximamente). Inmutable.'
 }
 
-Table DevolucionItem {
-  id text [pk, default: `cuid()`]
-  devolucionId text [not null]
-  ventaItemId text [not null]
-  cantidad int [not null]
-  precioUnitario decimal(12,2) [not null, note: 'Snapshot del precio efectivo del ítem (con el descuento global prorrateado).']
-  subtotal decimal(12,2) [not null]
-
-  indexes {
-    devolucionId
-    ventaItemId
-  }
-}
+// ---------------------------------------------------------------------------
+// Relaciones
+// ---------------------------------------------------------------------------
 
 Ref: Sesion.usuarioId > Usuario.id [delete: cascade]
 Ref: Sesion.revocadaPorId > Usuario.id [delete: set null]
-Ref: OperacionSincronizada.usuarioId > Usuario.id [delete: restrict]
 Ref: PermisoUsuario.usuarioId > Usuario.id [delete: cascade]
+Ref: PermisoUsuario.panelId > Panel.id [delete: restrict]
+Ref: UsuarioPanel.usuarioId > Usuario.id [delete: cascade]
+Ref: UsuarioPanel.panelId > Panel.id [delete: restrict]
+
+Ref: Secuencia.panelId > Panel.id [delete: restrict]
+Ref: Configuracion.panelId > Panel.id [delete: restrict]
+Ref: AuditLog.panelId > Panel.id [delete: restrict]
+Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
+
+Ref: Deposito.panelId > Panel.id [delete: restrict]
+Ref: Categoria.panelId > Panel.id [delete: restrict]
+Ref: Marca.panelId > Panel.id [delete: restrict]
+Ref: Proveedor.panelId > Panel.id [delete: restrict]
+Ref: Cliente.panelId > Panel.id [delete: restrict]
+
+Ref: Producto.panelId > Panel.id [delete: restrict]
 Ref: Producto.categoriaId > Categoria.id [delete: restrict]
 Ref: Producto.marcaId > Marca.id [delete: restrict]
+Ref: Variante.panelId > Panel.id [delete: restrict]
 Ref: Variante.productoId > Producto.id [delete: restrict]
-Ref: HistorialPrecio.varianteId > Variante.id [delete: restrict]
-Ref: HistorialPrecio.usuarioId > Usuario.id [delete: restrict]
+Ref: CodigoBarrasAlternativo.panelId > Panel.id [delete: restrict]
 Ref: CodigoBarrasAlternativo.varianteId > Variante.id [delete: restrict]
+
+Ref: Stock.panelId > Panel.id [delete: restrict]
 Ref: Stock.varianteId > Variante.id [delete: restrict]
 Ref: Stock.depositoId > Deposito.id [delete: restrict]
+Ref: MovimientoStock.panelId > Panel.id [delete: restrict]
 Ref: MovimientoStock.varianteId > Variante.id [delete: restrict]
 Ref: MovimientoStock.depositoId > Deposito.id [delete: restrict]
 Ref: MovimientoStock.usuarioId > Usuario.id [delete: restrict]
+
+Ref: Transferencia.panelId > Panel.id [delete: restrict]
+Ref: Transferencia.depositoOrigenId > Deposito.id [delete: restrict]
+Ref: Transferencia.depositoDestinoId > Deposito.id [delete: restrict]
+Ref: Transferencia.usuarioId > Usuario.id [delete: restrict]
+Ref: TransferenciaItem.panelId > Panel.id [delete: restrict]
+Ref: TransferenciaItem.transferenciaId > Transferencia.id [delete: cascade]
+Ref: TransferenciaItem.varianteId > Variante.id [delete: restrict]
+
+Ref: Compra.panelId > Panel.id [delete: restrict]
 Ref: Compra.proveedorId > Proveedor.id [delete: restrict]
 Ref: Compra.depositoId > Deposito.id [delete: restrict]
 Ref: Compra.usuarioId > Usuario.id [delete: restrict]
+Ref: CompraItem.panelId > Panel.id [delete: restrict]
 Ref: CompraItem.compraId > Compra.id [delete: cascade]
 Ref: CompraItem.varianteId > Variante.id [delete: restrict]
+
+Ref: Venta.panelId > Panel.id [delete: restrict]
 Ref: Venta.clienteId > Cliente.id [delete: restrict]
 Ref: Venta.depositoId > Deposito.id [delete: restrict]
 Ref: Venta.usuarioId > Usuario.id [delete: restrict]
 Ref: Venta.anuladaPorId > Usuario.id [delete: restrict]
+Ref: VentaItem.panelId > Panel.id [delete: restrict]
 Ref: VentaItem.ventaId > Venta.id [delete: cascade]
 Ref: VentaItem.varianteId > Variante.id [delete: restrict]
-Ref: Comprobante.ventaId - Venta.id [delete: restrict]
-Ref: Transferencia.depositoOrigenId > Deposito.id [delete: restrict]
-Ref: Transferencia.depositoDestinoId > Deposito.id [delete: restrict]
-Ref: Transferencia.usuarioId > Usuario.id [delete: restrict]
-Ref: TransferenciaItem.transferenciaId > Transferencia.id [delete: cascade]
-Ref: TransferenciaItem.varianteId > Variante.id [delete: restrict]
-Ref: Gasto.categoriaGastoId > CategoriaGasto.id [delete: restrict]
-Ref: Gasto.depositoId > Deposito.id [delete: restrict]
-Ref: Gasto.cajaId > Caja.id [delete: restrict]
-Ref: Gasto.usuarioId > Usuario.id [delete: restrict]
-Ref: Caja.depositoId > Deposito.id [delete: restrict]
-Ref: Caja.abiertaPorId > Usuario.id [delete: restrict]
-Ref: Caja.cerradaPorId > Usuario.id [delete: restrict]
-Ref: MovimientoCaja.cajaId > Caja.id [delete: restrict]
-Ref: MovimientoCaja.usuarioId > Usuario.id [delete: restrict]
-Ref: ResumenDiario.depositoId > Deposito.id [delete: restrict]
-Ref: Notificacion.usuarioId > Usuario.id [delete: cascade]
-Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
-Ref: PagoVenta.ventaId > Venta.id [delete: cascade]
-Ref: PagoVenta.cajaId > Caja.id [delete: restrict]
-Ref: PagoVenta.usuarioId > Usuario.id [delete: restrict]
-Ref: PagoVenta.anuladoPorId > Usuario.id [delete: restrict]
+
+Ref: Devolucion.panelId > Panel.id [delete: restrict]
 Ref: Devolucion.ventaId > Venta.id [delete: restrict]
 Ref: Devolucion.depositoId > Deposito.id [delete: restrict]
 Ref: Devolucion.usuarioId > Usuario.id [delete: restrict]
-Ref: DevolucionItem.devolucionId > Devolucion.id [delete: cascade]
-Ref: DevolucionItem.ventaItemId > VentaItem.id [delete: restrict]
 ```
 
 ## Tablas por dominio
 
+### Paneles
+
+- **Panel**: cada sistema independiente de la app. `slug` (kebab-case) arma las rutas `/p/{slug}` y el prefijo de los IDs visibles (tres primeras letras: `vapes` → `VAP`); la app no deja crear un panel cuyo prefijo choque con otro. `colorAcento` tiñe la interfaz dentro del panel y `etiquetaEspecificacion` es cómo el panel llama al atributo principal de sus productos («Pitadas», «Contenido», «Detalle»). No se borra: se desactiva (`activo = false`) desde `/configuracion/sistemas` y sus datos se conservan. La migración crea **Vapes** (`pnl_vapes`), **Cosmetic** (`pnl_cosmetic`) y **Especiales** (`pnl_especiales`); los dueños agregan otros desde `/paneles`, y cada uno nace con un depósito «Principal» y sus secuencias en cero.
+- **Secuencia**: último número usado por (panel, entidad) para `VENTA`, `COMPRA`, `TRANSFERENCIA` y `DEVOLUCION`. `siguienteNumero()` (`src/server/db/secuencia.ts`) la toma con `SELECT … FOR UPDATE` dentro de la transacción que inserta el documento: dos transacciones del mismo panel se serializan y nunca repiten número, y si la transacción falla el número no se consume.
+- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas` (redondeo), `alertaStockMinimo` y `prefijoSku`.
+- **ConfiguracionGlobal**: pares clave-valor JSON que valen para toda la app: `nombreNegocio`, `iconoApp`, `timezone` y `moneda`.
+
 ### Usuarios, sesiones y seguridad
 
-- **Usuario**: personas que entran al sistema. `rol` es `OWNER` (dueño, acceso total) o `EMPLEADO` (acceso según `PermisoUsuario`). El email se guarda siempre en minúsculas. `debeCambiarPassword` obliga a pasar por `/cuenta` antes de usar el resto de la app (usuarios nuevos, contraseñas reseteadas y el seed). No se borra: se da de baja (`deletedAt`, `activo = false`).
-- **PermisoUsuario**: una fila por (usuario, módulo) con cuatro banderas: ver, crear, editar, eliminar. Los dueños no necesitan filas. Los permisos no viajan en el token: se leen de la base en cada request, así que un cambio aplica al instante.
+- **Usuario**: personas que entran al sistema. `rol` es `OWNER` (dueño: acceso total a todos los paneles y a lo global) o `EMPLEADO` (acceso según `UsuarioPanel` y `PermisoUsuario`). El email se guarda siempre en minúsculas. `debeCambiarPassword` obliga a pasar por `/cuenta` antes de usar el resto de la app (usuarios nuevos, contraseñas reseteadas y el seed). No se borra: se da de baja (`deletedAt`, `activo = false`).
+- **UsuarioPanel**: paneles a los que accede un empleado. Sin fila, el empleado no entra a ese panel (el middleware lo manda a `/paneles`).
+- **PermisoUsuario**: una fila por (usuario, panel, módulo) con cuatro banderas: ver, crear, editar, eliminar. Solo módulos de panel (`DASHBOARD` … `REPORTES`); `USUARIOS` y `CONFIGURACION` son exclusivos de los dueños y no tienen filas. Los dueños no necesitan filas. Los permisos no viajan en el token: se leen de la base, así que un cambio aplica al instante.
 - **Sesion**: cada inicio de sesión. El JWT de la cookie lleva `sid` (id de esta fila) y `tok` (secreto aleatorio del que acá se guarda solo el sha256). Revocarla (`revocadaAt`, `revocadaPorId`) corta el acceso en el próximo request; el middleware cachea la validación 60 s por instancia.
 - **IntentoLogin**: registro de cada intento de login (exitoso o no) para el límite de 5 fallidos por email cada 15 minutos. No es FK a `Usuario`: también se registran emails inexistentes.
 - **RateLimit**: contador por clave (`u:<usuarioId>` o `ip:<ip>`) y ventana de un minuto para el rate limit general de `/api/*` y Server Actions.
-- **AuditLog**: registro inmutable de quién hizo qué (altas, cambios, bajas, logins, logouts, cambios de permisos, sesiones revocadas y accesos denegados), con el antes y el después en JSON, IP y user agent. Se consulta en `/configuracion/auditoria`.
+- **AuditLog**: registro inmutable de quién hizo qué (altas, cambios, bajas, logins, logouts, cambios de permisos, sesiones revocadas y accesos denegados), con el antes y el después en JSON, IP, user agent y el panel donde ocurrió (`null` para acciones globales). Se consulta en `/configuracion/auditoria`.
+- **Backup**: un registro por cada backup (`pg_dump`) con el archivo en el bucket, tamaño, duración, si salió bien (verificado con `pg_restore --list`), el error y el origen (`cron`, `manual`, `release`). Inmutable. Se ve en `/configuracion/backups` y alimenta `backup` de `/api/health`.
 
 ### Maestros
 
-- **Deposito**: galpones o locales donde hay mercadería. Uno solo puede ser el principal. No se borra: se desactiva, y solo si no tiene stock y no es el principal.
-- **Categoria** y **Marca**: clasificación de productos. No se pueden desactivar si tienen productos activos.
-- **Proveedor**: con CUIT opcional, único entre los no borrados.
-- **Cliente**: con documento opcional, único entre los no borrados. `limiteCredito` en `null` significa que no se le vende fiado. `saldoDeudor` es lo que debe (suma de saldos pendientes de sus ventas confirmadas) y `saldoAFavor` el crédito por devoluciones, que se usa como medio de pago `CREDITO_CLIENTE`.
+- **Deposito**: locales o galpones de un panel. Uno solo por panel puede ser el principal. En Vapes: **Ayres Plaza** (principal) y **Mercedes**. No se borra: se desactiva, y solo si no tiene stock y no es el principal.
+- **Categoria** y **Marca**: clasificación de productos, con nombre único por panel. No se pueden desactivar si tienen productos activos.
+- **Proveedor**: con CUIT opcional, único por panel entre los no borrados.
+- **Cliente**: datos de contacto. Documento y teléfono opcionales, cada uno único por panel entre los no borrados. El teléfono se guarda normalizado: `+54` seguido solo de dígitos (la app y la función SQL `fn_normalizar_telefono` aplican la misma regla: se quitan los no-dígitos y los ceros iniciales; si ya empieza con `54` y tiene al menos 12 dígitos se respeta el código de país).
 
 ### Catálogo
 
-- **Producto**: nombre, categoría, marca, imagen. Todo producto tiene al menos una variante; si `tieneVariantes = false`, tiene exactamente una llamada «Único».
-- **Variante**: lo que realmente se vende y se cuenta (el sabor, el color). Tiene SKU único (`{prefijoSku}-XXXXXX` si no se indica), código de barras principal, precio de costo, precio de venta y stock mínimo para las alertas.
-- **CodigoBarrasAlternativo**: otros códigos que identifican a la misma variante (distintos lotes o importadores). Un código no puede repetirse entre esta tabla y `Variante.codigoBarras`.
-- **HistorialPrecio**: una fila inmutable por cada cambio de costo o precio de venta, con quién y por qué. La base rechaza un cambio de precio sin su fila de historial en la misma transacción.
+- **Producto**: nombre (único por panel y marca), categoría, marca, imagen. Todo producto tiene al menos una variante; si `tieneVariantes = false`, tiene exactamente una llamada «Único».
+- **Variante**: lo que realmente se vende y se cuenta (el sabor, el color). Tiene SKU único por panel (`{prefijoSku}-XXXXXX` si no se indica), código de barras principal, precio de costo, precio de venta y stock mínimo. Repite el `panelId` de su producto (verificado por trigger) para buscar por código dentro de un panel sin join.
+- **CodigoBarrasAlternativo**: otros códigos que identifican a la misma variante (distintos lotes o importadores). Dentro de un panel, un código no puede repetirse entre esta tabla y `Variante.codigoBarras`; en paneles distintos sí.
 
 ### Inventario
 
 - **MovimientoStock**: el ledger. Cada entrada o salida de mercadería es una fila inmutable con tipo (`INGRESO_COMPRA`, `INGRESO_MANUAL`, `VENTA`, `DEVOLUCION_CLIENTE`, `DEVOLUCION_PROVEEDOR`, `AJUSTE_POSITIVO`, `AJUSTE_NEGATIVO`, `TRANSFERENCIA_SALIDA`, `TRANSFERENCIA_ENTRADA`), cantidad siempre positiva (el signo lo da el tipo), stock anterior y posterior, costo y referencia al documento que lo originó. Un error se corrige con un ajuste inverso, nunca editando.
-- **Stock**: cantidad actual por (variante, depósito). Es un caché del ledger: solo cambia en la misma transacción que inserta el movimiento correspondiente (`registrarMovimiento()` / `transferirStock()` en `stock.service.ts`).
-- **Transferencia** y **TransferenciaItem**: envío de mercadería entre depósitos. Nace `PENDIENTE`, se `COMPLETA` (genera la salida y la entrada) o se `ANULA`.
-- **OperacionSincronizada**: operaciones del escáner hechas sin conexión (ingreso, recuento, transferencia) y enviadas después a `/api/sync`. `idOperacion` es el UUID generado en el celular y es único: si la misma operación llega dos veces, la segunda devuelve el resultado guardado sin repetir movimientos. Estados: `PROCESANDO`, `APLICADA`, `RECHAZADA` (con `motivo`).
+- **Stock**: cantidad actual por (variante, depósito). Es un caché del ledger: solo cambia en la misma transacción que inserta el movimiento correspondiente (`registrarMovimiento()` / `transferirStock()` en `stock.service.ts`). La vista **Global** de la app suma todos los depósitos del panel.
+- **Transferencia** y **TransferenciaItem**: envío de mercadería entre depósitos del mismo panel. Nace `PENDIENTE`, se `COMPLETA` (genera la salida y la entrada) o se `ANULA`.
 
-Vistas SQL (no son modelos de Prisma):
+Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por panel:
 
-- `vw_stock_consolidado`: stock por variante con una columna por depósito más un `por_deposito` en JSON. Se regenera sola cuando se crea o renombra un depósito.
-- `vw_alertas_stock`: variantes activas cuyo stock total (todos los depósitos) está por debajo de su stock mínimo, con el faltante.
+- `vw_stock_consolidado`: stock por variante con el total y un `por_deposito` en JSON (`{ depositoId: cantidad }`).
+- `vw_alertas_stock`: variantes activas cuyo stock total (todos los depósitos del panel) está por debajo de su stock mínimo, con el faltante.
 
 ### Compras
 
-- **Compra** y **CompraItem**: mercadería recibida de un proveedor en un depósito. `BORRADOR` (editable) → `RECIBIDA` (genera un `INGRESO_COMPRA` por ítem y opcionalmente actualiza costos con historial) → `ANULADA` (genera `DEVOLUCION_PROVEEDOR`). Los totales se calculan en el servidor y la base verifica que cierren con los ítems.
+- **Compra** y **CompraItem**: mercadería recibida de un proveedor en un depósito. `BORRADOR` (editable) → `RECIBIDA` (genera un `INGRESO_COMPRA` por ítem y opcionalmente actualiza el costo de la variante) → `ANULADA` (genera `DEVOLUCION_PROVEEDOR`). Los totales se calculan en el servidor y la base verifica que cierren con los ítems.
 
-### Ventas, pagos y comprobantes
+### Ventas y devoluciones
 
-- **Venta**: cabecera de la venta con depósito, cliente opcional, vendedor, totales, costo congelado (`costoTotal`) y ganancia bruta. `estadoPago` (`PAGADA`, `PARCIAL`, `PENDIENTE`) y `montoPagado`/`saldoPendiente` resumen los pagos; `redondeo` es siempre cero o negativo (a favor del cliente). Una venta confirmada no se edita: se anula, registrando quién, cuándo y por qué.
-- **VentaItem**: renglones con precio y costo congelados al momento de vender, descuento por ítem y `cantidadDevuelta` (caché de lo devuelto).
-- **PagoVenta**: cada pago de una venta. Permite pagos partidos (varios medios) y cobros posteriores de cuenta corriente. No se borra ni se edita: se anula (solo el dueño). Si es efectivo cobrado con la caja del depósito abierta, `cajaId` apunta a ella.
-- **Devolucion** y **DevolucionItem**: devolución parcial o total de una venta confirmada. La mercadería vuelve a un depósito (`DEVOLUCION_CLIENTE`) y el importe se reintegra en dinero (`reintegroMonto` + medio) y/o a la cuenta del cliente (`aCuentaCorriente`: primero cancela deuda, el resto queda como saldo a favor). Inmutables.
-- **Comprobante**: comprobante interno de la venta (uno por venta). Tipos: ticket, facturas A/B/C y presupuesto. Tiene `cae` y `caeVencimiento` preparados para AFIP, hoy sin uso. `pdfUrl` apunta al PDF guardado. Se anula solo junto con su venta.
-- **SecuenciaComprobante**: último número usado por (tipo, punto de venta). Se toma con `SELECT … FOR UPDATE` dentro de la transacción de la venta: numeración sin huecos ni duplicados aunque cobren varias cajas a la vez.
-
-### Caja y gastos
-
-- **Caja**: la caja física de efectivo de un depósito. Una sola abierta por depósito. Guarda apertura (quién, cuándo, monto inicial) y cierre (esperado, contado, diferencia, observaciones, `requiereRevision` si la diferencia supera la tolerancia configurada). Cerrada es inmutable.
-- **MovimientoCaja**: cada entrada o salida de efectivo, inmutable y con signo: `APERTURA` (≥ 0), `VENTA`, `PAGO_CLIENTE`, `INGRESO_EXTRA` (> 0), `DEVOLUCION`, `GASTO`, `RETIRO` (< 0) y `CIERRE` (≤ 0, igual a menos el contado). El esperado de una caja es siempre la suma de sus movimientos.
-- **CategoriaGasto** y **Gasto**: gastos del negocio (alquiler, servicios, sueldos…) con categoría, medio de pago, depósito opcional, foto del ticket (`comprobanteUrl`) y marca de recurrente (solo recordatorio). Si se pagó en efectivo con una caja abierta, `cajaId` apunta a ella y hay un `MovimientoCaja` de tipo `GASTO`. Soft delete.
-
-### Reportes, notificaciones, configuración y backups
-
-- **ResumenDiario**: agregados por día (en la zona horaria del negocio) y depósito, más una fila consolidada con `depositoId` nulo: cantidad de ventas, unidades, total, costo, ganancia bruta, gastos, ganancia neta, cobrado por medio de pago y devoluciones. Se **recalcula** (no se suma un delta) al final de cada transacción que toca un día. `pnpm reportes:rebuild` la reconstruye entera desde el ledger.
-- **Notificacion**: alertas para la campana y `/notificaciones`: `STOCK_BAJO`, `SIN_STOCK`, `CAJA_DIFERENCIA`, `TRANSFERENCIA_PENDIENTE`, `DEUDA_CLIENTE` y `BACKUP_FALLIDO`. `usuarioId` nulo significa «todos los dueños»; `datos.clave` evita repetir una alerta mientras haya otra igual sin leer.
-- **Configuracion**: pares clave-valor JSON (nombre del negocio, moneda, prefijo de SKU, parámetros del escáner, ventas y comprobante, zona horaria, caja obligatoria, tolerancia de arqueo, días de cobertura, rotación, etc.).
-- **Backup**: un registro por cada backup (`pg_dump`) con el archivo en el bucket, tamaño, duración, si salió bien (verificado con `pg_restore --list`), el error y el origen (`cron`, `manual`, `release`). Inmutable.
+- **Venta**: cabecera con depósito, cliente opcional, vendedor, totales, costo congelado (`costoTotal`) y ganancia bruta. Se cobra **completa con un único medio de pago** (`medioPago`, obligatorio al confirmar). `redondeo` es siempre cero o negativo (a favor del cliente). Una venta confirmada no se edita: se anula, registrando quién, cuándo y por qué, y el stock vuelve al depósito.
+- **VentaItem**: renglones con precio y costo congelados al momento de vender y descuento por ítem. Costo y ganancia solo se muestran a los dueños.
+- **Devolucion**: devolución vinculada a una venta, con depósito de reingreso, motivo y número correlativo por panel. No tiene campos económicos: queda reservada para las devoluciones por garantía (módulo en preparación). Inmutable.
 
 ## Invariantes garantizadas por la base
 
 Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las migraciones), no solo el código de la app: un script, una consola SQL o un bug no pueden romperlas. Los triggers «diferidos» (`CONSTRAINT TRIGGER … DEFERRABLE INITIALLY DEFERRED`) verifican al COMMIT, cuando la transacción ya escribió todas sus filas.
 
+### Aislamiento entre paneles
+
+- Toda tabla de negocio tiene `panelId NOT NULL` con FK a `Panel` y `DEFAULT current_setting('app.panel_id', true)`. Nadie setea esa variable, así que el default es `NULL`: un `INSERT` que olvide el panel **falla** por `NOT NULL` en vez de guardar una fila huérfana. (En la app, `dbPara(panelId)` completa el panel en cada create.)
+- `fn_verificar_mismo_panel` (triggers `trg_panel_*`) verifica que cada FK apunte a una fila **del mismo panel**: producto → categoría y marca; variante → producto; código alternativo → variante; stock y movimiento → variante y depósito; compra → proveedor y depósito; ítems → su documento y su variante; venta → cliente y depósito; devolución → venta y depósito; transferencia → depósitos de origen y destino.
+- `panelId` **no se puede cambiar** en ninguna tabla de negocio (el mismo trigger lo rechaza en `UPDATE`).
+- Unicidades **por panel**: nombre de depósito, categoría y marca; producto por (nombre, marca); SKU; código alternativo; número de venta, compra, transferencia y devolución; clave de configuración; (panel, entidad) de secuencia. Índices únicos parciales por panel: un solo depósito principal; código de barras principal, CUIT de proveedor, documento y teléfono de cliente entre los no borrados.
+- Código de barras único dentro del panel entre `Variante.codigoBarras` y `CodigoBarrasAlternativo.codigo` (trigger con advisory lock por panel y código, porque un índice no abarca dos tablas). El mismo EAN puede existir en dos paneles.
+- `PermisoUsuario.modulo` nunca es `USUARIOS` ni `CONFIGURACION` (son globales, solo para dueños).
+
+### Paneles y numeración
+
+- `Panel`: nombre no vacío; `slug` en kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`) de 2 a 40 caracteres; `colorAcento` nulo o `#RRGGBB`; `etiquetaEspecificacion` no vacía. Un panel no se borra (solo se desactiva).
+- `Secuencia`: `entidad` en `VENTA`, `COMPRA`, `TRANSFERENCIA`, `DEVOLUCION`; `ultimoNumero ≥ 0`; **solo avanza** (no retrocede ni cambia de panel o entidad) y no se borra, porque reiniciarla duplicaría IDs de venta.
+
 ### Inmutabilidad y borrado
 
-- `MovimientoStock`, `AuditLog`, `HistorialPrecio` y `MovimientoCaja` son inmutables: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`.
-- `IntentoLogin` no se edita; `Backup` no se edita ni se borra; `Devolucion` y `DevolucionItem` no se editan ni se borran, y no se agregan ítems a una devolución ya registrada.
-- Sin `DELETE` físico en `Usuario`, `Producto`, `Variante`, `Cliente`, `Proveedor` y `Gasto` (soft delete), `Deposito` (se desactiva), `Comprobante`, `SecuenciaComprobante`, `CategoriaGasto`, `Caja`, `PagoVenta` y `OperacionSincronizada`.
-- `Venta`, `Compra` y `Transferencia` solo se borran en borrador (o transferencia pendiente): confirmadas, se anulan. Sus transiciones de estado están restringidas (por ejemplo, una venta confirmada solo puede pasar a anulada) y una vez confirmadas no se modifican sus datos ni sus ítems.
+- `MovimientoStock` y `AuditLog` son inmutables: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`.
+- `IntentoLogin` no se edita; `Backup` no se edita ni se borra; `Devolucion` no se edita ni se borra.
+- Sin `DELETE` físico en `Usuario`, `Producto`, `Variante`, `Cliente` y `Proveedor` (soft delete), `Deposito` y `Panel` (se desactivan) y `Secuencia`.
+- `Venta`, `Compra` y `Transferencia` solo se borran en borrador (o transferencia pendiente): confirmadas, se anulan. Sus transiciones de estado están restringidas (por ejemplo, una venta confirmada solo puede pasar a anulada) y una vez confirmadas no se modifican sus datos ni sus ítems (los ítems de una venta confirmada son inmutables).
 
 ### Stock y ledger
 
@@ -957,40 +784,26 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Catálogo
 
 - Nombres no vacíos en usuarios, depósitos, categorías, marcas, productos y variantes.
-- Precios y stock mínimo ≥ 0. Códigos de barras de 4 a 64 caracteres alfanuméricos o guiones, en mayúsculas.
-- Código de barras único entre variantes no borradas **y** entre `Variante.codigoBarras` y `CodigoBarrasAlternativo.codigo` (trigger con advisory lock, porque un índice no abarca dos tablas).
+- Precios y stock mínimo ≥ 0. Códigos de barras de 4 a 64 caracteres alfanuméricos o guiones.
 - Todo producto tiene al menos una variante; uno sin variantes tiene exactamente una «Único» (diferido).
-- Un cambio de precio de `Variante` exige su `HistorialPrecio` en la misma transacción, con los precios anteriores iguales a los vigentes y un cambio real.
-- Un solo depósito principal (índice único parcial). No se desactiva el principal ni un depósito con stock; no se desactiva una categoría o marca con productos activos.
-- CUIT de proveedor y documento de cliente únicos entre los no borrados (índices únicos parciales).
+- No se desactiva el depósito principal ni un depósito con stock; no se desactiva una categoría o marca con productos activos.
 
-### Compras, ventas y comprobantes
+### Clientes
 
-- Totales: `total = subtotal − descuento` en compras; `total = subtotal − descuento + redondeo` en ventas, con `redondeo ≤ 0`; `gananciaBruta = total − costoTotal`; subtotal de cada ítem igual a cantidad × precio (menos descuento en ventas). Al COMMIT se verifica que los totales de la cabecera coincidan con la suma de ítems y que el documento tenga ítems.
+- `Cliente.telefono` es nulo o cumple `^\+54[0-9]{6,13}$` (CHECK `Cliente_telefono_chk`).
+- Teléfono y documento únicos por panel entre los clientes no borrados.
+
+### Compras y ventas
+
+- Totales: `total = subtotal − descuento` en compras; en ventas, `total = subtotal − descuento + redondeo` con `redondeo ≤ 0` y `gananciaBruta = total − costoTotal`; subtotal de cada ítem igual a cantidad × precio (menos descuento en ventas). Al COMMIT se verifica que los totales de la cabecera coincidan con la suma de ítems y que el documento tenga ítems.
+- Una venta que no está en borrador tiene medio de pago (CHECK `Venta_medioPago_chk`).
 - Venta anulada ⇔ tiene `anuladaAt` y `anuladaPorId`.
-- Pagos: `montoPagado = Σ pagos vigentes`, `montoPagado + saldoPendiente = total` en ventas confirmadas, `estadoPago` coherente, y una venta anulada no puede tener pagos vigentes ni saldo (diferido).
-- `PagoVenta.monto > 0`; un pago anulado registra quién, cuándo y por qué; un pago no se modifica salvo para anularlo.
-- `Cliente.saldoDeudor = Σ saldoPendiente` de sus ventas confirmadas (diferido); `saldoDeudor`, `saldoAFavor` y `limiteCredito` no negativos.
-- Devoluciones: `total = reintegroMonto + aCuentaCorriente`; reintegro en dinero ⇔ tiene medio de pago (y nunca `CREDITO_CLIENTE`); todos los ítems de la misma venta; `VentaItem.cantidadDevuelta = Σ devuelto ≤ cantidad vendida` (diferido).
-- Comprobantes: solo de ventas confirmadas, con el mismo total que la venta y con un número asignado por `SecuenciaComprobante`; un comprobante emitido no se modifica salvo `pdfUrl`, CAE (una sola vez) y la anulación junto con su venta. La secuencia solo avanza. `(tipo, puntoVenta, numero)` es único.
 - Transferencias: origen distinto de destino; `completadaAt` coherente con el estado; al menos un ítem.
 
-### Caja y gastos
-
-- Una sola caja `ABIERTA` por depósito (índice único parcial). Una caja cerrada no se modifica y no admite movimientos; los datos de apertura no cambian.
-- Estado coherente: abierta sin datos de cierre; cerrada con esperado, contado y `diferencia = contado − esperado`. Al cerrar, el esperado tiene que coincidir con la suma de sus movimientos y tiene que existir el movimiento de `CIERRE` por el contado.
-- Signo de cada `MovimientoCaja` según su tipo; una sola `APERTURA` y un solo `CIERRE` por caja; la apertura es igual al monto inicial.
-- Solo efectivo pasa por la caja: `PagoVenta.cajaId` y `Gasto.cajaId` solo con medio `EFECTIVO`. `Gasto.monto > 0`.
-
-### Usuarios, sesiones y sincronización
+### Usuarios y sesiones
 
 - Siempre queda al menos un dueño activo (diferido, con advisory lock para que dos dueños no se degraden mutuamente a la vez).
 - Emails de `Usuario` e `IntentoLogin` en minúsculas y sin espacios.
 - Un permiso de crear, editar o eliminar exige el de ver.
 - Una sesión no cambia de usuario ni de token, y una revocada no se «des-revoca».
-- Una `OperacionSincronizada` no cambia de id ni de usuario, y una ya aplicada no se modifica.
 - `RateLimit.contador ≥ 0`.
-
-### Reportes
-
-- `ResumenDiario`: único por `(fecha, depositoId)` con `NULLS NOT DISTINCT`, así la fila consolidada (depósito nulo) también es única por día.

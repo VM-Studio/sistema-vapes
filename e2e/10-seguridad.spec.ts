@@ -6,14 +6,14 @@ test("el dueño cierra las sesiones de un empleado: su próximo request lo manda
   page,
   browser,
 }) => {
-  const u = await crearUsuario({ permisos: [{ modulo: "INVENTARIO" }] });
+  const u = await crearUsuario({ permisos: [{ modulo: "STOCK" }] });
 
   // El empleado, en "su celular" (otro contexto de navegador).
   const celular = await browser.newContext();
   const empleado = await celular.newPage();
   await login(empleado, u.email, u.password);
-  await empleado.goto("/inventario");
-  await expect(empleado).toHaveURL(/\/inventario/);
+  await empleado.goto("/p/vapes/stock");
+  await expect(empleado).toHaveURL(/\/p\/vapes\/stock/);
   expect(await db.sesion.count({ where: { usuarioId: u.id, revocadaAt: null } })).toBe(1);
 
   // El dueño le cierra las sesiones desde Usuarios.
@@ -30,7 +30,7 @@ test("el dueño cierra las sesiones de un empleado: su próximo request lo manda
     .toBe(0);
 
   // Siguiente navegación del empleado: afuera, aunque su cookie siga "vigente".
-  await empleado.goto("/inventario");
+  await empleado.goto("/p/vapes/stock");
   await expect(empleado).toHaveURL(/\/login/);
   expect(
     await db.auditLog.count({ where: { entidadId: u.id, accion: "SESION_REVOCADA" } }),

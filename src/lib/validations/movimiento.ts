@@ -2,49 +2,14 @@ import { TipoMovimiento } from "@prisma/client";
 import { z } from "zod";
 
 import {
-  cantidad,
   enteroNoNegativo,
   enteroPositivo,
   id,
   montoOpcional,
   sinDuplicados,
   texto,
-  textoOpcional,
   vacioAUndefined,
 } from "./common";
-
-/**
- * Tipos que se pueden cargar a mano. VENTA, INGRESO_COMPRA y TRANSFERENCIA_*
- * solo los generan sus módulos (ventas, compras, transferencias).
- */
-export const TIPOS_MOVIMIENTO_MANUAL = [
-  TipoMovimiento.INGRESO_MANUAL,
-  TipoMovimiento.AJUSTE_POSITIVO,
-  TipoMovimiento.AJUSTE_NEGATIVO,
-  TipoMovimiento.DEVOLUCION_CLIENTE,
-  TipoMovimiento.DEVOLUCION_PROVEEDOR,
-] as const;
-
-const TIPOS_CON_MOTIVO_OBLIGATORIO: ReadonlySet<TipoMovimiento> = new Set([
-  TipoMovimiento.AJUSTE_POSITIVO,
-  TipoMovimiento.AJUSTE_NEGATIVO,
-  TipoMovimiento.DEVOLUCION_CLIENTE,
-  TipoMovimiento.DEVOLUCION_PROVEEDOR,
-]);
-
-export const movimientoManualSchema = z
-  .object({
-    tipo: z.enum(TIPOS_MOVIMIENTO_MANUAL),
-    varianteId: id,
-    depositoId: id,
-    cantidad,
-    costoUnitario: montoOpcional,
-    motivo: textoOpcional(500),
-  })
-  .refine((m) => !TIPOS_CON_MOTIVO_OBLIGATORIO.has(m.tipo) || m.motivo !== undefined, {
-    message: "Indicá el motivo del ajuste o devolución",
-    path: ["motivo"],
-  });
 
 /** Motivo de ajustes: obligatorio y con algo de contenido (auditoría). */
 export const motivoAjuste = z
@@ -74,7 +39,7 @@ export const ingresoManualSchema = z.object({
     }),
   ),
   motivo: texto(500),
-  /** Si un costo ingresado difiere del precioCosto actual, actualizarlo (con historial). */
+  /** Solo dueños: si un costo ingresado difiere del precioCosto actual, actualizarlo. */
   actualizarCosto: z.boolean().default(false),
 });
 
@@ -112,7 +77,6 @@ export const listarMovimientosSchema = z.object({
   pageSize: z.coerce.number().int().min(10).max(200).catch(50),
 });
 
-export type MovimientoManual = z.output<typeof movimientoManualSchema>;
 export type IngresoManual = z.output<typeof ingresoManualSchema>;
 export type Ajuste = z.output<typeof ajusteSchema>;
 export type AjusteMasivo = z.output<typeof ajusteMasivoSchema>;

@@ -7,10 +7,12 @@ import { URL_TEST } from "../playwright.config";
 
 /**
  * Base de test desde cero: DROP/CREATE, migraciones (migrate deploy, igual que
- * producción) y seed base. Los dueños quedan con una contraseña conocida y sin
- * el cambio obligatorio (el flujo de cambio se prueba con usuarios propios).
+ * producción) y seed base. Los dueños (Juan Cruz, Agustina) y Trinidad quedan
+ * con una contraseña conocida y sin el cambio obligatorio (el flujo de cambio
+ * se prueba con usuarios propios).
  */
 export const PASSWORD_DUENO = "DuenoE2E2026";
+export const PASSWORD_TRINIDAD = "TrinidadE2E2026";
 
 export async function prepararBaseDeTest(url: string = URL_TEST) {
   const URL_TEST_LOCAL = url;
@@ -37,6 +39,10 @@ export async function prepararBaseDeTest(url: string = URL_TEST) {
   await db.usuario.updateMany({
     where: { rol: "OWNER" },
     data: { passwordHash: await bcrypt.hash(PASSWORD_DUENO, 12), debeCambiarPassword: false },
+  });
+  await db.usuario.updateMany({
+    where: { nombre: "Trinidad" },
+    data: { passwordHash: await bcrypt.hash(PASSWORD_TRINIDAD, 12), debeCambiarPassword: false },
   });
   await db.$disconnect();
   execSync("rm -rf .storage-e2e");

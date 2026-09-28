@@ -1,41 +1,52 @@
 @import "tailwindcss";
 
 /*
- * Tokens de diseño. Paleta neutra + un primario (índigo). Todo color de la UI
- * sale de acá: los componentes usan bg-surface, text-muted, bg-primary, etc.
- * Dark mode automático por prefers-color-scheme.
+ * Tokens de diseño. Estética SaaS clara: fondo blanco, superficies gris muy
+ * suave, bordes sutiles y texto casi negro. Sin dark mode.
+ *
+ * Acento por panel: el "primario" (botón principal, tab activo, chip
+ * seleccionado, switch encendido, checkbox marcado, foco) sale de
+ * --panel-accent / --panel-accent-foreground. Un layout puede teñirlo con
+ *   style={{ "--panel-accent": "#E11D48", "--panel-accent-foreground": "#fff" }}
+ * y todo lo que use bg-primary / bg-accent / text-primary / ring-ring, etc.
+ * dentro de ese subárbol se tiñe. Las utilidades referencian la variable
+ * directamente (en @theme inline), así el override funciona en cualquier nivel.
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  --background: #f5f5f7;
+  --panel-accent: #111113;
+  --panel-accent-foreground: #ffffff;
+
+  --background: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f0f0f3;
-  --foreground: #111116;
-  --muted: #5c5c6a;
-  --border: #e1e1e8;
-  --input: #c9c9d3;
+  --surface-2: #f7f7f8;
+  --foreground: #111113;
+  --muted: #5f5f6b;
+  --border: #ebebee;
+  --input: #d6d6dc;
 
-  --primary: #4338ca;
-  --primary-hover: #3730a3;
-  --primary-foreground: #ffffff;
-  --primary-soft: #eef0ff;
-  --primary-soft-foreground: #3730a3;
+  /* Alias históricos del primario (valores en :root; para teñir usar las utilidades). */
+  --primary: var(--panel-accent);
+  --primary-hover: color-mix(in oklab, var(--panel-accent) 86%, black);
+  --primary-foreground: var(--panel-accent-foreground);
+  --primary-soft: color-mix(in oklab, var(--panel-accent) 8%, white);
+  --primary-soft-foreground: color-mix(in oklab, var(--panel-accent) 88%, black);
 
-  --danger: #c81e1e;
-  --danger-hover: #a51717;
+  --danger: #d92d20;
+  --danger-hover: #b42318;
   --danger-foreground: #ffffff;
-  --danger-soft: #fdecec;
-  --danger-soft-foreground: #a51717;
+  --danger-soft: #fef3f2;
+  --danger-soft-foreground: #b42318;
 
-  --success: #15803d;
-  --success-soft: #e9f8ee;
-  --success-soft-foreground: #166534;
-  --warning-soft: #fff6e0;
-  --warning-soft-foreground: #92400e;
+  --success: #067647;
+  --success-soft: #ecfdf3;
+  --success-soft-foreground: #067647;
+  --warning-soft: #fffaeb;
+  --warning-soft-foreground: #93370d;
 
-  --ring: #6366f1;
-  --backdrop: rgb(10 10 15 / 0.5);
+  --ring: var(--panel-accent);
+  --backdrop: rgb(17 17 19 / 0.4);
 
   /* Gráficos: paleta categórica validada (orden fijo, nunca cíclico) + grilla. */
   --serie-1: #2a78d6;
@@ -44,48 +55,7 @@
   --serie-4: #eda100;
   --serie-5: #e87ba4;
   --serie-6: #008300;
-  --grilla: #e6e6ec;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b0b10;
-    --surface: #15151c;
-    --surface-2: #1e1e27;
-    --foreground: #f3f3f6;
-    --muted: #a3a3b2;
-    --border: #2a2a35;
-    --input: #3d3d4a;
-
-    --primary: #8b93ff;
-    --primary-hover: #a5abff;
-    --primary-foreground: #0b0b10;
-    --primary-soft: #1f1f45;
-    --primary-soft-foreground: #c7caff;
-
-    --danger: #f87171;
-    --danger-hover: #fca5a5;
-    --danger-foreground: #0b0b10;
-    --danger-soft: #3a1618;
-    --danger-soft-foreground: #fecaca;
-
-    --success: #4ade80;
-    --success-soft: #11291a;
-    --success-soft-foreground: #bbf7d0;
-    --warning-soft: #2e2208;
-    --warning-soft-foreground: #fde68a;
-
-    --ring: #8b93ff;
-    --backdrop: rgb(0 0 0 / 0.65);
-
-    --serie-1: #3987e5;
-    --serie-2: #d95926;
-    --serie-3: #199e70;
-    --serie-4: #c98500;
-    --serie-5: #d55181;
-    --serie-6: #008300;
-    --grilla: #2a2a35;
-  }
+  --grilla: #ededf0;
 }
 
 @theme inline {
@@ -96,11 +66,20 @@
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-input: var(--input);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary-soft: var(--primary-soft);
-  --color-primary-soft-foreground: var(--primary-soft-foreground);
+
+  /* Primario = acento del panel (se resuelve donde se usa la clase). */
+  --color-primary: var(--panel-accent);
+  --color-primary-hover: color-mix(in oklab, var(--panel-accent) 86%, black);
+  --color-primary-foreground: var(--panel-accent-foreground);
+  --color-primary-soft: color-mix(in oklab, var(--panel-accent) 8%, white);
+  --color-primary-soft-foreground: color-mix(in oklab, var(--panel-accent) 88%, black);
+  --color-accent: var(--panel-accent);
+  --color-accent-hover: color-mix(in oklab, var(--panel-accent) 86%, black);
+  --color-accent-foreground: var(--panel-accent-foreground);
+  --color-accent-soft: color-mix(in oklab, var(--panel-accent) 8%, white);
+  --color-accent-soft-foreground: color-mix(in oklab, var(--panel-accent) 88%, black);
+  --color-ring: var(--panel-accent);
+
   --color-danger: var(--danger);
   --color-danger-hover: var(--danger-hover);
   --color-danger-foreground: var(--danger-foreground);
@@ -111,27 +90,45 @@
   --color-success-soft-foreground: var(--success-soft-foreground);
   --color-warning-soft: var(--warning-soft);
   --color-warning-soft-foreground: var(--warning-soft-foreground);
-  --color-ring: var(--ring);
   --color-serie-1: var(--serie-1);
   --color-serie-2: var(--serie-2);
   --color-serie-3: var(--serie-3);
   --color-serie-4: var(--serie-4);
   --color-serie-5: var(--serie-5);
   --color-serie-6: var(--serie-6);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Sombras suaves: solo cards (card) y paneles flotantes (sheet/pop). */
+  --shadow-card: 0 1px 2px 0 rgb(17 17 19 / 0.04), 0 1px 3px 0 rgb(17 17 19 / 0.04);
+  --shadow-card-hover: 0 2px 4px 0 rgb(17 17 19 / 0.04), 0 6px 16px -4px rgb(17 17 19 / 0.08);
+  --shadow-pop: 0 4px 8px -2px rgb(17 17 19 / 0.06), 0 12px 24px -6px rgb(17 17 19 / 0.1);
+  --shadow-sheet: 0 -8px 32px -8px rgb(17 17 19 / 0.14), 0 24px 48px -12px rgb(17 17 19 / 0.18);
 }
 
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
   }
   body {
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--panel-accent) 16%, white);
   }
   /* Con un <dialog> modal abierto, la página de fondo no scrollea. */
   html:has(dialog[open]) {
@@ -139,9 +136,10 @@
   }
   dialog::backdrop {
     background: var(--backdrop);
+    backdrop-filter: blur(2px);
   }
   :focus-visible {
-    outline: 2px solid var(--ring);
+    outline: 2px solid var(--panel-accent);
     outline-offset: 2px;
   }
 }

@@ -2,20 +2,25 @@ import { expect, test } from "./base";
 
 import { crearUsuario, db, llamarAccion, login } from "./helpers";
 
-test("empleado sin permiso: navegación filtrada, /usuarios → /sin-acceso, Server Action → Forbidden", async ({
+test("empleado sin permiso: navegación filtrada por panel, /usuarios → /sin-acceso, Server Action → Forbidden", async ({
   page,
 }) => {
   const u = await crearUsuario({
-    permisos: [{ modulo: "VENTAS", crear: true }, { modulo: "INVENTARIO" }],
+    permisos: [{ modulo: "VENTAS", crear: true }, { modulo: "STOCK" }],
   });
   await login(page, u.email, u.password);
+  // Un solo sistema habilitado: entra directo a Vapes, sin pasar por el selector.
   await page.goto("/");
+  await expect(page).toHaveURL(/\/p\/vapes$/);
 
-  // Navegación: solo lo que puede ver (en mobile, dentro de «Más»).
+  // Navegación: solo lo que puede ver en este panel (en mobile, dentro de «Más»).
   const nav = page.locator('aside, nav[aria-label="Navegación inferior"]');
   await expect(nav.locator('a[href="/usuarios"]')).toHaveCount(0);
-  await expect(nav.locator('a[href="/reportes"]')).toHaveCount(0);
-  await expect(nav.locator('a[href^="/ventas"]').locator("visible=true").first()).toBeVisible();
+  await expect(nav.locator('a[href="/p/vapes/reportes"]')).toHaveCount(0);
+  await expect(nav.locator('a[href="/p/vapes/productos"]')).toHaveCount(0);
+  await expect(
+    nav.locator('a[href^="/p/vapes/ventas"]').locator("visible=true").first(),
+  ).toBeVisible();
 
   await page.goto("/usuarios");
   await expect(page).toHaveURL(/\/sin-acceso$/);

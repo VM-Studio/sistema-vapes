@@ -24,7 +24,7 @@ export function TabsNav({
       aria-label={ariaLabel}
       className={cn("-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0", className)}
     >
-      <ul className="border-border flex min-w-max gap-1 border-b">
+      <ul className="border-border flex min-w-max gap-2 border-b">
         {items.map((t) => (
           <li key={t.href}>
             <Link
@@ -32,15 +32,20 @@ export function TabsNav({
               scroll={false}
               aria-current={t.activo ? "page" : undefined}
               className={cn(
-                "-mb-px flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium whitespace-nowrap transition-colors",
+                "-mb-px flex min-h-12 items-center gap-2 border-b-2 px-3 text-sm font-medium whitespace-nowrap transition-colors",
                 t.activo
-                  ? "border-primary text-foreground"
-                  : "text-muted hover:text-foreground border-transparent",
+                  ? "border-accent text-foreground"
+                  : "text-muted hover:text-foreground hover:border-input border-transparent",
               )}
             >
               {t.label}
               {t.badge !== undefined && (
-                <span className="bg-surface-2 text-muted rounded-full px-1.5 text-xs tabular-nums">
+                <span
+                  className={cn(
+                    "min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs leading-none tabular-nums",
+                    t.activo ? "bg-accent text-accent-foreground" : "bg-surface-2 text-muted",
+                  )}
+                >
                   {t.badge}
                 </span>
               )}

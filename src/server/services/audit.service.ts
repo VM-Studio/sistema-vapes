@@ -1,6 +1,6 @@
 import { AccionAuditoria, Prisma, type Usuario } from "@prisma/client";
 
-import type { Tx } from "@/lib/db";
+import type { Tx } from "@/server/db/panel-scoped";
 import type { RequestMeta } from "@/server/auth/request-meta";
 
 export interface DatosAuditoria {

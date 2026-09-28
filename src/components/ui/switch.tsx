@@ -55,14 +55,14 @@ export function Switch({
           disabled={disabled}
           onClick={() => onCheckedChange(!checked)}
           className={cn(
-            "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border-2 border-transparent transition-colors",
-            checked ? "bg-primary" : "bg-input",
+            "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-150 disabled:cursor-not-allowed",
+            checked ? "bg-accent" : "bg-input",
           )}
         >
           <span
             aria-hidden
             className={cn(
-              "inline-block size-6 rounded-full bg-white shadow-sm transition-transform",
+              "inline-block size-6 rounded-full bg-white shadow-[0_1px_3px_rgb(17_17_19/0.2)] transition-transform duration-150",
               checked ? "translate-x-5" : "translate-x-0",
             )}
           />

@@ -1,17 +1,25 @@
 /**
- * Concurrencia: 10 confirmaciones SIMULTÁNEAS de ventas de 1 unidad de una
- * variante con stock 5 en un depósito.
- * Esperado: exactamente 5 confirman, 5 fallan con "stock insuficiente", el
- * stock queda en 0 y los comprobantes emitidos son consecutivos, sin huecos
- * ni repetidos.
- * Uso: pnpm test:ventas:concurrencia — DB recién sembrada (crea datos).
+ * Concurrencia de ventas en el panel Vapes (crea datos: correr sobre una base
+ * recién sembrada).
+ *  1. 10 confirmaciones SIMULTÁNEAS de borradores de 1 unidad de una variante
+ *     con stock 5 → exactamente 5 confirman, 5 fallan por stock, stock 0.
+ *  2. 10 cajas venden A LA VEZ la última unidad (vender: borrador + confirmación
+ *     en una tx) → exactamente una gana; las que pierden no consumen número.
+ *  3. 20 borradores simultáneos → números de venta del panel únicos y
+ *     consecutivos (sin huecos ni repetidos); otro panel no se ve afectado.
+ * Uso: pnpm test:ventas:concurrencia
  */
 import { EstadoVenta, MedioPago, RolUsuario } from "@prisma/client";
 
 import { prisma } from "../src/lib/db";
-import { borradorVentaSchema } from "../src/lib/validations/venta";
+import { formatearIdVenta } from "../src/lib/paneles";
+import { borradorVentaSchema, venderSchema } from "../src/lib/validations/venta";
+import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
-import { confirmarVenta, crearBorrador } from "../src/server/services/venta.service";
+import { confirmarVenta, crearBorrador, vender } from "../src/server/services/venta.service";
+
+const PANEL = "pnl_vapes";
+const db = dbPara(PANEL);
 
 let fallos = 0;
 const check = (cond: boolean, msg: string) => {
@@ -19,83 +27,98 @@ const check = (cond: boolean, msg: string) => {
   console.log(`  ${cond ? "✔" : "✘"} ${msg}`);
 };
 
+const ultimoNumero = async (panelId: string) =>
+  (
+    await prisma.secuencia.findUniqueOrThrow({
+      where: { panelId_entidad: { panelId, entidad: "VENTA" } },
+    })
+  ).ultimoNumero;
+
+const mensaje = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 async function main() {
   const owner = await prisma.usuario.findFirstOrThrow({
-    where: { rol: RolUsuario.OWNER, email: "dueno1@negocio.com" },
+    where: { rol: RolUsuario.OWNER, deletedAt: null },
+    orderBy: { createdAt: "asc" },
   });
-  const actor = { id: owner.id, meta: { ip: "127.0.0.1", userAgent: "test-ventas-concurrentes" } };
-  const deposito = await prisma.deposito.findFirstOrThrow({ where: { esPrincipal: true } });
-  const variante = await prisma.variante.findFirstOrThrow({
+  const ctx: Ctx = {
+    panelId: PANEL,
+    usuarioId: owner.id,
+    meta: { ip: "127.0.0.1", userAgent: "test-ventas-concurrentes" },
+  };
+  const deposito = await db.deposito.findFirstOrThrow({ where: { esPrincipal: true } });
+  const variante = await db.variante.findFirstOrThrow({
     where: { nombre: "Grape Ice", producto: { nombre: "Ignite V80" } },
   });
-
-  console.log("\nPreparación: Ignite V80 — Grape Ice con stock 5 en", deposito.nombre);
-  await registrarAjuste(
-    {
+  const stockActual = async () =>
+    (
+      await db.stock.findUniqueOrThrow({
+        where: {
+          panelId_varianteId_depositoId: {
+            panelId: PANEL,
+            varianteId: variante.id,
+            depositoId: deposito.id,
+          },
+        },
+      })
+    ).cantidad;
+  /**
+   * Borrador de 1 unidad. Varias cajas creando borradores a la vez compiten por
+   * la fila de Secuencia (FOR UPDATE, Serializable): la tx se reintenta.
+   */
+  const nuevoBorrador = () =>
+    transaccion(
+      ctx,
+      (tx) =>
+        crearBorrador(
+          ctx,
+          borradorVentaSchema.parse({
+            depositoId: deposito.id,
+            items: [{ varianteId: variante.id, cantidad: 1 }],
+          }),
+          { puedeEditar: false },
+          tx,
+        ),
+      { maxRetries: 30 },
+    );
+  const dejarStock = async (cantidadReal: number) => {
+    if ((await stockActual()) === cantidadReal) return;
+    await registrarAjuste(ctx, {
       depositoId: deposito.id,
       varianteId: variante.id,
-      cantidadReal: 5,
+      cantidadReal,
       motivo: "Prueba de concurrencia",
-    },
-    actor,
-  );
-  const stockInicial = (
-    await prisma.stock.findUniqueOrThrow({
-      where: { varianteId_depositoId: { varianteId: variante.id, depositoId: deposito.id } },
-    })
-  ).cantidad;
-  check(stockInicial === 5, `stock inicial ${stockInicial}`);
+    });
+  };
 
-  const borradores = await Promise.all(
-    Array.from({ length: 10 }, () =>
-      crearBorrador(
-        borradorVentaSchema.parse({
-          depositoId: deposito.id,
-          items: [{ varianteId: variante.id, cantidad: 1 }],
-        }),
-        actor,
-        {
-          puedeEditar: false,
-        },
-      ),
-    ),
+  // ---------------------------------------------------------------------------
+  console.log(
+    `\n1) Ignite V80 — Grape Ice con stock 5 en ${deposito.nombre}: 10 confirmaciones simultáneas`,
   );
-  const ultimoAntes =
-    (await prisma.secuenciaComprobante.findFirst({ where: { tipo: "TICKET", puntoVenta: 1 } }))
-      ?.ultimoNumero ?? 0;
+  await dejarStock(5);
+  check((await stockActual()) === 5, "stock inicial 5");
 
-  console.log("\n10 confirmaciones simultáneas de 1 unidad");
+  const borradores = await Promise.all(Array.from({ length: 10 }, () => nuevoBorrador()));
+  check(
+    new Set(borradores.map((b) => b.numero)).size === 10,
+    `10 borradores con números distintos (${borradores.map((b) => b.idVenta).sort()[0]}…)`,
+  );
+
   const t0 = performance.now();
   const resultados = await Promise.allSettled(
-    borradores.map((b) =>
-      confirmarVenta(
-        b.id,
-        { pagos: [{ medioPago: MedioPago.EFECTIVO, monto: Number(variante.precioVenta) }] },
-        actor,
-        { puedeEditar: false },
-      ),
-    ),
+    borradores.map((b) => confirmarVenta(ctx, b.id, { medioPago: MedioPago.EFECTIVO })),
   );
   const ms = Math.round(performance.now() - t0);
-  const ok = resultados.filter((r) => r.status === "fulfilled");
-  const errores = resultados.flatMap((r) =>
-    r.status === "rejected"
-      ? [r.reason instanceof Error ? r.reason.message : String(r.reason)]
-      : [],
-  );
+  const ok = resultados.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  const errores = resultados.flatMap((r) => (r.status === "rejected" ? [mensaje(r.reason)] : []));
+  const otros = errores.filter((e) => !/Stock insuficiente/.test(e));
   check(ok.length === 5, `${ok.length} confirmadas (en ${ms} ms)`);
   check(
-    errores.length === 5 && errores.every((e) => /Stock insuficiente/.test(e)),
-    `${errores.length} rechazadas por stock: «${errores[0]}»${errores.some((e) => !/Stock insuficiente/.test(e)) ? ` · OTROS: ${errores.filter((e) => !/Stock insuficiente/.test(e)).join(" | ")}` : ""}`,
+    errores.length === 5 && otros.length === 0,
+    `${errores.length} rechazadas por stock: «${errores[0]}»${otros.length ? ` · OTROS: ${otros.join(" | ")}` : ""}`,
   );
-
-  const stockFinal = (
-    await prisma.stock.findUniqueOrThrow({
-      where: { varianteId_depositoId: { varianteId: variante.id, depositoId: deposito.id } },
-    })
-  ).cantidad;
-  check(stockFinal === 0, `stock final ${stockFinal}`);
-  const estados = await prisma.venta.groupBy({
+  check((await stockActual()) === 0, "stock final 0 (nunca negativo)");
+  const estados = await db.venta.groupBy({
     by: ["estado"],
     where: { id: { in: borradores.map((b) => b.id) } },
     _count: true,
@@ -105,27 +128,14 @@ async function main() {
       estados.find((e) => e.estado === EstadoVenta.BORRADOR)?._count === 5,
     `ventas: ${estados.map((e) => `${e._count} ${e.estado}`).join(", ")} (las rechazadas siguen en borrador, sin descontar nada)`,
   );
-
-  const numeros = ok
-    .map(
-      (r) =>
-        (r as PromiseFulfilledResult<Awaited<ReturnType<typeof confirmarVenta>>>).value.comprobante
-          ?.numero ?? 0,
-    )
-    .sort((a, b) => a - b);
-  const esperados = Array.from({ length: 5 }, (_, i) => ultimoAntes + 1 + i);
   check(
-    JSON.stringify(numeros) === JSON.stringify(esperados),
-    `comprobantes emitidos: ${numeros.join(", ")} (consecutivos desde ${ultimoAntes + 1}, sin huecos ni repetidos)`,
+    ok.every((v) => v.idVenta === formatearIdVenta("vapes", v.numero)),
+    `IDs de venta del panel: ${ok
+      .map((v) => v.idVenta)
+      .sort()
+      .join(", ")}`,
   );
-  const ultimoDespues = (
-    await prisma.secuenciaComprobante.findFirstOrThrow({ where: { tipo: "TICKET", puntoVenta: 1 } })
-  ).ultimoNumero;
-  check(
-    ultimoDespues === ultimoAntes + 5,
-    `la secuencia avanzó exactamente 5 (${ultimoAntes} → ${ultimoDespues}): las ventas fallidas no consumieron número`,
-  );
-  const ledger = await prisma.movimientoStock.count({
+  const ledger = await db.movimientoStock.count({
     where: {
       tipo: "VENTA",
       referenciaTipo: "VENTA",
@@ -133,6 +143,62 @@ async function main() {
     },
   });
   check(ledger === 5, `ledger: ${ledger} movimientos VENTA de estas 10 ventas`);
+
+  // ---------------------------------------------------------------------------
+  console.log("\n2) La última unidad: 10 cajas venden a la vez");
+  await dejarStock(1);
+  const antesUltima = await ultimoNumero(PANEL);
+  const carrera = await Promise.allSettled(
+    Array.from({ length: 10 }, () =>
+      vender(
+        ctx,
+        venderSchema.parse({
+          venta: { depositoId: deposito.id, items: [{ varianteId: variante.id, cantidad: 1 }] },
+          medioPago: MedioPago.TRANSFERENCIA,
+        }),
+        { puedeEditar: false },
+      ),
+    ),
+  );
+  const ganadoras = carrera.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  const perdedoras = carrera.flatMap((r) => (r.status === "rejected" ? [mensaje(r.reason)] : []));
+  check(
+    ganadoras.length === 1,
+    `exactamente una venta gana (${ganadoras.map((g) => g.idVenta).join(", ")})`,
+  );
+  check(
+    perdedoras.length === 9 && perdedoras.every((e) => /Stock insuficiente/.test(e)),
+    `9 rechazadas por stock${perdedoras.some((e) => !/Stock insuficiente/.test(e)) ? ` · OTROS: ${perdedoras.filter((e) => !/Stock insuficiente/.test(e)).join(" | ")}` : ""}`,
+  );
+  check((await stockActual()) === 0, "stock final 0");
+  const despuesUltima = await ultimoNumero(PANEL);
+  check(
+    despuesUltima === antesUltima + 1 && ganadoras[0]?.numero === despuesUltima,
+    `la secuencia avanzó exactamente 1 (${antesUltima} → ${despuesUltima}): las ventas fallidas no consumieron número`,
+  );
+
+  // ---------------------------------------------------------------------------
+  console.log("\n3) Numeración: 20 borradores simultáneos");
+  await dejarStock(3);
+  const antes = await ultimoNumero(PANEL);
+  const otroPanelAntes = await ultimoNumero("pnl_cosmetic");
+  const nuevos = await Promise.all(Array.from({ length: 20 }, () => nuevoBorrador()));
+  const numeros = nuevos.map((n) => n.numero).sort((a, b) => a - b);
+  const esperados = Array.from({ length: 20 }, (_, i) => antes + 1 + i);
+  check(
+    JSON.stringify(numeros) === JSON.stringify(esperados),
+    `números ${numeros[0]}..${numeros.at(-1)}: consecutivos desde ${antes + 1}, sin huecos ni repetidos`,
+  );
+  check((await ultimoNumero(PANEL)) === antes + 20, "la secuencia avanzó exactamente 20");
+  check(
+    (await ultimoNumero("pnl_cosmetic")) === otroPanelAntes,
+    "la numeración de Cosmetic no se movió",
+  );
+  const duplicados = await prisma.$queryRaw<{ n: bigint }[]>`
+    SELECT COUNT(*) AS n FROM (
+      SELECT "numero" FROM "Venta" WHERE "panelId" = ${PANEL} GROUP BY "numero" HAVING COUNT(*) > 1
+    ) x`;
+  check(Number(duplicados[0]?.n) === 0, "ningún número de venta repetido en el panel");
 
   console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} verificación(es) fallaron`);
   process.exitCode = fallos === 0 ? 0 : 1;

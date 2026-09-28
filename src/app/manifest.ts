@@ -5,9 +5,10 @@ import { nombreNegocio } from "@/server/services/identidad.service";
 export const dynamic = "force-dynamic";
 
 /**
- * Manifest de la PWA. El nombre sale de Configuracion (el del negocio), con
- * "Gestión" si todavía no se configuró o la DB no responde. Los colores son
- * los tokens de la app (primario índigo, fondo claro).
+ * Manifest de la PWA. El nombre sale de ConfiguracionGlobal (el del negocio),
+ * con "Gestión" si todavía no se configuró o la DB no responde. La app
+ * instalada arranca en el último panel usado (/paneles?origen=pwa lo resuelve
+ * con localStorage). Sin accesos directos: cada módulo depende del panel.
  */
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const nombre = await nombreNegocio();
@@ -16,40 +17,21 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     id: "/",
     name: nombre === "Gestión" ? "Gestión — Inventario y ventas" : nombre,
     short_name: corto,
-    description: "Inventario, ventas y stock por depósito, con escáner que funciona sin señal.",
+    description:
+      "Stock, ventas y compras de cada uno de tus sistemas, con escáner que reconoce códigos sin señal.",
     lang: "es-AR",
     dir: "ltr",
-    start_url: "/",
+    start_url: "/paneles?origen=pwa",
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#f5f5f7",
-    theme_color: "#4338ca",
+    background_color: "#ffffff",
+    theme_color: "#ffffff",
     categories: ["business"],
     icons: [
       { src: "/icons/192", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/512", sizes: "512x512", type: "image/png", purpose: "any" },
       { src: "/icons/maskable", sizes: "512x512", type: "image/png", purpose: "maskable" },
-    ],
-    shortcuts: [
-      {
-        name: "Nueva venta",
-        short_name: "Vender",
-        url: "/ventas/nueva",
-        icons: [{ src: "/icons/192", sizes: "192x192" }],
-      },
-      {
-        name: "Escanear",
-        short_name: "Escanear",
-        url: "/escanear",
-        icons: [{ src: "/icons/192", sizes: "192x192" }],
-      },
-      {
-        name: "Inventario",
-        short_name: "Stock",
-        url: "/inventario",
-        icons: [{ src: "/icons/192", sizes: "192x192" }],
-      },
     ],
     screenshots: [
       {

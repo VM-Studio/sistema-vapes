@@ -5,12 +5,14 @@ import { PassThrough, Readable } from "node:stream";
 import ExcelJS from "exceljs";
 
 import { prisma } from "@/lib/db";
+import { formatearIdVenta } from "@/lib/paneles";
 import { formatearFechaHora } from "@/lib/utils";
 
 /**
- * Exportación COMPLETA de los datos del negocio a Excel (es su negocio: se los
- * pueden llevar cuando quieran). Streaming: cada hoja se escribe de a 1.000
- * filas (paginado por id) y se libera; no se arma el libro entero en memoria.
+ * Exportación COMPLETA de los datos del negocio a Excel, de TODOS los
+ * sistemas (paneles): cada hoja tiene la columna "Sistema". Es un servicio
+ * global de dueños (por eso usa el cliente crudo). Streaming: cada hoja se
+ * escribe de a 1.000 filas (paginado por id) y se libera.
  */
 const MONEDA = '"$" #,##0.00;[Red]-"$" #,##0.00';
 const LOTE = 1000;
@@ -69,14 +71,23 @@ export function streamExportarTodo(meta: {
     info.addRow([`${meta.negocio} — exportación completa`]).font = { bold: true, size: 14 };
     info.addRow([`Generada ${formatearFechaHora(new Date())} por ${meta.usuario}`]);
     info.addRow([
-      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Pagos, Compras, Ítems de compras, Clientes, Proveedores, Gastos, Cajas.",
+      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Compras, Ítems de compras, Clientes, Proveedores. Cada fila indica su sistema.",
     ]);
     info.commit();
+    const sistemas = new Map(
+      (await prisma.panel.findMany({ select: { id: true, nombre: true, slug: true } })).map((p) => [
+        p.id,
+        p,
+      ]),
+    );
+    const sistema = (panelId: string) => sistemas.get(panelId)?.nombre ?? panelId;
+    const SISTEMA: Col = { header: "Sistema", key: "sis", width: 14 };
 
     await hoja(
       wb,
       "Productos",
       [
+        SISTEMA,
         { header: "Producto", key: "p", width: 30 },
         { header: "Sabor / variante", key: "v", width: 24 },
         { header: "SKU", key: "sku", width: 14 },
@@ -99,6 +110,7 @@ export function streamExportarTodo(meta: {
           },
         }),
       (v) => ({
+        sis: sistema(v.panelId),
         p: v.producto.nombre,
         v: v.nombre,
         sku: v.sku,
@@ -118,6 +130,7 @@ export function streamExportarTodo(meta: {
       wb,
       "Stock",
       [
+        SISTEMA,
         { header: "Producto", key: "p", width: 30 },
         { header: "Variante", key: "v", width: 24 },
         { header: "Depósito", key: "d", width: 16 },
@@ -129,6 +142,7 @@ export function streamExportarTodo(meta: {
           include: { variante: { include: { producto: true } }, deposito: true },
         }),
       (s) => ({
+        sis: sistema(s.panelId),
         p: s.variante.producto.nombre,
         v: s.variante.nombre,
         d: s.deposito.nombre,
@@ -140,6 +154,7 @@ export function streamExportarTodo(meta: {
       wb,
       "Movimientos",
       [
+        SISTEMA,
         { header: "Fecha", key: "f", width: 17 },
         { header: "Tipo", key: "t", width: 22 },
         { header: "Producto", key: "p", width: 30 },
@@ -162,6 +177,7 @@ export function streamExportarTodo(meta: {
           },
         }),
       (m) => ({
+        sis: sistema(m.panelId),
         f: formatearFechaHora(m.createdAt),
         t: m.tipo,
         p: m.variante.producto.nombre,
@@ -180,17 +196,17 @@ export function streamExportarTodo(meta: {
       wb,
       "Ventas",
       [
-        { header: "N.º", key: "n", width: 8 },
+        SISTEMA,
+        { header: "ID de venta", key: "n", width: 12 },
         { header: "Fecha", key: "f", width: 17 },
         { header: "Estado", key: "e", width: 12 },
+        { header: "Medio de pago", key: "mp", width: 14 },
         { header: "Cliente", key: "c", width: 22 },
         { header: "Vendedor", key: "u", width: 14 },
         { header: "Depósito", key: "d", width: 14 },
         { header: "Total", key: "t", width: 12, numFmt: MONEDA },
         { header: "Costo", key: "co", width: 12, numFmt: MONEDA },
         { header: "Ganancia bruta", key: "g", width: 13, numFmt: MONEDA },
-        { header: "Pagado", key: "p", width: 12, numFmt: MONEDA },
-        { header: "Saldo", key: "s", width: 12, numFmt: MONEDA },
       ],
       (c) =>
         prisma.venta.findMany({
@@ -198,17 +214,17 @@ export function streamExportarTodo(meta: {
           include: { cliente: true, usuario: { select: { nombre: true } }, deposito: true },
         }),
       (v) => ({
-        n: v.numero,
+        sis: sistema(v.panelId),
+        n: formatearIdVenta(sistemas.get(v.panelId)?.slug ?? "", v.numero),
         f: formatearFechaHora(v.fecha),
         e: v.estado,
+        mp: v.medioPago ?? "",
         c: v.cliente ? [v.cliente.nombre, v.cliente.apellido].filter(Boolean).join(" ") : "",
         u: v.usuario.nombre,
         d: v.deposito.nombre,
         t: num(v.total),
         co: num(v.costoTotal),
         g: num(v.gananciaBruta),
-        p: num(v.montoPagado),
-        s: num(v.saldoPendiente),
       }),
     );
 
@@ -216,11 +232,11 @@ export function streamExportarTodo(meta: {
       wb,
       "Ítems de ventas",
       [
-        { header: "Venta", key: "n", width: 8 },
+        SISTEMA,
+        { header: "ID de venta", key: "n", width: 12 },
         { header: "Producto", key: "p", width: 30 },
         { header: "Variante", key: "v", width: 20 },
         { header: "Cantidad", key: "c", width: 9 },
-        { header: "Devueltas", key: "d", width: 9 },
         { header: "Precio", key: "pr", width: 12, numFmt: MONEDA },
         { header: "Costo", key: "co", width: 12, numFmt: MONEDA },
         { header: "Subtotal", key: "s", width: 12, numFmt: MONEDA },
@@ -234,11 +250,11 @@ export function streamExportarTodo(meta: {
           },
         }),
       (i) => ({
-        n: i.venta.numero,
+        sis: sistema(i.panelId),
+        n: formatearIdVenta(sistemas.get(i.panelId)?.slug ?? "", i.venta.numero),
         p: i.variante.producto.nombre,
         v: i.variante.nombre,
         c: i.cantidad,
-        d: i.cantidadDevuelta,
         pr: num(i.precioUnitario),
         co: num(i.costoUnitario),
         s: num(i.subtotal),
@@ -247,31 +263,9 @@ export function streamExportarTodo(meta: {
 
     await hoja(
       wb,
-      "Pagos",
-      [
-        { header: "Venta", key: "n", width: 8 },
-        { header: "Fecha", key: "f", width: 17 },
-        { header: "Medio", key: "m", width: 16 },
-        { header: "Monto", key: "t", width: 12, numFmt: MONEDA },
-        { header: "Referencia", key: "r", width: 18 },
-        { header: "Anulado", key: "a", width: 9 },
-      ],
-      (c) =>
-        prisma.pagoVenta.findMany({ ...pag(c), include: { venta: { select: { numero: true } } } }),
-      (p) => ({
-        n: p.venta.numero,
-        f: formatearFechaHora(p.fecha),
-        m: p.medioPago,
-        t: num(p.monto),
-        r: p.referencia,
-        a: p.anulado ? "Sí" : "No",
-      }),
-    );
-
-    await hoja(
-      wb,
       "Compras",
       [
+        SISTEMA,
         { header: "N.º", key: "n", width: 8 },
         { header: "Fecha", key: "f", width: 17 },
         { header: "Estado", key: "e", width: 11 },
@@ -281,6 +275,7 @@ export function streamExportarTodo(meta: {
       ],
       (c) => prisma.compra.findMany({ ...pag(c), include: { proveedor: true, deposito: true } }),
       (x) => ({
+        sis: sistema(x.panelId),
         n: x.numero,
         f: formatearFechaHora(x.fecha),
         e: x.estado,
@@ -294,6 +289,7 @@ export function streamExportarTodo(meta: {
       wb,
       "Ítems de compras",
       [
+        SISTEMA,
         { header: "Compra", key: "n", width: 8 },
         { header: "Producto", key: "p", width: 30 },
         { header: "Variante", key: "v", width: 20 },
@@ -310,6 +306,7 @@ export function streamExportarTodo(meta: {
           },
         }),
       (i) => ({
+        sis: sistema(i.panelId),
         n: i.compra.numero,
         p: i.variante.producto.nombre,
         v: i.variante.nombre,
@@ -323,25 +320,21 @@ export function streamExportarTodo(meta: {
       wb,
       "Clientes",
       [
+        SISTEMA,
         { header: "Nombre", key: "n", width: 18 },
         { header: "Apellido", key: "a", width: 16 },
         { header: "Documento", key: "d", width: 14 },
         { header: "Teléfono", key: "t", width: 16 },
         { header: "Email", key: "e", width: 24 },
-        { header: "Límite de crédito", key: "l", width: 14, numFmt: MONEDA },
-        { header: "Saldo deudor", key: "s", width: 13, numFmt: MONEDA },
-        { header: "Saldo a favor", key: "f", width: 13, numFmt: MONEDA },
       ],
       (c) => prisma.cliente.findMany(pag(c)),
       (x) => ({
+        sis: sistema(x.panelId),
         n: x.nombre,
         a: x.apellido,
         d: x.documento,
         t: x.telefono,
         e: x.email,
-        l: num(x.limiteCredito),
-        s: num(x.saldoDeudor),
-        f: num(x.saldoAFavor),
       }),
     );
 
@@ -349,63 +342,14 @@ export function streamExportarTodo(meta: {
       wb,
       "Proveedores",
       [
+        SISTEMA,
         { header: "Nombre", key: "n", width: 26 },
         { header: "CUIT", key: "c", width: 14 },
         { header: "Teléfono", key: "t", width: 16 },
         { header: "Email", key: "e", width: 24 },
       ],
       (c) => prisma.proveedor.findMany(pag(c)),
-      (x) => ({ n: x.nombre, c: x.cuit, t: x.telefono, e: x.email }),
-    );
-
-    await hoja(
-      wb,
-      "Gastos",
-      [
-        { header: "Fecha", key: "f", width: 17 },
-        { header: "Categoría", key: "c", width: 14 },
-        { header: "Descripción", key: "d", width: 36 },
-        { header: "Medio", key: "m", width: 14 },
-        { header: "Monto", key: "t", width: 12, numFmt: MONEDA },
-        { header: "Depósito", key: "dep", width: 14 },
-        { header: "Borrado", key: "b", width: 9 },
-      ],
-      (c) => prisma.gasto.findMany({ ...pag(c), include: { categoria: true, deposito: true } }),
-      (g) => ({
-        f: formatearFechaHora(g.fecha),
-        c: g.categoria.nombre,
-        d: g.descripcion,
-        m: g.medioPago,
-        t: num(g.monto),
-        dep: g.deposito?.nombre ?? "General",
-        b: g.deletedAt ? "Sí" : "No",
-      }),
-    );
-
-    await hoja(
-      wb,
-      "Cajas",
-      [
-        { header: "Depósito", key: "d", width: 14 },
-        { header: "Apertura", key: "a", width: 17 },
-        { header: "Cierre", key: "c", width: 17 },
-        { header: "Inicial", key: "i", width: 12, numFmt: MONEDA },
-        { header: "Esperado", key: "e", width: 12, numFmt: MONEDA },
-        { header: "Contado", key: "k", width: 12, numFmt: MONEDA },
-        { header: "Diferencia", key: "x", width: 12, numFmt: MONEDA },
-        { header: "Observaciones", key: "o", width: 30 },
-      ],
-      (c) => prisma.caja.findMany({ ...pag(c), include: { deposito: true } }),
-      (x) => ({
-        d: x.deposito.nombre,
-        a: formatearFechaHora(x.abiertaAt),
-        c: x.cerradaAt ? formatearFechaHora(x.cerradaAt) : "Abierta",
-        i: num(x.montoInicial),
-        e: num(x.montoEsperado),
-        k: num(x.montoContado),
-        x: num(x.diferencia),
-        o: x.observaciones,
-      }),
+      (x) => ({ sis: sistema(x.panelId), n: x.nombre, c: x.cuit, t: x.telefono, e: x.email }),
     );
 
     await wb.commit();

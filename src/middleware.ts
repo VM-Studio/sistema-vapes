@@ -9,6 +9,7 @@ import {
   opcionesCookieSesion,
   verificarToken,
 } from "@/server/auth/session";
+import { panelPorSlug, slugDeRuta } from "@/server/auth/paneles-acceso";
 import { extenderSesion, validarSesion } from "@/server/auth/sesiones";
 
 /**
@@ -19,7 +20,10 @@ import { extenderSesion, validarSesion } from "@/server/auth/sesiones";
  * 4. Sesión: JWT válido + fila Sesion no revocada ni vencida + usuario activo
  *    (consulta cacheada 60 s por sid). Revocar corta el acceso al instante.
  * 5. Con contraseña pendiente de cambio, solo deja usar /cuenta.
- * 6. Renovación deslizante del JWT y de la sesión.
+ * 6. /p/{slug}/* (y /api/p/{slug}/*): el panel existe, está activo y el
+ *    usuario accede (OWNER o fila en UsuarioPanel); si no → /paneles con aviso.
+ *    Pasa el panel resuelto a la app en x-panel-id / x-panel-slug.
+ * 7. Renovación deslizante del JWT y de la sesión.
  *
  * Runtime Node.js (estable desde Next 15.5) para poder consultar la DB con Prisma.
  */
@@ -94,7 +98,6 @@ export async function middleware(req: NextRequest) {
     storage: [process.env.S3_PUBLIC_URL, process.env.S3_ENDPOINT].filter((x): x is string =>
       Boolean(x),
     ),
-    sentry: process.env.NEXT_PUBLIC_SENTRY_DSN ?? null,
     https: process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ?? false,
   });
 
@@ -103,6 +106,9 @@ export async function middleware(req: NextRequest) {
   cabeceras.set("x-nonce", nonce);
   cabeceras.set("x-pathname", pathname);
   cabeceras.set("content-security-policy", csp);
+  // Solo el middleware define el panel: lo que mande el cliente se descarta.
+  cabeceras.delete("x-panel-id");
+  cabeceras.delete("x-panel-slug");
   const seguir = () => {
     const r = NextResponse.next({ request: { headers: cabeceras } });
     r.headers.set("content-security-policy", csp);
@@ -153,6 +159,20 @@ export async function middleware(req: NextRequest) {
     return esApi(pathname)
       ? json(403, "PASSWORD_CHANGE_REQUIRED", "Tenés que cambiar tu contraseña")
       : NextResponse.redirect(new URL("/cuenta", req.url));
+  }
+
+  // 6. Panel: existe, activo y el usuario accede.
+  const slug = slugDeRuta(pathname);
+  if (slug) {
+    const panel = await panelPorSlug(slug);
+    const accede = panel && (estado.rol === "OWNER" || estado.paneles.includes(panel.id));
+    if (!panel || !accede) {
+      return esApi(pathname) || esAction
+        ? json(403, "FORBIDDEN", "No tenés acceso a ese panel")
+        : NextResponse.redirect(new URL("/paneles?aviso=sin-acceso", req.url));
+    }
+    cabeceras.set("x-panel-id", panel.id);
+    cabeceras.set("x-panel-slug", panel.slug);
   }
 
   const res = seguir();

@@ -6,6 +6,8 @@ import { esDiaISO, limitesRango, ZONA_DEFAULT } from "@/lib/zona-horaria";
 
 export const filtrosAuditoriaSchema = z.object({
   usuarioId: z.string().min(1).optional().catch(undefined),
+  /** Id de panel, o "global" (acciones fuera de los paneles: login, usuarios, configuración). */
+  panelId: z.string().min(1).optional().catch(undefined),
   entidad: z.string().trim().max(60).optional().catch(undefined),
   accion: z.enum(AccionAuditoria).optional().catch(undefined),
   desde: z.string().refine(esDiaISO).optional().catch(undefined),
@@ -38,6 +40,7 @@ export function diffAuditoria(antes: Prisma.JsonValue, despues: Prisma.JsonValue
 export async function listarAuditoria(f: FiltrosAuditoria, pageSize = 50) {
   const where: Prisma.AuditLogWhereInput = {};
   if (f.usuarioId) where.usuarioId = f.usuarioId;
+  if (f.panelId) where.panelId = f.panelId === "global" ? null : f.panelId;
   if (f.entidad) where.entidad = f.entidad;
   if (f.accion) where.accion = f.accion;
   if (f.desde || f.hasta) {
@@ -55,7 +58,7 @@ export async function listarAuditoria(f: FiltrosAuditoria, pageSize = 50) {
       orderBy: { createdAt: "desc" },
       skip: (f.page - 1) * pageSize,
       take: pageSize,
-      include: { usuario: { select: { nombre: true } } },
+      include: { usuario: { select: { nombre: true } }, panel: { select: { nombre: true } } },
     }),
     prisma.auditLog.groupBy({ by: ["entidad"], orderBy: { entidad: "asc" } }),
   ]);
@@ -68,6 +71,7 @@ export async function listarAuditoria(f: FiltrosAuditoria, pageSize = 50) {
       id: r.id,
       fecha: r.createdAt,
       usuario: r.usuario?.nombre ?? "—",
+      sistema: r.panel?.nombre ?? "Global",
       accion: r.accion,
       entidad: r.entidad,
       entidadId: r.entidadId,

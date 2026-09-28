@@ -1,21 +1,24 @@
 import { AccionAuditoria, EstadoCompra, Prisma, TipoMovimiento } from "@prisma/client";
 
 import { finDelDia, hoyAR, inicioDelDia } from "@/lib/fechas";
-import { prisma, withTransaction, type Tx } from "@/lib/db";
 import type { Compra, FiltrosCompras } from "@/lib/validations/compra";
+import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
+import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
-import type { Actor } from "@/server/services/actor";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { actualizarPrecios, nombreCompleto } from "@/server/services/producto.service";
+import { nombreCompleto } from "@/server/services/producto.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
- * COMPRAS a proveedores.
+ * COMPRAS a proveedores (por panel: numeración, proveedor y depósito del panel).
  * - Los totales se calculan SIEMPRE acá (nunca se confía en los del cliente);
  *   la DB además verifica subtotal = Σ ítems y total = subtotal − descuento.
  * - El stock entra solo al RECIBIR (INGRESO_COMPRA, vía el motor de stock) y
  *   sale solo al ANULAR una recibida (DEVOLUCION_PROVEEDOR).
  * - Una compra recibida no se edita (lo garantiza la DB): se anula.
+ * - Los costos de la compra los ve quien tiene COMPRAS; el precio de costo
+ *   ACTUAL de las variantes (y actualizarlo al recibir) es solo de los dueños:
+ *   lo decide quien llama (`incluirCostoActual`, `actualizarCostos`).
  */
 
 const dec = (d: Prisma.Decimal | string | number) => new Prisma.Decimal(d).toFixed(2);
@@ -55,6 +58,10 @@ export function calcularTotalesCompra(datos: Pick<Compra, "items" | "descuento">
     });
   }
   return { items, subtotal, descuento, total: subtotal.minus(descuento) };
+}
+
+async function bloquearCompra(tx: Tx, ctx: Ctx, id: string): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "Compra" WHERE "id" = ${id} AND "panelId" = ${ctx.panelId} FOR UPDATE`;
 }
 
 async function validarReferencias(tx: Tx, datos: Compra) {
@@ -103,14 +110,16 @@ function snapshot(datos: Compra, t: TotalesCompra): Prisma.InputJsonObject {
 
 /** Crea la compra en BORRADOR (no mueve stock). */
 export async function crearCompra(
+  ctx: Ctx,
   datos: Compra,
-  actor: Actor,
 ): Promise<{ id: string; numero: number }> {
-  return withTransaction(async (tx) => {
+  return transaccion(ctx, async (tx) => {
     await validarReferencias(tx, datos);
     const t = calcularTotalesCompra(datos);
+    const numero = await siguienteNumero(tx, ctx.panelId, "COMPRA");
     const compra = await tx.compra.create({
       data: {
+        numero,
         proveedorId: datos.proveedorId ?? null,
         depositoId: datos.depositoId,
         fecha: datos.fecha ?? new Date(),
@@ -119,17 +128,17 @@ export async function crearCompra(
         descuento: t.descuento,
         total: t.total,
         notas: datos.notas ?? null,
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         items: { create: t.items.map((i) => ({ ...i })) },
       },
     });
     await registrarAuditoria(tx, {
-      usuarioId: actor.id,
+      usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.CREATE,
       entidad: "Compra",
       entidadId: compra.id,
       datosDespues: { numero: compra.numero, ...snapshot(datos, t) },
-      meta: actor.meta,
+      meta: ctx.meta,
     });
     return { id: compra.id, numero: compra.numero };
   });
@@ -137,12 +146,12 @@ export async function crearCompra(
 
 /** Reemplaza los datos e ítems de una compra en BORRADOR. */
 export async function actualizarCompra(
+  ctx: Ctx,
   id: string,
   datos: Compra,
-  actor: Actor,
 ): Promise<{ id: string; numero: number }> {
-  return withTransaction(async (tx) => {
-    await tx.$queryRaw`SELECT "id" FROM "Compra" WHERE "id" = ${id} FOR UPDATE`;
+  return transaccion(ctx, async (tx) => {
+    await bloquearCompra(tx, ctx, id);
     const antes = await tx.compra.findUnique({ where: { id }, include: { items: true } });
     if (!antes) throw new NotFoundError("La compra no existe");
     if (antes.estado !== EstadoCompra.BORRADOR) {
@@ -168,7 +177,7 @@ export async function actualizarCompra(
       },
     });
     await registrarAuditoria(tx, {
-      usuarioId: actor.id,
+      usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.UPDATE,
       entidad: "Compra",
       entidadId: id,
@@ -181,7 +190,7 @@ export async function actualizarCompra(
         })),
       },
       datosDespues: snapshot(datos, t),
-      meta: actor.meta,
+      meta: ctx.meta,
     });
     return { id, numero: antes.numero };
   });
@@ -189,21 +198,25 @@ export async function actualizarCompra(
 
 /**
  * Recibe la mercadería: un INGRESO_COMPRA por ítem (con su costo y la
- * referencia a la compra). Con `actualizarCostos`, el precioCosto de cada
- * variante pasa a ser el de esta compra (queda HistorialPrecio).
+ * referencia a la compra) en el depósito de la compra. Con `actualizarCostos`
+ * (solo dueños), el precioCosto de cada variante pasa a ser el de esta compra.
  * Transacción Serializable; si ya está recibida → DomainError (idempotente).
  */
 export async function recibirCompra(
+  ctx: Ctx,
   id: string,
-  actor: Actor,
   opciones: { actualizarCostos: boolean },
 ): Promise<{ numero: number; unidades: number; costosActualizados: number }> {
-  return withTransaction(
+  return transaccion(
+    ctx,
     async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "Compra" WHERE "id" = ${id} FOR UPDATE`;
+      await bloquearCompra(tx, ctx, id);
       const compra = await tx.compra.findUnique({
         where: { id },
-        include: { items: true, deposito: true },
+        include: {
+          items: { include: { variante: { select: { precioCosto: true } } } },
+          deposito: true,
+        },
       });
       if (!compra) throw new NotFoundError("La compra no existe");
       if (compra.estado === EstadoCompra.RECIBIDA)
@@ -227,23 +240,20 @@ export async function recibirCompra(
           motivo: `Compra #${compra.numero}`,
           referenciaTipo: "COMPRA",
           referenciaId: compra.id,
-          usuarioId: actor.id,
+          usuarioId: ctx.usuarioId,
         });
-        if (opciones.actualizarCostos) {
-          const r = await actualizarPrecios(
-            item.varianteId,
-            { precioCosto: Number(item.costoUnitario) },
-            actor,
-            `Compra #${compra.numero}`,
-            tx,
-          );
-          costosActualizados += r.actualizadas;
+        if (opciones.actualizarCostos && !item.variante.precioCosto.equals(item.costoUnitario)) {
+          await tx.variante.update({
+            where: { id: item.varianteId },
+            data: { precioCosto: item.costoUnitario },
+          });
+          costosActualizados++;
         }
       }
 
       await tx.compra.update({ where: { id }, data: { estado: EstadoCompra.RECIBIDA } });
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.UPDATE,
         entidad: "Compra",
         entidadId: id,
@@ -253,7 +263,7 @@ export async function recibirCompra(
           actualizarCostos: opciones.actualizarCostos,
           costosActualizados,
         },
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return {
         numero: compra.numero,
@@ -271,13 +281,14 @@ export async function recibirCompra(
  * depósito, falla completa con el detalle y la compra queda como estaba.
  */
 export async function anularCompra(
+  ctx: Ctx,
   id: string,
   motivo: string,
-  actor: Actor,
 ): Promise<{ numero: number; devoluciones: number }> {
-  return withTransaction(
+  return transaccion(
+    ctx,
     async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "Compra" WHERE "id" = ${id} FOR UPDATE`;
+      await bloquearCompra(tx, ctx, id);
       const compra = await tx.compra.findUnique({
         where: { id },
         include: {
@@ -335,7 +346,7 @@ export async function anularCompra(
               motivo: `Anulación compra #${compra.numero}: ${motivo}`,
               referenciaTipo: "COMPRA",
               referenciaId: compra.id,
-              usuarioId: actor.id,
+              usuarioId: ctx.usuarioId,
             });
             devoluciones++;
           }
@@ -354,13 +365,13 @@ export async function anularCompra(
       const notas = [compra.notas, `[Anulada] ${motivo}`].filter(Boolean).join("\n");
       await tx.compra.update({ where: { id }, data: { estado: EstadoCompra.ANULADA, notas } });
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.UPDATE,
         entidad: "Compra",
         entidadId: id,
         datosAntes: { estado: compra.estado },
         datosDespues: { estado: "ANULADA", motivo, devoluciones },
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { numero: compra.numero, devoluciones };
     },
@@ -386,6 +397,7 @@ export interface CompraListada {
 }
 
 export async function listarCompras(
+  ctx: Ctx,
   f: FiltrosCompras,
 ): Promise<{ compras: CompraListada[]; total: number; page: number; pageSize: number }> {
   const where: Prisma.CompraWhereInput = {};
@@ -397,9 +409,10 @@ export async function listarCompras(
       ...(f.hasta ? { lte: finDelDia(f.hasta) } : {}),
     };
   }
+  const db = dbPara(ctx.panelId);
   const [total, filas] = await Promise.all([
-    prisma.compra.count({ where }),
-    prisma.compra.findMany({
+    db.compra.count({ where }),
+    db.compra.findMany({
       where,
       orderBy: { numero: "desc" },
       skip: (f.page - 1) * f.pageSize,
@@ -439,8 +452,8 @@ export interface ItemCompraDetalle {
   cantidad: number;
   costoUnitario: string;
   subtotal: string;
-  /** Costo actual de la variante (para mostrar qué cambia si se actualizan costos). */
-  precioCostoActual: string;
+  /** Costo actual de la variante (solo dueños; null si no se pidió). */
+  precioCostoActual: string | null;
 }
 
 export interface CompraDetalle extends Omit<CompraListada, "items" | "total"> {
@@ -454,8 +467,13 @@ export interface CompraDetalle extends Omit<CompraListada, "items" | "total"> {
   movimientos: number;
 }
 
-export async function obtenerCompra(id: string): Promise<CompraDetalle> {
-  const c = await prisma.compra.findUnique({
+export async function obtenerCompra(
+  ctx: Ctx,
+  id: string,
+  opciones: { incluirCostoActual: boolean },
+): Promise<CompraDetalle> {
+  const db = dbPara(ctx.panelId);
+  const c = await db.compra.findUnique({
     where: { id },
     include: {
       proveedor: { select: { nombre: true } },
@@ -478,7 +496,7 @@ export async function obtenerCompra(id: string): Promise<CompraDetalle> {
     },
   });
   if (!c) throw new NotFoundError("La compra no existe");
-  const movimientos = await prisma.movimientoStock.count({
+  const movimientos = await db.movimientoStock.count({
     where: { referenciaTipo: "COMPRA", referenciaId: id },
   });
   return {
@@ -509,7 +527,7 @@ export async function obtenerCompra(id: string): Promise<CompraDetalle> {
       cantidad: i.cantidad,
       costoUnitario: dec(i.costoUnitario),
       subtotal: dec(i.subtotal),
-      precioCostoActual: dec(i.variante.precioCosto),
+      precioCostoActual: opciones.incluirCostoActual ? dec(i.variante.precioCosto) : null,
     })),
   };
 }

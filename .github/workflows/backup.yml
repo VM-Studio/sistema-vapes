@@ -1,7 +1,7 @@
 # Backup diario de la base: 04:00 hora Argentina (07:00 UTC).
 # Corre en GitHub Actions porque las funciones de Vercel no traen pg_dump.
 # Resultado registrado en la tabla Backup (visible en /configuracion/backups);
-# si falla, notificación a los dueños y el job queda en rojo.
+# si falla, queda registrado (log de error, /configuracion/backups y /api/health) y el job queda en rojo.
 name: Backup diario
 
 on:

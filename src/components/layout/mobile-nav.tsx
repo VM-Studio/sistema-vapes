@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleHelp, Ellipsis, UserRound } from "lucide-react";
+import { CircleHelp, Ellipsis, LayoutGrid, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -14,23 +14,38 @@ import { cn } from "@/lib/utils";
 
 import { IndicadorRed } from "@/components/pwa/sincronizacion-offline";
 
-import { Campana } from "./campana";
+import { LogoPanel } from "./logo-panel";
 import { LogoutButton } from "./logout-button";
+import { usePanelOpcional } from "./panel-context";
 import { useUsuario } from "./usuario-context";
+
+function LinkCambiarSistema({ onClick }: { onClick: () => void }) {
+  return (
+    <Link
+      href="/paneles"
+      onClick={onClick}
+      className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
+    >
+      <LayoutGrid className="text-muted size-5" strokeWidth={1.75} aria-hidden />
+      Cambiar de sistema
+    </Link>
+  );
+}
 
 /** Barra superior fija (mobile): título de la sección + avatar que abre el menú de cuenta. */
 export function TopBar({ restringido = false }: { restringido?: boolean }) {
   const pathname = usePathname();
   const usuario = useUsuario();
+  const panel = usePanelOpcional();
   const [menuAbierto, setMenuAbierto] = useState(false);
 
   return (
     <header className="pt-safe pl-safe pr-safe border-border bg-surface/95 fixed inset-x-0 top-0 z-30 border-b backdrop-blur md:hidden">
       <div className="flex h-14 items-center justify-between gap-3 px-4">
+        {panel && <LogoPanel panel={panel} size={32} />}
         {/* No es <h1>: el encabezado de la página lo pone cada pantalla. */}
         <p className="min-w-0 flex-1 truncate text-lg font-semibold">{tituloDeRuta(pathname)}</p>
-        {!restringido && <IndicadorRed />}
-        {!restringido && <Campana />}
+        {!restringido && panel && <IndicadorRed />}
         <button
           type="button"
           onClick={() => setMenuAbierto(true)}
@@ -52,6 +67,7 @@ export function TopBar({ restringido = false }: { restringido?: boolean }) {
               {esOwner(usuario) ? "Dueño" : "Empleado"}
             </Badge>
           </div>
+          {!restringido && <LinkCambiarSistema onClick={() => setMenuAbierto(false)} />}
           {!restringido && (
             <Link
               href="/cuenta"
@@ -107,28 +123,6 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
           {principales.map((item) => {
             const activo = esRutaActiva(item.base ?? item.href, pathname);
             const Icono = item.icon;
-            if (item.destacado) {
-              // Botón central elevado (Escanear): la acción más usada en el galpón.
-              return (
-                <li key={item.href} className="flex flex-1 justify-center">
-                  <Link
-                    href={item.href}
-                    aria-current={activo ? "page" : undefined}
-                    className="text-primary -mt-5 flex flex-col items-center gap-0.5 text-[11px] font-semibold"
-                  >
-                    <span
-                      className={cn(
-                        "border-background bg-primary text-primary-foreground flex size-14 items-center justify-center rounded-full border-4 shadow-lg",
-                        activo && "ring-primary/40 ring-2",
-                      )}
-                    >
-                      <Icono className="size-7" aria-hidden />
-                    </span>
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            }
             return (
               <li key={item.href} className="flex flex-1">
                 <Link
@@ -185,6 +179,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
           </ul>
         )}
         <div className="border-border mt-4 flex flex-col gap-1 border-t pt-3">
+          <LinkCambiarSistema onClick={() => setMasAbierto(false)} />
           <Link
             href="/cuenta"
             onClick={() => setMasAbierto(false)}

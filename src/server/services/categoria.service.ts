@@ -1,5 +1,5 @@
 import type { ActualizarCategoria, CrearCategoria } from "@/lib/validations/clasificacion";
-import type { Actor } from "@/server/services/actor";
+import type { Ctx } from "@/server/db/panel-scoped";
 
 import {
   actualizarClasificacion,
@@ -9,11 +9,14 @@ import {
   listarClasificacionesActivas,
 } from "./clasificacion.service";
 
-export const listarCategorias = () => listarClasificaciones("Categoria");
-export const listarCategoriasActivas = () => listarClasificacionesActivas("Categoria");
-export const crearCategoria = (input: CrearCategoria, actor: Actor) =>
-  crearClasificacion("Categoria", input, actor);
-export const actualizarCategoria = (input: ActualizarCategoria, actor: Actor) =>
-  actualizarClasificacion("Categoria", input, actor);
-export const cambiarActivoCategoria = (id: string, activo: boolean, actor: Actor) =>
-  cambiarActivoClasificacion("Categoria", id, activo, actor);
+type CtxPanel = Pick<Ctx, "panelId">;
+
+export const listarCategorias = (ctx: CtxPanel) => listarClasificaciones(ctx, "Categoria");
+export const listarCategoriasActivas = (ctx: CtxPanel) =>
+  listarClasificacionesActivas(ctx, "Categoria");
+export const crearCategoria = (ctx: Ctx, input: CrearCategoria) =>
+  crearClasificacion(ctx, "Categoria", input);
+export const actualizarCategoria = (ctx: Ctx, input: ActualizarCategoria) =>
+  actualizarClasificacion(ctx, "Categoria", input);
+export const cambiarActivoCategoria = (ctx: Ctx, id: string, activo: boolean) =>
+  cambiarActivoClasificacion(ctx, "Categoria", id, activo);

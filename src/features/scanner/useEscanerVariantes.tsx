@@ -3,6 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { usePanel } from "@/components/layout/panel-context";
+
 import { resolverVarianteAction } from "./actions";
 import { CameraScanner, type MensajeCamara } from "./CameraScanner";
 import { CodigoDesconocidoSheet } from "./CodigoDesconocidoSheet";
@@ -38,6 +40,7 @@ export function useEscanerVariantes({
   tituloCamara,
 }: Opciones) {
   const feedback = useScanFeedback();
+  const panel = usePanel();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -80,7 +83,7 @@ export function useEscanerVariantes({
 
   const procesar = useCallback(
     async (codigo: string, fuente: FuenteEscaneo) => {
-      const r = await resolverCodigo(codigo);
+      const r = await resolverCodigo(panel.id, codigo);
       if (!r.ok) {
         feedback.error("No se pudo buscar el código", r.error.message);
         return;
@@ -101,7 +104,7 @@ export function useEscanerVariantes({
       // Solo si se estaba tipeando a mano: con la pistola, enfocar un input abriría el teclado del celular.
       if (fuente === "manual") inputRef.current?.focus();
     },
-    [aceptarVariante, feedback],
+    [aceptarVariante, feedback, panel.id],
   );
 
   // Pistola: pausada mientras el Sheet de código desconocido está abierto (ahí se tipea).

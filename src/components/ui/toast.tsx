@@ -82,28 +82,29 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div
               key={t.id}
               role={t.variant === "error" ? "alert" : "status"}
-              className="border-border bg-surface pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border p-3 shadow-lg"
+              className="border-border bg-surface shadow-pop pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl border p-4"
             >
               <Icono
                 className={cn(
                   "mt-0.5 size-5 shrink-0",
                   t.variant === "success" && "text-success",
                   t.variant === "error" && "text-danger",
-                  t.variant === "info" && "text-primary",
+                  t.variant === "info" && "text-foreground",
                 )}
+                strokeWidth={1.75}
                 aria-hidden
               />
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <p className="text-sm font-medium">{t.title}</p>
+                <p className="text-sm font-semibold">{t.title}</p>
                 {t.description && <p className="text-muted text-sm">{t.description}</p>}
               </div>
               <button
                 type="button"
                 onClick={() => cerrar(t.id)}
-                className="text-muted hover:bg-surface-2 -m-1 flex size-8 items-center justify-center rounded-md"
+                className="text-muted hover:bg-surface-2 hover:text-foreground -m-1.5 flex size-9 items-center justify-center rounded-lg"
                 aria-label="Cerrar aviso"
               >
-                <X className="size-4" />
+                <X className="size-4" strokeWidth={1.75} aria-hidden />
               </button>
             </div>
           );

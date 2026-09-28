@@ -58,11 +58,11 @@ export function Pagination({
       <div className="flex items-center gap-2">
         {page > 1 ? (
           <Link href={link(page - 1)} className={clase} aria-label="Página anterior" scroll={false}>
-            <ChevronLeft /> <span className="max-sm:sr-only">Anterior</span>
+            <ChevronLeft strokeWidth={1.75} /> <span className="max-sm:sr-only">Anterior</span>
           </Link>
         ) : (
           <span className={cn(clase, "pointer-events-none opacity-40")} aria-hidden>
-            <ChevronLeft />
+            <ChevronLeft strokeWidth={1.75} />
           </span>
         )}
         <span className="text-muted tabular-nums">
@@ -75,11 +75,11 @@ export function Pagination({
             aria-label="Página siguiente"
             scroll={false}
           >
-            <span className="max-sm:sr-only">Siguiente</span> <ChevronRight />
+            <span className="max-sm:sr-only">Siguiente</span> <ChevronRight strokeWidth={1.75} />
           </Link>
         ) : (
           <span className={cn(clase, "pointer-events-none opacity-40")} aria-hidden>
-            <ChevronRight />
+            <ChevronRight strokeWidth={1.75} />
           </span>
         )}
       </div>

@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { TipoNotificacion } from "@prisma/client";
 import { formatInTimeZone } from "date-fns-tz";
 
 import { obtenerEnv } from "@/env";
@@ -221,41 +220,10 @@ export async function hacerBackup(
       .create({ data: { archivo, duracionMs, ok: false, error: error.slice(0, 2000), origen } })
       .catch((e2: unknown) => log.error({ err: e2 }, "no se pudo registrar el backup fallido"));
     log.error({ archivo, error }, "backup FALLIDO");
-    await avisarBackupFallido(
-      `El backup ${path.basename(archivo)} falló: ${error.slice(0, 200)}`,
-    ).catch(() => {});
     return { ok: false, archivo, tamanio: 0, duracionMs, entradas: 0, borrados: [], error };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-}
-
-async function avisarBackupFallido(mensaje: string): Promise<void> {
-  const { notificar } = await import("@/server/services/notificacion.service");
-  await notificar({
-    tipo: TipoNotificacion.BACKUP_FALLIDO,
-    titulo: "Backup de la base de datos",
-    mensaje,
-    clave: `backup:${new Date().toISOString().slice(0, 10)}`,
-    href: "/configuracion/backups",
-  });
-}
-
-/** Para el job diario de alertas: ¿hubo un backup OK en las últimas 36 h? */
-export async function verificarBackupReciente(): Promise<{ ok: boolean; ultimo: Date | null }> {
-  const ultimo = await prisma.backup.findFirst({
-    where: { ok: true },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
-  });
-  const ok = ultimo !== null && Date.now() - ultimo.createdAt.getTime() < 36 * 3600_000;
-  if (!ok)
-    await avisarBackupFallido(
-      ultimo
-        ? `No hay un backup correcto desde ${formatInTimeZone(ultimo.createdAt, ZONA_DEFAULT, "dd/MM HH:mm")}.`
-        : "Todavía no se hizo ningún backup.",
-    );
-  return { ok, ultimo: ultimo?.createdAt ?? null };
 }
 
 export async function listarBackups(limite = 60) {

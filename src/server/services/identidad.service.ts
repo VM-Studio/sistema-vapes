@@ -16,18 +16,39 @@ let cache: { t: number; datos: Uint8Array | null } | null = null;
 
 export async function nombreNegocio(): Promise<string> {
   try {
-    const f = await prisma.configuracion.findUnique({ where: { clave: "nombreNegocio" } });
+    const f = await prisma.configuracionGlobal.findUnique({ where: { clave: "nombreNegocio" } });
     return typeof f?.valor === "string" && f.valor.trim() ? f.valor.trim() : "Gestión";
   } catch {
     return "Gestión";
   }
 }
 
+/** Nombre del negocio (manifest de la app instalada, login, exportaciones). */
+export async function guardarNombreNegocio(nombre: string, actor: Actor): Promise<void> {
+  await withTransaction(async (tx) => {
+    const antes = await tx.configuracionGlobal.findUnique({ where: { clave: "nombreNegocio" } });
+    await tx.configuracionGlobal.upsert({
+      where: { clave: "nombreNegocio" },
+      create: { clave: "nombreNegocio", valor: nombre },
+      update: { valor: nombre },
+    });
+    await registrarAuditoria(tx, {
+      usuarioId: actor.id,
+      accion: AccionAuditoria.UPDATE,
+      entidad: "ConfiguracionGlobal",
+      entidadId: "nombreNegocio",
+      datosAntes: antes ? { nombreNegocio: antes.valor } : null,
+      datosDespues: { nombreNegocio: nombre },
+      meta: actor.meta,
+    });
+  });
+}
+
 export async function iconoPropio(): Promise<Uint8Array | null> {
   if (cache && Date.now() - cache.t < 5 * 60_000) return cache.datos;
   let datos: Uint8Array | null = null;
   try {
-    const f = await prisma.configuracion.findUnique({ where: { clave: CLAVE } });
+    const f = await prisma.configuracionGlobal.findUnique({ where: { clave: CLAVE } });
     const clave = (f?.valor as { clave?: string } | null)?.clave;
     if (clave) datos = (await obtenerStorage().leer(clave))?.datos ?? null;
   } catch {
@@ -50,7 +71,7 @@ export async function guardarIconoPropio(bytes: Uint8Array, actor: Actor): Promi
   const clave = claveAleatoria("marca", "icono", "png");
   await obtenerStorage().guardar(clave, img.datos, img.tipo);
   await withTransaction(async (tx) => {
-    await tx.configuracion.upsert({
+    await tx.configuracionGlobal.upsert({
       where: { clave: CLAVE },
       create: { clave: CLAVE, valor: { clave } },
       update: { valor: { clave } },
@@ -58,7 +79,7 @@ export async function guardarIconoPropio(bytes: Uint8Array, actor: Actor): Promi
     await registrarAuditoria(tx, {
       usuarioId: actor.id,
       accion: AccionAuditoria.UPDATE,
-      entidad: "Configuracion",
+      entidad: "ConfiguracionGlobal",
       entidadId: CLAVE,
       datosDespues: { clave },
       meta: actor.meta,
@@ -69,11 +90,11 @@ export async function guardarIconoPropio(bytes: Uint8Array, actor: Actor): Promi
 
 export async function quitarIconoPropio(actor: Actor): Promise<void> {
   await withTransaction(async (tx) => {
-    await tx.configuracion.deleteMany({ where: { clave: CLAVE } });
+    await tx.configuracionGlobal.deleteMany({ where: { clave: CLAVE } });
     await registrarAuditoria(tx, {
       usuarioId: actor.id,
       accion: AccionAuditoria.DELETE,
-      entidad: "Configuracion",
+      entidad: "ConfiguracionGlobal",
       entidadId: CLAVE,
       meta: actor.meta,
     });

@@ -1,4 +1,4 @@
-import type { EstadoPago, EstadoVenta } from "@prisma/client";
+import type { EstadoVenta, MedioPago } from "@prisma/client";
 
 export const ESTADO_VENTA_UI: Record<
   EstadoVenta,
@@ -9,11 +9,21 @@ export const ESTADO_VENTA_UI: Record<
   ANULADA: { label: "Anulada", variante: "neutral" },
 };
 
-export const ESTADO_PAGO_UI: Record<
-  EstadoPago,
-  { label: string; variante: "success" | "warning" | "danger" }
-> = {
-  PAGADA: { label: "Pagada", variante: "success" },
-  PARCIAL: { label: "Pago parcial", variante: "warning" },
-  PENDIENTE: { label: "Pendiente", variante: "danger" },
+/** Orden en que el POS ofrece los medios (el más usado primero). */
+export const MEDIOS_PAGO: readonly MedioPago[] = [
+  "EFECTIVO",
+  "TRANSFERENCIA",
+  "MERCADOPAGO",
+  "DEBITO",
+  "CREDITO",
+  "OTRO",
+];
+
+export const ETIQUETA_MEDIO_PAGO: Record<MedioPago, string> = {
+  EFECTIVO: "Efectivo",
+  TRANSFERENCIA: "Transferencia",
+  DEBITO: "Débito",
+  CREDITO: "Crédito",
+  MERCADOPAGO: "MercadoPago",
+  OTRO: "Otro",
 };

@@ -1,19 +1,26 @@
 import { randomUUID } from "node:crypto";
 
-import { AccionAuditoria, EstadoTransferencia, Prisma, TipoMovimiento } from "@prisma/client";
+import {
+  AccionAuditoria,
+  EstadoTransferencia,
+  Prisma,
+  RolUsuario,
+  TipoMovimiento,
+} from "@prisma/client";
 
-import { prisma, enTransaccion, withTransaction, type Tx } from "@/lib/db";
 import type {
   AjusteMasivo,
   Ajuste,
   FiltrosMovimientos,
   IngresoManual,
 } from "@/lib/validations/movimiento";
+import { formatearIdVenta, rutaPanel } from "@/lib/paneles";
 import type { CrearTransferencia } from "@/lib/validations/transferencia";
+import { siguienteNumero } from "@/server/db/secuencia";
+import { dbPara, enTransaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
-import type { Actor } from "@/server/services/actor";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { actualizarPrecios, nombreCompleto } from "@/server/services/producto.service";
+import { nombreCompleto } from "@/server/services/producto.service";
 import {
   bloquearStock,
   registrarMovimiento,
@@ -22,9 +29,11 @@ import {
 } from "@/server/services/stock.service";
 
 /**
- * MOVIMIENTOS: ledger, ingresos manuales, ajustes y transferencias.
+ * MOVIMIENTOS: ledger, ingresos manuales, ajustes y transferencias de UN panel.
  * Regla de oro: el stock SOLO cambia vía registrarMovimiento / transferirStock
  * (motor de stock). Acá no hay ni un update a Stock.
+ * Todo recibe `ctx` primero: lecturas con dbPara(ctx.panelId), escrituras con
+ * transaccion(ctx, ...). Un depósito o variante de otro panel da "no existe".
  */
 
 // =============================================================================
@@ -35,7 +44,7 @@ export interface ReferenciaMovimiento {
   tipo: string;
   id: string;
   etiqueta: string;
-  /** Link a la pantalla del documento, cuando ese módulo existe. */
+  /** Ruta completa (/p/{slug}/...) a la pantalla del documento, cuando existe. */
   href: string | null;
 }
 
@@ -51,8 +60,10 @@ export interface MovimientoListado {
   productoId: string;
   nombre: string;
   sku: string;
+  depositoId: string;
   deposito: string;
   usuario: string;
+  /** Solo para dueños (opciones.incluirCostos); null para el resto. */
   costoUnitario: string | null;
   motivo: string | null;
   referencia: ReferenciaMovimiento | null;
@@ -78,58 +89,63 @@ function whereMovimientos(f: FiltrosMovimientos): Prisma.MovimientoStockWhereInp
 
 /** Etiquetas y links de referencias, resueltos en lote (sin N+1). */
 async function resolverReferencias(
+  ctx: Ctx,
   movs: { referenciaTipo: string | null; referenciaId: string | null }[],
 ): Promise<Map<string, ReferenciaMovimiento>> {
+  const db = dbPara(ctx.panelId);
   const ids = (tipo: string) => [
     ...new Set(movs.filter((m) => m.referenciaTipo === tipo).map((m) => m.referenciaId!)),
   ];
-  const [transf, ventas, compras, devoluciones] = await Promise.all([
-    prisma.transferencia.findMany({
+  const mapa = new Map<string, ReferenciaMovimiento>();
+  if (!movs.some((m) => m.referenciaTipo && m.referenciaId)) return mapa;
+  const [panel, transf, ventas, compras, devoluciones] = await Promise.all([
+    db.panel.findUniqueOrThrow({ where: { id: ctx.panelId }, select: { slug: true } }),
+    db.transferencia.findMany({
       where: { id: { in: ids("TRANSFERENCIA") } },
       select: { id: true, numero: true },
     }),
-    prisma.venta.findMany({
+    db.venta.findMany({
       where: { id: { in: ids("VENTA") } },
       select: { id: true, numero: true },
     }),
-    prisma.compra.findMany({
+    db.compra.findMany({
       where: { id: { in: ids("COMPRA") } },
       select: { id: true, numero: true },
     }),
-    prisma.devolucion.findMany({
+    db.devolucion.findMany({
       where: { id: { in: ids("DEVOLUCION") } },
       select: { id: true, numero: true, ventaId: true, venta: { select: { numero: true } } },
     }),
   ]);
-  const mapa = new Map<string, ReferenciaMovimiento>();
+  const ruta = (r: string) => rutaPanel(panel.slug, r);
   for (const t of transf) {
     mapa.set(`TRANSFERENCIA:${t.id}`, {
       tipo: "TRANSFERENCIA",
       id: t.id,
       etiqueta: `Transferencia #${t.numero}`,
-      href: `/movimientos/transferencias/${t.id}`,
+      href: ruta(`/stock/movimientos/transferencias/${t.id}`),
     });
   }
   for (const v of ventas)
     mapa.set(`VENTA:${v.id}`, {
       tipo: "VENTA",
       id: v.id,
-      etiqueta: `Venta #${v.numero}`,
-      href: `/ventas/${v.id}`,
+      etiqueta: `Venta ${formatearIdVenta(panel.slug, v.numero)}`,
+      href: ruta(`/ventas/${v.id}`),
     });
   for (const d of devoluciones)
     mapa.set(`DEVOLUCION:${d.id}`, {
       tipo: "DEVOLUCION",
       id: d.id,
-      etiqueta: `Devolución #${d.numero} (venta #${d.venta.numero})`,
-      href: `/ventas/${d.ventaId}`,
+      etiqueta: `Devolución #${d.numero} (venta ${formatearIdVenta(panel.slug, d.venta.numero)})`,
+      href: ruta(`/ventas/${d.ventaId}`),
     });
   for (const c of compras)
     mapa.set(`COMPRA:${c.id}`, {
       tipo: "COMPRA",
       id: c.id,
       etiqueta: `Compra #${c.numero}`,
-      href: `/compras/${c.id}`,
+      href: ruta(`/compras/${c.id}`),
     });
   for (const m of movs) {
     if (m.referenciaTipo === "AJUSTE" && m.referenciaId) {
@@ -144,14 +160,21 @@ async function resolverReferencias(
   return mapa;
 }
 
-/** Ledger paginado, más nuevo primero, con producto, variante, depósito y usuario. */
+/**
+ * Ledger del panel paginado, más nuevo primero, con producto, variante,
+ * depósito y usuario. Filtrable por depósito (sin depósito = todos).
+ * El costo unitario solo viaja si `incluirCostos` (dueños).
+ */
 export async function listarMovimientos(
+  ctx: Ctx,
   filtros: FiltrosMovimientos,
+  opciones: { incluirCostos?: boolean } = {},
 ): Promise<{ movimientos: MovimientoListado[]; total: number; page: number; pageSize: number }> {
+  const db = dbPara(ctx.panelId);
   const where = whereMovimientos(filtros);
   const [total, filas] = await Promise.all([
-    prisma.movimientoStock.count({ where }),
-    prisma.movimientoStock.findMany({
+    db.movimientoStock.count({ where }),
+    db.movimientoStock.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (filtros.page - 1) * filtros.pageSize,
@@ -170,7 +193,7 @@ export async function listarMovimientos(
       },
     }),
   ]);
-  const refs = await resolverReferencias(filas);
+  const refs = await resolverReferencias(ctx, filas);
   return {
     movimientos: filas.map((m) => ({
       id: m.id,
@@ -187,9 +210,10 @@ export async function listarMovimientos(
         m.variante.producto.tieneVariantes,
       ),
       sku: m.variante.sku,
+      depositoId: m.depositoId,
       deposito: m.deposito.nombre,
       usuario: m.usuario.nombre,
-      costoUnitario: m.costoUnitario ? m.costoUnitario.toFixed(2) : null,
+      costoUnitario: opciones.incluirCostos && m.costoUnitario ? m.costoUnitario.toFixed(2) : null,
       motivo: m.motivo,
       referencia:
         m.referenciaTipo && m.referenciaId
@@ -239,6 +263,12 @@ async function variantesVivas(tx: Tx, ids: string[]) {
   );
 }
 
+/** Los costos solo los informa (y los ve) un dueño. */
+async function esDuenio(tx: Tx, usuarioId: string): Promise<boolean> {
+  const u = await tx.usuario.findUnique({ where: { id: usuarioId }, select: { rol: true } });
+  return u?.rol === RolUsuario.OWNER;
+}
+
 /** Ordenar por varianteId: todas las operaciones bloquean filas de Stock en el mismo orden (sin deadlocks). */
 const porVariante = <T extends { varianteId: string }>(items: T[]) =>
   [...items].sort((a, b) => a.varianteId.localeCompare(b.varianteId));
@@ -249,15 +279,17 @@ const porVariante = <T extends { varianteId: string }>(items: T[]) =>
 
 /**
  * Carga inicial o entrada sin proveedor. Una transacción, un movimiento
- * INGRESO_MANUAL por ítem. Si `actualizarCosto` y el costo informado difiere
- * del precioCosto actual, lo actualiza (con HistorialPrecio).
+ * INGRESO_MANUAL por ítem. Costos: solo si quien carga es dueño; si
+ * `actualizarCosto` y el costo informado difiere del precioCosto actual, lo
+ * actualiza. Si no es dueño, se ignoran y el movimiento lleva el costo vigente.
  */
 export async function registrarIngresoManual(
+  ctx: Ctx,
   input: IngresoManual,
-  actor: Actor,
   txExterna?: Tx,
 ): Promise<{ movimientos: number; unidades: number; costosActualizados: number }> {
   return enTransaccion(
+    ctx,
     txExterna,
     async (tx) => {
       await depositoActivo(tx, input.depositoId);
@@ -265,38 +297,51 @@ export async function registrarIngresoManual(
         tx,
         input.items.map((i) => i.varianteId),
       );
+      const conCostos =
+        input.items.some((i) => i.costoUnitario !== undefined) &&
+        (await esDuenio(tx, ctx.usuarioId));
 
       let costosActualizados = 0;
       for (const item of porVariante(input.items)) {
         const v = variantes.get(item.varianteId)!;
+        const costoInformado = conCostos ? item.costoUnitario : undefined;
         await registrarMovimiento(tx, {
           tipo: TipoMovimiento.INGRESO_MANUAL,
           varianteId: item.varianteId,
           depositoId: input.depositoId,
           cantidad: item.cantidad,
-          costoUnitario: item.costoUnitario ?? v.precioCosto,
+          costoUnitario: costoInformado ?? v.precioCosto,
           motivo: input.motivo,
-          usuarioId: actor.id,
+          usuarioId: ctx.usuarioId,
         });
         if (
           input.actualizarCosto &&
-          item.costoUnitario !== undefined &&
-          !new Prisma.Decimal(item.costoUnitario).equals(v.precioCosto)
+          costoInformado !== undefined &&
+          !new Prisma.Decimal(costoInformado).equals(v.precioCosto)
         ) {
-          const r = await actualizarPrecios(
-            item.varianteId,
-            { precioCosto: item.costoUnitario },
-            actor,
-            `Ingreso manual: ${input.motivo}`,
-            tx,
-          );
-          costosActualizados += r.actualizadas;
+          await tx.variante.update({
+            where: { id: item.varianteId },
+            data: { precioCosto: costoInformado },
+          });
+          await registrarAuditoria(tx, {
+            usuarioId: ctx.usuarioId,
+            accion: AccionAuditoria.UPDATE,
+            entidad: "Variante",
+            entidadId: item.varianteId,
+            datosAntes: { precioCosto: v.precioCosto.toFixed(2) },
+            datosDespues: {
+              precioCosto: new Prisma.Decimal(costoInformado).toFixed(2),
+              motivo: `Ingreso manual: ${input.motivo}`,
+            },
+            meta: ctx.meta,
+          });
+          costosActualizados++;
         }
       }
 
       const unidades = input.items.reduce((a, i) => a + i.cantidad, 0);
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.CREATE,
         entidad: "IngresoManual",
         datosDespues: {
@@ -305,11 +350,11 @@ export async function registrarIngresoManual(
           items: input.items.map((i) => ({
             varianteId: i.varianteId,
             cantidad: i.cantidad,
-            costoUnitario: i.costoUnitario ?? null,
+            costoUnitario: conCostos ? (i.costoUnitario ?? null) : null,
           })),
           costosActualizados,
         },
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { movimientos: input.items.length, unidades, costosActualizados };
     },
@@ -330,15 +375,15 @@ export interface ResultadoAjuste {
 }
 
 async function ajustarUno(
+  ctx: Ctx,
   tx: Tx,
   depositoId: string,
   varianteId: string,
   cantidadReal: number,
   motivo: string,
   referenciaId: string,
-  usuarioId: string,
 ): Promise<{ stockAnterior: number; diferencia: number }> {
-  const filas = await bloquearStock(tx, varianteId, [depositoId]);
+  const filas = await bloquearStock(tx, ctx.panelId, varianteId, [depositoId]);
   const stockAnterior = filas.get(depositoId)?.cantidad ?? 0;
   const diferencia = cantidadReal - stockAnterior;
   if (diferencia !== 0) {
@@ -350,7 +395,7 @@ async function ajustarUno(
       motivo,
       referenciaTipo: "AJUSTE",
       referenciaId,
-      usuarioId,
+      usuarioId: ctx.usuarioId,
     });
   }
   return { stockAnterior, diferencia };
@@ -361,19 +406,23 @@ async function ajustarUno(
  * AJUSTE_POSITIVO o AJUSTE_NEGATIVO por la diferencia contra el stock actual
  * (leído con bloqueo dentro de la transacción: no se pisa con una venta).
  */
-export async function registrarAjuste(input: Ajuste, actor: Actor): Promise<ResultadoAjuste> {
-  return withTransaction(async (tx) => {
+export async function registrarAjuste(
+  ctx: Ctx,
+  input: Ajuste,
+  txExterna?: Tx,
+): Promise<ResultadoAjuste> {
+  return enTransaccion(ctx, txExterna, async (tx) => {
     await depositoActivo(tx, input.depositoId);
     const v = (await variantesVivas(tx, [input.varianteId])).get(input.varianteId)!;
     const referenciaId = randomUUID();
     const { stockAnterior, diferencia } = await ajustarUno(
+      ctx,
       tx,
       input.depositoId,
       input.varianteId,
       input.cantidadReal,
       input.motivo,
       referenciaId,
-      actor.id,
     );
     if (diferencia === 0) {
       throw new DomainError(
@@ -381,7 +430,7 @@ export async function registrarAjuste(input: Ajuste, actor: Actor): Promise<Resu
       );
     }
     await registrarAuditoria(tx, {
-      usuarioId: actor.id,
+      usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.CREATE,
       entidad: "Ajuste",
       entidadId: referenciaId,
@@ -393,7 +442,7 @@ export async function registrarAjuste(input: Ajuste, actor: Actor): Promise<Resu
         diferencia,
         motivo: input.motivo,
       },
-      meta: actor.meta,
+      meta: ctx.meta,
     });
     return {
       varianteId: input.varianteId,
@@ -410,11 +459,12 @@ export async function registrarAjuste(input: Ajuste, actor: Actor): Promise<Resu
  * ajustes donde hay diferencia; todos comparten referencia (un "recuento").
  */
 export async function registrarAjusteMasivo(
+  ctx: Ctx,
   input: AjusteMasivo,
-  actor: Actor,
   txExterna?: Tx,
 ): Promise<{ referenciaId: string; ajustes: ResultadoAjuste[]; sinCambios: number }> {
   return enTransaccion(
+    ctx,
     txExterna,
     async (tx) => {
       await depositoActivo(tx, input.depositoId);
@@ -427,13 +477,13 @@ export async function registrarAjusteMasivo(
       let sinCambios = 0;
       for (const item of porVariante(input.items)) {
         const { stockAnterior, diferencia } = await ajustarUno(
+          ctx,
           tx,
           input.depositoId,
           item.varianteId,
           item.cantidadReal,
           input.motivo,
           referenciaId,
-          actor.id,
         );
         if (diferencia === 0) sinCambios++;
         else
@@ -450,7 +500,7 @@ export async function registrarAjusteMasivo(
           "El conteo coincide con el sistema en todos los productos: no hay nada que ajustar.",
         );
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.CREATE,
         entidad: "Ajuste",
         entidadId: referenciaId,
@@ -461,7 +511,7 @@ export async function registrarAjusteMasivo(
           ajustes: ajustes.map((a) => ({ ...a })),
           sinCambios,
         },
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { referenciaId, ajustes, sinCambios };
     },
@@ -479,10 +529,11 @@ export interface StockParaRecuento {
 
 /** Variantes con stock en el depósito (o todas las activas) para la planilla de recuento. */
 export async function listarStockParaRecuento(
+  ctx: Ctx,
   depositoId: string,
   incluirSinStock = false,
 ): Promise<StockParaRecuento[]> {
-  const variantes = await prisma.variante.findMany({
+  const variantes = await dbPara(ctx.panelId).variante.findMany({
     where: {
       deletedAt: null,
       producto: { deletedAt: null },
@@ -510,7 +561,7 @@ export async function listarStockParaRecuento(
 }
 
 // =============================================================================
-// Transferencias
+// Transferencias (entre depósitos del mismo panel)
 // =============================================================================
 
 async function faltantes(
@@ -532,16 +583,25 @@ async function faltantes(
     );
 }
 
+/** Bloquea la fila de la transferencia (SQL cruda: filtra el panel a mano). */
+async function bloquearTransferencia(ctx: Ctx, tx: Tx, id: string): Promise<void> {
+  await tx.$queryRaw`
+    SELECT "id" FROM "Transferencia"
+    WHERE "id" = ${id} AND "panelId" = ${ctx.panelId}
+    FOR UPDATE`;
+}
+
 /**
- * Crea la transferencia PENDIENTE. Valida que HOY haya stock en origen (solo
- * valida: no mueve nada hasta completarla).
+ * Crea la transferencia PENDIENTE con el próximo número del panel. Valida que
+ * HOY haya stock en origen (solo valida: no mueve nada hasta completarla).
+ * Origen y destino tienen que ser depósitos del panel (el tx no ve otros).
  */
 export async function crearTransferencia(
+  ctx: Ctx,
   input: CrearTransferencia,
-  actor: Actor,
   txExterna?: Tx,
 ): Promise<{ id: string; numero: number }> {
-  return enTransaccion(txExterna, async (tx) => {
+  return enTransaccion(ctx, txExterna, async (tx) => {
     const origen = await depositoActivo(tx, input.depositoOrigenId, "El depósito de origen");
     await depositoActivo(tx, input.depositoDestinoId, "El depósito de destino");
     const variantes = await variantesVivas(
@@ -556,21 +616,23 @@ export async function crearTransferencia(
         409,
       );
     }
+    const numero = await siguienteNumero(tx, ctx.panelId, "TRANSFERENCIA");
     const t = await tx.transferencia.create({
       data: {
+        numero,
         depositoOrigenId: input.depositoOrigenId,
         depositoDestinoId: input.depositoDestinoId,
         estado: EstadoTransferencia.PENDIENTE,
         fecha: input.fecha ?? new Date(),
         notas: input.notas ?? null,
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         items: {
           create: input.items.map((i) => ({ varianteId: i.varianteId, cantidad: i.cantidad })),
         },
       },
     });
     await registrarAuditoria(tx, {
-      usuarioId: actor.id,
+      usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.CREATE,
       entidad: "Transferencia",
       entidadId: t.id,
@@ -580,7 +642,7 @@ export async function crearTransferencia(
         destino: input.depositoDestinoId,
         items: input.items.map((i) => ({ ...i })),
       },
-      meta: actor.meta,
+      meta: ctx.meta,
     });
     return { id: t.id, numero: t.numero };
   });
@@ -588,19 +650,20 @@ export async function crearTransferencia(
 
 /**
  * Completa la transferencia: por cada ítem, transferirStock (SALIDA + ENTRADA).
- * Transacción Serializable (withTransaction). Si falta stock en cualquier
- * ítem, falla completa con el detalle de TODOS los faltantes y queda PENDIENTE.
+ * Transacción Serializable del panel. Si falta stock en cualquier ítem, falla
+ * completa con el detalle de TODOS los faltantes y queda PENDIENTE.
  */
 export async function completarTransferencia(
+  ctx: Ctx,
   id: string,
-  actor: Actor,
   txExterna?: Tx,
 ): Promise<{ numero: number; unidades: number }> {
   return enTransaccion(
+    ctx,
     txExterna,
     async (tx) => {
       // Bloquea la transferencia: dos "Completar" simultáneos no la aplican dos veces.
-      await tx.$queryRaw`SELECT "id" FROM "Transferencia" WHERE "id" = ${id} FOR UPDATE`;
+      await bloquearTransferencia(ctx, tx, id);
       const t = await tx.transferencia.findUnique({ where: { id }, include: { items: true } });
       if (!t) throw new NotFoundError("La transferencia no existe");
       if (t.estado !== EstadoTransferencia.PENDIENTE) {
@@ -618,7 +681,10 @@ export async function completarTransferencia(
 
       // Bloquear todo primero (orden fijo) y reportar TODOS los faltantes juntos.
       for (const i of items)
-        await bloquearStock(tx, i.varianteId, [t.depositoOrigenId, t.depositoDestinoId]);
+        await bloquearStock(tx, ctx.panelId, i.varianteId, [
+          t.depositoOrigenId,
+          t.depositoDestinoId,
+        ]);
       const sinStock = await faltantes(tx, t.depositoOrigenId, items, variantes);
       if (sinStock.length) {
         throw new DomainError(
@@ -635,7 +701,7 @@ export async function completarTransferencia(
             depositoOrigenId: t.depositoOrigenId,
             depositoDestinoId: t.depositoDestinoId,
             cantidad: i.cantidad,
-            usuarioId: actor.id,
+            usuarioId: ctx.usuarioId,
             motivo: `Transferencia #${t.numero}`,
             referenciaId: t.id,
           });
@@ -656,13 +722,13 @@ export async function completarTransferencia(
         data: { estado: EstadoTransferencia.COMPLETADA, completadaAt: new Date() },
       });
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.UPDATE,
         entidad: "Transferencia",
         entidadId: id,
         datosAntes: { estado: "PENDIENTE" },
         datosDespues: { estado: "COMPLETADA" },
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { numero: t.numero, unidades: items.reduce((a, i) => a + i.cantidad, 0) };
     },
@@ -672,12 +738,13 @@ export async function completarTransferencia(
 
 /** Anula una transferencia PENDIENTE (no movió stock, no hay nada que revertir). */
 export async function anularTransferencia(
+  ctx: Ctx,
   id: string,
   motivo: string,
-  actor: Actor,
+  txExterna?: Tx,
 ): Promise<{ numero: number }> {
-  return withTransaction(async (tx) => {
-    await tx.$queryRaw`SELECT "id" FROM "Transferencia" WHERE "id" = ${id} FOR UPDATE`;
+  return enTransaccion(ctx, txExterna, async (tx) => {
+    await bloquearTransferencia(ctx, tx, id);
     const t = await tx.transferencia.findUnique({ where: { id } });
     if (!t) throw new NotFoundError("La transferencia no existe");
     if (t.estado !== EstadoTransferencia.PENDIENTE) {
@@ -691,13 +758,13 @@ export async function anularTransferencia(
       data: { estado: EstadoTransferencia.ANULADA, notas },
     });
     await registrarAuditoria(tx, {
-      usuarioId: actor.id,
+      usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.UPDATE,
       entidad: "Transferencia",
       entidadId: id,
       datosAntes: { estado: "PENDIENTE" },
       datosDespues: { estado: "ANULADA", motivo },
-      meta: actor.meta,
+      meta: ctx.meta,
     });
     return { numero: t.numero };
   });
@@ -716,20 +783,33 @@ export interface TransferenciaListada {
   completadaAt: Date | null;
 }
 
-export async function listarTransferencias(filtros: {
-  estado?: EstadoTransferencia;
-  page: number;
-  pageSize: number;
-}): Promise<{
+/** Transferencias del panel; con `depositoId`, las que salen o entran a ese depósito. */
+export async function listarTransferencias(
+  ctx: Ctx,
+  filtros: {
+    estado?: EstadoTransferencia;
+    depositoId?: string;
+    page: number;
+    pageSize: number;
+  },
+): Promise<{
   transferencias: TransferenciaListada[];
   total: number;
   page: number;
   pageSize: number;
 }> {
-  const where: Prisma.TransferenciaWhereInput = filtros.estado ? { estado: filtros.estado } : {};
+  const db = dbPara(ctx.panelId);
+  const where: Prisma.TransferenciaWhereInput = {
+    ...(filtros.estado ? { estado: filtros.estado } : {}),
+    ...(filtros.depositoId
+      ? {
+          OR: [{ depositoOrigenId: filtros.depositoId }, { depositoDestinoId: filtros.depositoId }],
+        }
+      : {}),
+  };
   const [total, filas] = await Promise.all([
-    prisma.transferencia.count({ where }),
-    prisma.transferencia.findMany({
+    db.transferencia.count({ where }),
+    db.transferencia.findMany({
       where,
       orderBy: [{ numero: "desc" }],
       skip: (filtros.page - 1) * filtros.pageSize,
@@ -774,8 +854,8 @@ export interface TransferenciaDetalle extends Omit<TransferenciaListada, "items"
   }[];
 }
 
-export async function obtenerTransferencia(id: string): Promise<TransferenciaDetalle> {
-  const t = await prisma.transferencia.findUnique({
+export async function obtenerTransferencia(ctx: Ctx, id: string): Promise<TransferenciaDetalle> {
+  const t = await dbPara(ctx.panelId).transferencia.findUnique({
     where: { id },
     include: {
       depositoOrigen: { select: { nombre: true } },

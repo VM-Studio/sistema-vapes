@@ -1,10 +1,14 @@
 import { AccionAuditoria, Prisma, type Deposito } from "@prisma/client";
 
-import { prisma, withTransaction, type Tx } from "@/lib/db";
 import type { ActualizarDeposito, CrearDeposito } from "@/lib/validations/deposito";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
-import type { Actor } from "@/server/services/actor";
+import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { registrarAuditoria } from "@/server/services/audit.service";
+
+/**
+ * Depósitos del panel. Cada panel tiene los suyos y exactamente un principal
+ * (índice único parcial por panel en SQL).
+ */
 
 export interface DepositoListado {
   id: string;
@@ -21,8 +25,11 @@ export interface DepositoBasico {
   esPrincipal: boolean;
 }
 
-/** Depósitos activos, principal primero (columnas de inventario, selects). */
-export async function listarDepositosActivos(tx: Tx = prisma): Promise<DepositoBasico[]> {
+/** Depósitos activos del panel, principal primero (columnas de inventario, selects). */
+export async function listarDepositosActivos(
+  ctx: Pick<Ctx, "panelId">,
+  tx: Tx = dbPara(ctx.panelId),
+): Promise<DepositoBasico[]> {
   return tx.deposito.findMany({
     where: { activo: true },
     select: { id: true, nombre: true, esPrincipal: true },
@@ -30,13 +37,14 @@ export async function listarDepositosActivos(tx: Tx = prisma): Promise<DepositoB
   });
 }
 
-/** Todos los depósitos con las unidades que tiene cada uno. */
-export async function listarDepositos(): Promise<DepositoListado[]> {
+/** Todos los depósitos del panel con las unidades que tiene cada uno. */
+export async function listarDepositos(ctx: Pick<Ctx, "panelId">): Promise<DepositoListado[]> {
+  const db = dbPara(ctx.panelId);
   const [depositos, unidades] = await Promise.all([
-    prisma.deposito.findMany({
+    db.deposito.findMany({
       orderBy: [{ esPrincipal: "desc" }, { activo: "desc" }, { nombre: "asc" }],
     }),
-    prisma.stock.groupBy({ by: ["depositoId"], _sum: { cantidad: true } }),
+    db.stock.groupBy({ by: ["depositoId"], _sum: { cantidad: true } }),
   ]);
   const porDeposito = new Map(unidades.map((u) => [u.depositoId, u._sum.cantidad ?? 0]));
   return depositos.map((d) => ({
@@ -67,8 +75,9 @@ function conflictoNombre(error: unknown): void {
 }
 
 /**
- * Marca `id` como principal desmarcando al anterior en la MISMA transacción
- * (primero desmarca: el índice único parcial no admite dos principales ni un instante).
+ * Marca `id` como principal del panel desmarcando al anterior en la MISMA
+ * transacción (primero desmarca: el índice único parcial no admite dos
+ * principales ni un instante). `tx` es del panel: solo toca sus depósitos.
  */
 async function hacerPrincipal(tx: Tx, id: string): Promise<void> {
   await tx.deposito.updateMany({
@@ -78,11 +87,11 @@ async function hacerPrincipal(tx: Tx, id: string): Promise<void> {
   await tx.deposito.update({ where: { id }, data: { esPrincipal: true } });
 }
 
-export async function crearDeposito(input: CrearDeposito, actor: Actor): Promise<{ id: string }> {
+export async function crearDeposito(ctx: Ctx, input: CrearDeposito): Promise<{ id: string }> {
   if (input.esPrincipal && !input.activo)
     throw new DomainError("El depósito principal tiene que estar activo.");
   try {
-    return await withTransaction(async (tx) => {
+    return await transaccion(ctx, async (tx) => {
       const d = await tx.deposito.create({
         data: {
           nombre: input.nombre,
@@ -91,15 +100,17 @@ export async function crearDeposito(input: CrearDeposito, actor: Actor): Promise
           esPrincipal: false,
         },
       });
-      if (input.esPrincipal) await hacerPrincipal(tx, d.id);
+      // El primer depósito activo del panel queda como principal.
+      const hayPrincipal = (await tx.deposito.count({ where: { esPrincipal: true } })) > 0;
+      if (input.esPrincipal || (!hayPrincipal && input.activo)) await hacerPrincipal(tx, d.id);
       const final = await tx.deposito.findUniqueOrThrow({ where: { id: d.id } });
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.CREATE,
         entidad: "Deposito",
         entidadId: d.id,
         datosDespues: snapshot(final),
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { id: d.id };
     });
@@ -110,11 +121,11 @@ export async function crearDeposito(input: CrearDeposito, actor: Actor): Promise
 }
 
 export async function actualizarDeposito(
+  ctx: Ctx,
   input: ActualizarDeposito,
-  actor: Actor,
 ): Promise<{ id: string }> {
   try {
-    return await withTransaction(async (tx) => {
+    return await transaccion(ctx, async (tx) => {
       const antes = await tx.deposito.findUnique({ where: { id: input.id } });
       if (!antes) throw new NotFoundError("El depósito no existe");
 
@@ -135,13 +146,13 @@ export async function actualizarDeposito(
 
       const despues = await tx.deposito.findUniqueOrThrow({ where: { id: input.id } });
       await registrarAuditoria(tx, {
-        usuarioId: actor.id,
+        usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.UPDATE,
         entidad: "Deposito",
         entidadId: input.id,
         datosAntes: snapshot(antes),
         datosDespues: snapshot(despues),
-        meta: actor.meta,
+        meta: ctx.meta,
       });
       return { id: input.id };
     });
@@ -165,25 +176,21 @@ async function assertPuedeDesactivar(tx: Tx, d: Deposito): Promise<void> {
   }
 }
 
-export async function cambiarActivoDeposito(
-  id: string,
-  activo: boolean,
-  actor: Actor,
-): Promise<void> {
-  await withTransaction(async (tx) => {
+export async function cambiarActivoDeposito(ctx: Ctx, id: string, activo: boolean): Promise<void> {
+  await transaccion(ctx, async (tx) => {
     const antes = await tx.deposito.findUnique({ where: { id } });
     if (!antes) throw new NotFoundError("El depósito no existe");
     if (antes.activo === activo) return;
     if (!activo) await assertPuedeDesactivar(tx, antes);
     const despues = await tx.deposito.update({ where: { id }, data: { activo } });
     await registrarAuditoria(tx, {
-      usuarioId: actor.id,
+      usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.UPDATE,
       entidad: "Deposito",
       entidadId: id,
       datosAntes: snapshot(antes),
       datosDespues: snapshot(despues),
-      meta: actor.meta,
+      meta: ctx.meta,
     });
   });
 }

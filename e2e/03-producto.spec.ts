@@ -15,7 +15,7 @@ test("crear producto con 3 sabores y códigos → aparece en inventario con stoc
   const sabores = ["Uva", "Menta", "Frutilla"];
   const codigos = sabores.map((_, i) => ean13(`779${sufijo}${String(i).padStart(3, "0")}`));
   await loginDueno(page);
-  await page.goto("/productos/nuevo");
+  await page.goto("/p/vapes/productos/nuevo");
   await page.locator('input[name="nombre"]').fill(nombre);
   await page.locator('select[name="categoriaId"]').selectOption({ label: "Vapes" });
   await page.locator("#variantes-0-nombre").fill(sabores[0]!);
@@ -30,7 +30,7 @@ test("crear producto con 3 sabores y códigos → aparece en inventario con stoc
   await page.waitForTimeout(800); // validación en vivo de códigos (debounce)
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
   await page.waitForURL(
-    (u) => /^\/productos\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nuevo"),
+    (u) => /^\/p\/vapes\/productos\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nuevo"),
   );
 
   const p = await db.producto.findFirstOrThrow({
@@ -41,7 +41,7 @@ test("crear producto con 3 sabores y códigos → aparece en inventario con stoc
   expect(p.variantes.map((v) => v.codigoBarras).sort()).toEqual([...codigos].sort());
   expect(p.variantes.flatMap((v) => v.stocks).reduce((a, s) => a + s.cantidad, 0)).toBe(0);
 
-  await page.goto(`/inventario?q=${encodeURIComponent(nombre)}`);
+  await page.goto(`/p/vapes/stock?q=${encodeURIComponent(nombre)}`);
   for (const s of sabores)
     await expect(page.getByText(s, { exact: false }).locator("visible=true").first()).toBeVisible();
   await expect(page.getByText("Sin stock").locator("visible=true").first()).toBeVisible();

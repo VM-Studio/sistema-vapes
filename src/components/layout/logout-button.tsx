@@ -6,10 +6,8 @@ import { borrarCatalogo } from "@/features/offline/catalogo";
 import { cn } from "@/lib/utils";
 
 /**
- * POST nativo a /api/auth/logout (funciona aun sin JS). Antes, borra el
- * catálogo offline: precios y stock no quedan en el celular. La cola de
- * operaciones pendientes NO se borra: es de ese usuario y se sincroniza
- * cuando vuelva a entrar.
+ * POST nativo a /api/auth/logout (funciona aun sin JS). Antes, borra los
+ * catálogos offline de todos los paneles: precios y stock no quedan en el celular.
  */
 export function LogoutButton({
   className,
@@ -38,7 +36,7 @@ export function LogoutButton({
           className,
         )}
       >
-        <LogOut className="size-5 shrink-0" aria-hidden />
+        <LogOut className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
         {!compacto && <span>Cerrar sesión</span>}
       </button>
     </form>

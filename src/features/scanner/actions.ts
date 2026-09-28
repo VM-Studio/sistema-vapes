@@ -4,42 +4,28 @@ import { Modulo } from "@prisma/client";
 import { z } from "zod";
 
 import { normalizarCodigoBarras } from "@/lib/barcode";
-import { esOwner, puede, type UsuarioSesion } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
 import { actionHandler } from "@/server/action-handler";
-import { requirePermisoAlguno } from "@/server/auth/permissions";
+import { requireCtxAlguno } from "@/server/auth/permissions";
 import { medir } from "@/server/log";
-import {
-  buscarPorCodigo,
-  obtenerVarianteEncontrada,
-  type VarianteEncontrada,
-} from "@/server/services/producto.service";
+import { buscarPorCodigo, obtenerVarianteEncontrada } from "@/server/services/producto.service";
 
 import type { ResultadoResolucion, VarianteEscaneada } from "./tipos";
 
-/** Módulos desde los que se escanea (cualquiera con "ver" alcanza para resolver un código). */
-const MODULOS_ESCANEO = [
-  Modulo.INVENTARIO,
-  Modulo.MOVIMIENTOS,
-  Modulo.COMPRAS,
-  Modulo.PRODUCTOS,
-  Modulo.VENTAS,
-];
+/** Módulos desde los que se escanea (cualquiera con "ver" en el panel alcanza para resolver un código). */
+const MODULOS_ESCANEO = [Modulo.STOCK, Modulo.COMPRAS, Modulo.PRODUCTOS, Modulo.VENTAS];
 
-/** El costo solo lo ve el dueño o quien carga compras (lo necesita para el costo unitario). */
-function ocultarCosto(v: VarianteEncontrada, usuario: UsuarioSesion): VarianteEscaneada {
-  const veCosto = esOwner(usuario) || puede(usuario, Modulo.COMPRAS, "crear");
-  return { ...v, precioCosto: veCosto ? v.precioCosto : null };
-}
-
-/** resolverCodigo(codigo): lo usa todo escaneo (pistola, cámara o manual). */
+/**
+ * resolverCodigo(codigo): lo usa todo escaneo (pistola, cámara o manual).
+ * Busca SOLO en el panel actual; el costo llega únicamente a los dueños.
+ */
 export const resolverCodigoAction = actionHandler(
   async (input: unknown): Promise<ResultadoResolucion> => {
-    const usuario = await requirePermisoAlguno(MODULOS_ESCANEO, "ver");
+    const ctx = await requireCtxAlguno(MODULOS_ESCANEO, "ver");
     const { codigo } = z.object({ codigo: z.string().trim().min(1).max(80) }).parse(input);
-    const v = await medir("resolverCodigo", () => buscarPorCodigo(codigo));
+    const v = await medir("resolverCodigo", () => buscarPorCodigo(ctx, codigo));
     return v
-      ? { encontrado: true, variante: ocultarCosto(v, usuario) }
+      ? { encontrado: true, variante: v }
       : { encontrado: false, codigo: normalizarCodigoBarras(codigo) };
   },
 );
@@ -47,9 +33,8 @@ export const resolverCodigoAction = actionHandler(
 /** Igual pero por id (al volver de "crear producto" con el código escaneado). */
 export const resolverVarianteAction = actionHandler(
   async (input: unknown): Promise<VarianteEscaneada | null> => {
-    const usuario = await requirePermisoAlguno(MODULOS_ESCANEO, "ver");
+    const ctx = await requireCtxAlguno(MODULOS_ESCANEO, "ver");
     const { varianteId } = z.object({ varianteId: id }).parse(input);
-    const v = await obtenerVarianteEncontrada(varianteId);
-    return v ? ocultarCosto(v, usuario) : null;
+    return obtenerVarianteEncontrada(ctx, varianteId);
   },
 );

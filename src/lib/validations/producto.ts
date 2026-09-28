@@ -33,7 +33,8 @@ export const varianteFormSchema = z.object({
   nombre: texto(100),
   sku: skuOpcional,
   codigoBarras: codigoBarrasOpcional,
-  precioCosto: monto,
+  /** Solo lo carga un dueño: si viene de un empleado, el servicio lo ignora. */
+  precioCosto: montoOpcional,
   precioVenta: monto,
   stockMinimo: enteroNoNegativo.default(0),
   activo: z.boolean().default(true),
@@ -132,34 +133,6 @@ export const actualizarPreciosSchema = z
     path: ["precioVenta"],
   });
 
-export const REDONDEOS = [1, 10, 100] as const;
-
-/** Aumento (o rebaja) porcentual masivo. */
-export const aumentoPorcentualSchema = z.object({
-  filtro: z.object({
-    categoriaId: idOpcional,
-    marcaId: idOpcional,
-    productoId: idOpcional,
-  }),
-  porcentaje: z.preprocess(
-    vacioAUndefined,
-    z.coerce
-      .number({ error: "Ingresá un porcentaje" })
-      .min(-90, "Mínimo -90%")
-      .max(1000, "Máximo 1000%")
-      .refine((n) => n !== 0, "El porcentaje no puede ser 0")
-      .refine((n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-9, "Máximo 2 decimales"),
-  ),
-  aplicarA: z.enum(["costo", "venta", "ambos"]),
-  redondeo: z.coerce
-    .number()
-    .refine(
-      (n): n is (typeof REDONDEOS)[number] => (REDONDEOS as readonly number[]).includes(n),
-      "Redondeo inválido",
-    ),
-  motivo: textoOpcional(300),
-});
-
 export const ORDENES_PRODUCTO = ["nombre", "-nombre", "reciente"] as const;
 
 export const listarProductosSchema = z.object({
@@ -177,5 +150,4 @@ export type ProductoInput = z.input<typeof productoSchema>;
 export type Producto = z.output<typeof productoSchema>;
 export type VarianteForm = z.output<typeof varianteFormSchema>;
 export type ActualizarPrecios = z.output<typeof actualizarPreciosSchema>;
-export type AumentoPorcentual = z.output<typeof aumentoPorcentualSchema>;
 export type FiltrosProductos = z.output<typeof listarProductosSchema>;

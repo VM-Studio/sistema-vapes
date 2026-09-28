@@ -37,7 +37,7 @@ export function Input({
     >
       <input
         id={inputId}
-        className={cn(controlClass, "h-11", className)}
+        className={cn(controlClass, "h-12 md:h-11", className)}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(inputId, error, hint)}
         required={required}

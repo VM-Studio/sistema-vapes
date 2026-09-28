@@ -48,7 +48,8 @@ export function SearchInput({
   return (
     <div className={cn("relative", className)}>
       <Search
-        className="text-muted pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+        className="text-muted pointer-events-none absolute top-1/2 left-3.5 size-[1.125rem] -translate-y-1/2"
+        strokeWidth={1.75}
         aria-hidden
       />
       <input
@@ -69,11 +70,15 @@ export function SearchInput({
             actualizar({ [param]: valor.trim() || null });
           }
         }}
-        className={cn(controlClass, "h-11 pr-10 pl-9 [&::-webkit-search-cancel-button]:hidden")}
+        className={cn(
+          controlClass,
+          "h-12 pr-11 pl-10.5 md:h-11 [&::-webkit-search-cancel-button]:hidden",
+        )}
       />
       {pendiente ? (
         <Loader2
-          className="text-muted absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin"
+          className="text-muted absolute top-1/2 right-3.5 size-4 -translate-y-1/2 animate-spin"
+          strokeWidth={1.75}
           aria-hidden
         />
       ) : (
@@ -81,10 +86,10 @@ export function SearchInput({
           <button
             type="button"
             onClick={() => setValor("")}
-            className="text-muted hover:text-foreground absolute top-1/2 right-1 flex size-9 -translate-y-1/2 items-center justify-center rounded-md"
+            className="text-muted hover:bg-surface-2 hover:text-foreground absolute top-1/2 right-1.5 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg"
             aria-label="Limpiar búsqueda"
           >
-            <X className="size-4" />
+            <X className="size-4" strokeWidth={1.75} aria-hidden />
           </button>
         )
       )}

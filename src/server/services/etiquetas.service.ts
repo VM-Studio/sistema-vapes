@@ -10,12 +10,11 @@ import {
   type PDFPage,
 } from "pdf-lib";
 
-import { prisma } from "@/lib/db";
 import { aWinAnsi, MM, recortar } from "@/server/pdf";
 import { formatearPesos } from "@/lib/format";
 import type { FormatoEtiqueta, PedidoEtiquetas } from "@/lib/validations/etiquetas";
 import { DomainError } from "@/server/errors";
-import type { Actor } from "@/server/services/actor";
+import { dbPara, type Ctx } from "@/server/db/panel-scoped";
 import {
   asignarCodigosInternos,
   esCodigoInterno,
@@ -26,7 +25,8 @@ import {
 /**
  * Etiquetas Code128 para imprimir (productos sin código de fábrica, o para
  * re-etiquetar). bwip-js dibuja el código (PNG, con zona blanca) y pdf-lib
- * arma el PDF en el formato elegido. Todo del lado del servidor.
+ * arma el PDF en el formato elegido. Todo del lado del servidor y dentro del
+ * panel del ctx (los códigos internos son únicos por panel).
  */
 
 const MAX_ETIQUETAS = 2000;
@@ -92,15 +92,18 @@ export interface VarianteParaEtiqueta {
 }
 
 /** Para la pantalla de impresión: buscar por texto, por producto o "todas sin código de fábrica". */
-export async function listarVariantesParaEtiquetas(filtro: {
-  q?: string;
-  productoId?: string;
-  soloSinCodigoDeFabrica?: boolean;
-}): Promise<VarianteParaEtiqueta[]> {
+export async function listarVariantesParaEtiquetas(
+  ctx: Pick<Ctx, "panelId">,
+  filtro: {
+    q?: string;
+    productoId?: string;
+    soloSinCodigoDeFabrica?: boolean;
+  },
+): Promise<VarianteParaEtiqueta[]> {
   const q = filtro.q?.trim();
   const [prefijo, filas] = await Promise.all([
-    prefijoCodigoInterno(),
-    prisma.variante.findMany({
+    prefijoCodigoInterno(ctx),
+    dbPara(ctx.panelId).variante.findMany({
       where: {
         deletedAt: null,
         producto: { deletedAt: null, ...(filtro.productoId ? { id: filtro.productoId } : {}) },
@@ -235,16 +238,17 @@ function dibujarEtiqueta(
  * (requiere permiso de edición en Productos: lo decide la capa de acción).
  */
 export async function generarPdfEtiquetas(
+  ctx: Ctx,
   pedido: PedidoEtiquetas,
-  actor: Actor,
   opciones: { puedeGenerarCodigos: boolean },
 ): Promise<{ pdf: Uint8Array; etiquetas: number; codigosGenerados: number }> {
   const total = pedido.items.reduce((a, i) => a + i.cantidad, 0);
   if (total > MAX_ETIQUETAS)
     throw new DomainError(`Máximo ${MAX_ETIQUETAS} etiquetas por PDF (pediste ${total}).`);
 
+  const db = dbPara(ctx.panelId);
   const ids = pedido.items.map((i) => i.varianteId);
-  const sinCodigo = await prisma.variante.count({
+  const sinCodigo = await db.variante.count({
     where: { id: { in: ids }, deletedAt: null, codigoBarras: null },
   });
   let codigosGenerados = 0;
@@ -254,10 +258,10 @@ export async function generarPdfEtiquetas(
         `${sinCodigo} producto(s) no tienen código de barras y no tenés permiso para generarlos.`,
       );
     }
-    codigosGenerados = (await asignarCodigosInternos(ids, actor)).asignados.length;
+    codigosGenerados = (await asignarCodigosInternos(ctx, ids)).asignados.length;
   }
 
-  const variantes = await prisma.variante.findMany({
+  const variantes = await db.variante.findMany({
     where: { id: { in: ids }, deletedAt: null },
     select: {
       id: true,

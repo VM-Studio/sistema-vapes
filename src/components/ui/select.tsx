@@ -50,7 +50,7 @@ export function Select({
       <div className="relative">
         <select
           id={selectId}
-          className={cn(controlClass, "h-11 appearance-none pr-10", className)}
+          className={cn(controlClass, "h-12 appearance-none pr-10 md:h-11", className)}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy(selectId, error, hint)}
           required={required}
@@ -68,7 +68,8 @@ export function Select({
           ))}
         </select>
         <ChevronDown
-          className="text-muted pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2"
+          className="text-muted pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2"
+          strokeWidth={1.75}
           aria-hidden
         />
       </div>

@@ -40,7 +40,7 @@ export function SortHeader({
       )}
     >
       {children}
-      <Icono className={cn("size-3.5", !activo && "opacity-40")} aria-hidden />
+      <Icono className={cn("size-3.5", !activo && "opacity-40")} strokeWidth={1.75} aria-hidden />
     </Link>
   );
 }

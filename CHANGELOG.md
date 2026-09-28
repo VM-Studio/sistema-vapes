@@ -5,6 +5,100 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.0.0] - 2026-09-28
+
+**Reforma R1: multipanel, limpieza y rediseño.** La app pasa a ser un conjunto de sistemas independientes
+(paneles) y se simplifica: se eliminan los módulos de dinero (caja, gastos, cuenta corriente, pagos
+partidos, comprobantes) y los reportes anteriores.
+
+### BREAKING
+
+- La migración `20260928160000_reforma_multipanel` **borra tablas y columnas** y no es compatible hacia
+  atrás: el código 1.x no funciona contra una base migrada y lo eliminado solo se recupera desde un backup.
+  Hacer y descargar un backup antes de migrar (ver `docs/DEPLOY.md`, «Migración de la reforma R1»).
+- Todos los datos existentes pasan al panel **Vapes**; sus depósitos «Galpón 1» y «Galpón 2» se renombran
+  **Ayres Plaza** y **Mercedes**.
+- Las rutas de negocio pasan de `/{modulo}` a `/p/{slug}/{modulo}` (por ejemplo, `/p/vapes/ventas/nueva`);
+  `/` redirige a `/paneles`. Los links y accesos guardados a las rutas anteriores dejan de funcionar.
+- La numeración de ventas, compras, transferencias y devoluciones es **por panel** y el ID de venta visible
+  pasa a ser `VAP-000001`.
+- Permisos: son **por panel**; `INVENTARIO` y `MOVIMIENTOS` se fusionan en `STOCK`; desaparecen `FINANZAS`,
+  `GASTOS` y `CAJA`; `USUARIOS` y `CONFIGURACION` quedan solo para dueños.
+- Una venta se cobra completa con un único medio de pago; el medio `CREDITO_CLIENTE` desaparece y las ventas
+  que lo usaban quedan con `OTRO`.
+- `/api/sync` y la cola offline se eliminan: sin conexión solo se consulta.
+- Variables de entorno: se quitan `SENTRY_DSN` y `NEXT_PUBLIC_SENTRY_DSN`; se agregan `SEED_OWNER1_*`,
+  `SEED_OWNER2_*` y `SEED_EMPLEADO1_*` (obligatorias para correr el seed en producción).
+
+### Added
+
+- **Paneles** (`Panel`): Vapes, Cosmetic y Especiales, cada uno con sus propios productos, variantes, códigos,
+  stock, depósitos, ventas, clientes, compras, proveedores, configuración y numeración. Logo, color de acento
+  y nombre del atributo principal de los productos («Pitadas», «Contenido», «Detalle») por panel.
+- Selector de sistemas `/paneles` después del login, con ventas de hoy y alertas de stock por panel; entra
+  directo si el usuario accede a un solo panel. «Cambiar de sistema» desde el menú lateral y el menú de cuenta.
+  La PWA arranca en el último panel usado.
+- «Agregar panel» en `/paneles` (solo dueños): nombre, dirección (slug), atributo principal, color y logo; el
+  panel nace con un depósito «Principal» y sus secuencias. Desactivación de paneles en
+  `/configuracion/sistemas` (sus datos se conservan).
+- **Aislamiento entre paneles en tres capas**: `dbPara(panelId)` (Prisma Client Extension que filtra e inyecta
+  `panelId` y lanza `PanelAislamientoError` ante un panel ajeno); en la base, `panelId` con
+  `DEFAULT current_setting('app.panel_id', true)` (un `INSERT` sin panel falla) y el trigger
+  `fn_verificar_mismo_panel` (cada FK apunta a su mismo panel y `panelId` no cambia); y una regla de ESLint
+  que prohíbe el cliente de Prisma crudo en código de negocio.
+- El middleware resuelve el panel de `/p/{slug}` (existe, activo y el usuario accede) y lo pasa a la app en
+  `x-panel-id` / `x-panel-slug`; `requireCtx(modulo, accion)` arma el `ctx { panelId, usuarioId }` de los
+  servicios.
+- Tabla `Secuencia`: numeración correlativa por panel y entidad con `SELECT … FOR UPDATE`, que solo avanza y
+  no se borra.
+- Acceso de usuarios por panel (`UsuarioPanel`) y grilla módulo × acción por panel en `/usuarios/[id]`, junto
+  con las sesiones activas del usuario y «Cerrar sesiones».
+- Ajustes del panel en `/p/{slug}/configuracion` (solo dueños): depósitos, categorías, marcas, escáner y
+  «Ventas y catálogo» (redondeo, prefijo de SKU, alerta de stock mínimo).
+- `ConfiguracionGlobal` para lo que vale en toda la app (nombre del negocio, ícono, zona horaria, moneda).
+- Vista **Global** de Stock y de movimientos, que consolida todos los depósitos del panel.
+- Nuevos módulos en el menú, en preparación: Devoluciones (por garantía), Cotizador unitario, Cotizador
+  mayorista y Reportes.
+- Clientes: teléfono normalizado a `+54` + dígitos y único por panel (CHECK e índice único parcial).
+- Usuarios iniciales del seed desde variables de entorno: dueños Juan Cruz y Agustina, empleada Trinidad
+  (solo Vapes: ver y crear en Ventas, Clientes y Cotizador; ver en Productos y Stock), con cambio de
+  contraseña obligatorio. En desarrollo, por defecto `juancruz@`, `agustina@` y `trinidad@negocio.com`.
+- Tests de integración de aislamiento entre paneles y E2E de paneles.
+
+### Changed
+
+- Rediseño: fondo blanco, tipografía Inter, estilo SaaS, sin modo oscuro, color de acento por panel.
+- Navegación dentro del panel agrupada en Operación, Catálogo, Cotizadores y Administración; barra inferior
+  mobile con Inicio, Ventas, Productos y Stock.
+- Ventas: se cobran completas con un único medio de pago (obligatorio al confirmar, verificado por la base);
+  los ítems de una venta confirmada son inmutables; anular devuelve el stock.
+- Inicio del panel: ventas de hoy, 7 días y mes, top 5 del mes, stock bajo y últimas ventas, calculados sobre
+  las ventas (sin tablas de resumen). Costos y ganancias solo los ven los dueños, en todas las pantallas.
+- Escáner sin conexión: solo consulta, con el catálogo del panel guardado en IndexedDB. Ingresar, contar,
+  transferir y vender necesitan conexión.
+- Unicidades por panel: nombres de depósito, categoría y marca, SKU, códigos de barras, CUIT, documento,
+  producto por nombre y marca, números de documento. El mismo código de barras puede existir en dos paneles.
+- Vistas `vw_stock_consolidado` (ahora con `por_deposito` en JSON en lugar de una columna por depósito) y
+  `vw_alertas_stock`, ambas con `panel_id`.
+- Configuración global (`/configuracion`) reducida a Negocio y app, Sistemas, Backups, Auditoría y Exportar
+  todo; la auditoría registra el panel de cada acción.
+- Backups: un fallo queda registrado en `/configuracion/backups`, en el log de errores y en `/api/health`.
+
+### Removed
+
+- Caja y arqueos, gastos y sus categorías.
+- Cuenta corriente, ventas fiadas, saldos de clientes y pagos partidos (`PagoVenta`).
+- Comprobantes (ticket y A4), su numeración, campos para AFIP y envío por WhatsApp.
+- Devoluciones con reintegro de dinero (`DevolucionItem` y campos económicos de `Devolucion`).
+- Notificaciones, campana y cron de alertas (`/api/cron/alertas`).
+- `ResumenDiario`, los once reportes anteriores, finanzas, rotación, valorización de inventario y cuentas por
+  cobrar.
+- Importación y exportación CSV de productos, aumento masivo de precios e historial de precios.
+- Cola offline, Background Sync, `OperacionSincronizada` y `/api/sync`.
+- Sentry y Lighthouse CI.
+- Scripts `reportes:rebuild`, `explain:reportes`, `test:reportes`, `lighthouse` y los E2E con puppeteer
+  (`test:e2e:*`); E2E de cierre de caja.
+
 ## [1.0.0] - 2026-09-26
 
 Primera versión para producción. Reúne el trabajo de las siete etapas de desarrollo.

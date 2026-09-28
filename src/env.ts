@@ -45,8 +45,6 @@ const esquema = z
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
       .default("info"),
-    SENTRY_DSN: z.string().url().optional(),
-    NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
     /** SHA del commit desplegado (Vercel lo inyecta como VERCEL_GIT_COMMIT_SHA). */
     APP_VERSION: z.string().optional(),
     VERCEL_GIT_COMMIT_SHA: z.string().optional(),
@@ -97,7 +95,7 @@ export function obtenerEnv(): Env {
   return cache;
 }
 
-/** Versión desplegada (SHA corto) para health, Sentry y logs. */
+/** Versión desplegada (SHA corto) para health y logs. */
 export function versionApp(): string {
   const e = obtenerEnv();
   return (e.APP_VERSION ?? e.VERCEL_GIT_COMMIT_SHA ?? "dev").slice(0, 12);
