@@ -1,7 +1,7 @@
 "use client";
 
 import type { MedioPago } from "@prisma/client";
-import { ArrowLeft, Check, Warehouse, WifiOff, X } from "lucide-react";
+import { ArrowLeft, Check, Lock, Warehouse, WifiOff, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -10,11 +10,13 @@ import { SelectorCliente, type ClienteElegido } from "@/components/clientes/sele
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useDialogElement } from "@/components/ui/use-dialog-element";
+import { useRutaPanel } from "@/components/layout/panel-context";
 import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { VentaGenerada } from "@/server/services/venta.service";
 
+import { convertirCotizacionAction } from "../cotizador/actions";
 import { generarVentaAction, stockVentaAction, unidadesPorDepositoAction } from "./actions";
 import {
   ETIQUETA_PASO,
@@ -40,6 +42,24 @@ export interface DepositoVenta {
 }
 
 /**
+ * Venta que sale de una cotización: ítems, precios, descuento y (si lo tenía)
+ * cliente vienen BLOQUEADOS; el modal solo pide galpón y medio de pago.
+ */
+export interface ConversionVenta {
+  cotizacionId: string;
+  codigo: string;
+  /** Cotización vencida: se venden los precios de hoy (el vendedor ya lo confirmó). */
+  recalcular: boolean;
+  items: VentaEnCurso["items"];
+  descuento: string;
+  /** null = la cotización no tenía cliente: se elige en el modal. */
+  cliente: ClienteElegido | null;
+}
+
+/** Pasos del modal cuando se convierte una cotización. */
+const PASOS_CONVERSION = ["galpon", "pago"] as const satisfies readonly Paso[];
+
+/**
  * "Generar venta": modal a pantalla completa en el celular y centrado grande
  * en desktop. Pasos: galpón → productos → cliente → pago → éxito. Se puede
  * volver a cualquier paso anterior. El estado se guarda en localStorage (por
@@ -53,6 +73,7 @@ export function ModalVenta({
   puedeEditar,
   puedeAltaProductos,
   claveStorage,
+  conversion = null,
   onCerrado,
 }: {
   abierto: boolean;
@@ -62,9 +83,12 @@ export function ModalVenta({
   puedeEditar: boolean;
   puedeAltaProductos: boolean;
   claveStorage: string;
+  conversion?: ConversionVenta | null;
   onCerrado: () => void;
 }) {
   const router = useRouter();
+  const ruta = useRutaPanel();
+  const pasos: readonly Paso[] = conversion ? PASOS_CONVERSION : PASOS;
   const enLinea = useEnLinea();
   const idTitulo = useId();
   const [venta, setVenta] = useState<VentaEnCurso>(inicial);
@@ -92,12 +116,15 @@ export function ModalVenta({
 
   // Persistencia para "Retomar venta en curso".
   useEffect(() => {
-    if (!abierto || exito) return;
+    if (!abierto || exito || conversion) return;
     if (ventaTieneDatos(venta) || venta.paso !== "galpon") guardarVentaEnCurso(claveStorage, venta);
-  }, [abierto, venta, exito, claveStorage]);
+  }, [abierto, venta, exito, claveStorage, conversion]);
 
   const deposito = depositos.find((d) => d.id === venta.depositoId) ?? null;
-  const totales = totalesVenta(venta.items, puedeEditar ? venta.descuento : "");
+  const totales = totalesVenta(
+    venta.items,
+    conversion ? conversion.descuento : puedeEditar ? venta.descuento : "",
+  );
 
   const refrescarStock = useCallback(async (depositoId: string, ids: string[]) => {
     if (ids.length === 0) return {};
@@ -124,14 +151,14 @@ export function ModalVenta({
   };
 
   function cerrar(descartar: boolean) {
-    if (descartar) guardarVentaEnCurso(claveStorage, null);
+    if (descartar && !conversion) guardarVentaEnCurso(claveStorage, null);
     setConfirmarCierre(false);
     onCerrado();
   }
 
   function solicitarCerrar() {
     if (enviando) return;
-    if (exito || !ventaTieneDatos(venta)) cerrar(true);
+    if (exito || conversion || !ventaTieneDatos(venta)) cerrar(true);
     else setConfirmarCierre(true);
   }
 
@@ -189,6 +216,29 @@ export function ModalVenta({
     irA("cliente");
   }
 
+  /** Conversión: al elegir el galpón se verifica que alcance el stock de toda la cotización. */
+  async function elegirGalponConversion(depositoId: string) {
+    setError(null);
+    cambiar({ depositoId });
+    const r = await refrescarStock(
+      depositoId,
+      venta.items.map((i) => i.varianteId),
+    );
+    if (!r) {
+      setError("No se pudo verificar el stock. Probá de nuevo.");
+      return;
+    }
+    const nombre = depositos.find((d) => d.id === depositoId)?.nombre ?? "el galpón";
+    const falta = venta.items.find((i) => i.cantidad > (r[i.varianteId] ?? 0));
+    if (falta) {
+      setError(
+        `No hay stock suficiente de ${falta.titulo} en ${nombre} (hay ${r[falta.varianteId] ?? 0}). Elegí otro galpón o transferí stock.`,
+      );
+      return;
+    }
+    cambiar({ depositoId, paso: "pago" });
+  }
+
   // --- Confirmar ------------------------------------------------------------------
 
   const puedeConfirmar =
@@ -205,6 +255,37 @@ export function ModalVenta({
     setEnviando(true);
     setError(null);
     const cliente: ClienteElegido = venta.cliente;
+    if (conversion) {
+      const rc = await convertirCotizacionAction({
+        id: conversion.cotizacionId,
+        depositoId: venta.depositoId,
+        medioPago: venta.medioPago,
+        ...(conversion.recalcular ? { recalcular: true } : {}),
+        // El cliente de la cotización lo resuelve el servidor; solo viaja el elegido acá.
+        ...(conversion.cliente === null
+          ? {
+              cliente:
+                cliente.tipo === "existente"
+                  ? { id: cliente.id }
+                  : { nombre: cliente.nombre, telefono: cliente.telefono },
+            }
+          : {}),
+      }).catch(() => null);
+      setEnviando(false);
+      if (!rc) {
+        setError("Sin conexión con el servidor. La venta NO se registró: probá de nuevo.");
+        return;
+      }
+      if (!rc.ok) {
+        setError(rc.error.message);
+        if (rc.error.code === "STOCK_INSUFICIENTE") setVenta((v) => ({ ...v, paso: "galpon" }));
+        return;
+      }
+      invalidarResoluciones();
+      setExito(rc.data);
+      router.refresh();
+      return;
+    }
     const descuento = puedeEditar ? montoTipeado(venta.descuento) : null;
     const r = await generarVentaAction({
       depositoId: venta.depositoId,
@@ -280,7 +361,7 @@ export function ModalVenta({
     return () => window.removeEventListener("keydown", onKey);
   }, [abierto]);
 
-  const indicePaso = PASOS.indexOf(venta.paso);
+  const indicePaso = pasos.indexOf(venta.paso);
 
   return (
     <dialog
@@ -299,7 +380,11 @@ export function ModalVenta({
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id={idTitulo} className="text-xl font-semibold tracking-tight">
-                  {exito ? "Venta registrada" : "Generar venta"}
+                  {exito
+                    ? "Venta registrada"
+                    : conversion
+                      ? `Convertir ${conversion.codigo} en venta`
+                      : "Generar venta"}
                 </h2>
                 {deposito && !exito && venta.paso !== "galpon" && (
                   <button
@@ -325,8 +410,11 @@ export function ModalVenta({
               </Button>
             </div>
             {!exito && (
-              <ol aria-label="Pasos de la venta" className="grid grid-cols-4 gap-1.5">
-                {PASOS.map((p, n) => {
+              <ol
+                aria-label="Pasos de la venta"
+                className={cn("grid gap-1.5", conversion ? "grid-cols-2" : "grid-cols-4")}
+              >
+                {pasos.map((p, n) => {
                   const hecho = n < indicePaso;
                   const actual = n === indicePaso;
                   return (
@@ -373,7 +461,17 @@ export function ModalVenta({
                 </p>
               </div>
             ) : exito ? (
-              <VentaExitosa venta={exito} />
+              <>
+                {conversion && (
+                  <p
+                    role="status"
+                    className="bg-success-soft text-success-soft-foreground mx-auto mb-4 max-w-lg rounded-xl px-4 py-3 text-center text-sm"
+                  >
+                    La cotización {conversion.codigo} quedó convertida en esta venta.
+                  </p>
+                )}
+                <VentaExitosa venta={exito} />
+              </>
             ) : (
               <>
                 {error && (
@@ -393,6 +491,10 @@ export function ModalVenta({
                     titulo="¿Desde qué galpón vendés?"
                     descripcion="El stock se descuenta de este galpón."
                     onConfirmar={(depositoId) => {
+                      if (conversion) {
+                        void elegirGalponConversion(depositoId);
+                        return;
+                      }
                       setError(null);
                       cambiar({ depositoId, paso: "productos" });
                     }}
@@ -454,6 +556,30 @@ export function ModalVenta({
                     />
                   </div>
                 )}
+                {venta.paso === "pago" && conversion && (
+                  <div className="mb-5 flex flex-col gap-3">
+                    <p
+                      className="bg-primary-soft text-primary-soft-foreground flex items-center gap-2 rounded-xl px-4 py-3 text-sm"
+                      data-testid="conversion-bloqueada"
+                    >
+                      <Lock className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                      <span>
+                        Cotización <strong>{conversion.codigo}</strong>: productos, precios
+                        {conversion.cliente ? " y cliente" : ""} vienen de la cotización y no se
+                        pueden cambiar.
+                      </span>
+                    </p>
+                    {conversion.cliente === null && (
+                      <div className="max-w-xl">
+                        <SelectorCliente
+                          valor={venta.cliente}
+                          onCambiar={(cliente) => setVenta((v) => ({ ...v, cliente }))}
+                          permitirNuevo
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 {venta.paso === "pago" && deposito && venta.cliente && (
                   <PasoPago
                     deposito={deposito.nombre}
@@ -463,6 +589,7 @@ export function ModalVenta({
                     descuento={venta.descuento}
                     notas={venta.notas}
                     puedeEditar={puedeEditar}
+                    bloqueado={conversion !== null}
                     totales={totales}
                     onMedioPago={(medioPago: MedioPago) => cambiar({ medioPago })}
                     onDescuento={(descuento) => cambiar({ descuento })}
@@ -479,9 +606,18 @@ export function ModalVenta({
                 <Button variant="secondary" onClick={() => cerrar(true)}>
                   Cerrar
                 </Button>
-                <Button size="lg" onClick={nuevaVenta}>
-                  Nueva venta
-                </Button>
+                {conversion ? (
+                  <Button
+                    size="lg"
+                    onClick={() => router.push(ruta(`/cotizador/${conversion.cotizacionId}`))}
+                  >
+                    Volver a la cotización
+                  </Button>
+                ) : (
+                  <Button size="lg" onClick={nuevaVenta}>
+                    Nueva venta
+                  </Button>
+                )}
               </div>
             ) : (
               <>
@@ -490,7 +626,7 @@ export function ModalVenta({
                     variant="secondary"
                     size="icon"
                     aria-label="Volver al paso anterior"
-                    onClick={() => irA(PASOS[indicePaso - 1]!)}
+                    onClick={() => irA(pasos[indicePaso - 1]!)}
                     disabled={enviando}
                   >
                     <ArrowLeft strokeWidth={1.75} />

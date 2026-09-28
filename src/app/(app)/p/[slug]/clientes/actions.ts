@@ -23,7 +23,7 @@ import {
 } from "@/server/services/cliente.service";
 
 /** Desde dónde se elige un cliente (SelectorCliente). */
-const MODULOS_SELECTOR = [Modulo.CLIENTES, Modulo.VENTAS, Modulo.DEVOLUCIONES];
+const MODULOS_SELECTOR = [Modulo.CLIENTES, Modulo.VENTAS, Modulo.DEVOLUCIONES, Modulo.COTIZADOR];
 
 /** CLIENTES (en el panel actual): crear → alta · editar → datos · eliminar → desactivar. */
 

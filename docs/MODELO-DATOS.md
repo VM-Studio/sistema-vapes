@@ -761,8 +761,8 @@ Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
 ### Paneles
 
 - **Panel**: cada sistema independiente de la app. `slug` (kebab-case) arma las rutas `/p/{slug}` y el prefijo de los IDs visibles (tres primeras letras: `vapes` → `VAP`); la app no deja crear un panel cuyo prefijo choque con otro. `colorAcento` tiñe la interfaz dentro del panel y `etiquetaEspecificacion` es cómo el panel llama al atributo principal de sus productos («Pitadas», «Contenido», «Detalle»). No se borra: se desactiva (`activo = false`) desde `/configuracion/sistemas` y sus datos se conservan. La migración crea **Vapes** (`pnl_vapes`), **Cosmetic** (`pnl_cosmetic`) y **Especiales** (`pnl_especiales`); los dueños agregan otros desde `/paneles`, y cada uno nace con un depósito «Principal» y sus secuencias en cero.
-- **Secuencia**: último número usado por (panel, entidad) para `VENTA`, `COMPRA`, `TRANSFERENCIA` y `DEVOLUCION`. `siguienteNumero()` (`src/server/db/secuencia.ts`) la toma con `SELECT … FOR UPDATE` dentro de la transacción que inserta el documento: dos transacciones del mismo panel se serializan y nunca repiten número, y si la transacción falla el número no se consume.
-- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas`, `alertaStockMinimo` y `prefijoSku`.
+- **Secuencia**: último número usado por (panel, entidad) para `VENTA`, `COMPRA`, `TRANSFERENCIA`, `DEVOLUCION` y `COTIZACION`. `siguienteNumero()` (`src/server/db/secuencia.ts`) la toma con `SELECT … FOR UPDATE` dentro de la transacción que inserta el documento: dos transacciones del mismo panel se serializan y nunca repiten número, y si la transacción falla el número no se consume.
+- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas`, `cotizacion`, `alertaStockMinimo` y `prefijoSku`.
 - **ConfiguracionGlobal**: pares clave-valor JSON que valen para toda la app: `nombreNegocio`, `iconoApp`, `timezone` y `moneda`.
 
 ### Usuarios, sesiones y seguridad
@@ -813,6 +813,15 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 - **VentaItem**: un renglón por sabor con `productoId` desnormalizado (verificado por trigger), `precioLista` (el precio efectivo al vender), `precioUnitario` (lo cobrado), `esPrecioEspecial` y `costoUnitario` (snapshot de `Variante.ultimoCosto`, 0 si no hubo compras; `costoParaVenta()`). Subtotal = cantidad × precio cobrado. Costo y ganancia solo se muestran a los dueños.
 - **Devolucion** (garantía): cliente obligatorio, venta opcional, galpón del que sale la **unidad nueva** que se entrega (`GARANTIA` por ítem), `observacion` de al menos 10 caracteres, código `VAP-D-000001` (secuencia `DEVOLUCION`). `REGISTRADA` → `ANULADA` (con motivo; el stock vuelve con `GARANTIA_ANULADA`); no se edita ni se borra.
 - **DevolucionItem**: sabor, producto (verificado por trigger) y cantidad > 0. Inmutable.
+
+### Cotizador
+
+- **EscalonPrecio**: precio mayorista de un producto desde `cantidadMinima` unidades, para **todos** sus sabores (20 Mango + 35 Frutilla entran en el escalón de 50). Único por (panel, producto, cantidad mínima); `cantidadMinima > 0`, `precioUnitario > 0`. Se editan como set completo (`guardarEscalones()` en `escalon.service.ts`: mínimos distintos y precios que bajan al subir la cantidad).
+- **EscalonPrecioDefault**: escalones del panel como % de descuento sobre la lista (0–100), para productos sin escalones propios activos. El precio resultante se redondea a 10 pesos.
+- **Cotizacion**: código `VAP-Q-000001` (secuencia `COTIZACION`, `formatearIdCotizacion()` en `src/lib/validations/cotizacion.ts`), `tipo` `UNITARIA` / `MAYORISTA`, `validaHasta`, cliente opcional (o nombre y teléfono de alguien que todavía no es cliente), `vendedorId`, totales (`total = subtotal − descuento`, CHECK) y estado `BORRADOR` → `ENVIADA` → `ACEPTADA` / `RECHAZADA`; las borrador/enviadas pasan a `VENCIDA` al pasar la validez; `CONVERTIDA` ⇔ tiene `ventaId` (CHECK) y desde ahí no se modifica (trigger `trg_cotizacion_convertida`). No se borra físicamente.
+- **CotizacionItem**: sabor, producto (verificado por trigger), cantidad, `precioLista`, `precioUnitario` cotizado (lista, escalón o manual), `escalonAplicado` y `esPrecioManual`; subtotal = cantidad × precio (CHECK).
+- Motor de precios (`precio.service.ts`): unitaria = lista; mayorista = escalón por unidades del producto (`POR_PRODUCTO`) o de toda la cotización (`POR_TOTAL`), según la configuración `cotizacion` del panel (`validezDias`, `modoEscalonMayorista`, `leyenda`, `mostrarStock`). El precio manual y el descuento exigen `editar` en `COTIZADOR`.
+- Convertir (`convertirEnVenta()`) crea la venta (con `Venta.cotizacionId`, precios cotizados como precio especial, tipo de la cotización) y marca la cotización `CONVERTIDA` en una sola transacción: si falta stock no cambia nada.
 
 ## Invariantes garantizadas por la base
 

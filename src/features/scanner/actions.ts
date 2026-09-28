@@ -24,6 +24,7 @@ const MODULOS_ESCANEO = [
   Modulo.PRODUCTOS,
   Modulo.VENTAS,
   Modulo.DEVOLUCIONES,
+  Modulo.COTIZADOR,
 ];
 
 /**

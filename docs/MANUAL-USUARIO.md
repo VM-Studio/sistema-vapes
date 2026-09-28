@@ -139,6 +139,26 @@ Cada venta guarda el **precio de lista**, el **precio cobrado** y el **costo** d
 
 **Sin conexión** no se puede vender: «Las ventas necesitan conexión para validar stock y registrar el pago».
 
+## Cotizador
+
+Presupuestos para compartir por WhatsApp o PDF y, cuando el cliente acepta, pasar a venta.
+
+- **Cotizar por unidad**: escaneá, buscá o tocá un más vendido; cada renglón muestra el precio de lista y el
+  stock total (si dice «Sin stock» igual se puede cotizar). El cliente es opcional: uno registrado o solo
+  nombre y teléfono.
+- **Cotizar por mayor**: escribí la cantidad grande de cada sabor. Los sabores del mismo producto suman para
+  el escalón: la fila muestra el precio de lista tachado, el precio del escalón, «Escalón desde 50 u.» y
+  cuánto falta para el siguiente («Agregá 45 más y baja a $11.000 c/u»). «Ver tabla de precios» muestra todos
+  los escalones del producto.
+- **Guardar / WhatsApp / PDF / Convertir en venta**: cada botón guarda antes. El código queda como
+  `VAP-Q-000001`.
+- **Detalle**: marcá la cotización como enviada, aceptada o rechazada, duplicala o convertila. Al convertir se
+  abre «Generar venta» con los productos, precios y cliente fijos: solo elegís galpón y medio de pago. Si
+  venció, primero te muestra qué precios cambiaron y se vende a los de hoy.
+- Precio manual y descuento: solo con permiso «editar» en Cotizador.
+- **Dueños**: «Configuración» del cotizador (escalones por defecto en %, validez, modo de escalón, leyenda del
+  PDF) y, en la ficha de cada producto, «Precios mayoristas» (también quien puede editar Productos).
+
 ## Clientes
 
 Cada cliente tiene **nombre** y **teléfono** (obligatorio) y, si querés, notas. En la ficha ves sus compras y sus devoluciones.

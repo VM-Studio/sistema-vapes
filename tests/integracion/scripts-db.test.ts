@@ -32,6 +32,7 @@ describe("integración con PostgreSQL", () => {
       "concurrencia de ventas (10 cajas, stock 5, numeración sin huecos)",
       "test-ventas-concurrentes.ts",
     ],
+    ["cotizador (escalones, conversión en venta, permisos, aislamiento)", "test-cotizador.ts"],
   ])("%s", (_nombre, script) => {
     const r = correr(script);
     if (!r.ok) console.log(r.salida);

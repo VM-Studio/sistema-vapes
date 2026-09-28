@@ -6,11 +6,16 @@ import {
   type ConfigEscaner,
 } from "@/features/scanner/config";
 import { configCatalogoSchema, type ConfigCatalogo } from "@/lib/validations/config-panel";
+import {
+  configCotizacionSchema,
+  type ConfigCotizacion,
+  type ConfigCotizacionInput,
+} from "@/lib/validations/cotizacion";
 import { configVentasSchema, type ConfigVentas } from "@/lib/validations/venta";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { registrarAuditoria } from "@/server/services/audit.service";
 
-export type { ConfigCatalogo, ConfigVentas };
+export type { ConfigCatalogo, ConfigCotizacion, ConfigVentas };
 
 /**
  * Configuración POR PANEL (clave/valor en Configuracion): cada panel tiene su
@@ -109,5 +114,29 @@ export async function guardarConfigCatalogo(
     prefijoSku: config.prefijoSku,
     alertaStockMinimo: config.alertaStockMinimo,
   });
+  return config;
+}
+
+// =============================================================================
+// Cotizador (clave "cotizacion"): validez, modo de escalón mayorista, leyenda
+// =============================================================================
+
+export async function obtenerConfigCotizacion(
+  ctx: Pick<Ctx, "panelId">,
+  tx: Tx = dbPara(ctx.panelId),
+): Promise<ConfigCotizacion> {
+  const valor = await leer(tx, "cotizacion");
+  const r = configCotizacionSchema.safeParse(
+    valor && typeof valor === "object" && !Array.isArray(valor) ? valor : {},
+  );
+  return r.success ? r.data : configCotizacionSchema.parse({});
+}
+
+export async function guardarConfigCotizacion(
+  ctx: Ctx,
+  cfg: ConfigCotizacionInput,
+): Promise<ConfigCotizacion> {
+  const config = configCotizacionSchema.parse(cfg);
+  await guardar(ctx, "cotizacion", { cotizacion: { ...config } });
   return config;
 }

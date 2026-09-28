@@ -320,7 +320,7 @@ src/
                           configuracion (negocio, sistemas, backups, auditoria, exportar-todo), cuenta, ayuda, sin-acceso
       p/[slug]/           Dentro de un panel: inicio (dashboard), ventas, stock (pestañas por galpón y Global +
                           movimientos, transferencias), clientes, compras, productos (+ cargar, etiquetas), proveedores,
-                          devoluciones, cotizador-unitario, cotizador-mayorista, reportes,
+                          devoluciones, cotizador (unitaria, mayorista, detalle, configuracion), reportes,
                           configuracion (depositos, categorias, marcas, escaner, ventas), sin-acceso
     api/                  Route handlers: auth, p/[slug]/catalogo/offline, p/[slug]/etiquetas, p/[slug]/stock/exportar,
                           cron/backup, backups/[id]/descargar, exportar-todo, publico/archivos, health

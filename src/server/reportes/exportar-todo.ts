@@ -15,6 +15,7 @@ import {
   saborVisible,
 } from "@/lib/ventas-ui";
 import { formatearFechaHora } from "@/lib/utils";
+import { ESTADO_COTIZACION_UI, ETIQUETA_TIPO_COTIZACION } from "@/lib/validations/cotizacion";
 
 /**
  * Exportación COMPLETA de los datos del negocio a Excel, de todos los
@@ -79,7 +80,7 @@ export function streamExportarTodo(meta: {
     info.addRow([`${meta.negocio} — exportación completa`]).font = { bold: true, size: 14 };
     info.addRow([`Generada ${formatearFechaHora(new Date())} por ${meta.usuario}`]);
     info.addRow([
-      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Devoluciones, Ítems de devoluciones, Compras, Ítems de compras, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
+      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Devoluciones, Ítems de devoluciones, Compras, Ítems de compras, Cotizaciones, Ítems de cotizaciones, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
     ]);
     info.commit();
     const sistemas = new Map(
@@ -414,6 +415,92 @@ export function streamExportarTodo(meta: {
         v: saborVisible(i.variante.nombre) ?? "",
         c: i.cantidad,
         co: num(i.costoUnitario),
+        s: num(i.subtotal),
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Cotizaciones",
+      [
+        SISTEMA,
+        { header: "Código", key: "n", width: 14 },
+        { header: "Fecha", key: "f", width: 17 },
+        { header: "Válida hasta", key: "vh", width: 17 },
+        { header: "Tipo", key: "ti", width: 11 },
+        { header: "Estado", key: "e", width: 14 },
+        { header: "Cliente", key: "c", width: 22 },
+        { header: "Teléfono", key: "tel", width: 16 },
+        { header: "Vendedor", key: "u", width: 14 },
+        { header: "Subtotal", key: "st", width: 12, numFmt: MONEDA },
+        { header: "Descuento", key: "de", width: 12, numFmt: MONEDA },
+        { header: "Total", key: "t", width: 12, numFmt: MONEDA },
+        { header: "Venta", key: "v", width: 12 },
+        { header: "Motivo de rechazo", key: "mr", width: 26 },
+        { header: "Notas", key: "no", width: 30 },
+      ],
+      (c) =>
+        prisma.cotizacion.findMany({
+          ...pag(c),
+          include: {
+            cliente: { select: { nombre: true, telefono: true } },
+            vendedor: { select: { nombre: true } },
+            venta: { select: { codigo: true } },
+          },
+        }),
+      (x) => ({
+        sis: sistema(x.panelId),
+        n: x.codigo,
+        f: formatearFechaHora(x.fecha),
+        vh: formatearFechaHora(x.validaHasta),
+        ti: ETIQUETA_TIPO_COTIZACION[x.tipo],
+        e: ESTADO_COTIZACION_UI[x.estado].label,
+        c: x.cliente?.nombre ?? x.clienteNombre ?? "",
+        tel: x.cliente?.telefono ?? x.clienteTelefono ?? "",
+        u: x.vendedor.nombre,
+        st: num(x.subtotal),
+        de: num(x.descuento),
+        t: num(x.total),
+        v: x.venta?.codigo ?? "",
+        mr: x.motivoRechazo ?? "",
+        no: x.notas ?? "",
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Ítems de cotizaciones",
+      [
+        SISTEMA,
+        { header: "Código", key: "n", width: 14 },
+        { header: "Producto", key: "p", width: 30 },
+        { header: "Sabor", key: "v", width: 20 },
+        { header: "Cantidad", key: "c", width: 9 },
+        { header: "Precio de lista", key: "pl", width: 13, numFmt: MONEDA },
+        { header: "Precio cotizado", key: "pr", width: 13, numFmt: MONEDA },
+        { header: "Escalón", key: "es", width: 9 },
+        { header: "Precio manual", key: "pm", width: 9 },
+        { header: "Subtotal", key: "s", width: 12, numFmt: MONEDA },
+      ],
+      (c) =>
+        prisma.cotizacionItem.findMany({
+          ...pag(c),
+          include: {
+            cotizacion: { select: { codigo: true } },
+            variante: { select: { nombre: true } },
+            producto: { select: { nombreCompleto: true } },
+          },
+        }),
+      (i) => ({
+        sis: sistema(i.panelId),
+        n: i.cotizacion.codigo,
+        p: i.producto.nombreCompleto,
+        v: saborVisible(i.variante.nombre) ?? "",
+        c: i.cantidad,
+        pl: num(i.precioLista),
+        pr: num(i.precioUnitario),
+        es: i.escalonAplicado ?? "",
+        pm: i.esPrecioManual ? "Sí" : "No",
         s: num(i.subtotal),
       }),
     );

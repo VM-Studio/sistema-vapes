@@ -81,6 +81,20 @@ enum TipoVenta {
   MAYORISTA
 }
 
+enum TipoCotizacion {
+  UNITARIA
+  MAYORISTA
+}
+
+enum EstadoCotizacion {
+  BORRADOR
+  ENVIADA
+  ACEPTADA
+  RECHAZADA
+  VENCIDA
+  CONVERTIDA
+}
+
 enum EstadoDevolucion {
   REGISTRADA
   ANULADA
@@ -150,6 +164,7 @@ model Usuario {
   auditLogs            AuditLog[]
   devoluciones         Devolucion[]        @relation("DevolucionUsuario")
   devolucionesAnuladas Devolucion[]        @relation("DevolucionAnuladaPor")
+  cotizaciones         Cotizacion[]        @relation("CotizacionVendedor")
   preciosProveedor     ProveedorProducto[]
   sesiones             Sesion[]            @relation("SesionUsuario")
   sesionesRevocadas    Sesion[]            @relation("SesionRevocadaPor")
@@ -298,6 +313,10 @@ model Panel {
   ventaItems          VentaItem[]
   devoluciones        Devolucion[]
   devolucionItems     DevolucionItem[]
+  escalones           EscalonPrecio[]
+  escalonesDefault    EscalonPrecioDefault[]
+  cotizaciones        Cotizacion[]
+  cotizacionItems     CotizacionItem[]
   transferencias      Transferencia[]
   transferenciaItems  TransferenciaItem[]
   configuraciones     Configuracion[]
@@ -440,6 +459,7 @@ model Cliente {
   panel        Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
   ventas       Venta[]
   devoluciones Devolucion[]
+  cotizaciones Cotizacion[]
 
   @@index([panelId, nombre])
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_nombre_trgm")
@@ -482,6 +502,8 @@ model Producto {
   compraItems     CompraItem[]
   ventaItems      VentaItem[]
   devolucionItems DevolucionItem[]
+  escalones       EscalonPrecio[]
+  cotizacionItems CotizacionItem[]
 
   @@unique([panelId, marcaId, nombre, especificacionNorm])
   @@index([panelId, categoriaId])
@@ -521,6 +543,7 @@ model Variante {
   compraItems         CompraItem[]
   ventaItems          VentaItem[]
   devolucionItems     DevolucionItem[]
+  cotizacionItems     CotizacionItem[]
   transferenciaItems  TransferenciaItem[]
 
   @@unique([panelId, sku])
@@ -688,19 +711,23 @@ model Venta {
   /// total − costoTotal (CHECK en DB).
   gananciaBruta   Decimal     @db.Decimal(12, 2)
   notas           String?
+  /// La cotización de la que salió (trazabilidad).
+  cotizacionId    String?     @unique
   anuladaPorId    String?
   motivoAnulacion String?
   anuladaAt       DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  panel        Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  cliente      Cliente      @relation(fields: [clienteId], references: [id], onDelete: Restrict)
-  deposito     Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-  vendedor     Usuario      @relation("VentaUsuario", fields: [vendedorId], references: [id], onDelete: Restrict)
-  anuladaPor   Usuario?     @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
-  items        VentaItem[]
-  devoluciones Devolucion[]
+  panel            Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  cotizacion       Cotizacion?  @relation("VentaCotizacion", fields: [cotizacionId], references: [id], onDelete: Restrict)
+  cliente          Cliente      @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  deposito         Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  vendedor         Usuario      @relation("VentaUsuario", fields: [vendedorId], references: [id], onDelete: Restrict)
+  anuladaPor       Usuario?     @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+  items            VentaItem[]
+  devoluciones     Devolucion[]
+  cotizacionOrigen Cotizacion?  @relation("CotizacionVenta")
 
   @@unique([panelId, numero])
   @@unique([panelId, codigo])
@@ -898,4 +925,112 @@ model AuditLog {
   @@index([usuarioId, createdAt])
   @@index([panelId, createdAt])
   @@index([createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Cotizador (precios mayoristas por escalones y cotizaciones)
+// -----------------------------------------------------------------------------
+
+/// Precio mayorista de un producto desde cierta cantidad: aplica a TODOS sus
+/// sabores (30 unidades mezclando sabores entran en el escalón de 30).
+model EscalonPrecio {
+  id             String   @id @default(cuid())
+  panelId        String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  productoId     String
+  cantidadMinima Int
+  precioUnitario Decimal  @db.Decimal(12, 2)
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, productoId, cantidadMinima])
+}
+
+/// Escalones por defecto del panel (descuento % sobre el precio de lista) para
+/// productos sin escalones propios activos.
+model EscalonPrecioDefault {
+  id                  String   @id @default(cuid())
+  panelId             String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  cantidadMinima      Int
+  porcentajeDescuento Decimal  @db.Decimal(5, 2)
+  activo              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  panel Panel @relation(fields: [panelId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, cantidadMinima])
+}
+
+model Cotizacion {
+  id              String           @id @default(cuid())
+  panelId         String           @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Correlativo por panel (Secuencia COTIZACION).
+  numero          Int
+  /// ID visible: "VAP-Q-000001".
+  codigo          String
+  tipo            TipoCotizacion
+  fecha           DateTime         @default(now())
+  validaHasta     DateTime
+  /// Opcional: puede ser para alguien que todavía no es cliente.
+  clienteId       String?
+  clienteNombre   String?
+  clienteTelefono String?
+  vendedorId      String
+  estado          EstadoCotizacion @default(BORRADOR)
+  subtotal        Decimal          @db.Decimal(12, 2)
+  descuento       Decimal          @default(0) @db.Decimal(12, 2)
+  total           Decimal          @db.Decimal(12, 2)
+  notas           String?
+  motivoRechazo   String?
+  /// La venta generada al convertir.
+  ventaId         String?          @unique
+  pdfUrl          String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+
+  panel         Panel            @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  cliente       Cliente?         @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  vendedor      Usuario          @relation("CotizacionVendedor", fields: [vendedorId], references: [id], onDelete: Restrict)
+  venta         Venta?           @relation("CotizacionVenta", fields: [ventaId], references: [id], onDelete: Restrict)
+  /// Lado inverso de Venta.cotizacionId (la misma venta, vista desde la venta).
+  ventaGenerada Venta?           @relation("VentaCotizacion")
+  items         CotizacionItem[]
+
+  @@unique([panelId, numero])
+  @@unique([panelId, codigo])
+  @@index([panelId, fecha])
+  @@index([panelId, vendedorId])
+  @@index([panelId, estado])
+}
+
+model CotizacionItem {
+  id              String   @id @default(cuid())
+  panelId         String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  cotizacionId    String
+  varianteId      String
+  /// Desnormalizado (= variante.productoId, lo verifica un trigger).
+  productoId      String
+  cantidad        Int
+  precioLista     Decimal  @db.Decimal(12, 2)
+  /// El cotizado: lista, escalón o manual.
+  precioUnitario  Decimal  @db.Decimal(12, 2)
+  /// cantidadMinima del escalón usado (null = lista o manual).
+  escalonAplicado Int?
+  esPrecioManual  Boolean  @default(false)
+  subtotal        Decimal  @db.Decimal(12, 2)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  panel      Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  variante   Variante   @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+  producto   Producto   @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, cotizacionId, varianteId])
+  @@index([panelId, varianteId])
 }

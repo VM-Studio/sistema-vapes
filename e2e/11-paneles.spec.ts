@@ -51,6 +51,7 @@ test("Juan Cruz: selector con los 3 sistemas y «Agregar panel»; crea «Prueba�
   expect(panel.depositos.map((d) => [d.nombre, d.esPrincipal])).toEqual([["Principal", true]]);
   expect(panel.secuencias.map((s) => s.entidad).sort()).toEqual([
     "COMPRA",
+    "COTIZACION",
     "DEVOLUCION",
     "TRANSFERENCIA",
     "VENTA",

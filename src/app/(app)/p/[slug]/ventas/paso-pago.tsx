@@ -26,6 +26,7 @@ export function PasoPago({
   descuento,
   notas,
   puedeEditar,
+  bloqueado = false,
   totales,
   onMedioPago,
   onDescuento,
@@ -38,6 +39,8 @@ export function PasoPago({
   descuento: string;
   notas: string;
   puedeEditar: boolean;
+  /** Venta desde una cotización: sin descuento ni notas editables (precios cotizados). */
+  bloqueado?: boolean;
   totales: { unidades: number; subtotal: string; descuento: string; total: string };
   onMedioPago: (m: MedioPago) => void;
   onDescuento: (d: string) => void;
@@ -84,7 +87,7 @@ export function PasoPago({
           </div>
         </fieldset>
 
-        {puedeEditar && (
+        {puedeEditar && !bloqueado && (
           <Input
             label="Descuento ($)"
             inputMode="decimal"
@@ -102,13 +105,15 @@ export function PasoPago({
           />
         )}
 
-        <Textarea
-          label="Notas (opcional)"
-          rows={2}
-          maxLength={2000}
-          value={notas}
-          onChange={(e) => onNotas(e.target.value)}
-        />
+        {!bloqueado && (
+          <Textarea
+            label="Notas (opcional)"
+            rows={2}
+            maxLength={2000}
+            value={notas}
+            onChange={(e) => onNotas(e.target.value)}
+          />
+        )}
       </div>
 
       <section
@@ -137,7 +142,8 @@ export function PasoPago({
                 {i.cantidad} × {i.titulo}
                 {i.precioEspecial !== null && (
                   <span className="text-primary block text-xs">
-                    Precio especial {formatearPesos(i.precioEspecial)}
+                    {bloqueado ? "Precio cotizado" : "Precio especial"}{" "}
+                    {formatearPesos(i.precioEspecial)}
                   </span>
                 )}
               </span>

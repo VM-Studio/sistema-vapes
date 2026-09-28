@@ -1,6 +1,6 @@
 import type { Tx } from "@/lib/db";
 
-export type EntidadNumerada = "VENTA" | "COMPRA" | "TRANSFERENCIA" | "DEVOLUCION";
+export type EntidadNumerada = "VENTA" | "COMPRA" | "TRANSFERENCIA" | "DEVOLUCION" | "COTIZACION";
 
 /**
  * Próximo número correlativo de `entidad` en el panel. SELECT ... FOR UPDATE

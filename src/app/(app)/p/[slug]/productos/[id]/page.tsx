@@ -10,12 +10,14 @@ import { esOwner, puede } from "@/lib/permisos";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
+import { listarEscalones } from "@/server/services/escalon.service";
 import { listarMovimientos } from "@/server/services/movimiento.service";
 import { obtener } from "@/server/services/producto.service";
 import { proveedoresDeProducto } from "@/server/services/proveedor.service";
 
 import { CabeceraProducto } from "./cabecera-producto";
 import { MovimientosProducto } from "./movimientos-producto";
+import { PreciosMayoristas } from "./precios-mayoristas";
 import { ProveedoresProducto } from "./proveedores-producto";
 import { SaboresProducto } from "./sabores-producto";
 
@@ -33,10 +35,13 @@ export default async function FichaProductoPage({ params }: { params: Promise<{ 
     if (e instanceof NotFoundError) notFound();
     throw e;
   });
-  const [depositos, movimientos, proveedores] = await Promise.all([
+  // Precios mayoristas (escalones del cotizador): dueños o "editar" en Productos.
+  const editaEscalones = owner || puede(ctx.usuario, ctx.panelId, Modulo.PRODUCTOS, "editar");
+  const [depositos, movimientos, proveedores, escalones] = await Promise.all([
     listarDepositosActivos(ctx),
     listarMovimientos(ctx, { productoId: id, page: 1, pageSize: 20 }, { incluirCostos: owner }),
     veProveedores ? proveedoresDeProducto(ctx, id) : Promise.resolve(null),
+    editaEscalones ? listarEscalones(ctx, id) : Promise.resolve(null),
   ]);
 
   return (
@@ -49,6 +54,13 @@ export default async function FichaProductoPage({ params }: { params: Promise<{ 
       </Link>
       <CabeceraProducto producto={producto} depositos={depositos} />
       <SaboresProducto producto={producto} depositos={depositos} />
+      {escalones && (
+        <PreciosMayoristas
+          productoId={id}
+          precioLista={String(producto.precioVenta)}
+          escalones={escalones}
+        />
+      )}
       {proveedores && (
         <ProveedoresProducto
           proveedores={proveedores}

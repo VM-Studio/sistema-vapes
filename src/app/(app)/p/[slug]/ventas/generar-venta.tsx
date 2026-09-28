@@ -16,18 +16,20 @@ import {
   ventaVacia,
   type VentaEnCurso,
 } from "./estado-venta";
-import { ModalVenta, type DepositoVenta } from "./modal-venta";
+import { ModalVenta, type ConversionVenta, type DepositoVenta } from "./modal-venta";
 
 /**
  * Botón principal "Generar venta" (+ "Retomar venta en curso" si quedó una
  * guardada) y el modal. `?nueva=1` lo abre al cargar (con `deposito` y el
- * cliente preseleccionados si vienen: links desde otros módulos).
+ * cliente preseleccionados si vienen: links desde otros módulos). Con
+ * `conversion` abre la conversión de esa cotización (ítems y cliente bloqueados).
  */
 export function GenerarVenta({
   depositos,
   unidades,
   puedeEditar,
   abrirAlCargar,
+  conversion,
 }: {
   depositos: DepositoVenta[];
   unidades: Record<string, number>;
@@ -36,6 +38,7 @@ export function GenerarVenta({
     depositoId: string | null;
     cliente: { id: string; nombre: string; telefono: string } | null;
   } | null;
+  conversion: ConversionVenta | null;
 }) {
   const { slug } = usePanel();
   const usuario = useUsuario();
@@ -47,6 +50,7 @@ export function GenerarVenta({
   const [guardada, setGuardada] = useState<VentaEnCurso | null>(null);
   const [abierto, setAbierto] = useState(false);
   const [inicial, setInicial] = useState<VentaEnCurso>(() => ventaVacia());
+  const [convirtiendo, setConvirtiendo] = useState<ConversionVenta | null>(null);
 
   const principal = depositos.find((d) => d.esPrincipal)?.id ?? null;
 
@@ -55,6 +59,20 @@ export function GenerarVenta({
   }, [clave, abierto]);
 
   useEffect(() => {
+    if (conversion) {
+      setConvirtiendo(conversion);
+      setInicial({
+        ...ventaVacia(principal),
+        items: conversion.items,
+        cliente: conversion.cliente,
+        descuento: conversion.descuento,
+      });
+      setAbierto(true);
+      const params = new URLSearchParams(searchParams.toString());
+      for (const k of ["nueva", "cotizacion", "recalcular"]) params.delete(k);
+      router.replace(params.size ? `${pathname}?${params}` : pathname, { scroll: false });
+      return;
+    }
     if (!abrirAlCargar) return;
     const depositoId = depositos.some((d) => d.id === abrirAlCargar.depositoId)
       ? abrirAlCargar.depositoId
@@ -82,6 +100,7 @@ export function GenerarVenta({
             variant="secondary"
             size="lg"
             onClick={() => {
+              setConvirtiendo(null);
               setInicial(guardada);
               setAbierto(true);
             }}
@@ -92,6 +111,7 @@ export function GenerarVenta({
         <Button
           size="lg"
           onClick={() => {
+            setConvirtiendo(null);
             setInicial(ventaVacia(principal));
             setAbierto(true);
           }}
@@ -107,7 +127,11 @@ export function GenerarVenta({
         puedeEditar={puedeEditar}
         puedeAltaProductos={puedeAltaProductos}
         claveStorage={clave}
-        onCerrado={() => setAbierto(false)}
+        conversion={convirtiendo}
+        onCerrado={() => {
+          setAbierto(false);
+          setConvirtiendo(null);
+        }}
       />
     </>
   );

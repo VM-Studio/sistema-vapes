@@ -44,6 +44,13 @@ const dec = (d: Prisma.Decimal) => d.toFixed(2);
 export interface PermisosVenta {
   /** VENTAS "editar": precio especial y descuento global. */
   puedeEditar: boolean;
+  /**
+   * "COTIZACION": la venta sale de una cotización guardada (convertirEnVenta).
+   * Sus precios especiales y su descuento ya los fijó la cotización, así que
+   * no exigen "editar"; la venta queda vinculada con `cotizacionId`.
+   */
+  origen?: "COTIZACION";
+  cotizacionId?: string;
 }
 
 export interface OpcionesLectura {
@@ -119,9 +126,12 @@ export async function generarVenta(
   ctx: Ctx,
   input: GenerarVenta,
   permisos: PermisosVenta,
+  tx?: Tx,
 ): Promise<VentaGenerada> {
+  // Con `tx` se compone en una transacción externa (convertir una cotización).
+  if (tx) return medir("confirmarVenta", () => generarEnTx(tx, ctx, input, permisos));
   return medir("confirmarVenta", () =>
-    transaccion(ctx, (tx) => generarEnTx(tx, ctx, input, permisos), OPCIONES_GENERAR),
+    transaccion(ctx, (t) => generarEnTx(t, ctx, input, permisos), OPCIONES_GENERAR),
   );
 }
 
@@ -140,6 +150,10 @@ async function generarEnTx(
   const ids = input.items.map((i) => i.varianteId);
   if (new Set(ids).size !== ids.length)
     throw new DomainError("Hay productos repetidos: sumá la cantidad en una sola fila.");
+  const desdeCotizacion = permisos.origen === "COTIZACION";
+  if (desdeCotizacion && !permisos.cotizacionId)
+    throw new DomainError("Falta la cotización de origen de la venta.");
+  const puedeFijarPrecios = permisos.puedeEditar || desdeCotizacion;
 
   const deposito = await tx.deposito.findUnique({
     where: { id: input.depositoId },
@@ -176,7 +190,7 @@ async function generarEnTx(
       const precioLista = D(precioVentaEfectivo(v, v.producto));
       let precioUnitario = precioLista;
       if (i.precioEspecial !== undefined) {
-        if (!permisos.puedeEditar)
+        if (!puedeFijarPrecios)
           throw new ForbiddenError("No tenés permiso para poner precios especiales.");
         precioUnitario = r2(D(i.precioEspecial));
       }
@@ -196,8 +210,7 @@ async function generarEnTx(
   const subtotal = items.reduce((a, i) => a.plus(i.subtotal), CERO);
   let descuento = CERO;
   if (input.descuento !== undefined && input.descuento > 0) {
-    if (!permisos.puedeEditar)
-      throw new ForbiddenError("No tenés permiso para aplicar descuentos.");
+    if (!puedeFijarPrecios) throw new ForbiddenError("No tenés permiso para aplicar descuentos.");
     descuento = r2(D(input.descuento));
     if (descuento.greaterThan(subtotal)) {
       throw new DomainError("El descuento no puede superar el subtotal.", "VALIDATION_ERROR", 400, {
@@ -208,7 +221,7 @@ async function generarEnTx(
   const total = subtotal.minus(descuento);
   const costoTotal = items.reduce((a, i) => a.plus(i.costoUnitario.mul(i.cantidad)), CERO);
 
-  // 3. Stock en el galpón: se informa TODO lo que falta antes de mover nada.
+  // 3. Stock en el galpón: se informa todo lo que falta antes de mover nada.
   const stocks = await tx.stock.findMany({
     where: { depositoId: deposito.id, varianteId: { in: ids } },
     select: { varianteId: true, cantidad: true },
@@ -260,6 +273,7 @@ async function generarEnTx(
       costoTotal,
       gananciaBruta: total.minus(costoTotal),
       notas: input.notas ?? null,
+      cotizacionId: desdeCotizacion ? permisos.cotizacionId : null,
       items: {
         create: items.map((i) => ({
           varianteId: i.varianteId,
@@ -304,6 +318,7 @@ async function generarEnTx(
       clienteNuevo,
       medioPago: input.medioPago,
       tipo: input.tipo,
+      ...(desdeCotizacion ? { cotizacionId: permisos.cotizacionId } : {}),
       subtotal: dec(subtotal),
       descuento: dec(descuento),
       total: dec(total),

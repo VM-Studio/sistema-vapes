@@ -32,6 +32,14 @@ import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { DomainError } from "../src/server/errors";
 import { crearCliente } from "../src/server/services/cliente.service";
 import { crearCompra, recibirCompra } from "../src/server/services/compra.service";
+import {
+  convertirEnVenta,
+  crearCotizacion,
+  listar as listarCotizaciones,
+  marcarAceptada,
+  marcarEnviada,
+  marcarRechazada,
+} from "../src/server/services/cotizacion.service";
 import { zonaHorariaNegocio } from "../src/server/services/dashboard.service";
 import { anularDevolucion, registrarDevolucion } from "../src/server/services/devolucion.service";
 import {
@@ -738,6 +746,125 @@ async function main() {
     agenda.delete(dia);
   }
 
+  // --- Cotizaciones: algunas de cada estado; dos se convierten en venta --------
+  const cotizaciones = { creadas: 0, convertidas: 0 };
+  {
+    const elf = await db.variante.findMany({
+      where: { deletedAt: null, producto: { nombreCompleto: "Elf Bar BC 5000" } },
+      select: { id: true },
+    });
+    const conStock = (
+      await Promise.all(elf.map(async (v) => ({ id: v.id, s: await stockEn(v.id, g1.id) })))
+    ).sort((a, b) => b.s - a.s);
+    const otros = vendibles.filter((v) => !elf.some((e) => e.id === v.id)).slice(0, 3);
+    const vendedora = empleadosBase[0] ?? owner;
+    const DUENO = { puedeEditar: true };
+    const cliente = () => ({ id: elegir(clientes).id });
+    const crear = async (
+      quien: { id: string },
+      datos: Parameters<typeof crearCotizacion>[1],
+      permisos = DUENO,
+    ) => {
+      const c = await crearCotizacion(ctxDe(quien), datos, permisos);
+      cotizaciones.creadas++;
+      return c;
+    };
+    const mayoristaElf = conStock
+      .slice(0, 2)
+      .map((v) => ({ varianteId: v.id, cantidad: Math.max(1, Math.min(v.s, 30)) }));
+
+    // Vencida: enviada hace 15 días con validez de 7.
+    fijarReloj(() => en(sumarDias(hoy, -15), 11));
+    const vieja = await crear(owner, {
+      tipo: "MAYORISTA",
+      items: mayoristaElf,
+      cliente: cliente(),
+      notas: "Pedido para reventa (demo)",
+    });
+    await marcarEnviada(ctxOwner, vieja.id);
+
+    fijarReloj(() => en(sumarDias(hoy, -3), 12));
+    const rechazada = await crear(
+      vendedora,
+      {
+        tipo: "UNITARIA",
+        items: otros.map((v) => ({ varianteId: v.id, cantidad: 2 })),
+        cliente: cliente(),
+      },
+      { puedeEditar: false },
+    );
+    await marcarEnviada(ctxDe(vendedora), rechazada.id);
+    await marcarRechazada(ctxDe(vendedora), rechazada.id, "Le pareció caro");
+
+    fijarReloj(() => en(sumarDias(hoy, -2), 16));
+    const aceptada = await crear(owner, {
+      tipo: "MAYORISTA",
+      items: otros.map((v) => ({ varianteId: v.id, cantidad: 12 })),
+      cliente: { nombre: "Kiosco La Esquina", telefono: "11 6999-1234" },
+      descuento: 1000,
+    });
+    await marcarEnviada(ctxOwner, aceptada.id);
+    await marcarAceptada(ctxOwner, aceptada.id);
+
+    fijarReloj(() => en(sumarDias(hoy, -1), 18));
+    const enviada = await crear(
+      vendedora,
+      {
+        tipo: "UNITARIA",
+        items: mayoristaElf.map((i) => ({ ...i, cantidad: 3 })),
+        cliente: cliente(),
+      },
+      { puedeEditar: false },
+    );
+    await marcarEnviada(ctxDe(vendedora), enviada.id);
+
+    fijarReloj(() => new Date(ahoraReal.getTime() - 90 * 60_000));
+    await crear(owner, {
+      tipo: "MAYORISTA",
+      items: mayoristaElf.map((i) => ({ ...i, cantidad: 25 })),
+      cliente: null,
+      notas: "Consulta por Instagram (demo)",
+    });
+
+    // Convertidas: una mayorista a un cliente existente y una unitaria a un cliente nuevo.
+    fijarReloj(() => new Date(ahoraReal.getTime() - 60 * 60_000));
+    const aConvertir = [
+      await crear(owner, {
+        tipo: "MAYORISTA",
+        items: mayoristaElf.map((i) => ({
+          ...i,
+          cantidad: Math.max(1, Math.floor(i.cantidad / 3)),
+        })),
+        cliente: cliente(),
+      }),
+      await crear(
+        vendedora,
+        {
+          tipo: "UNITARIA",
+          items: [{ varianteId: conStock[0]!.id, cantidad: 1 }],
+          cliente: { nombre: "Rocío Demo", telefono: "11 6999-5678" },
+        },
+        { puedeEditar: false },
+      ),
+    ];
+    for (const c of aConvertir) {
+      await marcarEnviada(ctxOwner, c.id);
+      try {
+        await convertirEnVenta(ctxOwner, c.id, {
+          depositoId: g1.id,
+          medioPago: MedioPago.EFECTIVO,
+        });
+        cotizaciones.convertidas++;
+        stats.ventas++;
+      } catch (e) {
+        if (!(e instanceof DomainError)) throw e;
+      }
+    }
+    fijarReloj(null);
+    // Pasa a VENCIDA las que ya no valen.
+    await listarCotizaciones(ctxOwner, {});
+  }
+
   // Pendiente para el dashboard: una compra sin recibir.
   fijarReloj(() => new Date(ahoraReal.getTime() - 20 * 60_000));
   await crearCompra(ctxOwner, {
@@ -755,6 +882,7 @@ async function main() {
   ]);
   console.log("seed-demo OK (panel Vapes)", {
     ...stats,
+    cotizaciones,
     ventasPorEstado: Object.fromEntries(ventas.map((v) => [v.estado, v._count])),
     facturado: (total._sum.total ?? new Prisma.Decimal(0)).toString(),
     desde: primerDia,

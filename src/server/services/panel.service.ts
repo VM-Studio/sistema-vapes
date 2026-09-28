@@ -30,7 +30,13 @@ export interface Quien {
   meta?: RequestMeta;
 }
 
-export const ENTIDADES_NUMERADAS = ["VENTA", "COMPRA", "TRANSFERENCIA", "DEVOLUCION"] as const;
+export const ENTIDADES_NUMERADAS = [
+  "VENTA",
+  "COMPRA",
+  "TRANSFERENCIA",
+  "DEVOLUCION",
+  "COTIZACION",
+] as const;
 
 /** Paneles activos a los que accede el usuario, en orden. */
 export async function panelesDeUsuario(

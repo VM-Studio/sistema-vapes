@@ -24,6 +24,7 @@ import {
 } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { obtenerClienteBasico } from "@/server/services/cliente.service";
+import { prepararConversion } from "@/server/services/cotizacion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import {
   listarVentas,
@@ -34,6 +35,7 @@ import {
 
 import { FiltrosVentas } from "./filtros-ventas";
 import { GenerarVenta } from "./generar-venta";
+import type { ConversionVenta } from "./modal-venta";
 
 export const metadata: Metadata = { title: "Ventas" };
 
@@ -91,6 +93,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         }
       : null;
 
+  // "Convertir en venta" desde el cotizador: ítems y cliente llegan bloqueados.
+  const conversion =
+    puedeCrear && plano.nueva === "1" && plano.cotizacion
+      ? await conversionDeCotizacion(ctx, plano.cotizacion, plano.recalcular === "1")
+      : null;
+
   const href = (v: VentaListada) => rutaPanel(slug, `/ventas/${v.id}`);
   const estado = (v: VentaListada) => (
     <Badge variant={ESTADO_VENTA_UI[v.estado].variante}>{ESTADO_VENTA_UI[v.estado].label}</Badge>
@@ -106,7 +114,8 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
               depositos={depositos}
               unidades={unidades}
               puedeEditar={puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "editar")}
-              abrirAlCargar={abrirAlCargar}
+              abrirAlCargar={conversion ? null : abrirAlCargar}
+              conversion={conversion}
             />
           )
         }
@@ -236,4 +245,40 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
       />
     </>
   );
+}
+
+/**
+ * Datos de la cotización para el modal. Si está vencida y el vendedor
+ * confirmó recalcular, los precios pasan a los de hoy. Sin permiso en el
+ * cotizador o si ya no se puede convertir, el modal no se abre.
+ */
+async function conversionDeCotizacion(
+  ctx: Awaited<ReturnType<typeof requirePaginaPanel>>,
+  cotizacionId: string,
+  recalcular: boolean,
+): Promise<ConversionVenta | null> {
+  if (!puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "ver")) return null;
+  const p = await prepararConversion(ctx, cotizacionId).catch(() => null);
+  if (!p) return null;
+  const usarHoy = p.vencida && recalcular;
+  const hoy = new Map(p.cambios.map((c) => [c.titulo, c.despues]));
+  return {
+    cotizacionId: p.cotizacion.id,
+    codigo: p.cotizacion.codigo,
+    recalcular: usarHoy,
+    descuento: p.cotizacion.descuento,
+    items: p.cotizacion.items.map((i) => ({
+      varianteId: i.varianteId,
+      productoId: "",
+      titulo: i.titulo,
+      cantidad: i.cantidad,
+      precioLista: (usarHoy ? hoy.get(i.titulo) : undefined) ?? i.precioUnitario,
+      precioEspecial: null,
+    })),
+    cliente: !p.cliente
+      ? null
+      : "id" in p.cliente
+        ? { tipo: "existente", ...p.cliente }
+        : { tipo: "nuevo", ...p.cliente },
+  };
 }

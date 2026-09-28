@@ -5,6 +5,34 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.3.0] - 2026-10-01
+
+**Reforma R4: cotizador unitario y mayorista.** Migración `20261001090000_cotizador` (escalones de precio,
+cotizaciones y `Venta.cotizacionId`).
+
+### Added
+
+- **Cotizador** (`/p/{slug}/cotizador`): accesos «Cotizar por unidad» / «Cotizar por mayor» y listado con
+  pestañas Todas | Unitarias | Mayoristas, filtros por estado, vendedor, fechas y búsqueda por código
+  (`VAP-Q-000001`) o cliente, y acciones ver, duplicar, WhatsApp, PDF y convertir.
+- Armado en una sola pantalla (`/cotizador/unitaria/nueva`, `/cotizador/mayorista/nueva`, edición en
+  `/cotizador/{id}/editar`): cliente opcional (registrado o nombre y teléfono), validez, pistola, cámara,
+  buscador y más vendidos; precios siempre calculados por el servidor; stock total informativo con «Sin stock»;
+  precio manual y descuento solo con «editar»; pie fijo con total y Guardar / WhatsApp / PDF / Convertir.
+- Mayorista: escalón por producto o por total, lista tachada y precio del escalón, chip «Escalón desde N u.»,
+  hint «Agregá N más y baja a $X c/u», resumen de escalones y «Ver tabla de precios».
+- Detalle `/cotizador/{id}`: estados Enviada / Aceptada / Rechazada, duplicar, WhatsApp, PDF y **Convertir en
+  venta**: abre el modal de Ventas con ítems, precios y cliente bloqueados (solo galpón y medio de pago); si
+  está vencida muestra qué precios cambian y vende a los de hoy.
+- Configuración del cotizador (dueños): escalones por defecto en %, validez, modo de escalón, leyenda del PDF
+  y stock visible. Ficha de producto: sección «Precios mayoristas» (dueños o «editar» en Productos).
+- E2E `19-cotizador.spec.ts`.
+
+### Changed
+
+- Navegación: «Cotizar por unidad», «Cotizar por mayor» y «Cotizaciones» reemplazan a las páginas
+  «Próximamente» `cotizador-unitario` / `cotizador-mayorista`.
+
 ## [2.2.0] - 2026-09-30
 
 **Reforma R3: ventas con cliente obligatorio, clientes por teléfono, devoluciones por garantía y stock por

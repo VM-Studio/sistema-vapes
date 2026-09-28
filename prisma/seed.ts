@@ -21,6 +21,7 @@ import { generarEan13 } from "../src/lib/barcode";
 import { prisma } from "../src/lib/db";
 import { normalizarPermiso, type PermisoModulo } from "../src/lib/permisos";
 import { normalizarTelefono } from "../src/lib/validations/cliente";
+import { configCotizacionSchema } from "../src/lib/validations/cotizacion";
 import { configVentasSchema } from "../src/lib/validations/venta";
 import { dbPara, transaccion } from "../src/server/db/panel-scoped";
 import { registrarMovimiento } from "../src/server/services/stock.service";
@@ -183,6 +184,7 @@ async function seedConfiguracion() {
     prefijoSku: "PRD",
     escaner: { ...CONFIG_ESCANER_DEFAULT, sufijos: [...CONFIG_ESCANER_DEFAULT.sufijos] },
     ventas: configVentasSchema.parse({}) as Prisma.InputJsonValue,
+    cotizacion: configCotizacionSchema.parse({}) as Prisma.InputJsonValue,
   };
   const paneles = await prisma.panel.findMany({ select: { id: true } });
   for (const { id: panelId } of paneles) {
@@ -600,6 +602,48 @@ async function seedClientes() {
   }
 }
 
+/**
+ * Cotizador de ejemplo en Vapes: escalones propios de "Elf Bar BC 5000"
+ * (10 → $9.000, 50 → $8.200, 100 → $7.500) y defaults del panel para el resto
+ * (10 u. → 5 %, 50 u. → 12 %). Solo se crean si no existen.
+ */
+async function seedCotizador() {
+  const db = dbPara(PANEL_VAPES);
+  const elf = await db.producto.findFirst({
+    where: { nombreCompleto: "Elf Bar BC 5000", deletedAt: null },
+    select: { id: true },
+  });
+  if (elf) {
+    for (const [cantidadMinima, precioUnitario] of [
+      [10, "9000.00"],
+      [50, "8200.00"],
+      [100, "7500.00"],
+    ] as const) {
+      await db.escalonPrecio.upsert({
+        where: {
+          panelId_productoId_cantidadMinima: {
+            panelId: PANEL_VAPES,
+            productoId: elf.id,
+            cantidadMinima,
+          },
+        },
+        update: {},
+        create: { productoId: elf.id, cantidadMinima, precioUnitario },
+      });
+    }
+  }
+  for (const [cantidadMinima, porcentajeDescuento] of [
+    [10, "5.00"],
+    [50, "12.00"],
+  ] as const) {
+    await db.escalonPrecioDefault.upsert({
+      where: { panelId_cantidadMinima: { panelId: PANEL_VAPES, cantidadMinima } },
+      update: {},
+      create: { cantidadMinima, porcentajeDescuento },
+    });
+  }
+}
+
 async function main() {
   // La configuración va primero: el prefijo de SKU y el escáner se leen de ahí.
   await seedConfiguracion();
@@ -609,6 +653,7 @@ async function main() {
   const productos = await seedProductos(refs, depositos, ownerId);
   await seedProveedores(productos, ownerId);
   await seedClientes();
+  await seedCotizador();
 
   const [usuarios, paneles, variantes, movimientos, stockTotal] = await Promise.all([
     prisma.usuario.count(),
