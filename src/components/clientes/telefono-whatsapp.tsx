@@ -1,9 +1,10 @@
 import { MessageCircle } from "lucide-react";
 
+import { buttonVariants } from "@/components/ui/button";
 import { mostrarTelefono, linkWhatsApp } from "@/lib/validations/cliente";
 import { cn } from "@/lib/utils";
 
-/** Teléfono del cliente + acceso directo a WhatsApp. */
+/** Teléfono del cliente + acceso directo a WhatsApp (botón secundario chico). */
 export function TelefonoWhatsApp({
   telefono,
   className,
@@ -18,11 +19,14 @@ export function TelefonoWhatsApp({
         href={linkWhatsApp(telefono)}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-success hover:bg-success-soft inline-flex size-9 items-center justify-center rounded-control"
+        className={cn(
+          buttonVariants({ variant: "secondary", size: "icon" }),
+          "text-foreground md:size-8 [&_svg]:size-4",
+        )}
         aria-label={`WhatsApp a ${mostrarTelefono(telefono)}`}
         title="Abrir WhatsApp"
       >
-        <MessageCircle className="size-[1.125rem]" strokeWidth={1.75} aria-hidden />
+        <MessageCircle strokeWidth={1.75} aria-hidden />
       </a>
     </span>
   );

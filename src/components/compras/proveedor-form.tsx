@@ -3,8 +3,8 @@
 import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -111,116 +111,73 @@ export function ProveedorForm({
     setFilas((fs) => fs.map((f) => (f.productoId === productoId ? { ...f, ...cambios } : f)));
 
   return (
-    <form id={formId} onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-4" noValidate>
-      <Input
-        label="Nombre"
-        hint="La persona de contacto."
-        required
-        value={nombre}
-        onChange={(e) => setNombre(e.target.value)}
-        error={errores.nombre}
-        autoComplete="off"
-      />
-      <Input
-        label="Teléfono"
-        type="tel"
-        inputMode="tel"
-        placeholder="11 2233-4455"
-        hint="Con código de área, sin 0 ni 15."
-        value={telefono}
-        onChange={(e) => setTelefono(e.target.value)}
-        error={errores.telefono}
-      />
-      <Input
-        label="Nombre de la tienda"
-        required
-        value={nombreTienda}
-        onChange={(e) => setNombreTienda(e.target.value)}
-        error={errores.nombreTienda}
-        autoComplete="off"
-      />
-      {!compacto && (
-        <Textarea
-          label="Notas"
-          rows={2}
-          value={notas}
-          onChange={(e) => setNotas(e.target.value)}
-          error={errores.notas}
+    <form id={formId} onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-8" noValidate>
+      <section
+        aria-labelledby={compacto ? undefined : `${formId}-datos`}
+        className="flex flex-col gap-4"
+      >
+        {!compacto && (
+          <h3 id={`${formId}-datos`} className="text-h3 font-semibold">
+            Datos del proveedor
+          </h3>
+        )}
+        <Input
+          label="Nombre"
+          hint="La persona de contacto."
+          required
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          error={errores.nombre}
+          autoComplete="off"
         />
-      )}
-      {proveedor && (
-        <Switch
-          label="Activo"
-          checked={activo}
-          onCheckedChange={setActivo}
-          hint="Un proveedor inactivo no aparece para nuevas compras."
-          error={errores.activo}
+        <Input
+          label="Nombre de la tienda"
+          required
+          value={nombreTienda}
+          onChange={(e) => setNombreTienda(e.target.value)}
+          error={errores.nombreTienda}
+          autoComplete="off"
         />
-      )}
+        <Input
+          label="Teléfono"
+          type="tel"
+          inputMode="tel"
+          placeholder="11 2233-4455"
+          hint="Con código de área, sin 0 ni 15."
+          value={telefono}
+          onChange={(e) => setTelefono(e.target.value)}
+          error={errores.telefono}
+        />
+        {!compacto && (
+          <Textarea
+            label="Notas"
+            rows={2}
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+            error={errores.notas}
+          />
+        )}
+        {proveedor && (
+          <Switch
+            label="Activo"
+            checked={activo}
+            onCheckedChange={setActivo}
+            hint="Un proveedor inactivo no aparece para nuevas compras."
+            error={errores.activo}
+          />
+        )}
+      </section>
 
       {conProductos && (
-        <section aria-labelledby={`${formId}-productos`} className="flex flex-col gap-3">
-          <div>
-            <h3 id={`${formId}-productos`} className="font-semibold">
+        <section aria-labelledby={`${formId}-productos`} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-0.5">
+            <h3 id={`${formId}-productos`} className="text-h3 font-semibold">
               Productos que vende
             </h3>
-            <p className="text-muted text-sm">Opcional: podés cargarlos después desde su ficha.</p>
+            <p className="text-muted text-small">
+              Opcional: podés cargarlos después desde su ficha.
+            </p>
           </div>
-          {filas.length > 0 && (
-            <ul className="flex flex-col gap-2">
-              {filas.map((f, i) => (
-                <li
-                  key={f.productoId}
-                  className="border-border grid grid-cols-[1fr_6rem_auto] items-start gap-2 rounded-control border p-3"
-                >
-                  <p className="col-span-3 text-sm font-medium">{f.nombreCompleto}</p>
-                  <label className="flex flex-col gap-1">
-                    <span className="sr-only">Precio de {f.nombreCompleto}</span>
-                    <input
-                      inputMode="decimal"
-                      placeholder="Precio"
-                      aria-label={`Precio de ${f.nombreCompleto}`}
-                      value={f.precio}
-                      onChange={(e) =>
-                        actualizarFila(f.productoId, { precio: soloDecimal(e.target.value) })
-                      }
-                      aria-invalid={errores[`productos.${i}.precio`] ? true : undefined}
-                      className={cn(controlClass, "h-11 text-right tabular-nums")}
-                    />
-                    {errores[`productos.${i}.precio`] && (
-                      <span className="text-danger text-xs">
-                        {errores[`productos.${i}.precio`]}
-                      </span>
-                    )}
-                  </label>
-                  <select
-                    aria-label={`Moneda de ${f.nombreCompleto}`}
-                    value={f.moneda}
-                    onChange={(e) =>
-                      actualizarFila(f.productoId, { moneda: e.target.value as "ARS" | "USD" })
-                    }
-                    className={cn(controlClass, "h-11")}
-                  >
-                    <option value="ARS">ARS</option>
-                    <option value="USD">USD</option>
-                  </select>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="text-danger col-start-3 row-start-1 justify-self-end"
-                    onClick={() =>
-                      setFilas((fs) => fs.filter((x) => x.productoId !== f.productoId))
-                    }
-                    aria-label={`Quitar ${f.nombreCompleto}`}
-                  >
-                    <Trash2 strokeWidth={1.75} />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {errores.productos && <p className="text-danger text-sm">{errores.productos}</p>}
           <BuscadorRemoto
             ariaLabel="Agregar producto que vende"
             placeholder="Agregar producto (marca, modelo…)"
@@ -230,7 +187,7 @@ export function ProveedorForm({
               <span className="truncate">
                 {p.nombreCompleto}
                 {filas.some((f) => f.productoId === p.id) && (
-                  <span className="text-primary ml-2 text-xs">(ya agregado)</span>
+                  <span className="text-subtle ml-2 text-xs">(ya agregado)</span>
                 )}
               </span>
             )}
@@ -250,6 +207,70 @@ export function ProveedorForm({
               )
             }
           />
+          {filas.length > 0 && (
+            <div className="border-border bg-surface rounded-card overflow-hidden border">
+              <div
+                aria-hidden
+                className="border-border bg-card text-muted hidden h-9 grid-cols-[minmax(0,1fr)_7rem_5.5rem_2.75rem] items-center gap-2 border-b px-3 text-xs font-medium md:grid"
+              >
+                <span>Producto</span>
+                <span className="text-right">Precio</span>
+                <span>Moneda</span>
+                <span />
+              </div>
+              <ul className="divide-border flex flex-col divide-y">
+                {filas.map((f, i) => (
+                  <li
+                    key={f.productoId}
+                    className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-2 px-3 py-2.5 md:grid-cols-[minmax(0,1fr)_7rem_5.5rem_2.75rem]"
+                  >
+                    <p className="text-small min-w-0 font-medium">{f.nombreCompleto}</p>
+                    <label className="flex flex-col gap-1">
+                      <span className="sr-only">Precio de {f.nombreCompleto}</span>
+                      <input
+                        inputMode="decimal"
+                        placeholder="Precio"
+                        aria-label={`Precio de ${f.nombreCompleto}`}
+                        value={f.precio}
+                        onChange={(e) =>
+                          actualizarFila(f.productoId, { precio: soloDecimal(e.target.value) })
+                        }
+                        aria-invalid={errores[`productos.${i}.precio`] ? true : undefined}
+                        className={cn(controlClass, "h-11 px-2.5 text-right tabular-nums")}
+                      />
+                    </label>
+                    <select
+                      aria-label={`Moneda de ${f.nombreCompleto}`}
+                      value={f.moneda}
+                      onChange={(e) =>
+                        actualizarFila(f.productoId, { moneda: e.target.value as "ARS" | "USD" })
+                      }
+                      className={cn(controlClass, "h-11 px-2.5")}
+                    >
+                      <option value="ARS">ARS</option>
+                      <option value="USD">USD</option>
+                    </select>
+                    <IconButton
+                      variant="ghost"
+                      className="hover:text-danger col-start-2 row-start-1 justify-self-end md:col-start-auto md:row-start-auto"
+                      onClick={() =>
+                        setFilas((fs) => fs.filter((x) => x.productoId !== f.productoId))
+                      }
+                      aria-label={`Quitar ${f.nombreCompleto}`}
+                    >
+                      <Trash2 strokeWidth={1.75} />
+                    </IconButton>
+                    {errores[`productos.${i}.precio`] && (
+                      <p className="text-danger text-small col-span-2 md:col-span-4">
+                        {errores[`productos.${i}.precio`]}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {errores.productos && <p className="text-danger text-small">{errores.productos}</p>}
         </section>
       )}
     </form>

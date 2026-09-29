@@ -19,9 +19,9 @@ export function FiltrosCotizaciones({
 }) {
   const { actualizar } = useUrlParams();
   return (
-    <div className="mb-4 flex flex-col gap-3">
+    <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
       <SearchInput placeholder="Código (VAP-Q-000012 o 12) o cliente" />
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:w-[40rem]">
         <Select
           aria-label="Estado"
           containerClassName="self-end"
@@ -45,20 +45,32 @@ export function FiltrosCotizaciones({
           value={params.vendedorId ?? ""}
           onChange={(e) => actualizar({ vendedorId: e.target.value || null })}
         />
-        <label className="text-muted flex flex-col gap-1 text-xs">
-          Desde
+        <label className="relative flex flex-col">
+          <span className="sr-only">Desde</span>
+          <span
+            className="text-subtle pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-xs"
+            aria-hidden
+          >
+            Desde
+          </span>
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 pl-14 md:h-10")}
             value={params.desde ?? ""}
             onChange={(e) => actualizar({ desde: e.target.value || null })}
           />
         </label>
-        <label className="text-muted flex flex-col gap-1 text-xs">
-          Hasta
+        <label className="relative flex flex-col">
+          <span className="sr-only">Hasta</span>
+          <span
+            className="text-subtle pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-xs"
+            aria-hidden
+          >
+            Hasta
+          </span>
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 pl-14 md:h-10")}
             value={params.hasta ?? ""}
             onChange={(e) => actualizar({ hasta: e.target.value || null })}
           />

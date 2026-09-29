@@ -5,7 +5,7 @@ import { describirPeriodo, diaDe, type Periodo } from "@/server/services/analiti
 export function PeriodoAnalitica({ periodo, preset }: { periodo: Periodo; preset: string | null }) {
   const d = describirPeriodo(periodo);
   return (
-    <div className="mb-6">
+    <div className="mb-4 md:mb-6">
       <SelectorPeriodo
         modo={periodo.modo}
         desde={diaDe(periodo.desde)}

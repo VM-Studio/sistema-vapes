@@ -25,8 +25,8 @@ export function DesactivarPanel({ panelId, nombre }: { panelId: string; nombre: 
 
   return (
     <>
-      <Button variant="secondary" size="sm" onClick={() => setAbierto(true)}>
-        <Power /> Desactivar
+      <Button variant="secondary" onClick={() => setAbierto(true)} className="w-full sm:w-auto">
+        <Power strokeWidth={1.75} /> Desactivar
       </Button>
       <ConfirmDialog
         open={abierto}

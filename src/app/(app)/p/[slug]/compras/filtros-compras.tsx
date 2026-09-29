@@ -14,8 +14,9 @@ export function FiltrosCompras({
 }) {
   const { actualizar } = useUrlParams();
   return (
-    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,16rem)_10rem_10rem] lg:shrink-0">
       <Select
+        label="Proveedor"
         aria-label="Proveedor"
         options={[
           { value: "", label: "Todos los proveedores" },
@@ -23,22 +24,22 @@ export function FiltrosCompras({
         ]}
         value={params.proveedorId ?? ""}
         onChange={(e) => actualizar({ proveedorId: e.target.value || null })}
-        containerClassName="col-span-2 self-end md:col-span-2"
+        containerClassName="col-span-2 md:col-span-1"
       />
-      <label className="text-muted flex flex-col gap-1 text-xs">
+      <label className="text-small flex flex-col gap-1.5 font-medium">
         Desde
         <input
           type="date"
-          className={cn(controlClass, "h-11")}
+          className={cn(controlClass, "h-11 md:h-10")}
           value={params.desde ?? ""}
           onChange={(e) => actualizar({ desde: e.target.value || null })}
         />
       </label>
-      <label className="text-muted flex flex-col gap-1 text-xs">
+      <label className="text-small flex flex-col gap-1.5 font-medium">
         Hasta
         <input
           type="date"
-          className={cn(controlClass, "h-11")}
+          className={cn(controlClass, "h-11 md:h-10")}
           value={params.hasta ?? ""}
           onChange={(e) => actualizar({ hasta: e.target.value || null })}
         />

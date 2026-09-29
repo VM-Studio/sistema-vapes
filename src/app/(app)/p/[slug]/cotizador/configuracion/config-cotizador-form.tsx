@@ -1,13 +1,14 @@
 "use client";
 
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
+import { Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { useRutaPanel } from "@/components/layout/panel-context";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BarraAccion } from "@/components/ui/barra-accion";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
@@ -67,26 +68,34 @@ export function ConfigCotizadorForm({
 
   return (
     <>
-      <Link
-        href={ruta("/cotizador")}
-        className={buttonVariants({ variant: "ghost", size: "sm", className: "mb-2 -ml-2" })}
-      >
-        <ArrowLeft strokeWidth={1.75} /> Cotizaciones
-      </Link>
       <PageHeader
+        breadcrumb={
+          <Breadcrumb
+            items={[{ label: "Cotizador", href: ruta("/cotizador") }, { label: "Configuración" }]}
+          />
+        }
         title="Configuración del cotizador"
         subtitle="Validez, escalones por defecto y lo que muestra el PDF."
+        actions={
+          <Button
+            onClick={() => void guardar()}
+            loading={guardando}
+            className="max-md:hidden"
+          >
+            {!guardando && <Save strokeWidth={1.75} />} Guardar
+          </Button>
+        }
       />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         <Card>
           <CardHeader>
             <CardTitle>Escalones por defecto</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <p className="text-muted text-sm">
+            <CardDescription>
               Para productos sin precios mayoristas propios: % de descuento sobre la lista desde
               cierta cantidad (redondeado a $10).
-            </p>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
             <TablaEscalones
               filas={filas}
               onCambiar={setFilas}
@@ -99,7 +108,7 @@ export function ConfigCotizadorForm({
           <CardHeader>
             <CardTitle>Cotizaciones</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+          <CardContent className="flex flex-col gap-4">
             <Input
               label="Validez (días)"
               inputMode="numeric"
@@ -130,11 +139,11 @@ export function ConfigCotizadorForm({
           </CardContent>
         </Card>
       </div>
-      <div className="mt-4 flex justify-end">
+      <BarraAccion soloMobile>
         <Button onClick={() => void guardar()} loading={guardando}>
-          Guardar
+          {!guardando && <Save strokeWidth={1.75} />} Guardar
         </Button>
-      </div>
+      </BarraAccion>
     </>
   );
 }

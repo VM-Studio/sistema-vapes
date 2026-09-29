@@ -16,7 +16,7 @@ export default async function DepositosPage() {
     <>
       <TabsNav
         items={tabsAjustesPanel(ctx.panel.slug, "/configuracion/depositos")}
-        className="mb-4"
+        className="mb-6"
         ariaLabel="Ajustes del panel"
       />
       <DepositosView depositos={depositos} />

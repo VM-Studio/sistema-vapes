@@ -119,8 +119,8 @@ export function AccesoForm({
   return (
     <div className="flex flex-col gap-4">
       {esOwner && (
-        <p className="bg-primary-soft text-primary-soft-foreground flex items-start gap-2 rounded-control p-4 text-sm">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+        <p className="border-border bg-surface text-small rounded-control flex items-start gap-2.5 border p-4">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0" strokeWidth={1.75} aria-hidden />
           Es dueño: accede a todos los sistemas y a todos sus módulos. Los permisos no se pueden
           restringir.
         </p>
@@ -130,10 +130,10 @@ export function AccesoForm({
         return (
           <section
             key={panel.id}
-            className="border-border bg-surface rounded-card border p-4 md:p-5"
+            aria-label={panel.nombre}
+            className="border-border bg-surface rounded-card overflow-hidden border"
           >
-            <div className="flex items-center gap-3">
-              <LogoPanel panel={panel} size={36} />
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2 md:px-5">
               <Checkbox
                 id={`panel-${panel.id}`}
                 checked={activo}
@@ -143,14 +143,15 @@ export function AccesoForm({
                   <span className="font-semibold">
                     Accede a {panel.nombre}
                     {!panel.activo && (
-                      <span className="text-muted ml-2 text-xs font-normal">(desactivado)</span>
+                      <span className="text-muted text-small ml-2 font-normal">(desactivado)</span>
                     )}
                   </span>
                 }
               />
+              <LogoPanel panel={panel} size={24} />
             </div>
             {activo && (
-              <div className="mt-4">
+              <div className="border-border border-t">
                 <GrillaPermisos
                   titulo={panel.nombre}
                   permisos={esOwner ? grillaVacia(panel.id, true) : grillas[panel.id]!}
@@ -163,7 +164,7 @@ export function AccesoForm({
         );
       })}
       {!esOwner && (
-        <div className="flex justify-end gap-2">
+        <div className="grid grid-cols-2 gap-2 md:flex md:justify-end">
           <Button
             variant="secondary"
             onClick={() => {

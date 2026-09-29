@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionCard } from "@/components/ui/section-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
@@ -16,6 +16,7 @@ import {
   type CompraPorProveedor,
 } from "@/server/services/reporte.service";
 
+import { BarraFiltros, FilaMobile } from "../_componentes/barra-filtros";
 import { CabeceraReporte } from "../_componentes/cabecera-reporte";
 import { FiltroPeriodo } from "../_componentes/filtro-periodo";
 import { FiltroSelect } from "../_componentes/filtro-select";
@@ -71,7 +72,7 @@ export default async function ReporteComprasPage({
         subtitulo={r.etiqueta}
         params={plano}
       />
-      <div className="mb-5 flex flex-col gap-3">
+      <BarraFiltros>
         <FiltroPeriodo periodo={r.periodo} desde={r.desde} hasta={r.hasta} />
         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           <FiltroSelect
@@ -92,87 +93,84 @@ export default async function ReporteComprasPage({
             opciones={productos.map((p) => ({ value: p.id, label: p.nombre }))}
           />
         </div>
+      </BarraFiltros>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SectionCard title="Compras recibidas por proveedor">
+          <GraficoBarras
+            horizontal
+            moneda
+            nombre="Total"
+            datos={porProv.map((x) => ({ etiqueta: x.proveedor, valor: Number(x.total) }))}
+          />
+        </SectionCard>
+        <SectionCard title="Detalle por proveedor">
+          <DataTable
+            caption="Compras por proveedor"
+            rows={porProv}
+            getRowKey={(x) => x.proveedorId ?? "sin"}
+            empty={<EmptyState title="No hay compras recibidas en el período" />}
+            columns={[
+              {
+                key: "p",
+                header: "Proveedor",
+                cell: (x: CompraPorProveedor) => (
+                  <span className="font-medium">
+                    {x.proveedor}
+                    <span className="text-muted block text-xs font-normal">{x.tienda}</span>
+                  </span>
+                ),
+              },
+              {
+                key: "c",
+                header: "Compras",
+                className: "text-right tabular-nums",
+                cell: (x) => formatearNumero(x.compras),
+              },
+              {
+                key: "u",
+                header: "Unidades",
+                className: "text-right tabular-nums",
+                cell: (x) => formatearNumero(x.unidades),
+              },
+              {
+                key: "t",
+                header: "Total",
+                className: "text-right tabular-nums font-medium",
+                cell: (x) => formatearPesos(x.total),
+              },
+              {
+                key: "f",
+                header: "Última",
+                cell: (x) => <span className="text-muted">{formatearFecha(x.ultima)}</span>,
+              },
+            ]}
+            renderMobile={(x) => (
+              <FilaMobile className="flex items-center justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="font-semibold">{x.proveedor}</span>
+                  <span className="text-muted text-small block">
+                    {x.compras} compras · {x.unidades} u.
+                  </span>
+                </span>
+                <span className="font-semibold tabular-nums">{formatearPesos(x.total)}</span>
+              </FilaMobile>
+            )}
+          />
+        </SectionCard>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Compras recibidas por proveedor</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <GraficoBarras
-              horizontal
-              moneda
-              nombre="Total"
-              datos={porProv.map((x) => ({ etiqueta: x.proveedor, valor: Number(x.total) }))}
-            />
-          </CardContent>
-        </Card>
-        <DataTable
-          caption="Compras por proveedor"
-          rows={porProv}
-          getRowKey={(x) => x.proveedorId ?? "sin"}
-          empty={<EmptyState title="No hay compras recibidas en el período" />}
-          columns={[
-            {
-              key: "p",
-              header: "Proveedor",
-              cell: (x: CompraPorProveedor) => (
-                <span className="font-medium">
-                  {x.proveedor}
-                  <span className="text-muted block text-xs font-normal">{x.tienda}</span>
-                </span>
-              ),
-            },
-            {
-              key: "c",
-              header: "Compras",
-              className: "text-right tabular-nums",
-              cell: (x) => formatearNumero(x.compras),
-            },
-            {
-              key: "u",
-              header: "Unidades",
-              className: "text-right tabular-nums",
-              cell: (x) => formatearNumero(x.unidades),
-            },
-            {
-              key: "t",
-              header: "Total",
-              className: "text-right tabular-nums font-medium",
-              cell: (x) => formatearPesos(x.total),
-            },
-            {
-              key: "f",
-              header: "Última",
-              cell: (x) => <span className="text-muted">{formatearFecha(x.ultima)}</span>,
-            },
-          ]}
-          renderMobile={(x) => (
-            <div className="border-border bg-surface flex items-center justify-between rounded-card border p-4">
-              <span>
-                <span className="font-semibold">{x.proveedor}</span>
-                <span className="text-muted block text-xs">
-                  {x.compras} compras · {x.unidades} u.
-                </span>
-              </span>
-              <span className="font-semibold tabular-nums">{formatearPesos(x.total)}</span>
-            </div>
-          )}
-        />
-      </div>
-
-      <section className="mt-8 flex flex-col gap-4" aria-labelledby="titulo-historial">
-        <h2 id="titulo-historial" className="text-lg font-semibold">
-          Evolución de precios de proveedor
-        </h2>
-        {f.productoId && (
-          <Card>
-            <CardContent className="pt-5">
-              <GraficoLineas datos={puntos} series={series} />
-            </CardContent>
-          </Card>
-        )}
+      <SectionCard
+        className="mt-4"
+        title="Evolución de precios de proveedor"
+        description={
+          f.productoId
+            ? "Una línea por proveedor (precios en pesos)."
+            : "Elegí un producto en los filtros para ver la evolución en un gráfico."
+        }
+        contentClassName="flex flex-col gap-4"
+      >
+        {f.productoId && <GraficoLineas datos={puntos} series={series} />}
         <DataTable
           caption="Historial de precios"
           rows={historial}
@@ -225,15 +223,12 @@ export default async function ReporteComprasPage({
             },
           ]}
           renderMobile={(h) => (
-            <div
-              className="border-border bg-surface rounded-card border p-4"
-              data-testid="fila-historial"
-            >
+            <FilaMobile data-testid="fila-historial">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold">{h.nombreCompleto}</span>
                 <span className="font-semibold tabular-nums">{precio(h.precio, h.moneda)}</span>
               </div>
-              <p className="text-muted mt-1 text-xs">
+              <p className="text-muted text-small mt-1">
                 {h.proveedor} · {formatearFechaHora(h.fecha)} ·{" "}
                 {h.anterior === null
                   ? "Alta"
@@ -242,10 +237,10 @@ export default async function ReporteComprasPage({
                   ? ` (${h.variacionPct > 0 ? "+" : ""}${h.variacionPct.toLocaleString("es-AR")} %)`
                   : ""}
               </p>
-            </div>
+            </FilaMobile>
           )}
         />
-      </section>
+      </SectionCard>
     </>
   );
 }

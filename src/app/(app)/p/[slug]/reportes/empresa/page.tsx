@@ -44,11 +44,11 @@ export default async function EmpresaPage({ searchParams }: { searchParams: Prom
         params={plano}
       />
       <PeriodoAnalitica periodo={periodo} preset={plano.preset ?? null} />
-      <div className="flex flex-col gap-4 md:gap-6">
+      <div className="flex flex-col gap-4">
         <Suspense key={`k${clave}`} fallback={<SkeletonKpis n={6} />}>
           <SeccionKpis {...props} />
         </Suspense>
-        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-12">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Suspense
             key={`g${clave}`}
             fallback={<SkeletonTarjeta className="lg:col-span-8" alto="h-72" />}

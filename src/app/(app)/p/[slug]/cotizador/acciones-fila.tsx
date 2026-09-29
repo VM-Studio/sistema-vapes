@@ -1,12 +1,11 @@
 "use client";
 
-import { Copy, Eye, FileText, MessageCircle, ShoppingCart } from "lucide-react";
-import Link from "next/link";
+import { Copy, Eye, FileText, Loader2, MessageCircle, ShoppingCart } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { useRutaPanel } from "@/components/layout/panel-context";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { MenuFila, type AccionFila } from "@/components/ui/menu-fila";
 import { useToast } from "@/components/ui/toast";
 
 import { duplicarCotizacionAction, pdfCotizacionAction, whatsappCotizacionAction } from "./actions";
@@ -49,58 +48,33 @@ export function AccionesFila({
     router.push(ruta(`/cotizador/${r.data.id}/editar`));
   }
 
-  return (
-    <div className="flex items-center justify-end gap-0.5">
-      <Link
-        href={ruta(`/cotizador/${id}`)}
-        className={buttonVariants({ variant: "ghost", size: "icon" })}
-        aria-label={`Ver ${codigo}`}
-        title="Ver"
+  if (ocupado) {
+    return (
+      <span
+        className="text-muted inline-flex size-9 items-center justify-center"
+        role="status"
+        aria-label={`Procesando ${codigo}`}
       >
-        <Eye strokeWidth={1.75} />
-      </Link>
-      {puedeCrear && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Duplicar ${codigo}`}
-          title="Duplicar"
-          loading={ocupado === "duplicar"}
-          onClick={() => void duplicarla()}
-        >
-          <Copy strokeWidth={1.75} />
-        </Button>
-      )}
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={`WhatsApp de ${codigo}`}
-        title="WhatsApp"
-        loading={ocupado === "whatsapp"}
-        onClick={() => void compartir("whatsapp")}
-      >
-        <MessageCircle strokeWidth={1.75} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={`PDF de ${codigo}`}
-        title="PDF"
-        loading={ocupado === "pdf"}
-        onClick={() => void compartir("pdf")}
-      >
-        <FileText strokeWidth={1.75} />
-      </Button>
-      {convertible && puedeVender && (
-        <Link
-          href={ruta(`/cotizador/${id}?convertir=1`)}
-          className={buttonVariants({ variant: "ghost", size: "icon" })}
-          aria-label={`Convertir ${codigo} en venta`}
-          title="Convertir en venta"
-        >
-          <ShoppingCart strokeWidth={1.75} />
-        </Link>
-      )}
-    </div>
-  );
+        <Loader2 className="size-5 animate-spin" strokeWidth={1.75} aria-hidden />
+      </span>
+    );
+  }
+
+  const acciones: AccionFila[] = [
+    { label: "Ver", icon: Eye, href: ruta(`/cotizador/${id}`) },
+    ...(puedeCrear ? [{ label: "Duplicar", icon: Copy, onSelect: () => void duplicarla() }] : []),
+    { label: "WhatsApp", icon: MessageCircle, onSelect: () => void compartir("whatsapp") },
+    { label: "PDF", icon: FileText, onSelect: () => void compartir("pdf") },
+    ...(convertible && puedeVender
+      ? [
+          {
+            label: "Convertir en venta",
+            icon: ShoppingCart,
+            href: ruta(`/cotizador/${id}?convertir=1`),
+          },
+        ]
+      : []),
+  ];
+
+  return <MenuFila acciones={acciones} label={`Acciones de ${codigo}`} />;
 }

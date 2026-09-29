@@ -1,16 +1,21 @@
-import { ArrowLeft, FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet, Receipt } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { KpisVendedor, Tarjeta } from "@/components/analitica/secciones";
+import { ETIQUETA_ANTERIOR, KpisVendedor } from "@/components/analitica/secciones";
 import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { buttonVariants } from "@/components/ui/button";
+import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
+import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
-import { formatearFechaHora } from "@/lib/utils";
+import { cn, formatearFechaHora } from "@/lib/utils";
 import { ETIQUETA_MEDIO_PAGO, ETIQUETA_TIPO_VENTA } from "@/lib/ventas-ui";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import {
@@ -50,7 +55,7 @@ export default async function EquipoVendedorPage({
       cell: (v: VentaDeVendedor) => (
         <Link
           href={ruta(`/ventas/${v.id}`)}
-          className="text-primary font-medium tabular-nums hover:underline"
+          className="text-foreground font-mono font-semibold hover:underline"
         >
           {v.codigo}
         </Link>
@@ -76,102 +81,158 @@ export default async function EquipoVendedorPage({
     {
       key: "unidades",
       header: "Unidades",
-      className: "text-right tabular-nums",
+      className: "text-right",
       cell: (v: VentaDeVendedor) => formatearNumero(v.unidades),
     },
     {
       key: "total",
       header: "Total",
-      className: "text-right font-semibold tabular-nums",
+      className: "text-right font-semibold",
       cell: (v: VentaDeVendedor) => formatearPesos(v.total),
     },
   ];
 
+  const detalle: [string, string][] = [
+    [
+      "Unitarias",
+      `${formatearNumero(d.actual.unitarias.cantidad)} · ${formatearPesos(d.actual.unitarias.total)}`,
+    ],
+    [
+      "Mayoristas",
+      `${formatearNumero(d.actual.mayoristas.cantidad)} · ${formatearPesos(d.actual.mayoristas.total)}`,
+    ],
+    [
+      "Cotizaciones",
+      `${d.actual.cotizaciones.convertidas}/${d.actual.cotizaciones.creadas} convertidas${
+        d.actual.cotizaciones.tasaPct !== null
+          ? ` (${d.actual.cotizaciones.tasaPct.toLocaleString("es-AR")} %)`
+          : ""
+      }`,
+    ],
+    ["Devoluciones registradas", formatearNumero(d.actual.devoluciones)],
+  ];
+
   return (
-    <div className="flex flex-col gap-6 md:gap-8">
-      <Link
-        href={`${rutaPanel(ctx.panel.slug)}${qs}`}
-        className="text-muted hover:text-foreground flex min-h-11 w-fit items-center gap-1.5 text-sm"
-      >
-        <ArrowLeft className="size-4" strokeWidth={1.75} aria-hidden /> Inicio
-      </Link>
-      <header className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl leading-tight font-semibold tracking-tight md:text-3xl">
-            {d.usuario.nombre}
-          </h1>
-          <Badge variant={d.usuario.rol === "OWNER" ? "primary" : "neutral"}>
-            {d.usuario.rol === "OWNER" ? "Dueño" : "Empleado"}
-          </Badge>
-        </div>
-        <SelectorPeriodo
-          modo={periodo.modo}
-          desde={diaDe(periodo.desde)}
-          hasta={diaDe(periodo.hasta)}
-          preset={typeof sp.preset === "string" ? sp.preset : null}
-          etiqueta={desc.etiqueta}
-          comparacion={desc.comparacion}
+    <div className="flex flex-col gap-4">
+      <header className="mb-2 flex flex-col gap-4 md:mb-4">
+        <Breadcrumb
+          items={[
+            { label: "Inicio", href: `${rutaPanel(ctx.panel.slug)}${qs}` },
+            { label: "Equipo", href: `${ruta("/equipo")}${qs}` },
+            { label: d.usuario.nombre },
+          ]}
         />
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar nombre={d.usuario.nombre} className="size-12 text-sm" />
+            <div className="flex min-w-0 flex-col gap-1">
+              <h1 className="text-h1 truncate font-semibold">{d.usuario.nombre}</h1>
+              <div>
+                <Badge variant={d.usuario.rol === "OWNER" ? "primary" : "neutral"}>
+                  {d.usuario.rol === "OWNER" ? "Dueño" : "Empleado"}
+                </Badge>
+              </div>
+            </div>
+          </div>
+          <SelectorPeriodo
+            alinear="fin"
+            modo={periodo.modo}
+            desde={diaDe(periodo.desde)}
+            hasta={diaDe(periodo.hasta)}
+            preset={typeof sp.preset === "string" ? sp.preset : null}
+            etiqueta={desc.etiqueta}
+            comparacion={desc.comparacion}
+          />
+        </div>
       </header>
 
-      <KpisVendedor r={d} periodo={periodo} />
+      <KpisVendedor r={d} periodo={periodo} sinComision />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        {[
-          [
-            "Unitarias",
-            `${formatearNumero(d.actual.unitarias.cantidad)} · ${formatearPesos(d.actual.unitarias.total)}`,
-          ],
-          [
-            "Mayoristas",
-            `${formatearNumero(d.actual.mayoristas.cantidad)} · ${formatearPesos(d.actual.mayoristas.total)}`,
-          ],
-          [
-            "Cotizaciones",
-            `${d.actual.cotizaciones.convertidas}/${d.actual.cotizaciones.creadas} convertidas${
-              d.actual.cotizaciones.tasaPct !== null
-                ? ` (${d.actual.cotizaciones.tasaPct.toLocaleString("es-AR")} %)`
-                : ""
-            }`,
-          ],
-          ["Devoluciones registradas", formatearNumero(d.actual.devoluciones)],
-        ].map(([label, valor]) => (
-          <div key={label} className="border-border bg-surface rounded-card border p-4">
-            <p className="text-muted text-xs">{label}</p>
-            <p className="font-medium tabular-nums">{valor}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <section
+          className={cn(
+            "bg-card rounded-card p-5 md:p-6",
+            d.comision ? "lg:col-span-2" : "lg:col-span-3",
+          )}
+        >
+          <h2 className="text-h3 font-semibold">Detalle del período</h2>
+          <dl className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {detalle.map(([label, valor]) => (
+              <div
+                key={label}
+                className="bg-surface rounded-inner flex min-w-0 flex-col gap-0.5 p-3"
+              >
+                <dt className="text-muted text-small">{label}</dt>
+                <dd className="text-sm font-semibold break-words tabular-nums">{valor}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+        {d.comision && (
+          <StatCard
+            label="Comisión estimada"
+            value={formatearPesos(d.comision.actual)}
+            anterior={formatearPesos(d.comision.anterior)}
+            etiquetaAnterior={ETIQUETA_ANTERIOR[periodo.modo]}
+            deltaPct={d.comision.deltaPct}
+            hint="Orientativa: se calcula con los porcentajes de comisión del usuario sobre sus ventas unitarias y mayoristas."
+            className="md:p-6"
+          />
+        )}
       </div>
 
-      <Tarjeta
-        titulo="Ventas del período"
-        subtitulo={`${formatearNumero(d.ventas.total)} ${d.ventas.total === 1 ? "venta" : "ventas"}`}
-        accion={
+      <section className="mt-4 flex flex-col gap-4" aria-labelledby="ventas-periodo">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 id="ventas-periodo" className="text-h2 font-semibold">
+              Ventas del período
+            </h2>
+            <p className="text-muted text-small">{`${formatearNumero(d.ventas.total)} ${d.ventas.total === 1 ? "venta" : "ventas"}`}</p>
+          </div>
           <a
             href={`/api/p/${ctx.panel.slug}/equipo/${d.usuario.id}/exportar${qs}`}
-            className={buttonVariants({ variant: "secondary", size: "sm" })}
+            className={buttonVariants({ variant: "secondary" })}
             download
           >
             <FileSpreadsheet strokeWidth={1.75} aria-hidden /> Exportar Excel
           </a>
-        }
-      >
+        </div>
         <DataTable
           columns={columnas}
           rows={d.ventas.filas}
           getRowKey={(v) => v.id}
           caption="Ventas del vendedor"
-          empty={<p className="text-muted py-8 text-center text-sm">Sin ventas en el período.</p>}
+          renderMobile={(v) => (
+            <Link
+              href={ruta(`/ventas/${v.id}`)}
+              className={cn(cardVariants({ variant: "clickable" }), "flex flex-col gap-2 p-4")}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-mono text-sm font-semibold">{v.codigo}</span>
+                <span className="font-semibold tabular-nums">{formatearPesos(v.total)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate text-sm">{v.cliente}</span>
+                <Badge variant={v.tipo === "MAYORISTA" ? "primary" : "neutral"}>
+                  {ETIQUETA_TIPO_VENTA[v.tipo]}
+                </Badge>
+              </div>
+              <p className="text-subtle text-small tabular-nums">
+                {formatearFechaHora(v.fecha)} · {ETIQUETA_MEDIO_PAGO[v.medioPago]} ·{" "}
+                {formatearNumero(v.unidades)} u.
+              </p>
+            </Link>
+          )}
+          empty={<EmptyState icon={Receipt} title="Sin ventas en el período." />}
         />
         <Pagination
-          className="mt-4"
           page={d.ventas.page}
           pageSize={d.ventas.pageSize}
           total={d.ventas.total}
           pathname={ruta(`/equipo/${d.usuario.id}`)}
           params={sp}
         />
-      </Tarjeta>
+      </section>
     </div>
   );
 }

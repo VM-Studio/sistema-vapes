@@ -15,8 +15,8 @@ export function CerrarTodas() {
   const [abierto, setAbierto] = useState(false);
   return (
     <>
-      <Button variant="secondary" onClick={() => setAbierto(true)} className="w-full md:w-fit">
-        <LogOut /> Cerrar sesión en todos los dispositivos
+      <Button variant="secondary" onClick={() => setAbierto(true)} className="w-full">
+        <LogOut strokeWidth={1.75} /> Cerrar sesión en todos los dispositivos
       </Button>
       <ConfirmDialog
         open={abierto}

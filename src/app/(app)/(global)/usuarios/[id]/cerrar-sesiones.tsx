@@ -36,8 +36,13 @@ export function CerrarSesiones({
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setAbierto(true)} disabled={cantidad === 0}>
-        <LogOut /> Cerrar sesiones
+      <Button
+        variant="secondary"
+        onClick={() => setAbierto(true)}
+        disabled={cantidad === 0}
+        className="w-full"
+      >
+        <LogOut strokeWidth={1.75} /> Cerrar sesiones
       </Button>
       <ConfirmDialog
         open={abierto}

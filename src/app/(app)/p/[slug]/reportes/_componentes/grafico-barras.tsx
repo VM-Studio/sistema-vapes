@@ -11,17 +11,17 @@ import {
   YAxis,
 } from "recharts";
 
-import { ChartPlaceholder } from "@/components/ui/chart-theme";
+import { ChartPlaceholder, ChartTheme } from "@/components/ui/chart-theme";
 import { formatearCompacto, formatearNumero, formatearPesos } from "@/lib/format";
 
 export interface PuntoBarra {
   etiqueta: string;
   valor: number;
-  /** Serie de comparación (opcional, gris). */
+  /** Serie de comparación (opcional, naranja: período anterior). */
   comparacion?: number | null;
 }
 
-/** Barras simples (recharts). `moneda`: ejes y tooltip en pesos. */
+/** Barras simples (recharts). Actual en azul, comparación en naranja. `moneda`: ejes y tooltip en pesos. */
 export function GraficoBarras({
   datos,
   moneda = false,
@@ -41,6 +41,7 @@ export function GraficoBarras({
   if (!datos.some((d) => d.valor || d.comparacion)) {
     return <ChartPlaceholder mensaje="Sin datos para graficar" />;
   }
+  const radio: [number, number, number, number] = horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0];
   return (
     <div
       style={{ height: horizontal ? Math.max(alto, datos.length * 34 + 40) : alto }}
@@ -51,10 +52,10 @@ export function GraficoBarras({
           data={datos}
           layout={horizontal ? "vertical" : "horizontal"}
           margin={{ top: 8, right: 12, bottom: 4, left: horizontal ? 8 : 0 }}
+          barCategoryGap={horizontal ? 8 : "20%"}
         >
           <CartesianGrid
-            strokeDasharray="3 3"
-            stroke="var(--color-border)"
+            stroke={ChartTheme.grilla}
             vertical={horizontal}
             horizontal={!horizontal}
           />
@@ -63,44 +64,42 @@ export function GraficoBarras({
               <XAxis
                 type="number"
                 tickFormatter={(n: number) => formatearCompacto(n, moneda)}
-                fontSize={11}
-                stroke="var(--color-muted)"
+                {...ChartTheme.ejeY}
               />
-              <YAxis
-                type="category"
-                dataKey="etiqueta"
-                width={140}
-                fontSize={11}
-                stroke="var(--color-muted)"
-              />
+              <YAxis type="category" dataKey="etiqueta" width={132} {...ChartTheme.ejeX} />
             </>
           ) : (
             <>
-              <XAxis
-                dataKey="etiqueta"
-                fontSize={11}
-                stroke="var(--color-muted)"
-                interval="preserveStartEnd"
-              />
+              <XAxis dataKey="etiqueta" interval="preserveStartEnd" {...ChartTheme.ejeX} />
               <YAxis
                 tickFormatter={(n: number) => formatearCompacto(n, moneda)}
-                fontSize={11}
                 width={56}
-                stroke="var(--color-muted)"
+                {...ChartTheme.ejeY}
               />
             </>
           )}
-          <Tooltip formatter={(v) => fmt(Number(v))} cursor={{ fill: "var(--color-surface-2)" }} />
-          {nombreComparacion && <Legend wrapperStyle={{ fontSize: 12 }} />}
+          <Tooltip
+            formatter={(v) => fmt(Number(v))}
+            contentStyle={ChartTheme.tooltip}
+            cursor={{ fill: ChartTheme.cursorArea }}
+          />
+          {nombreComparacion && <Legend wrapperStyle={ChartTheme.leyenda} />}
           {nombreComparacion && (
             <Bar
               dataKey="comparacion"
               name={nombreComparacion}
-              fill="var(--color-dato-anterior)"
-              radius={4}
+              fill={ChartTheme.anterior}
+              radius={radio}
+              maxBarSize={28}
             />
           )}
-          <Bar dataKey="valor" name={nombre} fill="var(--color-dato-actual)" radius={4} />
+          <Bar
+            dataKey="valor"
+            name={nombre}
+            fill={ChartTheme.actual}
+            radius={radio}
+            maxBarSize={28}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>

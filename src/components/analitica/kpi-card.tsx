@@ -5,8 +5,10 @@ import { formatearDelta } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
- * KPI con comparación: valor grande, el del período anterior en chico y la
- * variación % (verde si sube, rojo si baja; con flecha: no depende del color).
+ * KPI con comparación (mismo aspecto que StatCard): etiqueta gris arriba, valor
+ * grande, variación % con flecha (verde apagado si sube, rojo apagado si baja:
+ * no depende solo del color) y el valor del período anterior en gris.
+ * El 1.er <p> es la etiqueta y el 2.º el valor (lo leen los E2E).
  */
 export function KpiCard({
   label,
@@ -31,23 +33,20 @@ export function KpiCard({
   const Icono = sube ? ArrowUpRight : baja ? ArrowDownRight : Minus;
   return (
     <div
-      className={cn(
-        "bg-card flex min-w-0 flex-col gap-1.5 rounded-card p-4 md:p-5",
-        className,
-      )}
+      className={cn("bg-card rounded-card flex min-w-0 flex-col gap-1 p-4 md:p-5", className)}
       data-testid={`kpi-${label}`}
     >
-      <p className="text-muted truncate text-sm font-medium">{label}</p>
+      <p className="text-muted text-small truncate font-medium">{label}</p>
       <p className="text-xl leading-tight font-semibold tracking-tight break-words tabular-nums md:text-2xl xl:text-xl 2xl:text-2xl">
         {valor}
       </p>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <div className="text-small mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span
           className={cn(
-            "inline-flex items-center gap-0.5 rounded-inner px-1.5 py-0.5 font-semibold tabular-nums",
-            sube && "bg-success-soft text-success-soft-foreground",
-            baja && "bg-danger-soft text-danger-soft-foreground",
-            !sube && !baja && "bg-surface-3 text-muted",
+            "inline-flex items-center gap-0.5 font-semibold tabular-nums",
+            sube && "text-success",
+            baja && "text-danger",
+            !sube && !baja && "text-subtle",
           )}
           aria-label={
             deltaPct === null
@@ -58,11 +57,11 @@ export function KpiCard({
           <Icono className="size-3.5" strokeWidth={2} aria-hidden />
           {deltaPct === null ? "—" : formatearDelta(deltaPct)}
         </span>
-        <span className="text-muted tabular-nums">
-          {etiquetaAnterior}: {anterior}
+        <span className="text-subtle min-w-0 tabular-nums">
+          {etiquetaAnterior}: <span className="whitespace-nowrap">{anterior}</span>
         </span>
       </div>
-      {extra && <p className="text-muted text-xs">{extra}</p>}
+      {extra && <p className="text-subtle text-small">{extra}</p>}
     </div>
   );
 }

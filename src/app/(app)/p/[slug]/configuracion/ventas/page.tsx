@@ -22,7 +22,7 @@ export default async function ConfigVentasPage() {
     <>
       <TabsNav
         items={tabsAjustesPanel(ctx.panel.slug, "/configuracion/ventas")}
-        className="mb-4"
+        className="mb-6"
         ariaLabel="Ajustes del panel"
       />
       <ConfigVentasForm ventas={ventas} catalogo={catalogo} />

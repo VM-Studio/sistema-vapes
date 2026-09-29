@@ -12,7 +12,7 @@ import {
 
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { formatearFechaHora } from "@/lib/utils";
-import { aWinAnsi, recortar } from "@/server/pdf";
+import { aWinAnsi, COLOR_PDF, leerArchivoPublico, recortar, rectRedondeado } from "@/server/pdf";
 import { obtenerStorage } from "@/server/storage";
 
 /**
@@ -70,6 +70,8 @@ export async function cargarLogo(
     } else if (/^https?:\/\//.test(logoUrl)) {
       const r = await fetch(logoUrl, { signal: AbortSignal.timeout(3000) });
       if (r.ok) datos = new Uint8Array(await r.arrayBuffer());
+    } else if (logoUrl.startsWith("/")) {
+      datos = await leerArchivoPublico(logoUrl);
     }
     if (!datos || datos.length < 4) return null;
     if (datos[0] === 0x89 && datos[1] === 0x50) return await doc.embedPng(datos);
@@ -93,10 +95,10 @@ function celdaTexto(v: Celda, tipo: TipoColumna = "texto"): string {
 // =============================================================================
 
 export const A4 = { ancho: 595.28, alto: 841.89 };
-export const GRIS = rgb(0.42, 0.42, 0.45);
-export const NEGRO = rgb(0.07, 0.07, 0.09);
-const LINEA = rgb(0.86, 0.86, 0.88);
-const FONDO_CAB = rgb(0.94, 0.94, 0.95);
+export const GRIS = COLOR_PDF.muted;
+export const NEGRO = COLOR_PDF.texto;
+const LINEA = COLOR_PDF.borde;
+const FONDO_CAB = COLOR_PDF.card;
 
 export interface Lienzo {
   doc: PDFDocument;
@@ -152,57 +154,77 @@ export async function nuevoLienzo(
       l.page.drawText(s, { x: x - dx, y, size, font, color: o.color ?? NEGRO });
     },
   };
+  // Cabecera: logo (o el nombre del negocio) a la izquierda, datos a la derecha.
   const logo = await cargarLogo(doc, cab.logoUrl);
-  let x = l.margen;
+  const altoCab = 40;
+  const derecha = ancho - l.margen;
   if (logo) {
-    const k = Math.min(40 / logo.width, 40 / logo.height);
+    const k = Math.min(140 / logo.width, altoCab / logo.height);
     l.page.drawImage(logo, {
-      x,
-      y: l.y - logo.height * k,
+      x: l.margen,
+      y: l.y - altoCab + (altoCab - logo.height * k) / 2,
       width: logo.width * k,
       height: logo.height * k,
     });
-    x += logo.width * k + 10;
+  } else {
+    l.texto(cab.panel, l.margen, l.y - 24, { size: 16, font: negrita });
   }
-  l.texto(cab.negocio, x, l.y - 13, { size: 13, font: negrita });
-  l.texto(cab.panel, x, l.y - 27, { size: 9, color: GRIS });
-  l.texto(`Generado ${formatearFechaHora(new Date())}`, ancho - l.margen, l.y - 13, {
+  l.texto(cab.negocio, derecha, l.y - 11, { size: 10, font: negrita, derecha: true });
+  l.texto(cab.panel, derecha, l.y - 24, { size: 8.5, color: GRIS, derecha: true });
+  l.texto(`Generado ${formatearFechaHora(new Date())}`, derecha, l.y - 36, {
     derecha: true,
-    color: GRIS,
-    size: 8,
+    color: COLOR_PDF.subtle,
+    size: 7.5,
   });
-  l.y -= 52;
-  l.texto(titulo, l.margen, l.y, { size: 15, font: negrita });
-  l.y -= 14;
-  for (const linea of lineas) {
-    l.texto(linea, l.margen, l.y, { size: 8.5, color: GRIS, max: ancho - 2 * l.margen });
-    l.y -= 11;
-  }
-  l.y -= 4;
+  l.y -= altoCab + 14;
   l.page.drawLine({
     start: { x: l.margen, y: l.y },
-    end: { x: ancho - l.margen, y: l.y },
+    end: { x: derecha, y: l.y },
     thickness: 0.6,
     color: LINEA,
   });
+  l.y -= 28;
+  l.texto(titulo, l.margen, l.y, { size: 18, font: negrita });
   l.y -= 16;
+  for (const linea of lineas) {
+    l.texto(linea, l.margen, l.y, { size: 8.5, color: GRIS, max: ancho - 2 * l.margen });
+    l.y -= 12;
+  }
+  l.y -= 12;
   return l;
 }
 
 function nuevaPagina(l: Lienzo, titulo: string) {
   l.page = l.doc.addPage([l.ancho, l.alto]);
   l.y = l.alto - l.margen;
-  l.texto(`${titulo} (continuación)`, l.margen, l.y, { color: GRIS });
-  l.y -= 18;
+  l.texto(`${titulo} (continuación)`, l.margen, l.y, { color: GRIS, font: l.negrita });
+  l.y -= 8;
+  l.page.drawLine({
+    start: { x: l.margen, y: l.y },
+    end: { x: l.ancho - l.margen, y: l.y },
+    thickness: 0.6,
+    color: LINEA,
+  });
+  l.y -= 16;
 }
 
+/** Pie de cada página: línea fina, negocio · panel a la izquierda y "Página n de m". */
 function numerarPaginas(l: Lienzo) {
   const paginas = l.doc.getPages();
+  const pie = aWinAnsi(l.doc.getCreator() ?? "", l.normal);
   paginas.forEach((p, i) => {
+    const w = p.getWidth();
+    p.drawLine({
+      start: { x: l.margen, y: 28 },
+      end: { x: w - l.margen, y: 28 },
+      thickness: 0.4,
+      color: LINEA,
+    });
+    if (pie) p.drawText(pie, { x: l.margen, y: 16, size: 7.5, font: l.normal, color: GRIS });
     const t = `Página ${i + 1} de ${paginas.length}`;
     p.drawText(t, {
-      x: p.getWidth() - l.margen - l.normal.widthOfTextAtSize(t, 7.5),
-      y: 18,
+      x: w - l.margen - l.normal.widthOfTextAtSize(t, 7.5),
+      y: 16,
       size: 7.5,
       font: l.normal,
       color: GRIS,
@@ -225,7 +247,7 @@ function dibujarTabla(l: Lienzo, t: TablaExport, tituloDoc: string) {
     t.columnas.forEach((c, i) => {
       const s = celdaTexto(valores[i] ?? null, c.tipo);
       const w = anchos[i]! - 6;
-      l.texto(s, derecha(c) ? xs[i]! + anchos[i]! - 3 : xs[i]! + 3, l.y, {
+      l.texto(s, derecha(c) ? xs[i]! + anchos[i]! - 5 : xs[i]! + 5, l.y, {
         derecha: derecha(c),
         font: negrita ? l.negrita : l.normal,
         max: w,
@@ -233,21 +255,26 @@ function dibujarTabla(l: Lienzo, t: TablaExport, tituloDoc: string) {
     });
   };
   const encabezado = () => {
-    l.page.drawRectangle({ x: l.margen, y: l.y - 4, width: util, height: 15, color: FONDO_CAB });
-    fila(
-      t.columnas.map((c) => c.titulo),
-      true,
-    );
-    l.y -= 16;
+    rectRedondeado(l.page, l.margen, l.y - 6, util, 19, 3, FONDO_CAB);
+    t.columnas.forEach((c, i) => {
+      l.texto(c.titulo, derecha(c) ? xs[i]! + anchos[i]! - 5 : xs[i]! + 5, l.y, {
+        derecha: derecha(c),
+        font: l.negrita,
+        size: 7.5,
+        color: GRIS,
+        max: anchos[i]! - 8,
+      });
+    });
+    l.y -= 20;
   };
   if (l.y < l.margen + 60) nuevaPagina(l, tituloDoc);
   if (t.titulo) {
-    l.texto(t.titulo, l.margen, l.y, { size: 10.5, font: l.negrita });
-    l.y -= 15;
+    l.texto(t.titulo, l.margen, l.y, { size: 11, font: l.negrita });
+    l.y -= 16;
   }
   encabezado();
   if (t.filas.length === 0) {
-    l.texto("Sin datos para los filtros elegidos.", l.margen + 3, l.y, { color: GRIS });
+    l.texto("Sin datos para los filtros elegidos.", l.margen + 5, l.y, { color: GRIS });
     l.y -= 14;
   }
   for (const valores of t.filas) {
@@ -267,8 +294,16 @@ function dibujarTabla(l: Lienzo, t: TablaExport, tituloDoc: string) {
   }
   if (t.totales) {
     if (l.y < l.margen + 20) nuevaPagina(l, tituloDoc);
+    l.y -= 2;
     fila(t.totales, true);
-    l.y -= 14;
+    l.y -= 5;
+    l.page.drawLine({
+      start: { x: l.margen, y: l.y },
+      end: { x: l.ancho - l.margen, y: l.y },
+      thickness: 0.8,
+      color: NEGRO,
+    });
+    l.y -= 9;
   }
   l.y -= 12;
 }

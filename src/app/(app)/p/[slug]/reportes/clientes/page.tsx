@@ -1,9 +1,9 @@
 import { Modulo } from "@prisma/client";
 import type { Metadata } from "next";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { esOwner } from "@/lib/permisos";
@@ -17,6 +17,7 @@ import {
   type ReporteClientes,
 } from "@/server/services/reporte.service";
 
+import { BarraFiltros, FilaMobile, GrillaKpis } from "../_componentes/barra-filtros";
 import { CabeceraReporte } from "../_componentes/cabecera-reporte";
 import { FiltroPeriodo } from "../_componentes/filtro-periodo";
 import { GraficoBarras } from "../_componentes/grafico-barras";
@@ -47,10 +48,10 @@ export default async function ReporteClientesPage({
         subtitulo={r.etiqueta}
         params={plano}
       />
-      <div className="mb-5">
+      <BarraFiltros>
         <FiltroPeriodo periodo={r.periodo} desde={r.desde} hasta={r.hasta} />
-      </div>
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+      </BarraFiltros>
+      <GrillaKpis>
         <StatCard
           label="Clientes nuevos"
           value={formatearNumero(c.nuevos.length)}
@@ -61,24 +62,18 @@ export default async function ReporteClientesPage({
           value={formatearNumero(c.inactivos.length)}
           tono={c.inactivos.length ? "alerta" : "neutral"}
         />
-      </div>
-      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Altas por día</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <GraficoBarras
-              nombre="Clientes nuevos"
-              datos={c.nuevosPorDia.map((d) => ({
-                etiqueta: `${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}`,
-                valor: d.clientes,
-              }))}
-            />
-          </CardContent>
-        </Card>
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Clientes nuevos</h2>
+      </GrillaKpis>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SectionCard title="Altas por día">
+          <GraficoBarras
+            nombre="Clientes nuevos"
+            datos={c.nuevosPorDia.map((d) => ({
+              etiqueta: `${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}`,
+              valor: d.clientes,
+            }))}
+          />
+        </SectionCard>
+        <SectionCard title="Clientes nuevos">
           <DataTable
             caption="Clientes nuevos"
             rows={c.nuevos.slice(0, 100)}
@@ -103,12 +98,24 @@ export default async function ReporteClientesPage({
                 cell: (x) => x.compras,
               },
             ]}
+            renderMobile={(x) => (
+              <FilaMobile className="flex items-center justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{x.nombre}</span>
+                  <span className="text-muted text-small block">
+                    {telefonoVisible(x.telefono)} · alta {formatearFecha(x.alta)}
+                  </span>
+                </span>
+                <span className="text-muted text-small shrink-0 tabular-nums">
+                  {x.compras} compras
+                </span>
+              </FilaMobile>
+            )}
           />
-        </section>
+        </SectionCard>
       </div>
       {c.top && (
-        <section className="mt-8 flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Mejores compradores del período</h2>
+        <SectionCard className="mt-4" title="Mejores compradores del período">
           <DataTable
             caption="Mejores compradores"
             rows={c.top}
@@ -140,11 +147,23 @@ export default async function ReporteClientesPage({
                 cell: (x) => formatearPesos(x.total),
               },
             ]}
+            renderMobile={(x) => (
+              <FilaMobile className="flex items-center justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{x.nombre}</span>
+                  <span className="text-muted text-small block">
+                    {x.compras} compras · {formatearNumero(x.unidades)} u.
+                  </span>
+                </span>
+                <span className="shrink-0 font-semibold tabular-nums">
+                  {formatearPesos(x.total)}
+                </span>
+              </FilaMobile>
+            )}
           />
-        </section>
+        </SectionCard>
       )}
-      <section className="mt-8 flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Inactivos hace más de {DIAS_INACTIVO} días</h2>
+      <SectionCard className="mt-4" title={`Inactivos hace más de ${DIAS_INACTIVO} días`}>
         <DataTable
           caption="Clientes inactivos"
           rows={c.inactivos.slice(0, 200)}
@@ -166,8 +185,19 @@ export default async function ReporteClientesPage({
               cell: (x) => x.compras,
             },
           ]}
+          renderMobile={(x) => (
+            <FilaMobile className="flex items-center justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">{x.nombre}</span>
+                <span className="text-muted text-small block">
+                  {telefonoVisible(x.telefono)} · última {formatearFecha(x.ultimaCompra)}
+                </span>
+              </span>
+              <span className="text-muted text-small shrink-0 tabular-nums">{x.dias} días</span>
+            </FilaMobile>
+          )}
         />
-      </section>
+      </SectionCard>
     </>
   );
 }

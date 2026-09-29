@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { usePanel } from "@/components/layout/panel-context";
 import { usePuede, useUsuario } from "@/components/layout/usuario-context";
+import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button } from "@/components/ui/button";
 
 import {
@@ -94,30 +95,31 @@ export function GenerarVenta({
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {hayGuardada && (
+      {/* En mobile la reserva de alto de la barra va al final de la página, no en el encabezado. */}
+      <div className="contents max-md:[&>[aria-hidden]]:hidden">
+        <BarraAccion>
+          {hayGuardada && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setConvirtiendo(null);
+                setInicial(guardada);
+                setAbierto(true);
+              }}
+            >
+              <History strokeWidth={1.75} /> Retomar venta en curso ({guardada.items.length})
+            </Button>
+          )}
           <Button
-            variant="secondary"
-            size="lg"
             onClick={() => {
               setConvirtiendo(null);
-              setInicial(guardada);
+              setInicial(ventaVacia(principal));
               setAbierto(true);
             }}
           >
-            <History strokeWidth={1.75} /> Retomar venta en curso ({guardada.items.length})
+            <Plus strokeWidth={1.75} /> Generar venta
           </Button>
-        )}
-        <Button
-          size="lg"
-          onClick={() => {
-            setConvirtiendo(null);
-            setInicial(ventaVacia(principal));
-            setAbierto(true);
-          }}
-        >
-          <Plus strokeWidth={1.75} /> Generar venta
-        </Button>
+        </BarraAccion>
       </div>
       <ModalVenta
         abierto={abierto}

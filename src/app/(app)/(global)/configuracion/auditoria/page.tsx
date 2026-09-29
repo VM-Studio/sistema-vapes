@@ -1,7 +1,9 @@
+import { ChevronRight, History } from "lucide-react";
 import { AccionAuditoria } from "@prisma/client";
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { TabsNav } from "@/components/ui/tabs-nav";
@@ -49,7 +51,7 @@ export default async function AuditoriaPage({
     <>
       <TabsNav
         items={tabsConfiguracion("/configuracion/auditoria")}
-        className="mb-4"
+        className="mb-6"
         ariaLabel="Configuración"
       />
       <PageHeader
@@ -64,22 +66,39 @@ export default async function AuditoriaPage({
         acciones={Object.values(AccionAuditoria)}
       />
       <ul className="mt-4 flex flex-col gap-2">
+        {r.filas.length === 0 && (
+          <li>
+            <EmptyState icon={History} title="No hay registros con esos filtros" />
+          </li>
+        )}
         {r.filas.map((a) => (
-          <li key={a.id} className="border-border bg-surface rounded-card border p-4 text-sm">
-            <details>
-              <summary className="flex cursor-pointer flex-wrap items-center gap-2">
-                <Badge variant={VARIANTE[a.accion] ?? "neutral"}>{a.accion}</Badge>
+          <li key={a.id} className="bg-card text-small rounded-card">
+            <details className="group">
+              <summary className="flex min-h-12 cursor-pointer list-none flex-wrap items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                <ChevronRight
+                  className="text-subtle size-4 shrink-0 transition-transform group-open:rotate-90"
+                  strokeWidth={1.75}
+                  aria-hidden
+                />
+                <Badge
+                  variant={VARIANTE[a.accion] ?? "neutral"}
+                  className={VARIANTE[a.accion] ? undefined : "bg-surface-3"}
+                >
+                  {a.accion}
+                </Badge>
                 <span className="font-medium">{a.entidad}</span>
-                <Badge variant="neutral">{a.sistema}</Badge>
+                <Badge variant="neutral" className="bg-surface-3">
+                  {a.sistema}
+                </Badge>
                 <span className="text-muted">
                   {a.usuario} · {formatearFechaHora(a.fecha)}
                   {a.ip ? ` · ${a.ip}` : ""}
                 </span>
                 {a.cambios.length > 0 && (
-                  <span className="text-muted text-xs">({a.cambios.length} campo(s))</span>
+                  <span className="text-subtle">({a.cambios.length} campo(s))</span>
                 )}
               </summary>
-              <div className="mt-3 overflow-x-auto">
+              <div className="border-border bg-surface rounded-inner mx-4 mb-4 overflow-x-auto border p-3">
                 {a.cambios.length ? (
                   <table className="w-full text-xs">
                     <thead className="text-muted">
@@ -94,13 +113,13 @@ export default async function AuditoriaPage({
                         <tr key={c.campo}>
                           <td className="py-1 pr-3 font-sans font-medium">{c.campo}</td>
                           <td
-                            className="bg-danger-soft/40 max-w-72 truncate py-1 pr-3"
+                            className="text-danger-soft-foreground max-w-72 truncate py-1 pr-3"
                             title={valor(c.antes)}
                           >
                             {valor(c.antes)}
                           </td>
                           <td
-                            className="bg-success-soft/40 max-w-72 truncate py-1"
+                            className="text-success-soft-foreground max-w-72 truncate py-1"
                             title={valor(c.despues)}
                           >
                             {valor(c.despues)}

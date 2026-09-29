@@ -10,9 +10,10 @@ import { soloDecimal } from "@/components/compras/proveedor-form";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { controlClass } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
+import { SectionCard } from "@/components/ui/section-card";
 import { useToast } from "@/components/ui/toast";
-import { formatearFecha } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { cn, formatearFecha } from "@/lib/utils";
 import type { ProductoDeProveedorDTO } from "@/server/services/proveedor.service";
 
 import {
@@ -121,101 +122,139 @@ export function ProductosProveedor({
     router.refresh();
   }
 
+  const columnasDesktop = editable
+    ? "md:grid-cols-[minmax(0,1fr)_9rem_6rem_7.5rem_2.5rem]"
+    : puedeEditar
+      ? "md:grid-cols-[minmax(0,1fr)_auto_2.5rem]"
+      : "md:grid-cols-[minmax(0,1fr)_auto]";
+
   return (
-    <section aria-labelledby="productos-proveedor" className="flex flex-col gap-3">
-      <h2 id="productos-proveedor" className="text-lg font-semibold">
-        Productos y precios
-      </h2>
+    <SectionCard
+      title="Productos y precios"
+      description={
+        editable ? "Editá el precio y guardalo: queda registrada la fecha de hoy." : undefined
+      }
+      contentClassName="flex flex-col gap-4"
+    >
       {filas.length === 0 ? (
-        <EmptyState icon={Package} title="Todavía no tiene productos cargados" />
+        <EmptyState
+          icon={Package}
+          title="Todavía no tiene productos cargados"
+          className="bg-surface py-10 md:py-12"
+        />
       ) : (
-        <ul
-          aria-label="Productos del proveedor"
-          className="divide-border border-border bg-surface flex flex-col divide-y rounded-card border"
-        >
-          {filas.map((f) => {
-            const cambio =
-              f.guardado === null ||
-              f.guardado.precio !== String(Number(f.precio.replace(",", "."))) ||
-              f.guardado.moneda !== f.moneda;
-            return (
-              <li
-                key={f.productoId}
-                className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 md:grid-cols-[1fr_8rem_6rem_7rem_auto]"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium">{f.nombreCompleto}</p>
-                  {verPrecios && (
-                    <p className="text-muted text-xs">
-                      {f.actualizadoAt
-                        ? `Actualizado ${formatearFecha(f.actualizadoAt)}`
-                        : "Sin guardar"}
-                    </p>
+        <div className="border-border bg-surface rounded-card overflow-hidden border">
+          <div
+            aria-hidden
+            className={cn(
+              "border-border bg-card text-muted hidden h-10 items-center gap-3 border-b px-4 text-xs font-medium md:grid",
+              columnasDesktop,
+            )}
+          >
+            <span>Producto</span>
+            {editable ? (
+              <>
+                <span className="text-right">Precio</span>
+                <span>Moneda</span>
+                <span />
+              </>
+            ) : (
+              verPrecios && <span className="text-right">Precio</span>
+            )}
+            {puedeEditar && <span />}
+          </div>
+          <ul aria-label="Productos del proveedor" className="divide-border flex flex-col divide-y">
+            {filas.map((f) => {
+              const cambio =
+                f.guardado === null ||
+                f.guardado.precio !== String(Number(f.precio.replace(",", "."))) ||
+                f.guardado.moneda !== f.moneda;
+              return (
+                <li
+                  key={f.productoId}
+                  className={cn(
+                    "grid items-center gap-x-3 gap-y-2 px-4 py-3",
+                    editable
+                      ? "grid-cols-[minmax(0,1fr)_5.5rem_auto]"
+                      : "grid-cols-[minmax(0,1fr)_auto_auto]",
+                    columnasDesktop,
                   )}
-                  {errores[f.productoId] && (
-                    <p className="text-danger text-xs">{errores[f.productoId]}</p>
+                >
+                  <div className={cn("min-w-0", editable && "col-span-2 md:col-span-1")}>
+                    <p className="font-medium">{f.nombreCompleto}</p>
+                    {verPrecios && (
+                      <p className="text-subtle text-xs">
+                        {f.actualizadoAt
+                          ? `Actualizado ${formatearFecha(f.actualizadoAt)}`
+                          : "Sin guardar"}
+                      </p>
+                    )}
+                    {errores[f.productoId] && (
+                      <p className="text-danger text-xs">{errores[f.productoId]}</p>
+                    )}
+                  </div>
+                  {editable ? (
+                    <>
+                      <input
+                        inputMode="decimal"
+                        aria-label={`Precio de ${f.nombreCompleto}`}
+                        placeholder="Precio"
+                        value={f.precio}
+                        onChange={(e) =>
+                          actualizar(f.productoId, { precio: soloDecimal(e.target.value) })
+                        }
+                        className={cn(controlClass, "h-11 text-right tabular-nums md:h-10")}
+                      />
+                      <select
+                        aria-label={`Moneda de ${f.nombreCompleto}`}
+                        value={f.moneda}
+                        onChange={(e) =>
+                          actualizar(f.productoId, { moneda: e.target.value as Moneda })
+                        }
+                        className={cn(controlClass, "h-11 md:h-10")}
+                      >
+                        <option value="ARS">ARS</option>
+                        <option value="USD">USD</option>
+                      </select>
+                      <Button
+                        size="sm"
+                        variant={cambio && f.precio !== "" ? "primary" : "secondary"}
+                        className="max-md:h-11"
+                        disabled={!cambio || f.precio === ""}
+                        loading={guardando === f.productoId}
+                        onClick={() => void guardar(f)}
+                        aria-label={`Guardar precio de ${f.nombreCompleto}`}
+                      >
+                        <Check strokeWidth={1.75} /> Guardar
+                      </Button>
+                    </>
+                  ) : (
+                    verPrecios && (
+                      <span className="text-right font-semibold tabular-nums">
+                        {formatearMonto(f.guardado?.precio, f.guardado?.moneda)}
+                      </span>
+                    )
                   )}
-                </div>
-                {editable ? (
-                  <>
-                    <input
-                      inputMode="decimal"
-                      aria-label={`Precio de ${f.nombreCompleto}`}
-                      placeholder="Precio"
-                      value={f.precio}
-                      onChange={(e) =>
-                        actualizar(f.productoId, { precio: soloDecimal(e.target.value) })
-                      }
-                      className={cn(
-                        controlClass,
-                        "col-start-1 h-11 text-right tabular-nums md:col-start-auto",
-                      )}
-                    />
-                    <select
-                      aria-label={`Moneda de ${f.nombreCompleto}`}
-                      value={f.moneda}
-                      onChange={(e) =>
-                        actualizar(f.productoId, { moneda: e.target.value as Moneda })
-                      }
-                      className={cn(controlClass, "h-11")}
-                    >
-                      <option value="ARS">ARS</option>
-                      <option value="USD">USD</option>
-                    </select>
-                    <Button
+                  {puedeEditar && (
+                    <IconButton
+                      variant="ghost"
                       size="sm"
-                      className="min-h-11"
-                      disabled={!cambio || f.precio === ""}
-                      loading={guardando === f.productoId}
-                      onClick={() => void guardar(f)}
-                      aria-label={`Guardar precio de ${f.nombreCompleto}`}
+                      aria-label={`Quitar ${f.nombreCompleto}`}
+                      className={cn(
+                        "text-muted hover:text-danger justify-self-end max-md:size-11",
+                        editable && "col-start-3 row-start-1 md:col-start-auto md:row-start-auto",
+                      )}
+                      disabled={guardando === f.productoId}
+                      onClick={() => void quitar(f)}
                     >
-                      <Check strokeWidth={1.75} /> Guardar
-                    </Button>
-                  </>
-                ) : (
-                  verPrecios && (
-                    <span className="font-semibold tabular-nums">
-                      {formatearMonto(f.guardado?.precio, f.guardado?.moneda)}
-                    </span>
-                  )
-                )}
-                {puedeEditar && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-danger justify-self-end"
-                    disabled={guardando === f.productoId}
-                    onClick={() => void quitar(f)}
-                    aria-label={`Quitar ${f.nombreCompleto}`}
-                  >
-                    <Trash2 strokeWidth={1.75} />
-                  </Button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                      <Trash2 strokeWidth={1.75} />
+                    </IconButton>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
       {editable && (
         <BuscadorRemoto
@@ -243,6 +282,6 @@ export function ProductosProveedor({
           }
         />
       )}
-    </section>
+    </SectionCard>
   );
 }

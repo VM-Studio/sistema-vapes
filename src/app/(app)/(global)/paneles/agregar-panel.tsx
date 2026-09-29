@@ -56,7 +56,7 @@ export function AgregarPanel() {
       <button
         type="button"
         onClick={() => setAbierto(true)}
-        className="border-input text-muted hover:border-subtle hover:text-foreground flex h-full min-h-64 w-full flex-col items-center justify-center gap-3 rounded-card border border-dashed p-6 transition-colors"
+        className="border-input text-muted hover:border-subtle hover:text-foreground rounded-card flex h-full min-h-64 w-full flex-col items-center justify-center gap-3 border border-dashed p-6 transition-colors"
       >
         <Plus className="size-10" strokeWidth={1.25} aria-hidden />
         <span className="text-h3 text-foreground font-semibold">Agregar sistema</span>
@@ -128,13 +128,13 @@ export function AgregarPanel() {
               }}
               className={cn(
                 controlClass,
-                "file:bg-surface-2 py-2 text-sm file:mr-3 file:rounded-inner file:border-0 file:px-3 file:py-1.5",
+                "file:bg-surface-2 file:rounded-inner py-2 text-sm file:mr-3 file:border-0 file:px-3 file:py-1.5",
               )}
             />
           </Field>
           <div className="flex flex-col gap-2">
             <p className="text-small text-muted font-medium">Así se va a ver</p>
-            <div className="bg-surface-3/60 flex flex-col gap-4 rounded-card p-4">
+            <div className="bg-surface-3/60 rounded-card flex flex-col gap-4 p-4">
               <LogoTarjeta nombre={nombre} logoUrl={preview} />
               <p className="text-h2 truncate px-1 font-semibold">{nombre || "Nuevo sistema"}</p>
             </div>

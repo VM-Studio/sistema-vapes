@@ -1,13 +1,19 @@
 "use client";
 
+import { Modulo } from "@prisma/client";
 import {
   ArrowRight,
+  Boxes,
   Camera,
+  Check,
   CircleCheck,
+  History,
   Minus,
   PackageCheck,
+  PackageOpen,
   Plus,
   ScanBarcode,
+  ScanLine,
   Trash2,
   Warehouse,
 } from "lucide-react";
@@ -19,11 +25,15 @@ import { cargarStockPorEscaneoAction } from "@/app/(app)/p/[slug]/productos/acti
 import { SelectorGalpon } from "@/components/catalogo/selector-galpon";
 import { VariantePicker } from "@/components/catalogo/variante-picker";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
-import { useUsuario } from "@/components/layout/usuario-context";
+import { usePuede, useUsuario } from "@/components/layout/usuario-context";
 import { useEstadoOffline } from "@/components/pwa/sincronizacion-offline";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CantidadInput } from "@/components/ui/cantidad-input";
+import { Card } from "@/components/ui/card";
 import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
+import { PageHeader } from "@/components/ui/page-header";
+import { Stepper } from "@/components/ui/stepper";
 import { useToast } from "@/components/ui/toast";
 import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { ScanInput } from "@/features/scanner/ScanInput";
@@ -77,10 +87,13 @@ const stockEn = (v: VarianteEncontrada, depositoId: string) =>
 export function CargaStock({
   depositos,
   buscarInicial,
+  unidades: unidadesPorDeposito,
 }: {
   depositos: { id: string; nombre: string; esPrincipal: boolean }[];
   /** Nombre de un producto para dejar listo en el buscador. */
   buscarInicial: string;
+  /** Unidades actuales por galpón (se muestran en las tarjetas del paso 1). */
+  unidades?: Record<string, number>;
 }) {
   const panel = usePanel();
   const usuario = useUsuario();
@@ -88,6 +101,7 @@ export function CargaStock({
   const router = useRouter();
   const toast = useToast();
   const offline = useEstadoOffline();
+  const puedeVerStock = usePuede(Modulo.STOCK, "ver");
   const CLAVE_LISTA = `carga-stock.lista.${panel.id}.${usuario.id}`;
   const CLAVE_GALPON = `carga-stock.galpon.${panel.id}.${usuario.id}`;
 
@@ -219,24 +233,67 @@ export function CargaStock({
     setPaso("escaneo");
   }
 
+  const cabecera = (
+    <>
+      <PageHeader
+        title="Cargar stock"
+        className="mb-4 md:mb-5"
+        subtitle={
+          paso === "escaneo" && deposito ? (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              Cargando en
+              <Badge variant="primary" className="h-7 px-2.5 text-sm">
+                <Warehouse strokeWidth={1.75} aria-hidden />
+                <span data-testid="galpon-actual">{deposito.nombre}</span>
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-1 underline-offset-4 hover:underline"
+                onClick={() => (items.length > 0 ? setCambiarGalpon(true) : setPaso("galpon"))}
+              >
+                Cambiar
+              </Button>
+            </span>
+          ) : (
+            "Elegí el galpón y escaneá: cada lectura suma una unidad."
+          )
+        }
+      />
+      <Stepper
+        pasos={["Galpón", "Escaneo", "Listo"]}
+        actual={paso === "galpon" ? 0 : paso === "escaneo" ? 1 : 2}
+        className="mb-6 max-w-md"
+      />
+    </>
+  );
+
   // --- Paso 1: galpón -----------------------------------------------------------
   if (paso === "galpon") {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-5">
+      <div className="mx-auto flex max-w-3xl flex-col">
+        {cabecera}
         {guardada && (
           <div
             role="status"
-            className="border-primary/40 bg-primary-soft flex flex-col gap-3 rounded-card border p-4 text-sm md:flex-row md:items-center md:justify-between"
+            className="bg-card text-body mb-6 flex flex-col gap-3 rounded-card p-4 md:flex-row md:items-center md:justify-between md:p-5"
           >
-            <span>
-              Tenés una carga sin terminar:{" "}
-              <strong>
-                {guardada.items.reduce((a, i) => a + i.cantidad, 0)} unidades en{" "}
-                {depositos.find((d) => d.id === guardada.depositoId)?.nombre}
-              </strong>{" "}
-              (hace {haceCuanto(guardada.ts)}).
+            <span className="flex items-start gap-3">
+              <History
+                className="text-muted mt-0.5 size-5 shrink-0"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+              <span>
+                Tenés una carga sin terminar:{" "}
+                <strong>
+                  {guardada.items.reduce((a, i) => a + i.cantidad, 0)} unidades en{" "}
+                  {depositos.find((d) => d.id === guardada.depositoId)?.nombre}
+                </strong>{" "}
+                <span className="text-muted">(hace {haceCuanto(guardada.ts)}).</span>
+              </span>
             </span>
-            <span className="flex gap-2">
+            <span className="flex shrink-0 gap-2 [&>*]:flex-1">
               <Button variant="secondary" size="sm" onClick={descartar}>
                 Descartar
               </Button>
@@ -253,6 +310,7 @@ export function CargaStock({
           titulo="¿En qué galpón vas a cargar?"
           descripcion="Todo lo que escanees entra en ese galpón. Elegilo y tocá Continuar."
           onConfirmar={confirmarGalpon}
+          unidades={unidadesPorDeposito}
         />
         {escaner.ui}
       </div>
@@ -262,62 +320,80 @@ export function CargaStock({
   // --- Paso 3: éxito ------------------------------------------------------------
   if (paso === "exito" && resumen) {
     return (
-      <div className="mx-auto flex max-w-2xl flex-col gap-5">
-        <section className="border-border bg-surface flex flex-col items-center gap-3 rounded-card border p-6 text-center">
-          <span className="bg-success-soft text-success-soft-foreground flex size-14 items-center justify-center rounded-circle">
-            <CircleCheck className="size-7" strokeWidth={1.75} aria-hidden />
-          </span>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Cargaste {formatearNumero(resumen.unidades)} unidades en {resumen.deposito.nombre}
-          </h1>
-          <p className="text-muted text-sm">
-            {resumen.items.length} producto{resumen.items.length === 1 ? "" : "s"} · quedó
-            registrado como ingreso manual.
-          </p>
-        </section>
+      <div className="mx-auto flex max-w-2xl flex-col gap-4 py-2 md:py-6">
+        <Card className="flex flex-col items-center gap-6 p-6 text-center md:p-8">
+          <CircleCheck className="text-success size-14" strokeWidth={1.25} aria-hidden />
+          <div className="flex flex-col gap-1">
+            <h1 className="text-h1 font-semibold">
+              Cargaste {formatearNumero(resumen.unidades)} unidades en {resumen.deposito.nombre}
+            </h1>
+            <p className="text-muted text-body">
+              {resumen.items.length} producto{resumen.items.length === 1 ? "" : "s"} · quedó
+              registrado como ingreso manual.
+            </p>
+          </div>
 
-        <section className="border-border bg-surface rounded-card border p-4">
-          <h2 className="mb-2 text-sm font-semibold">Stock de lo cargado, por galpón</h2>
-          <ul className="grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="Totales por galpón">
-            {resumen.porDeposito.map((d) => (
-              <li
-                key={d.depositoId}
-                className={cn(
-                  "rounded-control p-3",
-                  d.depositoId === resumen.deposito.id
-                    ? "bg-primary-soft text-primary-soft-foreground"
-                    : "bg-surface-2",
-                )}
+          <div className="flex w-full flex-col gap-2 text-left">
+            <h2 className="text-muted text-small font-medium">Stock de lo cargado, por galpón</h2>
+            <ul className="grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="Totales por galpón">
+              {resumen.porDeposito.map((d) => {
+                const actual = d.depositoId === resumen.deposito.id;
+                return (
+                  <li
+                    key={d.depositoId}
+                    className={cn(
+                      "bg-surface flex flex-col gap-0.5 rounded-control p-3",
+                      actual && "ring-foreground ring-1",
+                    )}
+                  >
+                    <p className="text-muted text-small">
+                      {d.nombre}
+                      {actual && " · cargado"}
+                    </p>
+                    <p className="text-2xl font-semibold tabular-nums">
+                      {formatearNumero(d.unidades)}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+            <ul className="bg-surface divide-border mt-2 flex flex-col divide-y rounded-control px-4 text-sm">
+              {resumen.items.map((i) => (
+                <li key={i.varianteId} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="min-w-0 truncate">{i.titulo}</span>
+                  <span className="text-muted flex shrink-0 items-center gap-1.5 tabular-nums">
+                    <strong className="text-success font-semibold">+{i.cantidad}</strong>
+                    <span aria-hidden>·</span>
+                    {i.stockAnterior}
+                    <ArrowRight className="size-3.5" strokeWidth={1.75} aria-label="a" />
+                    <span className="text-foreground font-medium">{i.stockPosterior}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button size="lg" onClick={cargarMas}>
+              <ScanLine strokeWidth={1.75} /> Cargar más
+            </Button>
+            {puedeVerStock ? (
+              <Link
+                href={ruta(`/stock?tab=${resumen.deposito.id}`)}
+                className={buttonVariants({ variant: "secondary", size: "lg" })}
               >
-                <p className="text-xs">{d.nombre}</p>
-                <p className="text-2xl font-bold tabular-nums">{formatearNumero(d.unidades)}</p>
-              </li>
-            ))}
-          </ul>
-          <ul className="divide-border mt-3 flex flex-col divide-y text-sm">
-            {resumen.items.map((i) => (
-              <li key={i.varianteId} className="flex items-center justify-between gap-3 py-2">
-                <span className="min-w-0 truncate">{i.titulo}</span>
-                <span className="shrink-0 tabular-nums">
-                  +{i.cantidad} · {i.stockAnterior} <ArrowRight className="inline size-3" />{" "}
-                  {i.stockPosterior}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <div className="grid grid-cols-2 gap-2">
-          <Link
-            href={ruta("/productos")}
-            className={buttonVariants({ variant: "secondary", size: "lg" })}
-          >
-            Ver productos
-          </Link>
-          <Button size="lg" onClick={cargarMas}>
-            <ScanBarcode strokeWidth={1.75} /> Cargar más
-          </Button>
-        </div>
+                <Boxes strokeWidth={1.75} /> Ver stock
+              </Link>
+            ) : (
+              <Link
+                href={ruta("/productos")}
+                className={buttonVariants({ variant: "secondary", size: "lg" })}
+              >
+                Ver productos
+              </Link>
+            )}
+          </div>
+        </Card>
         {escaner.ui}
       </div>
     );
@@ -325,151 +401,163 @@ export function CargaStock({
 
   // --- Paso 2: escaneo ----------------------------------------------------------
   return (
-    <div
-      className={cn("mx-auto flex max-w-3xl flex-col gap-4", items.length > 0 && "pb-28 md:pb-0")}
-    >
-      <header className="border-primary bg-primary-soft sticky top-0 z-10 flex items-center gap-3 rounded-card border px-4 py-3">
-        <Warehouse className="text-primary size-6 shrink-0" strokeWidth={1.75} aria-hidden />
-        <div className="min-w-0 flex-1">
-          <p className="text-muted text-xs">Cargando en</p>
-          <p className="truncate text-lg leading-tight font-semibold" data-testid="galpon-actual">
-            {deposito?.nombre}
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => (items.length > 0 ? setCambiarGalpon(true) : setPaso("galpon"))}
-        >
-          Cambiar
-        </Button>
-      </header>
-
-      <section
-        aria-label="Escáner"
-        className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4"
-      >
-        <div className="flex items-center gap-3">
-          <span className="bg-primary-soft text-primary-soft-foreground relative flex size-12 shrink-0 items-center justify-center rounded-circle">
-            <ScanBarcode className="size-6" strokeWidth={1.75} aria-hidden />
-            <span
-              className="bg-primary/15 absolute inset-0 animate-ping rounded-circle motion-reduce:hidden"
-              aria-hidden
+    <div className={cn("mx-auto flex max-w-3xl flex-col", items.length > 0 && "pb-28 md:pb-0")}>
+      {cabecera}
+      <div className="flex flex-col gap-4">
+        <Card aria-label="Escáner" className="flex flex-col gap-4 p-5 md:p-6" role="region">
+          <div className="flex items-center gap-4">
+            <span className="bg-surface text-foreground relative flex size-14 shrink-0 items-center justify-center rounded-card">
+              <ScanBarcode className="size-8" strokeWidth={1.5} aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1" aria-live="polite">
+              {escaner.ultima ? (
+                <>
+                  <p className="text-h3 truncate font-semibold">{escaner.ultima.titulo}</p>
+                  <p className="text-success text-small inline-flex items-center gap-1">
+                    <Check className="size-4" strokeWidth={2} aria-hidden /> Sumado a la lista
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-h3 font-semibold">Escaneá un producto o buscalo</p>
+                  <p className="text-muted text-small">
+                    Con la pistola no hace falta tocar nada. Cada lectura repetida suma 1.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <ScanInput
+              onScan={(c, m) => void escaner.procesar(c, m.fuente)}
+              inputRef={escaner.inputRef}
+              autoFocus={false}
+              placeholder="Escribí un código y Enter"
+              className="flex-1"
             />
-          </span>
-          <div className="min-w-0 flex-1" aria-live="polite">
-            {escaner.ultima ? (
-              <>
-                <p className="truncate font-semibold">{escaner.ultima.titulo}</p>
-                <p className="text-muted text-sm">Sumado a la lista</p>
-              </>
-            ) : (
-              <>
-                <p className="font-semibold">Escaneá los productos</p>
-                <p className="text-muted text-sm">
-                  Con la pistola no hace falta tocar nada. Cada lectura repetida suma 1.
-                </p>
-              </>
+            <Button
+              variant="secondary"
+              onClick={escaner.abrirCamara}
+              aria-label="Escanear con la cámara"
+              className="h-12 w-12 px-0 sm:w-auto sm:px-4 md:h-12"
+            >
+              <Camera strokeWidth={1.75} /> <span className="hidden sm:inline">Cámara</span>
+            </Button>
+          </div>
+          <VariantePicker
+            onSelect={(v) => escaner.agregar(v)}
+            depositoId={depositoId ?? undefined}
+            yaAgregadas={new Set(items.map((i) => i.variante.varianteId))}
+            valorInicial={buscarInicial}
+            autoFocus={buscarInicial !== ""}
+            placeholder="Buscar a mano: producto, sabor o código…"
+          />
+        </Card>
+
+        <Card className="flex flex-col gap-4 p-5 md:p-6">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-h3 font-semibold">Lista de carga</h2>
+            {items.length > 0 && (
+              <p className="text-muted text-small tabular-nums">
+                {items.length} producto{items.length === 1 ? "" : "s"} ·{" "}
+                {formatearNumero(unidades)} u.
+              </p>
             )}
           </div>
-          <Button
-            variant="secondary"
-            onClick={escaner.abrirCamara}
-            aria-label="Escanear con la cámara"
-          >
-            <Camera strokeWidth={1.75} /> <span className="hidden sm:inline">Cámara</span>
-          </Button>
-        </div>
-        <ScanInput
-          onScan={(c, m) => void escaner.procesar(c, m.fuente)}
-          inputRef={escaner.inputRef}
-          autoFocus={false}
-          placeholder="Escribí un código y Enter"
-        />
-        <VariantePicker
-          onSelect={(v) => escaner.agregar(v)}
-          depositoId={depositoId ?? undefined}
-          yaAgregadas={new Set(items.map((i) => i.variante.varianteId))}
-          valorInicial={buscarInicial}
-          autoFocus={buscarInicial !== ""}
-          placeholder="Buscar a mano: producto, sabor o código…"
-        />
-      </section>
-
-      {items.length === 0 ? (
-        <p className="border-border text-muted rounded-card border border-dashed px-4 py-8 text-center text-sm">
-          Todavía no escaneaste nada.
-        </p>
-      ) : (
-        <ul aria-label="Lista de carga" className="flex flex-col gap-2">
-          {items.map((i) => {
-            const v = i.variante;
-            const actual = depositoId ? stockEn(v, depositoId) : 0;
-            const recien = resaltado?.id === v.varianteId;
-            return (
-              <li
-                key={v.varianteId}
-                aria-label={v.titulo}
-                className={cn(
-                  "bg-surface flex flex-col gap-3 rounded-card border p-3 transition-colors sm:flex-row sm:items-center",
-                  recien ? "border-primary bg-primary-soft" : "border-border",
-                )}
+          {items.length === 0 ? (
+            <div className="bg-surface text-muted flex flex-col items-center gap-2 rounded-control px-4 py-10 text-center text-sm">
+              <PackageOpen className="text-subtle size-10" strokeWidth={1.25} aria-hidden />
+              Todavía no escaneaste nada.
+            </div>
+          ) : (
+            <div className="border-border bg-surface overflow-hidden rounded-control border">
+              <div
+                aria-hidden
+                className="border-border bg-card text-muted hidden h-10 grid-cols-[minmax(0,1fr)_9rem_13rem] items-center gap-4 border-b px-4 text-xs font-medium sm:grid"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="leading-tight font-semibold break-words">
-                    {v.nombreCompleto}
-                    {v.sabor && <span className="font-normal"> — {v.sabor}</span>}
-                  </p>
-                  <p className="text-muted text-sm">
-                    En {deposito?.nombre}: <span className="tabular-nums">{actual}</span>{" "}
-                    <ArrowRight className="inline size-3.5" aria-hidden />{" "}
-                    <strong className="text-foreground tabular-nums" data-testid="stock-resultante">
-                      {actual + i.cantidad}
-                    </strong>
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    onClick={() => cambiarCantidad(v.varianteId, i.cantidad - 1)}
-                    aria-label={`Restar uno de ${v.titulo}`}
-                    disabled={i.cantidad <= 1}
-                  >
-                    <Minus strokeWidth={1.75} />
-                  </Button>
-                  <CantidadInput
-                    etiqueta={`Cantidad de ${v.titulo}`}
-                    valor={i.cantidad}
-                    onCambio={(n) => cambiarCantidad(v.varianteId, n)}
-                    className="w-20 text-lg font-semibold"
-                  />
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    onClick={() => cambiarCantidad(v.varianteId, i.cantidad + 1)}
-                    aria-label={`Sumar uno de ${v.titulo}`}
-                  >
-                    <Plus strokeWidth={1.75} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-danger"
-                    onClick={() => quitar(v.varianteId)}
-                    aria-label={`Quitar ${v.titulo}`}
-                  >
-                    <Trash2 strokeWidth={1.75} />
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                <span>Producto</span>
+                <span className="text-right">En {deposito?.nombre}</span>
+                <span className="text-right">Cantidad</span>
+              </div>
+              <ul aria-label="Lista de carga" className="divide-border flex flex-col divide-y">
+                {items.map((i) => {
+                  const v = i.variante;
+                  const actual = depositoId ? stockEn(v, depositoId) : 0;
+                  const recien = resaltado?.id === v.varianteId;
+                  return (
+                    <li
+                      key={v.varianteId}
+                      aria-label={v.titulo}
+                      className={cn(
+                        "flex flex-col gap-3 px-4 py-3 transition-colors sm:grid sm:grid-cols-[minmax(0,1fr)_9rem_13rem] sm:items-center sm:gap-4",
+                        recien && "bg-surface-3",
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <p className="leading-tight font-medium break-words">
+                          {v.nombreCompleto}
+                          {v.sabor && <span className="text-muted font-normal"> — {v.sabor}</span>}
+                        </p>
+                        <p className="text-muted text-small sm:hidden">
+                          En {deposito?.nombre}: <span className="tabular-nums">{actual}</span>{" "}
+                          <ArrowRight className="inline size-3.5" aria-hidden />{" "}
+                          <strong className="text-foreground tabular-nums">{actual + i.cantidad}</strong>
+                        </p>
+                      </div>
+                      <p className="text-muted hidden text-right text-sm tabular-nums sm:block">
+                        {actual} <ArrowRight className="inline size-3.5" aria-hidden />{" "}
+                        <strong
+                          className="text-foreground font-semibold"
+                          data-testid="stock-resultante"
+                        >
+                          {actual + i.cantidad}
+                        </strong>
+                      </p>
+                      <div className="flex items-center gap-1 sm:justify-end">
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          onClick={() => cambiarCantidad(v.varianteId, i.cantidad - 1)}
+                          aria-label={`Restar uno de ${v.titulo}`}
+                          disabled={i.cantidad <= 1}
+                        >
+                          <Minus strokeWidth={1.75} />
+                        </Button>
+                        <CantidadInput
+                          etiqueta={`Cantidad de ${v.titulo}`}
+                          valor={i.cantidad}
+                          onCambio={(n) => cambiarCantidad(v.varianteId, n)}
+                          className="w-16 text-center text-lg font-semibold"
+                        />
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          onClick={() => cambiarCantidad(v.varianteId, i.cantidad + 1)}
+                          aria-label={`Sumar uno de ${v.titulo}`}
+                        >
+                          <Plus strokeWidth={1.75} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted hover:text-danger ml-auto sm:ml-0"
+                          onClick={() => quitar(v.varianteId)}
+                          aria-label={`Quitar ${v.titulo}`}
+                        >
+                          <Trash2 strokeWidth={1.75} />
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </Card>
+      </div>
 
       {items.length > 0 && deposito && (
-        <div className="border-border bg-surface/95 fixed inset-x-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-20 border-t px-4 py-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0">
+        <div className="border-border bg-surface pl-safe pr-safe fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t px-4 py-3 md:sticky md:bottom-0 md:mt-6 md:px-0 md:py-4">
           <Button
             size="lg"
             fullWidth

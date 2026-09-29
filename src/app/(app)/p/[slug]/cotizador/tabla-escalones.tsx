@@ -37,54 +37,64 @@ export function TablaEscalones({
 }) {
   const cambiar = (clave: number, cambio: Partial<FilaEscalon>) =>
     onCambiar(filas.map((f) => (f.clave === clave ? { ...f, ...cambio } : f)));
+  const columnas = "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3rem_2.75rem] items-center gap-2";
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       {filas.length > 0 && (
-        <div className="text-muted grid grid-cols-[1fr_1fr_auto_auto] gap-2 text-xs font-medium">
-          <span>Desde (unidades)</span>
-          <span>{etiquetaValor}</span>
-          <span className="w-12">Activo</span>
-          <span className="w-12" />
+        <div className="border-border bg-surface rounded-card overflow-hidden border">
+          <div
+            className={cn(
+              columnas,
+              "bg-card border-border text-muted border-b px-3 py-2.5 text-xs font-medium",
+            )}
+          >
+            <span>Desde (unidades)</span>
+            <span>{etiquetaValor}</span>
+            <span className="text-center">Activo</span>
+            <span className="sr-only">Quitar</span>
+          </div>
+          <div className="divide-border divide-y">
+            {filas.map((f, n) => (
+              <div key={f.clave} className={cn(columnas, "px-3 py-2")}>
+                <input
+                  inputMode="numeric"
+                  aria-label={`Cantidad mínima del escalón ${n + 1}`}
+                  className={cn(controlClass, "h-11 tabular-nums md:h-10")}
+                  value={f.cantidadMinima}
+                  placeholder="10"
+                  onChange={(e) =>
+                    cambiar(f.clave, { cantidadMinima: e.target.value.replace(/\D/g, "") })
+                  }
+                />
+                <input
+                  inputMode="decimal"
+                  aria-label={`${etiquetaValor} del escalón ${n + 1}`}
+                  className={cn(controlClass, "h-11 tabular-nums md:h-10")}
+                  value={f.valor}
+                  placeholder={placeholderValor}
+                  onChange={(e) => cambiar(f.clave, { valor: e.target.value })}
+                />
+                <Switch
+                  checked={f.activo}
+                  onCheckedChange={(activo) => cambiar(f.clave, { activo })}
+                  label={`Escalón ${n + 1} activo`}
+                  labelOculto
+                  className="justify-self-center"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted hover:text-danger"
+                  aria-label={`Quitar escalón ${n + 1}`}
+                  onClick={() => onCambiar(filas.filter((x) => x.clave !== f.clave))}
+                >
+                  <Trash2 strokeWidth={1.75} />
+                </Button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
-      {filas.map((f, n) => (
-        <div key={f.clave} className="grid grid-cols-[1fr_1fr_auto_auto] items-center gap-2">
-          <input
-            inputMode="numeric"
-            aria-label={`Cantidad mínima del escalón ${n + 1}`}
-            className={cn(controlClass, "h-11 tabular-nums")}
-            value={f.cantidadMinima}
-            placeholder="10"
-            onChange={(e) =>
-              cambiar(f.clave, { cantidadMinima: e.target.value.replace(/\D/g, "") })
-            }
-          />
-          <input
-            inputMode="decimal"
-            aria-label={`${etiquetaValor} del escalón ${n + 1}`}
-            className={cn(controlClass, "h-11 tabular-nums")}
-            value={f.valor}
-            placeholder={placeholderValor}
-            onChange={(e) => cambiar(f.clave, { valor: e.target.value })}
-          />
-          <Switch
-            checked={f.activo}
-            onCheckedChange={(activo) => cambiar(f.clave, { activo })}
-            label={`Escalón ${n + 1} activo`}
-            labelOculto
-            className="w-12"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-danger"
-            aria-label={`Quitar escalón ${n + 1}`}
-            onClick={() => onCambiar(filas.filter((x) => x.clave !== f.clave))}
-          >
-            <Trash2 strokeWidth={1.75} />
-          </Button>
-        </div>
-      ))}
       <Button
         variant="secondary"
         size="sm"

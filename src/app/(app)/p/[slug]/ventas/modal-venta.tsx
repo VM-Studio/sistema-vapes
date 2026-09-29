@@ -1,7 +1,7 @@
 "use client";
 
 import type { MedioPago } from "@prisma/client";
-import { ArrowLeft, Check, Lock, Warehouse, WifiOff, X } from "lucide-react";
+import { ArrowLeft, Lock, Warehouse, WifiOff, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -33,6 +33,7 @@ import {
 } from "./estado-venta";
 import { PasoPago } from "./paso-pago";
 import { ID_BUSCADOR_VENTA, PasoProductos, type SaborParaVenta } from "./paso-productos";
+import { StepperVenta } from "./_componentes/stepper-venta";
 import { VentaExitosa } from "./venta-exitosa";
 
 export interface DepositoVenta {
@@ -371,15 +372,15 @@ export function ModalVenta({
       data-testid="modal-venta"
       className={cn(
         "anim-dialog bg-surface text-foreground shadow-sheet m-0 h-dvh max-h-none w-full max-w-none p-0",
-        "md:m-auto md:h-[min(92dvh,60rem)] md:w-[min(72rem,calc(100%-3rem))] md:rounded-card",
+        "md:rounded-card md:m-auto md:h-[min(92dvh,56rem)] md:w-[min(60rem,calc(100%-3rem))]",
       )}
     >
       {abierto && (
         <div className="flex h-full flex-col">
-          <header className="border-border flex flex-col gap-3 border-b px-4 pt-3 pb-3 md:px-6 md:pt-5">
+          <header className="border-border flex flex-col gap-3 border-b px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 md:px-6 md:pt-5 md:pb-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <h2 id={idTitulo} className="text-xl font-semibold tracking-tight">
+                <h2 id={idTitulo} className="text-h2 truncate font-semibold">
                   {exito
                     ? "Venta registrada"
                     : conversion
@@ -390,11 +391,15 @@ export function ModalVenta({
                   <button
                     type="button"
                     onClick={() => irA("galpon")}
-                    className="bg-primary-soft text-primary-soft-foreground inline-flex min-h-9 items-center gap-1.5 rounded-control px-3 text-sm font-medium"
+                    className="bg-card hover:bg-card-hover text-foreground text-small rounded-control inline-flex min-h-9 min-w-0 items-center gap-1.5 px-3 font-medium transition-colors"
                     aria-label={`Galpón: ${deposito.nombre}. Cambiar`}
                     data-testid="galpon-venta"
                   >
-                    <Warehouse className="size-4" strokeWidth={1.75} aria-hidden />
+                    <Warehouse
+                      className="text-muted size-4 shrink-0"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
                     <span className="truncate">{deposito.nombre}</span>
                   </button>
                 )}
@@ -410,40 +415,12 @@ export function ModalVenta({
               </Button>
             </div>
             {!exito && (
-              <ol
-                aria-label="Pasos de la venta"
-                className={cn("grid gap-1.5", conversion ? "grid-cols-2" : "grid-cols-4")}
-              >
-                {pasos.map((p, n) => {
-                  const hecho = n < indicePaso;
-                  const actual = n === indicePaso;
-                  return (
-                    <li key={p}>
-                      <button
-                        type="button"
-                        disabled={!hecho}
-                        onClick={() => irA(p)}
-                        aria-current={actual ? "step" : undefined}
-                        className={cn(
-                          "flex w-full flex-col gap-1.5 text-left text-xs font-medium disabled:cursor-default",
-                          actual ? "text-foreground" : hecho ? "text-primary" : "text-muted",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "h-1.5 rounded-circle",
-                            actual || hecho ? "bg-primary" : "bg-surface-2",
-                          )}
-                        />
-                        <span className="flex items-center gap-1">
-                          {hecho && <Check className="size-3.5" strokeWidth={2} aria-hidden />}
-                          {n + 1}. {ETIQUETA_PASO[p]}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
+              <StepperVenta
+                ariaLabel="Pasos de la venta"
+                pasos={pasos.map((p) => ETIQUETA_PASO[p])}
+                actual={indicePaso}
+                onIr={(n) => irA(pasos[n]!)}
+              />
             )}
           </header>
 
@@ -451,12 +428,12 @@ export function ModalVenta({
             {!enLinea && !exito ? (
               <div
                 role="alert"
-                className="bg-warning-soft text-warning-soft-foreground flex flex-col items-center gap-3 rounded-card px-6 py-10 text-center"
+                className="bg-card rounded-card flex flex-col items-center gap-3 px-6 py-12 text-center"
               >
-                <WifiOff className="size-10" strokeWidth={1.75} aria-hidden />
-                <p className="text-lg font-semibold">Sin conexión</p>
-                <p className="max-w-md text-sm">{MENSAJE_SIN_CONEXION}.</p>
-                <p className="max-w-md text-xs">
+                <WifiOff className="text-subtle size-14" strokeWidth={1.25} aria-hidden />
+                <p className="text-h3 font-semibold">Sin conexión</p>
+                <p className="text-muted max-w-md text-sm">{MENSAJE_SIN_CONEXION}.</p>
+                <p className="text-subtle text-small max-w-md">
                   La venta en curso quedó guardada: cuando vuelva la señal, seguís desde acá.
                 </p>
               </div>
@@ -465,7 +442,7 @@ export function ModalVenta({
                 {conversion && (
                   <p
                     role="status"
-                    className="bg-success-soft text-success-soft-foreground mx-auto mb-4 max-w-lg rounded-control px-4 py-3 text-center text-sm"
+                    className="bg-success-soft text-success-soft-foreground rounded-control mx-auto mb-4 max-w-lg px-4 py-3 text-center text-sm"
                   >
                     La cotización {conversion.codigo} quedó convertida en esta venta.
                   </p>
@@ -477,7 +454,7 @@ export function ModalVenta({
                 {error && (
                   <p
                     role="alert"
-                    className="bg-danger-soft text-danger-soft-foreground mb-4 rounded-control px-4 py-3 text-sm"
+                    className="bg-danger-soft text-danger-soft-foreground rounded-control mb-4 px-4 py-3 text-sm"
                   >
                     {error}
                   </p>
@@ -537,7 +514,7 @@ export function ModalVenta({
                   />
                 )}
                 {venta.paso === "cliente" && (
-                  <div className="mx-auto flex max-w-xl flex-col gap-4">
+                  <div className="mx-auto flex max-w-xl flex-col gap-4 md:pt-4">
                     {avisoCliente && (
                       <p
                         role="status"
@@ -559,10 +536,10 @@ export function ModalVenta({
                 {venta.paso === "pago" && conversion && (
                   <div className="mb-5 flex flex-col gap-3">
                     <p
-                      className="bg-primary-soft text-primary-soft-foreground flex items-center gap-2 rounded-control px-4 py-3 text-sm"
+                      className="bg-card text-foreground rounded-card flex items-center gap-2 px-4 py-3 text-sm"
                       data-testid="conversion-bloqueada"
                     >
-                      <Lock className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                      <Lock className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
                       <span>
                         Cotización <strong>{conversion.codigo}</strong>: productos, precios
                         {conversion.cliente ? " y cliente" : ""} vienen de la cotización y no se
@@ -600,82 +577,85 @@ export function ModalVenta({
             )}
           </div>
 
-          <footer className="pb-safe border-border bg-surface flex shrink-0 items-center gap-3 border-t px-4 pt-3 md:px-6 md:pb-4">
-            {exito ? (
-              <div className="flex w-full flex-col gap-2 md:flex-row md:justify-end">
-                <Button variant="secondary" onClick={() => cerrar(true)}>
-                  Cerrar
-                </Button>
-                {conversion ? (
-                  <Button
-                    size="lg"
-                    onClick={() => router.push(ruta(`/cotizador/${conversion.cotizacionId}`))}
-                  >
-                    Volver a la cotización
+          {(exito || venta.paso !== "galpon") && (
+            <footer className="border-border bg-surface flex shrink-0 items-center gap-3 border-t px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:px-6 md:py-4">
+              {exito ? (
+                <div className="flex w-full flex-col-reverse gap-2 md:flex-row md:justify-end">
+                  <Button variant="secondary" size="lg" onClick={() => cerrar(true)}>
+                    Cerrar
                   </Button>
-                ) : (
-                  <Button size="lg" onClick={nuevaVenta}>
-                    Nueva venta
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <>
-                {indicePaso > 0 && (
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    aria-label="Volver al paso anterior"
-                    onClick={() => irA(pasos[indicePaso - 1]!)}
-                    disabled={enviando}
-                  >
-                    <ArrowLeft strokeWidth={1.75} />
-                  </Button>
-                )}
-                {venta.paso !== "galpon" && (
-                  <div className="min-w-0 flex-1 leading-tight">
-                    <p className="text-muted text-xs">
-                      {totales.unidades} {totales.unidades === 1 ? "unidad" : "unidades"}
-                    </p>
-                    <p className="text-lg font-semibold tabular-nums" data-testid="total-venta">
-                      {formatearPesos(totales.total)}
-                    </p>
-                  </div>
-                )}
-                {venta.paso === "productos" && (
-                  <Button
-                    size="lg"
-                    disabled={
-                      !enLinea || venta.items.length === 0 || excedidos.length > 0 || subdialogo
-                    }
-                    onClick={() => void continuarDesdeProductos()}
-                  >
-                    Continuar
-                  </Button>
-                )}
-                {venta.paso === "cliente" && (
-                  <Button
-                    size="lg"
-                    disabled={!enLinea || venta.cliente === null}
-                    onClick={() => irA("pago")}
-                  >
-                    Continuar
-                  </Button>
-                )}
-                {venta.paso === "pago" && (
-                  <Button
-                    size="lg"
-                    disabled={!puedeConfirmar}
-                    loading={enviando}
-                    onClick={() => void confirmar()}
-                    title="F9"
-                  >
-                    Confirmar venta
-                  </Button>
-                )}
-              </>
-            )}
-          </footer>
+                  {conversion ? (
+                    <Button
+                      size="lg"
+                      onClick={() => router.push(ruta(`/cotizador/${conversion.cotizacionId}`))}
+                    >
+                      Volver a la cotización
+                    </Button>
+                  ) : (
+                    <Button size="lg" onClick={nuevaVenta}>
+                      Nueva venta
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {indicePaso > 0 && (
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      aria-label="Volver al paso anterior"
+                      onClick={() => irA(pasos[indicePaso - 1]!)}
+                      disabled={enviando}
+                    >
+                      <ArrowLeft strokeWidth={1.75} />
+                    </Button>
+                  )}
+                  {venta.paso !== "galpon" && (
+                    <div className="min-w-0 flex-1">
+                      <p className="text-muted text-small">
+                        Total · {totales.unidades} {totales.unidades === 1 ? "unidad" : "unidades"}
+                      </p>
+                      <p className="text-h2 font-semibold tabular-nums" data-testid="total-venta">
+                        {formatearPesos(totales.total)}
+                      </p>
+                    </div>
+                  )}
+                  {venta.paso === "productos" && (
+                    <Button
+                      size="lg"
+                      disabled={
+                        !enLinea || venta.items.length === 0 || excedidos.length > 0 || subdialogo
+                      }
+                      onClick={() => void continuarDesdeProductos()}
+                    >
+                      Continuar
+                    </Button>
+                  )}
+                  {venta.paso === "cliente" && (
+                    <Button
+                      size="lg"
+                      disabled={!enLinea || venta.cliente === null}
+                      onClick={() => irA("pago")}
+                    >
+                      Continuar
+                    </Button>
+                  )}
+                  {venta.paso === "pago" && (
+                    <Button
+                      size="lg"
+                      className="md:min-w-56"
+                      disabled={!puedeConfirmar}
+                      loading={enviando}
+                      onClick={() => void confirmar()}
+                      title="F9"
+                    >
+                      Confirmar venta
+                    </Button>
+                  )}
+                </>
+              )}
+            </footer>
+          )}
         </div>
       )}
 

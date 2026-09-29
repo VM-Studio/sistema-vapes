@@ -102,10 +102,10 @@ export function CrearUsuarioForm({ onListo, onEnviando }: Props) {
         <Button
           variant="ghost"
           size="sm"
-          className="text-primary self-start"
+          className="self-start"
           onClick={() => form.setValue("password", passwordAleatoria(), { shouldValidate: true })}
         >
-          <Shuffle /> Generar una
+          <Shuffle strokeWidth={1.75} /> Generar una
         </Button>
       </div>
     </Form>
@@ -153,7 +153,7 @@ export function EditarUsuarioForm({
       {esUnoMismo ? (
         // Sin inputs deshabilitados: react-hook-form los excluiría del envío.
         // Los valores (OWNER, activo) viajan igual desde defaultValues.
-        <p className="bg-surface-2 text-muted rounded-control px-3 py-2.5 text-sm">
+        <p className="border-border bg-surface text-muted text-small rounded-control border px-3 py-2.5">
           Sos vos: no podés cambiar tu propio rol ni desactivarte.
         </p>
       ) : (

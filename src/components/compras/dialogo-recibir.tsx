@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -68,44 +68,63 @@ export function DialogoRecibir({
       }
     >
       {cambios === null ? (
-        <p className="text-muted flex items-center gap-2 text-sm">
-          <Loader2 className="size-4 animate-spin" aria-hidden /> Comparando con los precios de{" "}
-          {proveedor}…
+        <p className="text-muted text-small flex items-center gap-2">
+          <Loader2 className="size-4 animate-spin" strokeWidth={1.75} aria-hidden /> Comparando con
+          los precios de {proveedor}…
         </p>
       ) : hayCambios ? (
-        <>
-          <p className="text-sm font-medium">
+        <div className="flex flex-col gap-3">
+          <p className="text-body font-medium">
             ¿Actualizar el precio de {proveedor} con estos costos?
           </p>
-          <ul
-            aria-label="Precios que cambian"
-            className="flex max-h-60 flex-col gap-1.5 overflow-y-auto text-sm"
-          >
-            {cambios.map((c) => (
-              <li key={c.productoId} className="flex justify-between gap-3">
-                <span className="min-w-0 truncate">{c.nombreCompleto}</span>
-                <span className="shrink-0 tabular-nums">
-                  {c.antes === null ? (
-                    <>
-                      sin precio → <strong>{formatearPesos(c.despues)}</strong>
-                    </>
-                  ) : (
-                    <>
-                      de {formatearMonto(c.antes, c.monedaAntes)} a{" "}
-                      <strong>{formatearPesos(c.despues)}</strong>
-                    </>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="text-muted text-xs">
+          <div className="border-border bg-surface rounded-card overflow-hidden border">
+            <div
+              aria-hidden
+              className="border-border bg-card text-muted flex h-9 items-center justify-between gap-3 border-b px-3 text-xs font-medium"
+            >
+              <span>Producto</span>
+              <span>Precio actual → nuevo</span>
+            </div>
+            <ul
+              aria-label="Precios que cambian"
+              className="divide-border text-small flex max-h-60 flex-col divide-y overflow-y-auto"
+            >
+              {cambios.map((c) => (
+                <li
+                  key={c.productoId}
+                  className="flex min-h-11 items-center justify-between gap-3 px-3 py-2"
+                >
+                  <span className="min-w-0 truncate font-medium">{c.nombreCompleto}</span>
+                  <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
+                    {c.antes === null ? (
+                      <span className="text-subtle">sin precio</span>
+                    ) : (
+                      <span className="text-muted">
+                        <span className="sr-only">de </span>
+                        {formatearMonto(c.antes, c.monedaAntes)}
+                        <span className="sr-only"> a </span>
+                      </span>
+                    )}
+                    <ArrowRight
+                      className="text-subtle size-4 shrink-0"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
+                    <strong className="font-semibold">{formatearPesos(c.despues)}</strong>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="text-subtle text-small">
             Si hay varios sabores del mismo producto con costos distintos, queda el del último
             cargado.
           </p>
-        </>
+        </div>
       ) : (
-        <p className="text-muted text-sm">Los costos coinciden con los precios de {proveedor}.</p>
+        <p className="text-muted text-small">
+          Los costos coinciden con los precios de {proveedor}.
+        </p>
       )}
     </Dialog>
   );

@@ -1,7 +1,6 @@
 "use client";
 
 import type { MedioPago } from "@prisma/client";
-import { Banknote, Bitcoin, Landmark, type LucideIcon } from "lucide-react";
 
 import type { ClienteElegido } from "@/components/clientes/selector-cliente";
 import { Input } from "@/components/ui/input";
@@ -10,13 +9,8 @@ import { formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ETIQUETA_MEDIO_PAGO, MEDIOS_PAGO } from "@/lib/ventas-ui";
 
+import { ICONO_MEDIO_PAGO } from "./_componentes/medio-pago";
 import { aCentavos, deCentavos, montoTipeado, precioCobrado, type ItemVenta } from "./estado-venta";
-
-const ICONO_MEDIO: Record<MedioPago, LucideIcon> = {
-  EFECTIVO: Banknote,
-  TRANSFERENCIA: Landmark,
-  BINANCE: Bitcoin,
-};
 
 export function PasoPago({
   deposito,
@@ -53,13 +47,13 @@ export function PasoPago({
     aCentavos(montoTipeado(descuento) ?? 0) > aCentavos(totales.subtotal);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
-      <div className="flex flex-col gap-5">
-        <fieldset className="flex flex-col gap-3">
-          <legend className="mb-3 text-lg font-semibold">¿Cómo paga?</legend>
-          <div role="radiogroup" aria-label="Medio de pago" className="grid gap-3 sm:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="flex flex-col gap-4">
+        <fieldset className="flex flex-col">
+          <legend className="text-h2 mb-4 font-semibold">¿Cómo paga?</legend>
+          <div role="radiogroup" aria-label="Medio de pago" className="grid gap-2 sm:grid-cols-3">
             {MEDIOS_PAGO.map((m) => {
-              const Icono = ICONO_MEDIO[m];
+              const Icono = ICONO_MEDIO_PAGO[m];
               const activo = medioPago === m;
               return (
                 <button
@@ -69,14 +63,14 @@ export function PasoPago({
                   aria-checked={activo}
                   onClick={() => onMedioPago(m)}
                   className={cn(
-                    "flex min-h-20 items-center gap-3 rounded-card border-2 p-4 text-left text-lg font-semibold transition-colors sm:flex-col sm:justify-center sm:text-center",
+                    "text-body rounded-control flex min-h-14 items-center gap-3 border px-4 text-left font-semibold transition-colors sm:min-h-24 sm:flex-col sm:justify-center sm:text-center",
                     activo
-                      ? "border-primary bg-primary-soft"
-                      : "border-border bg-surface hover:border-input hover:bg-surface-2",
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-foreground bg-surface text-foreground hover:bg-surface-2",
                   )}
                 >
                   <Icono
-                    className={cn("size-7", activo ? "text-primary" : "text-muted")}
+                    className={cn("size-6", activo ? "text-background" : "text-muted")}
                     strokeWidth={1.75}
                     aria-hidden
                   />
@@ -87,46 +81,49 @@ export function PasoPago({
           </div>
         </fieldset>
 
-        {puedeEditar && !bloqueado && (
-          <Input
-            label="Descuento ($)"
-            inputMode="decimal"
-            placeholder="0"
-            value={descuento}
-            onChange={(e) => onDescuento(e.target.value)}
-            error={
-              descuentoInvalido
-                ? "Monto inválido"
-                : descuentoExcede
-                  ? `Máximo ${formatearPesos(totales.subtotal)}`
-                  : undefined
-            }
-            className="tabular-nums"
-          />
-        )}
-
         {!bloqueado && (
-          <Textarea
-            label="Notas (opcional)"
-            rows={2}
-            maxLength={2000}
-            value={notas}
-            onChange={(e) => onNotas(e.target.value)}
-          />
+          <div className="bg-card rounded-card flex flex-col gap-4 p-4 md:p-5">
+            {puedeEditar && (
+              <Input
+                label="Descuento ($)"
+                inputMode="decimal"
+                placeholder="0"
+                value={descuento}
+                onChange={(e) => onDescuento(e.target.value)}
+                error={
+                  descuentoInvalido
+                    ? "Monto inválido"
+                    : descuentoExcede
+                      ? `Máximo ${formatearPesos(totales.subtotal)}`
+                      : undefined
+                }
+                className="tabular-nums"
+              />
+            )}
+
+            <Textarea
+              label="Notas (opcional)"
+              rows={2}
+              maxLength={2000}
+              value={notas}
+              onChange={(e) => onNotas(e.target.value)}
+            />
+          </div>
         )}
       </div>
 
       <section
         aria-label="Resumen de la venta"
-        className="border-border bg-surface-2 flex flex-col gap-3 self-start rounded-card border p-4"
+        className="bg-card rounded-card flex flex-col gap-3 self-start p-4 md:p-5"
       >
+        <h3 className="text-h3 font-semibold">Resumen</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
           <dt className="text-muted">Galpón</dt>
           <dd className="text-right font-medium">{deposito}</dd>
           <dt className="text-muted">Cliente</dt>
           <dd className="text-right font-medium">
             {cliente.nombre}
-            {cliente.tipo === "nuevo" && <span className="text-primary"> (nuevo)</span>}
+            {cliente.tipo === "nuevo" && <span className="text-muted font-normal"> (nuevo)</span>}
           </dd>
           {medioPago && (
             <>
@@ -141,7 +138,7 @@ export function PasoPago({
               <span className="min-w-0">
                 {i.cantidad} × {i.titulo}
                 {i.precioEspecial !== null && (
-                  <span className="text-primary block text-xs">
+                  <span className="text-muted block text-xs">
                     {bloqueado ? "Precio cotizado" : "Precio especial"}{" "}
                     {formatearPesos(i.precioEspecial)}
                   </span>
@@ -162,8 +159,8 @@ export function PasoPago({
               <dd className="text-right tabular-nums">−{formatearPesos(totales.descuento)}</dd>
             </>
           )}
-          <dt className="text-base font-semibold">Total</dt>
-          <dd className="text-right text-base font-semibold tabular-nums">
+          <dt className="text-h3 font-semibold">Total</dt>
+          <dd className="text-h3 text-right font-semibold tabular-nums">
             {formatearPesos(totales.total)}
           </dd>
         </dl>

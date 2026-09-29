@@ -8,9 +8,9 @@ import {
   ChevronRight,
   Download,
   History,
-  ScanBarcode,
+  Package,
+  ScanLine,
   SlidersVertical,
-  Warehouse,
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
@@ -24,20 +24,24 @@ import { FiltrosCatalogo, type OpcionFiltro } from "@/components/catalogo/filtro
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MenuFila, type AccionFila } from "@/components/ui/menu-fila";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
-import { TabsNav } from "@/components/ui/tabs-nav";
+import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { FilaStock, ResultadoStock } from "@/server/services/inventario.service";
 import type { ResultadoLedger, ResumenStockPanel } from "@/server/services/stock.service";
 
+import { TabsGalpones } from "./_componentes/tabs-galpones";
 import { FiltrosMovimientosStock, TablaMovimientos } from "./tabla-movimientos";
 import { TransferirSheet, type FilaATransferir } from "./transferir-sheet";
 
 const ICONO = { strokeWidth: 1.75 } as const;
+
+/** Celda de encabezado (mismo aspecto que DataTable). */
+const TH = "h-10 px-4 font-medium whitespace-nowrap";
 
 interface Props {
   resumen: ResumenStockPanel;
@@ -106,16 +110,40 @@ export function StockView({
     if (!deposito) return null;
     const destinoUnico = otros.length === 1 ? otros[0]! : null;
     const puedeMover = puedeTransferir && otros.length > 0 && f.cantidad > 0;
-    if (!puedeMover && !puedeAjustar) return null;
+    const menu: AccionFila[] = [
+      ...(puedeAjustar
+        ? [
+            {
+              label: "Ajustar stock",
+              icon: SlidersVertical,
+              onSelect: () =>
+                setAjustando({
+                  varianteId: f.varianteId,
+                  nombre: f.nombreCompleto,
+                  porDeposito: f.porDeposito,
+                }),
+            },
+          ]
+        : []),
+      {
+        label: "Ver movimientos",
+        icon: History,
+        href: ruta(`/stock/movimientos?varianteId=${f.varianteId}&depositoId=${deposito.id}`),
+      },
+      { label: "Ver producto", icon: Package, href: ruta(`/productos/${f.productoId}`) },
+    ];
     return (
       <div
-        className={cn("flex gap-2", compacto ? "border-border mt-3 border-t pt-3" : "justify-end")}
+        className={cn(
+          "flex items-center gap-1",
+          compacto ? "border-border mt-3 border-t pt-3" : "justify-end",
+        )}
       >
         {puedeMover && (
           <Button
-            variant="secondary"
+            variant={compacto ? "secondary" : "ghost"}
             size="sm"
-            className={cn(compacto && "flex-1")}
+            className={cn(compacto && "h-11 flex-1")}
             onClick={() =>
               setTransfiriendo({
                 varianteId: f.varianteId,
@@ -126,27 +154,10 @@ export function StockView({
             aria-label={`Transferir ${f.nombreCompleto} a ${destinoUnico?.nombre ?? "otro galpón"}`}
           >
             <ArrowLeftRight {...ICONO} />
-            {destinoUnico ? `Transferir a ${destinoUnico.nombre}` : "Transferir"}
+            {compacto && destinoUnico ? `Transferir a ${destinoUnico.nombre}` : "Transferir"}
           </Button>
         )}
-        {puedeAjustar && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(compacto && "flex-1")}
-            onClick={() =>
-              setAjustando({
-                varianteId: f.varianteId,
-                nombre: f.nombreCompleto,
-                porDeposito: f.porDeposito,
-              })
-            }
-            aria-label={`Ajustar stock de ${f.nombreCompleto}`}
-          >
-            <SlidersVertical {...ICONO} />
-            Ajustar
-          </Button>
-        )}
+        <MenuFila acciones={menu} label={`Acciones de ${f.nombreCompleto}`} />
       </div>
     );
   };
@@ -159,36 +170,29 @@ export function StockView({
     col === "cantidad" || col === "total" ? f.cantidad : (f.porDeposito[col] ?? 0);
 
   const filaTabla = (f: FilaStock, anidada = false) => (
-    <tr
-      key={f.varianteId}
-      className={cn(
-        f.estado === "BAJO" && "bg-warning-soft/50",
-        f.estado === "SIN_STOCK" && "bg-danger-soft/40",
-        f.estado === "OK" && "hover:bg-surface-2/40",
-      )}
-    >
-      <td className={cn("px-4 py-2.5", anidada && "pl-10")}>
+    <tr key={f.varianteId} className="hover:bg-card/60 transition-colors">
+      <td className={cn("px-4 py-3", anidada && "pl-10")}>
         <Link href={ruta(`/productos/${f.productoId}`)} className="font-medium hover:underline">
           {anidada ? (f.sabor ?? f.producto) : f.nombreCompleto}
         </Link>
       </td>
-      <td className="text-muted px-4 py-2.5 font-mono text-xs whitespace-nowrap">{codigoDe(f)}</td>
+      <td className="text-muted px-4 py-3 font-mono text-xs whitespace-nowrap">{codigoDe(f)}</td>
       {columnas.map((c) => (
         <td
           key={c.id}
           className={cn(
-            "px-4 py-2.5 text-right tabular-nums",
-            (c.id === "total" || c.id === "cantidad") && "text-base font-semibold",
+            "px-4 py-3 text-right tabular-nums",
+            c.id === "total" || c.id === "cantidad" ? "text-base font-semibold" : "text-muted",
           )}
         >
           {valor(f, c.id)}
         </td>
       ))}
-      <td className="text-muted px-4 py-2.5 text-right tabular-nums">{f.stockMinimo}</td>
-      <td className="px-4 py-2.5">
+      <td className="text-subtle px-4 py-3 text-right tabular-nums">{f.stockMinimo}</td>
+      <td className="px-4 py-3">
         <EstadoStockBadge estado={f.estado} />
       </td>
-      {deposito && <td className="px-2 py-1.5">{acciones(f, false)}</td>}
+      {deposito && <td className="py-2 pr-2 pl-4">{acciones(f, false)}</td>}
     </tr>
   );
 
@@ -221,9 +225,7 @@ export function StockView({
         }
       />
 
-      <TabsNav
-        className="mb-4"
-        ariaLabel="Galpones"
+      <TabsGalpones
         items={[
           ...depositos.map((d) => ({
             href: linkTab(d.id),
@@ -235,93 +237,81 @@ export function StockView({
       />
 
       {deposito ? (
-        <section aria-label="Resumen del galpón" className="mb-4 grid grid-cols-2 gap-3">
-          <div className="border-border bg-surface flex flex-col gap-1 rounded-card border p-4">
-            <p className="text-muted text-sm font-medium">Unidades en {deposito.nombre}</p>
-            <p className="text-3xl leading-tight font-bold tabular-nums lg:text-4xl">
-              {formatearNumero(deposito.unidades)}
-            </p>
-          </div>
-          <Link
+        <section aria-label="Resumen del galpón" className="mb-6 grid grid-cols-2 gap-4">
+          <StatCard
+            label={`Unidades en ${deposito.nombre}`}
+            value={formatearNumero(deposito.unidades)}
+            hint={`${formatearNumero(resumen.total)} en todos los galpones`}
+          />
+          <StatCard
+            label="Bajo mínimo"
+            value={formatearNumero(deposito.bajoMinimo)}
             href={link({ soloBajoMinimo: soloBajoMinimo ? null : "1" })}
-            scroll={false}
-            className={cn(
-              "border-border bg-surface hover:bg-surface-2/60 flex flex-col gap-1 rounded-card border p-4 transition-colors",
-              soloBajoMinimo && "border-primary",
-            )}
-          >
-            <p className="text-muted text-sm font-medium">Bajo mínimo</p>
-            <p
-              className={cn(
-                "text-3xl leading-tight font-bold tabular-nums lg:text-4xl",
-                deposito.bajoMinimo > 0 ? "text-danger" : "text-success",
-              )}
-            >
-              {formatearNumero(deposito.bajoMinimo)}
-            </p>
-            <p className="text-muted text-xs">
-              {soloBajoMinimo ? "Tocá para ver todos" : "Sabores con menos que el mínimo acá"}
-            </p>
-          </Link>
+            className={cn(soloBajoMinimo && "ring-foreground ring-2")}
+            hint={soloBajoMinimo ? "Tocá para ver todos" : "Sabores con menos que el mínimo acá"}
+          />
         </section>
       ) : (
-        <section aria-label="Resumen global" className="mb-4 flex flex-col gap-3">
-          <div className="border-border bg-surface flex flex-wrap items-end justify-between gap-3 rounded-card border p-4">
-            <div>
-              <p className="text-muted text-sm font-medium">Unidades en todos los galpones</p>
-              <p className="text-4xl leading-tight font-bold tabular-nums">
-                {formatearNumero(resumen.total)}
-              </p>
-            </div>
-            <Link
-              href={link({ soloBajoMinimo: soloBajoMinimo ? null : "1" })}
-              scroll={false}
-              className={cn(
-                "rounded-control px-3 py-2 text-sm font-medium",
-                resumen.bajoMinimo > 0
-                  ? "bg-danger-soft text-danger-soft-foreground"
-                  : "bg-success-soft text-success-soft-foreground",
-              )}
-            >
-              {formatearNumero(resumen.bajoMinimo)} bajo mínimo
-            </Link>
-          </div>
-          <ul className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="Por galpón">
-            {depositos.map((d) => (
-              <li key={d.id}>
-                <Link
-                  href={linkTab(d.id)}
-                  className="border-border bg-surface hover:bg-surface-2/60 flex flex-col gap-0.5 rounded-card border p-3 transition-colors"
-                >
-                  <span className="text-muted flex items-center gap-1.5 truncate text-sm">
-                    <Warehouse className="size-4 shrink-0" {...ICONO} aria-hidden />
-                    {d.nombre}
-                  </span>
-                  <span className="text-2xl font-semibold tabular-nums">
-                    {formatearNumero(d.unidades)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+        <section
+          aria-label="Resumen global"
+          className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]"
+        >
+          {depositos.map((d) => (
+            <StatCard
+              key={d.id}
+              label={d.nombre}
+              value={formatearNumero(d.unidades)}
+              href={linkTab(d.id)}
+              hint={`${formatearNumero(d.bajoMinimo)} bajo mínimo`}
+            />
+          ))}
+          <StatCard
+            label="Total del panel"
+            value={formatearNumero(resumen.total)}
+            hint="Unidades en todos los galpones"
+          />
+          <StatCard
+            label="Bajo mínimo"
+            value={formatearNumero(resumen.bajoMinimo)}
+            href={link({ soloBajoMinimo: soloBajoMinimo ? null : "1" })}
+            className={cn(soloBajoMinimo && "ring-foreground ring-2")}
+            hint={soloBajoMinimo ? "Tocá para ver todos" : "Sabores con menos que el mínimo"}
+          />
         </section>
-      )}
-
-      {!deposito && (
-        <ChipRow ariaLabel="Vista" className="mb-3">
-          <ChipLink href={link({ vista: null })} activo={!porProducto}>
-            Por sabor
-          </ChipLink>
-          <ChipLink href={link({ vista: "producto" })} activo={porProducto}>
-            Por producto
-          </ChipLink>
-        </ChipRow>
       )}
 
       <FiltrosCatalogo
         marcas={marcas}
         extras={[{ tipo: "check", param: "soloBajoMinimo", label: "Solo bajo mínimo" }]}
         placeholder="Producto, sabor, SKU o código…"
+        inicio={
+          !deposito && (
+            <nav
+              aria-label="Vista"
+              className="bg-card inline-flex shrink-0 gap-0.5 rounded-control p-0.5"
+            >
+              {[
+                { href: link({ vista: null }), label: "Por sabor", activo: !porProducto },
+                { href: link({ vista: "producto" }), label: "Por producto", activo: porProducto },
+              ].map((v) => (
+                <Link
+                  key={v.label}
+                  href={v.href}
+                  scroll={false}
+                  aria-current={v.activo ? "page" : undefined}
+                  className={cn(
+                    "flex h-10 items-center rounded-inner px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9",
+                    v.activo
+                      ? "bg-foreground text-background"
+                      : "text-muted hover:text-foreground",
+                  )}
+                >
+                  {v.label}
+                </Link>
+              ))}
+            </nav>
+          )
+        }
       />
 
       {filas.length === 0 ? (
@@ -347,7 +337,7 @@ export function StockView({
             action={
               puedeTransferir ? (
                 <Link href={ruta("/productos/cargar")} className={buttonVariants()}>
-                  <ScanBarcode {...ICONO} /> Cargar stock escaneando
+                  <ScanLine {...ICONO} /> Cargar stock escaneando
                 </Link>
               ) : null
             }
@@ -356,31 +346,31 @@ export function StockView({
       ) : (
         <>
           <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
-            <table className="w-full text-sm" data-testid="tabla-stock">
+            <table className="w-full text-left text-sm tabular-nums" data-testid="tabla-stock">
               <caption className="sr-only">
                 {deposito ? `Stock en ${deposito.nombre}` : "Stock por galpón y total"}
               </caption>
-              <thead className="border-border bg-surface-2/60 text-muted border-b text-xs tracking-wide uppercase">
+              <thead className="border-border bg-card text-muted border-b text-xs">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left font-medium">
+                  <th scope="col" className={TH}>
                     Producto — sabor
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left font-medium">
+                  <th scope="col" className={TH}>
                     Código
                   </th>
                   {columnas.map((c) => (
-                    <th key={c.id} scope="col" className="px-4 py-3 text-right font-medium">
+                    <th key={c.id} scope="col" className={cn(TH, "text-right")}>
                       {c.nombre}
                     </th>
                   ))}
-                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                  <th scope="col" className={cn(TH, "text-right")}>
                     Mínimo
                   </th>
-                  <th scope="col" className="px-4 py-3 text-left font-medium">
+                  <th scope="col" className={TH}>
                     Estado
                   </th>
                   {deposito && (
-                    <th scope="col" className="px-4 py-3">
+                    <th scope="col" className={TH}>
                       <span className="sr-only">Acciones</span>
                     </th>
                   )}
@@ -392,8 +382,8 @@ export function StockView({
                       const primero = g[0]!;
                       return (
                         <Fragment key={primero.productoId}>
-                          <tr className="bg-surface-2/50">
-                            <td className="px-4 py-2.5 font-semibold" colSpan={2}>
+                          <tr className="bg-card">
+                            <td className="px-4 py-3 font-semibold" colSpan={2}>
                               <Link
                                 href={ruta(`/productos/${primero.productoId}`)}
                                 className="hover:underline"
@@ -407,12 +397,12 @@ export function StockView({
                             {columnas.map((c) => (
                               <td
                                 key={c.id}
-                                className="px-4 py-2.5 text-right font-semibold tabular-nums"
+                                className="px-4 py-3 text-right font-semibold tabular-nums"
                               >
                                 {g.reduce((a, f) => a + valor(f, c.id), 0)}
                               </td>
                             ))}
-                            <td colSpan={2} />
+                            <td colSpan={deposito ? 3 : 2} />
                           </tr>
                           {g.map((f) => filaTabla(f, true))}
                         </Fragment>
@@ -430,43 +420,44 @@ export function StockView({
               return (
                 <Fragment key={f.varianteId}>
                   {nuevoProducto && (
-                    <li className="text-muted mt-2 px-1 text-sm font-semibold">{f.producto}</li>
+                    <li className="text-h3 mt-3 px-1 font-semibold first:mt-0">{f.producto}</li>
                   )}
-                  <li
-                    className={cn(
-                      "bg-surface rounded-card border p-4",
-                      f.estado === "BAJO"
-                        ? "border-warning-soft-foreground/30 bg-warning-soft/40"
-                        : f.estado === "SIN_STOCK"
-                          ? "border-danger/30 bg-danger-soft/30"
-                          : "border-border",
-                    )}
-                  >
+                  <li className="bg-card rounded-card p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <Link href={ruta(`/productos/${f.productoId}`)} className="font-medium">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <Link
+                          href={ruta(`/productos/${f.productoId}`)}
+                          className="font-medium hover:underline"
+                        >
                           {grupos ? (f.sabor ?? f.producto) : f.nombreCompleto}
                         </Link>
                         <p className="text-muted truncate font-mono text-xs">{codigoDe(f)}</p>
+                        <div className="mt-1">
+                          <EstadoStockBadge estado={f.estado} sobreGris />
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-3xl leading-none font-bold tabular-nums">{f.cantidad}</p>
-                        <p className="text-muted mt-1 text-xs">mín. {f.stockMinimo}</p>
+                      <div className="shrink-0 text-right">
+                        <p className="text-3xl leading-none font-semibold tracking-tight tabular-nums">
+                          {f.cantidad}
+                        </p>
+                        <p className="text-subtle mt-1 text-xs">mín. {f.stockMinimo}</p>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      {!deposito &&
-                        depositos.map((d) => (
+                    {!deposito && (
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        {depositos.map((d) => (
                           <span
                             key={d.id}
-                            className="bg-surface-2 rounded-control px-2.5 py-1 text-xs"
+                            className="bg-surface text-muted rounded-control px-2 py-1 text-xs"
                           >
                             {d.nombre}{" "}
-                            <strong className="tabular-nums">{f.porDeposito[d.id] ?? 0}</strong>
+                            <strong className="text-foreground tabular-nums">
+                              {f.porDeposito[d.id] ?? 0}
+                            </strong>
                           </span>
                         ))}
-                      <EstadoStockBadge estado={f.estado} />
-                    </div>
+                      </div>
+                    )}
                     {acciones(f, true)}
                   </li>
                 </Fragment>
@@ -483,24 +474,23 @@ export function StockView({
             params={params}
           />
           {porProducto && (
-            <p className="text-muted mt-1 text-xs">
+            <p className="text-subtle mt-1 text-xs">
               En la vista por producto se pagina por producto.
             </p>
           )}
         </>
       )}
 
-      <section aria-labelledby="titulo-movimientos" className="mt-10 flex flex-col gap-3">
+      <section aria-labelledby="titulo-movimientos" className="mt-10 flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 id="titulo-movimientos" className="flex items-center gap-2 text-lg font-semibold">
-            <History className="text-muted size-5" {...ICONO} aria-hidden />
+          <h2 id="titulo-movimientos" className="text-h2 font-semibold">
             {deposito ? `Movimientos de ${titulo}` : "Movimientos de todos los galpones"}
           </h2>
           <Link
             href={ruta(
               deposito ? `/stock/movimientos?depositoId=${deposito.id}` : "/stock/movimientos",
             )}
-            className="text-primary text-sm font-medium hover:underline"
+            className="text-foreground text-sm font-medium underline underline-offset-4 hover:decoration-2"
           >
             Ver historial completo
           </Link>

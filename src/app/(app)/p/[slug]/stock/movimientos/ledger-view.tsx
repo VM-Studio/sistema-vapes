@@ -7,17 +7,15 @@ import { VariantePicker } from "@/components/catalogo/variante-picker";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
-import { controlClass } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { useUrlParams } from "@/hooks/use-url-params";
 import { RANGO_LABEL, RANGOS, type Rango } from "@/lib/fechas";
 import { TIPO_MOVIMIENTO_UI, TIPOS_MOVIMIENTO_FILTRO } from "@/lib/movimientos-ui";
-import { cn } from "@/lib/utils";
 import type { MovimientoListado } from "@/server/services/stock.service";
 
-import { TablaMovimientos } from "../tabla-movimientos";
+import { CampoFecha, TablaMovimientos } from "../tabla-movimientos";
 
 interface Props {
   resultado: { movimientos: MovimientoListado[]; total: number; page: number; pageSize: number };
@@ -62,7 +60,7 @@ export function LedgerView({
         {params.referenciaId && (
           <div
             role="status"
-            className="border-primary bg-primary-soft text-primary-soft-foreground flex min-h-11 items-center justify-between gap-2 rounded-control border px-3 text-sm"
+            className="bg-card flex min-h-11 items-center justify-between gap-2 rounded-control pl-3 text-sm"
           >
             <span>
               Solo los movimientos de{" "}
@@ -72,9 +70,9 @@ export function LedgerView({
               type="button"
               onClick={() => actualizar({ referenciaTipo: null, referenciaId: null })}
               aria-label="Quitar filtro de referencia"
-              className="-mr-1 p-1"
+              className="text-muted hover:bg-surface-3 hover:text-foreground flex size-11 items-center justify-center rounded-control"
             >
-              <X className="size-4" strokeWidth={1.75} />
+              <X className="size-5" strokeWidth={1.75} />
             </button>
           </div>
         )}
@@ -96,25 +94,21 @@ export function LedgerView({
           ))}
         </ChipRow>
 
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-5">
-          <label className="text-muted flex flex-col gap-1 text-xs">
-            Desde
-            <input
-              type="date"
-              className={cn(controlClass, "h-11")}
-              value={fechas.desde}
-              onChange={(e) => actualizar({ desde: e.target.value || null, rango: null })}
-            />
-          </label>
-          <label className="text-muted flex flex-col gap-1 text-xs">
-            Hasta
-            <input
-              type="date"
-              className={cn(controlClass, "h-11")}
-              value={fechas.hasta}
-              onChange={(e) => actualizar({ hasta: e.target.value || null, rango: null })}
-            />
-          </label>
+        <div
+          role="group"
+          aria-label="Filtros"
+          className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center"
+        >
+          <CampoFecha
+            etiqueta="Desde"
+            valor={fechas.desde}
+            onCambio={(v) => actualizar({ desde: v || null, rango: null })}
+          />
+          <CampoFecha
+            etiqueta="Hasta"
+            valor={fechas.hasta}
+            onCambio={(v) => actualizar({ hasta: v || null, rango: null })}
+          />
           <Select
             aria-label="Tipo"
             options={[
@@ -126,7 +120,7 @@ export function LedgerView({
             ]}
             value={params.tipo ?? ""}
             onChange={(e) => actualizar({ tipo: e.target.value || null })}
-            containerClassName="self-end"
+            containerClassName="md:w-56"
           />
           <Select
             aria-label="Usuario"
@@ -139,11 +133,11 @@ export function LedgerView({
             ]}
             value={params.usuarioId ?? ""}
             onChange={(e) => actualizar({ usuarioId: e.target.value || null })}
-            containerClassName="self-end"
+            containerClassName="md:w-48"
           />
-          <div className="col-span-2 self-end md:col-span-4 lg:col-span-1">
+          <div className="col-span-2 md:min-w-64 md:flex-1">
             {varianteFiltro || productoFiltro ? (
-              <span className="border-primary bg-primary-soft text-primary-soft-foreground flex h-11 items-center justify-between gap-2 rounded-control border px-3 text-sm">
+              <span className="bg-card flex h-11 items-center justify-between gap-2 rounded-control pl-3 text-sm md:h-10">
                 <span className="truncate">
                   {varianteFiltro?.titulo ?? `${productoFiltro?.nombre} (todas las variantes)`}
                 </span>
@@ -151,9 +145,9 @@ export function LedgerView({
                   type="button"
                   onClick={() => actualizar({ varianteId: null, productoId: null })}
                   aria-label="Quitar filtro de producto"
-                  className="-mr-1 p-1"
+                  className="text-muted hover:bg-surface-3 hover:text-foreground flex size-11 shrink-0 items-center justify-center rounded-control md:size-10"
                 >
-                  <X className="size-4" strokeWidth={1.75} />
+                  <X className="size-5" strokeWidth={1.75} />
                 </button>
               </span>
             ) : (

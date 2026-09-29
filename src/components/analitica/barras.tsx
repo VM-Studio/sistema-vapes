@@ -1,62 +1,63 @@
-"use client";
-
-import { Bar, BarChart, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-
-import { ChartPlaceholder, ChartTheme } from "@/components/ui/chart-theme";
-import { formatearCompacto, formatearPesos } from "@/lib/format";
+import { ChartPlaceholder } from "@/components/ui/chart-theme";
+import { formatearPesos } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export interface Barra {
   etiqueta: string;
   valor: number;
-  /** Texto secundario del tooltip ("12 ventas"). */
+  /** Texto secundario ("12 ventas"), en gris al lado de la etiqueta. */
   detalle?: string;
 }
 
-/** Barras horizontales de una sola serie (azul de marca) con el valor al final.
- * Sin valores (todo en 0 o vacío): placeholder, nunca barras vacías. */
-export function BarrasHorizontales({ datos, moneda = true }: { datos: Barra[]; moneda?: boolean }) {
-  const fmt = (v: number) => (moneda ? formatearPesos(v) : String(v));
+/** Colores de la marca por barra (solo tokens de gráfico). */
+const COLOR = {
+  azul: "bg-dato-actual",
+  naranja: "bg-dato-anterior",
+} as const;
+
+/**
+ * Barras horizontales de una sola serie (azul de marca, o un color por barra
+ * con `colores`): etiqueta a la izquierda, valor a la derecha y la barra
+ * rectangular debajo, sobre un riel gris. Sin valores (todo en 0 o vacío):
+ * placeholder, nunca barras vacías.
+ */
+export function BarrasHorizontales({
+  datos,
+  moneda = true,
+  colores,
+}: {
+  datos: Barra[];
+  moneda?: boolean;
+  /** Color de cada barra en orden (default: todas azules). */
+  colores?: (keyof typeof COLOR)[];
+}) {
+  const fmt = (v: number) => (moneda ? formatearPesos(v) : v.toLocaleString("es-AR"));
   if (!datos.some((d) => d.valor)) {
     return <ChartPlaceholder mensaje="Sin datos en el período" className="h-40 md:h-44" />;
   }
+  const max = Math.max(...datos.map((d) => d.valor), 0);
   return (
-    <div className="w-full" style={{ height: Math.max(96, datos.length * 52) }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={datos} layout="vertical" margin={{ top: 0, right: 72, bottom: 0, left: 0 }}>
-          <XAxis type="number" hide domain={[0, "dataMax"]} />
-          <YAxis
-            type="category"
-            dataKey="etiqueta"
-            width={96}
-            tickLine={false}
-            axisLine={false}
-            tick={{ fontSize: 13, fill: ChartTheme.textoFuerte }}
-          />
-          <Tooltip
-            cursor={{ fill: ChartTheme.cursorArea }}
-            formatter={(v, _n, item) => [
-              `${fmt(Number(v))}${(item.payload as Barra).detalle ? ` · ${(item.payload as Barra).detalle}` : ""}`,
-              "",
-            ]}
-            separator=""
-            contentStyle={ChartTheme.tooltip}
-          />
-          <Bar
-            dataKey="valor"
-            fill={ChartTheme.actual}
-            radius={[0, 4, 4, 0]}
-            barSize={22}
-            isAnimationActive={false}
-          >
-            <LabelList
-              dataKey="valor"
-              position="right"
-              formatter={(v) => (moneda ? formatearCompacto(Number(v), true) : String(v))}
-              style={{ fontSize: 12, fill: ChartTheme.texto }}
-            />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <ul className="flex flex-col gap-4">
+      {datos.map((d, i) => {
+        const pct = max > 0 ? Math.max((d.valor / max) * 100, d.valor > 0 ? 1.5 : 0) : 0;
+        return (
+          <li key={`${d.etiqueta}-${i}`} className="flex flex-col gap-1.5">
+            <div className="text-small flex items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate">
+                <span className="text-foreground font-medium">{d.etiqueta}</span>
+                {d.detalle && <span className="text-subtle"> · {d.detalle}</span>}
+              </span>
+              <span className="shrink-0 font-semibold tabular-nums">{fmt(d.valor)}</span>
+            </div>
+            <div className="bg-surface-3 h-2.5 w-full" aria-hidden>
+              <div
+                className={cn("h-full", COLOR[colores?.[i] ?? "azul"])}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

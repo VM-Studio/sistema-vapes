@@ -20,8 +20,10 @@ import {
   SkeletonTarjeta,
 } from "@/components/analitica/secciones";
 import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
+import { cardVariants } from "@/components/ui/card";
 import { navegacionPermitida, type ItemNavegacion } from "@/config/navigation";
 import { esOwner, puede } from "@/lib/permisos";
+import { cn } from "@/lib/utils";
 import { requirePaginaPanelUsuario } from "@/server/auth/permissions";
 import {
   describirPeriodo,
@@ -51,12 +53,10 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
 
   if (!verDashboard) {
     return (
-      <div className="flex flex-col gap-8 md:gap-10">
-        <header className="flex flex-col gap-1.5">
-          <h1 className="text-2xl leading-tight font-semibold tracking-tight md:text-3xl">
-            {panel.nombre}
-          </h1>
-          <p className="text-muted text-sm md:text-base">Elegí por dónde empezar.</p>
+      <div className="flex flex-col gap-6 md:gap-8">
+        <header className="flex flex-col gap-1">
+          <Titulo panel={panel.nombre} />
+          <p className="text-muted text-body">Elegí por dónde empezar.</p>
         </header>
         {accesos.length > 0 && <AccesosRapidos items={accesos} />}
       </div>
@@ -71,12 +71,11 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
   const props = { ctx, periodo };
 
   return (
-    <div className="flex flex-col gap-6 md:gap-8">
-      <header className="flex flex-col gap-4">
-        <h1 className="text-2xl leading-tight font-semibold tracking-tight md:text-3xl">
-          {panel.nombre}
-        </h1>
+    <div className="flex flex-col gap-4">
+      <header className="mb-2 flex flex-col gap-4 md:mb-4 md:flex-row md:items-start md:justify-between md:gap-6">
+        <Titulo panel={panel.nombre} className="md:pt-1" />
         <SelectorPeriodo
+          alinear="fin"
           modo={periodo.modo}
           desde={diaDe(periodo.desde)}
           hasta={diaDe(periodo.hasta)}
@@ -90,10 +89,10 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
         <SeccionKpis {...props} />
       </Suspense>
 
-      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <Suspense
           key={`g${clave}`}
-          fallback={<SkeletonTarjeta className="lg:col-span-8" alto="h-72" />}
+          fallback={<SkeletonTarjeta className="lg:col-span-8" alto="h-[280px] md:h-[360px]" />}
         >
           <SeccionGrafico {...props} className="lg:col-span-8" />
         </Suspense>
@@ -160,35 +159,48 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
         </Suspense>
       </div>
 
-      {accesos.length > 0 && <AccesosRapidos items={accesos} />}
+      {accesos.length > 0 && <AccesosRapidos items={accesos} className="mt-4" />}
     </div>
   );
 }
 
-function AccesosRapidos({ items }: { items: ItemNavegacion[] }) {
+/** "Inicio" + el nombre del panel en gris al lado. */
+function Titulo({ panel, className }: { panel: string; className?: string }) {
   return (
-    <section aria-labelledby="accesos" className="flex flex-col gap-4">
-      <h2 id="accesos" className="text-lg font-semibold tracking-tight">
+    <div className={cn("flex min-w-0 items-baseline gap-2", className)}>
+      <h1 className="text-h1 font-semibold">Inicio</h1>
+      <span className="text-h1 text-subtle truncate font-medium">{panel}</span>
+    </div>
+  );
+}
+
+function AccesosRapidos({ items, className }: { items: ItemNavegacion[]; className?: string }) {
+  return (
+    <section aria-labelledby="accesos" className={cn("flex flex-col gap-4", className)}>
+      <h2 id="accesos" className="text-h3 font-semibold">
         Accesos rápidos
       </h2>
-      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3">
         {items.map((item) => {
           const Icono = item.icon;
           return (
             <li key={`${item.global ? "g" : "p"}${item.href}`}>
               <Link
                 href={item.href}
-                className="group border-border bg-surface hover:border-input hover:shadow-card-hover flex h-full min-h-16 items-center gap-4 rounded-card border p-4 transition-[border-color,box-shadow]"
+                className={cn(
+                  cardVariants({ variant: "clickable" }),
+                  "group flex h-full min-h-16 items-center gap-4 p-4",
+                )}
               >
-                <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-control">
+                <span className="bg-surface text-foreground rounded-control flex size-11 shrink-0 items-center justify-center">
                   <Icono className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">{item.label}</span>
-                  <span className="text-muted block truncate text-sm">{item.descripcion}</span>
+                  <span className="text-muted text-small block truncate">{item.descripcion}</span>
                 </span>
                 <ChevronRight
-                  className="text-muted size-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                  className="text-subtle size-5 shrink-0 transition-transform group-hover:translate-x-0.5"
                   strokeWidth={1.75}
                   aria-hidden
                 />

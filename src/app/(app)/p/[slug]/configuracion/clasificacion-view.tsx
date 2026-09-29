@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { usePuede } from "@/components/layout/usuario-context";
+import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   aplicarErroresServidor,
   Form,
@@ -90,12 +92,19 @@ export function ClasificacionView({ tipo, filas }: { tipo: Tipo; filas: Clasific
         subtitle={textos.subtitulo}
         actions={
           puedeCrear && (
-            <Button onClick={() => setEditando("nuevo")}>
-              <Plus /> Nueva {textos.singular}
+            <Button onClick={() => setEditando("nuevo")} className="hidden md:inline-flex">
+              <Plus strokeWidth={1.75} /> Nueva {textos.singular}
             </Button>
           )
         }
       />
+      {puedeCrear && (
+        <BarraAccion soloMobile>
+          <Button onClick={() => setEditando("nuevo")}>
+            <Plus strokeWidth={1.75} /> Nueva {textos.singular}
+          </Button>
+        </BarraAccion>
+      )}
       <DataTable
         caption={textos.titulo}
         rows={filas}
@@ -121,7 +130,7 @@ export function ClasificacionView({ tipo, filas }: { tipo: Tipo; filas: Clasific
           {
             key: "productos",
             header: "Productos activos",
-            className: "text-right tabular-nums",
+            className: "text-right",
             cell: (f) => f.productosActivos,
           },
           {
@@ -136,19 +145,14 @@ export function ClasificacionView({ tipo, filas }: { tipo: Tipo; filas: Clasific
             className: "w-px",
             cell: (f) =>
               puedeEditar && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setEditando(f)}
-                  aria-label={`Editar ${f.nombre}`}
-                >
-                  <Pencil />
-                </Button>
+                <IconButton onClick={() => setEditando(f)} aria-label={`Editar ${f.nombre}`}>
+                  <Pencil strokeWidth={1.75} />
+                </IconButton>
               ),
           },
         ]}
         renderMobile={(f) => (
-          <div className="border-border bg-surface rounded-control border p-4">
+          <div className="bg-card rounded-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-medium">{f.nombre}</span>
@@ -156,17 +160,12 @@ export function ClasificacionView({ tipo, filas }: { tipo: Tipo; filas: Clasific
                 <span className="text-muted text-sm">{f.productosActivos} productos activos</span>
               </div>
               {puedeEditar && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setEditando(f)}
-                  aria-label={`Editar ${f.nombre}`}
-                >
-                  <Pencil />
-                </Button>
+                <IconButton onClick={() => setEditando(f)} aria-label={`Editar ${f.nombre}`}>
+                  <Pencil strokeWidth={1.75} />
+                </IconButton>
               )}
             </div>
-            {switchActivo(f, "Activa", "mt-2 border-t border-border pt-2")}
+            {switchActivo(f, "Activa", "mt-3 border-t border-border pt-1")}
           </div>
         )}
       />

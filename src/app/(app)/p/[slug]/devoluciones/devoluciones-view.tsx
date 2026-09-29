@@ -9,12 +9,15 @@ import { ESTADO_DEVOLUCION_UI } from "@/components/clientes/etiquetas";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Badge } from "@/components/ui/badge";
+import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { controlClass } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useUrlParams } from "@/hooks/use-url-params";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { DevolucionListada } from "@/server/services/devolucion.service";
@@ -76,7 +79,7 @@ export function DevolucionesView({
   const codigo = (d: DevolucionListada) => (
     <Link
       href={ruta(`/devoluciones/${d.id}`)}
-      className="text-primary font-semibold tabular-nums hover:underline"
+      className="text-foreground font-mono font-semibold whitespace-nowrap hover:underline"
     >
       {d.codigo}
     </Link>
@@ -94,32 +97,39 @@ export function DevolucionesView({
         subtitle="Garantías: el cliente trae un producto fallado y se le entrega uno nuevo"
         actions={
           puedeCrear && (
-            <Button onClick={abrir}>
-              <Plus strokeWidth={1.75} /> Registrar devolución
-            </Button>
+            <div className="contents max-md:[&>[aria-hidden]]:hidden">
+              <BarraAccion>
+                <Button onClick={abrir}>
+                  <Plus strokeWidth={1.75} /> Registrar devolución
+                </Button>
+              </BarraAccion>
+            </div>
           )
         }
       />
-      <div className="mb-4 grid grid-cols-2 gap-2 md:max-w-md">
-        <label className="text-muted flex flex-col gap-1 text-xs">
+      <section
+        aria-label="Filtros"
+        className="bg-card rounded-card mb-4 grid grid-cols-2 gap-2 p-4 md:grid-cols-[12rem_12rem]"
+      >
+        <label className="text-muted text-small flex flex-col gap-1">
           Desde
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 md:h-10")}
             value={params.desde ?? ""}
             onChange={(e) => actualizar({ desde: e.target.value || null })}
           />
         </label>
-        <label className="text-muted flex flex-col gap-1 text-xs">
+        <label className="text-muted text-small flex flex-col gap-1">
           Hasta
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 md:h-10")}
             value={params.hasta ?? ""}
             onChange={(e) => actualizar({ hasta: e.target.value || null })}
           />
         </label>
-      </div>
+      </section>
       <DataTable
         caption="Devoluciones"
         rows={resultado.devoluciones}
@@ -162,28 +172,45 @@ export function DevolucionesView({
               <span className="text-muted whitespace-nowrap">{formatearFechaHora(d.fecha)}</span>
             ),
           },
-          { key: "cliente", header: "Cliente", cell: (d) => d.cliente.nombre },
-          { key: "productos", header: "Producto(s)", cell: productos },
+          {
+            key: "cliente",
+            header: "Cliente",
+            cell: (d) => <span className="font-medium">{d.cliente.nombre}</span>,
+          },
+          {
+            key: "productos",
+            header: "Producto(s)",
+            cell: (d) => <span className="line-clamp-2 min-w-40">{productos(d)}</span>,
+          },
           { key: "galpon", header: "Galpón", cell: (d) => d.deposito.nombre },
           {
             key: "observacion",
             header: "Observación",
             cell: (d) => (
-              <span className="text-muted block max-w-56 truncate" title={d.observacion}>
-                {d.observacion}
-              </span>
+              <Tooltip content={d.observacion} className="max-w-56">
+                <span
+                  tabIndex={0}
+                  className="text-muted rounded-inner block min-w-0 truncate focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  {d.observacion}
+                </span>
+              </Tooltip>
             ),
           },
-          { key: "usuario", header: "Usuario", cell: (d) => d.usuario },
+          {
+            key: "usuario",
+            header: "Usuario",
+            cell: (d) => <span className="text-muted">{d.usuario}</span>,
+          },
           { key: "estado", header: "Estado", cell: estado },
         ]}
         renderMobile={(d) => (
           <Link
             href={ruta(`/devoluciones/${d.id}`)}
-            className="border-border bg-surface block rounded-card border p-4"
+            className={cn(cardVariants({ variant: "clickable" }), "block p-4")}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold tabular-nums">{d.codigo}</span>
+              <span className="font-mono font-semibold">{d.codigo}</span>
               {estado(d)}
             </div>
             <p className="mt-1 text-sm font-medium">{d.cliente.nombre}</p>
@@ -191,7 +218,7 @@ export function DevolucionesView({
             <p className="text-muted mt-1 truncate text-xs" title={d.observacion}>
               {d.observacion}
             </p>
-            <p className="text-muted mt-1 text-xs">
+            <p className="text-subtle mt-1 text-xs">
               {formatearFechaHora(d.fecha)} · {d.deposito.nombre} · {d.usuario}
             </p>
           </Link>
@@ -205,6 +232,7 @@ export function DevolucionesView({
         pathname={ruta("/devoluciones")}
         params={params}
       />
+      {puedeCrear && <div className="h-[4.5rem] md:hidden" aria-hidden />}
       {puedeCrear && (
         <RegistrarDevolucion
           key={clave}

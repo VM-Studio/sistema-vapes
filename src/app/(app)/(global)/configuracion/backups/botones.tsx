@@ -29,7 +29,7 @@ export function BotonBackup() {
         router.refresh();
       }}
     >
-      <DatabaseBackup /> Hacer backup ahora
+      <DatabaseBackup strokeWidth={1.75} /> Hacer backup ahora
     </Button>
   );
 }
@@ -46,7 +46,7 @@ export function BotonDescargar({ id }: { id: string }) {
         window.location.assign(r.data.url);
       }}
     >
-      <Download /> Descargar
+      <Download strokeWidth={1.75} /> Descargar
     </Button>
   );
 }

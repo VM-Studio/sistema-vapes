@@ -1,3 +1,4 @@
+import { WifiOff } from "lucide-react";
 import type { Metadata } from "next";
 
 import { EscanerOffline } from "./escaner-offline";
@@ -12,9 +13,12 @@ export const metadata: Metadata = { title: "Sin conexión" };
 export default function OfflinePage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-6 bg-white px-4 py-6 pt-[calc(1.5rem+env(safe-area-inset-top))]">
-      <header className="flex flex-col gap-1">
+      <header className="flex flex-col gap-3">
+        <span className="bg-card rounded-card flex size-12 items-center justify-center">
+          <WifiOff className="size-6" strokeWidth={1.75} aria-hidden />
+        </span>
         <h1 className="text-h1 font-semibold">Sin conexión</h1>
-        <p className="text-muted text-sm">
+        <p className="text-muted text-body">
           No hay señal para abrir esa pantalla. Mientras tanto podés escanear para consultar
           producto, precio y stock del último catálogo guardado. Ventas, ingresos, recuentos y
           transferencias necesitan conexión.

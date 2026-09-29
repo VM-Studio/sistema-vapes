@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import { useToast } from "@/components/ui/toast";
 
 import { guardarNombreNegocioAction } from "./actions";
@@ -28,28 +28,23 @@ export function NombreForm({ nombre }: { nombre: string }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Nombre del negocio</CardTitle>
-        <CardDescription>
-          Es el nombre de la app instalada, el que aparece en el ingreso y en las exportaciones.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={guardar} className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            aria-label="Nombre del negocio"
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            maxLength={60}
-            required
-            className="flex-1"
-          />
-          <Button type="submit" loading={enviando} disabled={valor.trim() === nombre}>
-            Guardar
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+    <SectionCard
+      title="Nombre del negocio"
+      description="Es el nombre de la app instalada, el que aparece en el ingreso y en las exportaciones."
+    >
+      <form onSubmit={guardar} className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        <Input
+          aria-label="Nombre del negocio"
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          maxLength={60}
+          required
+          containerClassName="flex-1"
+        />
+        <Button type="submit" loading={enviando} disabled={valor.trim() === nombre}>
+          Guardar
+        </Button>
+      </form>
+    </SectionCard>
   );
 }

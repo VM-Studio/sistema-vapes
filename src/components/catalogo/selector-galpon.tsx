@@ -34,11 +34,11 @@ export function SelectorGalpon({
 
   return (
     <section aria-labelledby="selector-galpon" className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
-        <h2 id="selector-galpon" className="text-xl font-semibold tracking-tight md:text-2xl">
+      <div className="flex flex-col gap-1">
+        <h2 id="selector-galpon" className="text-h2 font-semibold">
           {titulo}
         </h2>
-        {descripcion && <p className="text-muted text-sm md:text-base">{descripcion}</p>}
+        {descripcion && <p className="text-muted text-body">{descripcion}</p>}
       </div>
 
       {depositos.length === 0 ? (
@@ -46,9 +46,10 @@ export function SelectorGalpon({
           Este panel no tiene depósitos activos. Creá uno en Configuración → Depósitos.
         </p>
       ) : (
-        <div role="radiogroup" aria-label="Galpón" className="grid gap-3 sm:grid-cols-2">
+        <div role="radiogroup" aria-label="Galpón" className="grid gap-4 sm:grid-cols-2">
           {depositos.map((d) => {
             const activo = d.id === elegido;
+            const n = unidades?.[d.id] ?? 0;
             return (
               <button
                 key={d.id}
@@ -57,33 +58,37 @@ export function SelectorGalpon({
                 aria-checked={activo}
                 onClick={() => setElegido(d.id)}
                 className={cn(
-                  "flex min-h-24 items-center gap-4 rounded-card border-2 p-5 text-left transition-colors",
+                  // Tarjeta gris en la página; dentro de un modal/sheet, blanca con borde fino.
+                  "bg-card relative flex min-h-32 flex-col items-start gap-4 rounded-card p-5 text-left transition-[background-color,box-shadow] duration-150 md:p-6",
+                  "in-[dialog]:border-border in-[dialog]:bg-surface in-[dialog]:border",
                   activo
-                    ? "border-primary bg-primary-soft"
-                    : "border-border bg-surface hover:border-input hover:bg-surface-2",
+                    ? "ring-foreground ring-2 in-[dialog]:border-transparent"
+                    : "hover:bg-card-hover hover:shadow-card-hover in-[dialog]:hover:bg-surface",
                 )}
               >
-                <span
-                  className={cn(
-                    "flex size-12 shrink-0 items-center justify-center rounded-control",
-                    activo ? "bg-primary text-primary-foreground" : "bg-surface-2 text-muted",
-                  )}
-                >
-                  {activo ? (
-                    <Check className="size-6" strokeWidth={1.75} aria-hidden />
-                  ) : (
-                    <Warehouse className="size-6" strokeWidth={1.75} aria-hidden />
-                  )}
+                <span className="bg-surface text-foreground in-[dialog]:bg-card flex size-11 items-center justify-center rounded-control">
+                  <Warehouse className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-lg font-semibold">{d.nombre}</span>
-                  {d.esPrincipal && <span className="text-muted text-sm">Principal</span>}
-                  {unidades && (
-                    <span className="text-muted text-sm tabular-nums">
-                      {(unidades[d.id] ?? 0).toLocaleString("es-AR")}{" "}
-                      {(unidades[d.id] ?? 0) === 1 ? "unidad" : "unidades"}
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-h2 truncate font-semibold">{d.nombre}</span>
+                  {(d.esPrincipal || unidades) && (
+                    <span className="text-muted text-small tabular-nums">
+                      {unidades && `${n.toLocaleString("es-AR")} ${n === 1 ? "unidad" : "unidades"}`}
+                      {unidades && d.esPrincipal && " · "}
+                      {d.esPrincipal && "Principal"}
                     </span>
                   )}
+                </span>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute top-5 right-5 flex size-6 items-center justify-center rounded-circle border transition-colors md:top-6 md:right-6",
+                    activo
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-input bg-surface",
+                  )}
+                >
+                  {activo && <Check className="size-4" strokeWidth={2.25} />}
                 </span>
               </button>
             );

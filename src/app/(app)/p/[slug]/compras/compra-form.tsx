@@ -1,7 +1,7 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { Plus, Search, Store, Trash2, Truck, Warehouse } from "lucide-react";
+import { ArrowLeft, Plus, Search, Store, Trash2, Truck, Warehouse } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -12,13 +12,16 @@ import { DialogoRecibir } from "@/components/compras/dialogo-recibir";
 import { ProveedorForm, soloDecimal } from "@/components/compras/proveedor-form";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
+import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { controlClass } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Sheet } from "@/components/ui/sheet";
+import { Stepper } from "@/components/ui/stepper";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CameraScanner, type MensajeCamara } from "@/features/scanner/CameraScanner";
@@ -309,6 +312,13 @@ export function CompraForm({
   }
 
   const titulo = compraId && inicial.id ? `Editar compra ${idVisible ?? ""}` : "Nueva compra";
+  const pasos = (
+    <Stepper
+      pasos={["Proveedor", "Galpón", "Ítems"]}
+      actual={paso - 1}
+      className="bg-card rounded-card mb-6 px-4 py-3 md:px-5"
+    />
+  );
 
   // ---------------------------------------------------------------------------
   // Paso 1: proveedor
@@ -321,11 +331,12 @@ export function CompraForm({
     return (
       <>
         <PageHeader title={titulo} subtitle="Paso 1 de 3 · ¿A quién le comprás?" />
+        {pasos}
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
               <Search
-                className="text-muted pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                className="text-muted pointer-events-none absolute top-1/2 left-3.5 size-[1.125rem] -translate-y-1/2"
                 strokeWidth={1.75}
                 aria-hidden
               />
@@ -335,7 +346,7 @@ export function CompraForm({
                 placeholder="Buscar por nombre o tienda"
                 value={filtroProveedor}
                 onChange={(e) => setFiltroProveedor(e.target.value)}
-                className={cn(controlClass, "h-11 pl-9")}
+                className={cn(controlClass, "h-11 pl-10 md:h-10")}
               />
             </div>
             {puedeCrearProveedor && (
@@ -360,7 +371,7 @@ export function CompraForm({
             <div
               role="radiogroup"
               aria-label="Proveedor"
-              className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
             >
               {visibles.map((p) => (
                 <button
@@ -373,24 +384,22 @@ export function CompraForm({
                     setPaso(depositoId && compraId ? 3 : 2);
                   }}
                   className={cn(
-                    "flex min-h-20 items-center gap-4 rounded-card border-2 p-4 text-left transition-colors",
-                    p.id === proveedorId
-                      ? "border-primary bg-primary-soft"
-                      : "border-border bg-surface hover:bg-surface-2",
+                    "bg-card rounded-card hover:bg-card-hover hover:shadow-card-hover flex min-h-20 items-center gap-4 border p-4 text-left transition-[background-color,box-shadow,border-color] duration-150",
+                    p.id === proveedorId ? "border-foreground" : "border-transparent",
                   )}
                 >
-                  <span className="bg-surface-2 text-muted flex size-11 shrink-0 items-center justify-center rounded-control">
+                  <span className="bg-surface text-muted rounded-control flex size-11 shrink-0 items-center justify-center">
                     <Store className="size-5" strokeWidth={1.75} aria-hidden />
                   </span>
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate font-semibold">{p.nombre}</span>
-                    <span className="text-muted truncate text-sm">{p.nombreTienda}</span>
+                    <span className="text-muted text-small truncate">{p.nombreTienda}</span>
                   </span>
                 </button>
               ))}
             </div>
           )}
-          {errores.proveedorId && <p className="text-danger text-sm">{errores.proveedorId}</p>}
+          {errores.proveedorId && <p className="text-danger text-small">{errores.proveedorId}</p>}
         </div>
         <Sheet
           open={nuevoProveedor}
@@ -438,6 +447,7 @@ export function CompraForm({
     return (
       <>
         <PageHeader title={titulo} subtitle={`Paso 2 de 3 · Compra a ${proveedor?.nombre ?? ""}`} />
+        {pasos}
         <SelectorGalpon
           depositos={depositos}
           preseleccionadoId={depositoId || depositos.find((d) => d.esPrincipal)?.id}
@@ -449,7 +459,7 @@ export function CompraForm({
           }}
         />
         <Button variant="ghost" className="mt-4" onClick={() => setPaso(1)}>
-          Volver al proveedor
+          <ArrowLeft strokeWidth={1.75} /> Volver al proveedor
         </Button>
       </>
     );
@@ -464,14 +474,15 @@ export function CompraForm({
         title={titulo}
         subtitle="Paso 3 de 3 · Escaneá la mercadería (pistola o cámara) o buscala a mano."
       />
-      <div className="flex flex-col gap-4 pb-40 md:pb-0">
+      {pasos}
+      <div className="flex flex-col gap-4">
         <Card>
-          <CardContent className="grid gap-3 md:grid-cols-[1fr_1fr_12rem]">
+          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_12rem] md:items-end">
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-2">
                 <Store className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
                 <span className="min-w-0">
-                  <span className="text-muted block text-xs">Proveedor</span>
+                  <span className="text-muted text-small block">Proveedor</span>
                   <span className="block truncate font-semibold">
                     {proveedor ? `${proveedor.nombre} · ${proveedor.nombreTienda}` : "—"}
                   </span>
@@ -485,7 +496,7 @@ export function CompraForm({
               <span className="flex min-w-0 items-center gap-2">
                 <Warehouse className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
                 <span className="min-w-0">
-                  <span className="text-muted block text-xs">Galpón destino</span>
+                  <span className="text-muted text-small block">Galpón destino</span>
                   <span className="block truncate font-semibold">{deposito?.nombre ?? "—"}</span>
                 </span>
               </span>
@@ -502,7 +513,7 @@ export function CompraForm({
               error={errores.fecha}
             />
             {(errores.proveedorId || errores.depositoId) && (
-              <p className="text-danger text-sm md:col-span-3">
+              <p className="text-danger text-small md:col-span-3">
                 {errores.proveedorId ?? errores.depositoId}
               </p>
             )}
@@ -529,7 +540,7 @@ export function CompraForm({
                   <span className="truncate font-medium">
                     {tituloItem(v)}
                     {items.some((i) => i.varianteId === v.varianteId) && (
-                      <span className="text-primary ml-2 text-xs font-normal">(ya agregado)</span>
+                      <span className="text-subtle ml-2 text-xs font-normal">(ya agregado)</span>
                     )}
                   </span>
                   <span className="text-muted truncate text-xs">
@@ -550,90 +561,108 @@ export function CompraForm({
             description="Cada escaneo repetido suma una unidad."
           />
         ) : (
-          <ul aria-label="Ítems de la compra" className="flex flex-col gap-2">
-            {items.map((it, i) => {
-              const t = tituloItem(it);
-              const errorDe = (campo: string) => errores[`items.${i}.${campo}`];
-              return (
-                <li
-                  key={it.varianteId}
-                  className="border-border bg-surface grid grid-cols-2 items-start gap-3 rounded-card border p-3 md:grid-cols-[1fr_6rem_8rem_8rem_auto] md:items-center"
-                >
-                  <div className="col-span-2 min-w-0 md:col-span-1">
-                    <p className="font-medium">{it.nombreCompleto}</p>
-                    <p className="text-muted text-xs">
-                      {it.sabor ? `${it.sabor} · ` : ""}
-                      {it.sku}
-                      {it.origenCosto === "PROVEEDOR" && " · costo del proveedor"}
-                      {it.origenCosto === "ULTIMO_COSTO" && " · último costo"}
-                      {it.origenCosto === "cargando" && " · buscando costo…"}
-                    </p>
-                  </div>
-                  <label className="text-muted flex flex-col gap-1 text-xs">
-                    Cantidad
-                    <input
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      aria-label={`Cantidad de ${t}`}
-                      value={it.cantidad}
-                      onChange={(e) =>
-                        actualizar(it.varianteId, { cantidad: soloEntero(e.target.value) })
-                      }
-                      aria-invalid={errorDe("cantidad") ? true : undefined}
-                      className={cn(
-                        controlClass,
-                        "h-11 text-right text-base font-semibold tabular-nums",
-                      )}
-                    />
-                    {errorDe("cantidad") && (
-                      <span className="text-danger">{errorDe("cantidad")}</span>
-                    )}
-                  </label>
-                  <label className="text-muted flex flex-col gap-1 text-xs">
-                    Costo unitario
-                    <input
-                      inputMode="decimal"
-                      aria-label={`Costo de ${t}`}
-                      value={it.costo}
-                      onChange={(e) =>
-                        actualizar(it.varianteId, {
-                          costo: soloDecimal(e.target.value),
-                          origenCosto: "manual",
-                        })
-                      }
-                      aria-invalid={errorDe("costoUnitario") ? true : undefined}
-                      className={cn(controlClass, "h-11 text-right tabular-nums")}
-                    />
-                    {errorDe("costoUnitario") && (
-                      <span className="text-danger">{errorDe("costoUnitario")}</span>
-                    )}
-                  </label>
-                  <p className="text-right text-sm md:text-base">
-                    <span className="text-muted block text-xs md:hidden">Subtotal</span>
-                    <strong className="tabular-nums">
-                      {formatearPesos(num(it.cantidad) * num(it.costo))}
-                    </strong>
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-danger justify-self-end"
-                    onClick={() =>
-                      setItems((its) => its.filter((x) => x.varianteId !== it.varianteId))
-                    }
-                    aria-label={`Quitar ${t}`}
+          <div className="border-border bg-surface rounded-card overflow-hidden border">
+            <div
+              aria-hidden
+              className="border-border bg-card text-muted hidden h-10 grid-cols-[minmax(0,1fr)_6rem_8.5rem_8rem_2.75rem] items-center gap-3 border-b px-4 text-xs font-medium md:grid"
+            >
+              <span>Producto</span>
+              <span className="text-right">Cantidad</span>
+              <span className="text-right">Costo unitario</span>
+              <span className="text-right">Subtotal</span>
+              <span />
+            </div>
+            <ul aria-label="Ítems de la compra" className="divide-border flex flex-col divide-y">
+              {items.map((it, i) => {
+                const t = tituloItem(it);
+                const errorDe = (campo: string) => errores[`items.${i}.${campo}`];
+                const sugerido =
+                  it.origenCosto === "PROVEEDOR" || it.origenCosto === "ULTIMO_COSTO";
+                return (
+                  <li
+                    key={it.varianteId}
+                    className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.75rem] items-start gap-x-3 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_6rem_8.5rem_8rem_2.75rem] md:items-center"
                   >
-                    <Trash2 strokeWidth={1.75} />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
+                    <div className="col-span-2 min-w-0 md:col-span-1">
+                      <p className="font-medium">{it.nombreCompleto}</p>
+                      <p className="text-subtle text-xs">
+                        {it.sabor ? `${it.sabor} · ` : ""}
+                        {it.sku}
+                        {it.origenCosto === "PROVEEDOR" && " · costo del proveedor"}
+                        {it.origenCosto === "ULTIMO_COSTO" && " · último costo"}
+                        {it.origenCosto === "cargando" && " · buscando costo…"}
+                      </p>
+                    </div>
+                    <label className="text-muted text-small row-start-2 flex flex-col gap-1 md:row-start-auto">
+                      <span className="md:sr-only">Cantidad</span>
+                      <input
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        aria-label={`Cantidad de ${t}`}
+                        value={it.cantidad}
+                        onChange={(e) =>
+                          actualizar(it.varianteId, { cantidad: soloEntero(e.target.value) })
+                        }
+                        aria-invalid={errorDe("cantidad") ? true : undefined}
+                        className={cn(
+                          controlClass,
+                          "text-foreground h-11 text-right font-semibold tabular-nums md:h-10",
+                        )}
+                      />
+                      {errorDe("cantidad") && (
+                        <span className="text-danger">{errorDe("cantidad")}</span>
+                      )}
+                    </label>
+                    <label className="text-muted text-small row-start-2 flex flex-col gap-1 md:row-start-auto">
+                      <span className="md:sr-only">Costo unitario</span>
+                      <input
+                        inputMode="decimal"
+                        aria-label={`Costo de ${t}`}
+                        title={sugerido ? "Costo sugerido: editalo si cambió" : undefined}
+                        value={it.costo}
+                        onChange={(e) =>
+                          actualizar(it.varianteId, {
+                            costo: soloDecimal(e.target.value),
+                            origenCosto: "manual",
+                          })
+                        }
+                        aria-invalid={errorDe("costoUnitario") ? true : undefined}
+                        className={cn(
+                          controlClass,
+                          "h-11 text-right tabular-nums md:h-10",
+                          sugerido && "text-muted",
+                        )}
+                      />
+                      {errorDe("costoUnitario") && (
+                        <span className="text-danger">{errorDe("costoUnitario")}</span>
+                      )}
+                    </label>
+                    <p className="col-span-2 flex items-baseline justify-between gap-2 md:col-span-1 md:block md:text-right">
+                      <span className="text-muted text-small md:hidden">Subtotal</span>
+                      <strong className="font-semibold tabular-nums">
+                        {formatearPesos(num(it.cantidad) * num(it.costo))}
+                      </strong>
+                    </p>
+                    <IconButton
+                      variant="ghost"
+                      className="hover:text-danger col-start-3 row-start-1 justify-self-end md:col-start-auto md:row-start-auto"
+                      onClick={() =>
+                        setItems((its) => its.filter((x) => x.varianteId !== it.varianteId))
+                      }
+                      aria-label={`Quitar ${t}`}
+                    >
+                      <Trash2 strokeWidth={1.75} />
+                    </IconButton>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
-        {errores.items && <p className="text-danger text-sm">{errores.items}</p>}
+        {errores.items && <p className="text-danger text-small">{errores.items}</p>}
 
         <Card>
-          <CardContent className="grid gap-4 md:grid-cols-[1fr_14rem]">
+          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_14rem]">
             <Textarea
               label="Notas"
               rows={2}
@@ -641,39 +670,43 @@ export function CompraForm({
               onChange={(e) => setNotas(e.target.value)}
               placeholder="N.º de remito o factura, observaciones…"
             />
-            <div className="flex flex-col justify-end gap-1 text-sm">
-              <div className="flex justify-between text-base font-semibold">
-                <span>Total</span>
-                <span className="tabular-nums" aria-label="Total de la compra">
+            <div className="flex flex-col justify-end gap-1">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-h3 font-semibold">Total</span>
+                <span
+                  className="text-h2 font-semibold tabular-nums"
+                  aria-label="Total de la compra"
+                >
                   {formatearPesos(total)}
                 </span>
               </div>
-              <p className="text-muted text-xs">
+              <p className="text-muted text-small">
                 {formatearNumero(unidades)} unidades · el total final lo calcula el sistema
               </p>
             </div>
           </CardContent>
         </Card>
 
-        <div className="border-border bg-surface/95 fixed inset-x-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-20 grid grid-cols-2 gap-2 border-t px-4 py-3 backdrop-blur md:static md:flex md:justify-end md:border-0 md:bg-transparent md:p-0">
-          <Button
-            variant="secondary"
-            onClick={() => void onGuardarBorrador()}
-            loading={enviando === "borrador"}
-            disabled={items.length === 0 || enviando !== null}
-            className={cn(!puedeRecibir && "col-span-2")}
-          >
-            Guardar borrador
-          </Button>
-          {puedeRecibir && (
+        <div className="md:flex md:justify-end">
+          <BarraAccion>
             <Button
-              onClick={() => void onRecibir()}
-              loading={enviando === "recibir" && recibir === null}
+              variant="secondary"
+              onClick={() => void onGuardarBorrador()}
+              loading={enviando === "borrador"}
               disabled={items.length === 0 || enviando !== null}
             >
-              Recibir mercadería
+              Guardar borrador
             </Button>
-          )}
+            {puedeRecibir && (
+              <Button
+                onClick={() => void onRecibir()}
+                loading={enviando === "recibir" && recibir === null}
+                disabled={items.length === 0 || enviando !== null}
+              >
+                Recibir mercadería
+              </Button>
+            )}
+          </BarraAccion>
         </div>
       </div>
 

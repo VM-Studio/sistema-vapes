@@ -2,7 +2,6 @@
 
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -14,6 +13,7 @@ import {
 
 import { ChartPlaceholder, ChartTheme, ChartTooltipCard } from "@/components/ui/chart-theme";
 import { formatearCompacto, formatearPesos } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export interface PuntoGrafico {
   etiqueta: string;
@@ -38,17 +38,14 @@ function Contenido({
       <p className="mb-1.5 font-semibold">{p.etiqueta}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 tabular-nums">
         <dt className="text-muted flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-3 rounded" style={{ background: ACTUAL }} />
+          <span className="bg-dato-actual inline-block size-2.5 shrink-0" aria-hidden />
           Actual{p.fechaActual ? ` (${p.fechaActual})` : ""}
         </dt>
         <dd className="text-right font-medium">
           {p.actual === null ? "—" : formatearPesos(p.actual)}
         </dd>
         <dt className="text-muted flex items-center gap-1.5">
-          <span
-            className="inline-block h-0.5 w-3 rounded border-t-2 border-dashed"
-            style={{ borderColor: ANTERIOR }}
-          />
+          <span className="bg-dato-anterior inline-block size-2.5 shrink-0" aria-hidden />
           Anterior{p.fechaAnterior ? ` (${p.fechaAnterior})` : ""}
         </dt>
         <dd className="text-right font-medium">
@@ -56,10 +53,13 @@ function Contenido({
         </dd>
         {dif !== null && (
           <>
-            <dt className="text-muted">Diferencia</dt>
+            <dt className="text-muted border-border mt-1 border-t pt-1">Diferencia</dt>
             <dd
-              className={"text-right font-semibold"}
-              style={{ color: dif > 0 ? ChartTheme.sube : dif < 0 ? ChartTheme.baja : undefined }}
+              className={cn(
+                "border-border mt-1 border-t pt-1 text-right font-semibold",
+                dif > 0 && "text-success",
+                dif < 0 && "text-danger",
+              )}
             >
               {dif > 0 ? "+" : dif < 0 ? "−" : ""}
               {formatearPesos(Math.abs(dif))}
@@ -71,72 +71,85 @@ function Contenido({
   );
 }
 
+/** Leyenda propia: cuadraditos rectangulares (Actual azul, Anterior naranja). */
+function Leyenda() {
+  return (
+    <ul className="text-muted text-small flex items-center gap-4" aria-hidden>
+      <li className="flex items-center gap-1.5">
+        <span className="bg-dato-actual inline-block h-2.5 w-3.5" />
+        Actual
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span className="bg-dato-anterior inline-block h-2.5 w-3.5" />
+        Anterior
+      </li>
+    </ul>
+  );
+}
+
+const ALTO = "h-[280px] md:h-[360px]";
+
 /** Facturado del período actual (azul) contra el anterior (naranja punteado). */
 export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
   if (!datos.some((p) => p.actual || p.anterior)) {
     return (
       <div data-testid="grafico-comparativo">
-        <ChartPlaceholder mensaje="Sin ventas en el período" />
+        <ChartPlaceholder mensaje="Sin ventas en el período" className={ALTO} />
       </div>
     );
   }
   return (
-    <div className="h-64 w-full md:h-80" data-testid="grafico-comparativo">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={datos} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid {...ChartTheme.grid} />
-          <XAxis
-            dataKey="etiqueta"
-            tickLine={false}
-            axisLine={ChartTheme.ejeX.axisLine}
-            tick={ChartTheme.ejeX.tick}
-            minTickGap={12}
-            interval="preserveStartEnd"
-          />
-          <YAxis
-            width={68}
-            tickLine={false}
-            axisLine={false}
-            tick={ChartTheme.ejeX.tick}
-            tickFormatter={(v: number) => formatearCompacto(v, true)}
-          />
-          <Tooltip
-            content={(props) => (
-              <Contenido active={props.active} payload={props.payload as never} />
-            )}
-            cursor={{ stroke: ChartTheme.cursor, strokeWidth: 1 }}
-          />
-          <Legend
-            verticalAlign="top"
-            align="right"
-            height={28}
-            iconType="plainline"
-            wrapperStyle={ChartTheme.leyenda}
-          />
-          <Line
-            name="Anterior"
-            type="monotone"
-            dataKey="anterior"
-            stroke={ANTERIOR}
-            strokeWidth={2}
-            strokeDasharray="5 4"
-            dot={false}
-            activeDot={{ r: 4 }}
-            isAnimationActive={false}
-          />
-          <Line
-            name="Actual"
-            type="monotone"
-            dataKey="actual"
-            stroke={ACTUAL}
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 5, stroke: "var(--background)", strokeWidth: 2 }}
-            connectNulls={false}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="flex flex-col gap-3" data-testid="grafico-comparativo">
+      <Leyenda />
+      <div className={cn("-ml-2 w-[calc(100%+0.5rem)]", ALTO)}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={datos} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid {...ChartTheme.grid} />
+            <XAxis
+              dataKey="etiqueta"
+              tickLine={false}
+              axisLine={false}
+              tick={ChartTheme.ejeX.tick}
+              tickMargin={8}
+              minTickGap={12}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              width={60}
+              {...ChartTheme.ejeY}
+              tickFormatter={(v: number) => formatearCompacto(v, true)}
+            />
+            <Tooltip
+              content={(props) => (
+                <Contenido active={props.active} payload={props.payload as never} />
+              )}
+              cursor={{ stroke: ChartTheme.cursor, strokeWidth: 1 }}
+            />
+            <Line
+              name="Anterior"
+              type="monotone"
+              dataKey="anterior"
+              stroke={ANTERIOR}
+              strokeWidth={2}
+              strokeDasharray="5 4"
+              dot={false}
+              activeDot={{ r: 4, stroke: "var(--background)", strokeWidth: 2 }}
+              isAnimationActive={false}
+            />
+            <Line
+              name="Actual"
+              type="monotone"
+              dataKey="actual"
+              stroke={ACTUAL}
+              strokeWidth={2.25}
+              dot={false}
+              activeDot={{ r: 5, stroke: "var(--background)", strokeWidth: 2 }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

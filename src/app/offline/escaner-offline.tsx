@@ -82,7 +82,7 @@ export function EscanerOffline() {
   if (catalogos === undefined) return null;
   if (!meta)
     return (
-      <p className="bg-card text-muted rounded-card p-6 text-center text-sm">
+      <p className="bg-card text-muted text-small rounded-card p-6 text-center">
         Este celular todavía no tiene ningún catálogo guardado. Entrá una vez al panel con conexión
         y queda listo para consultar sin señal.
       </p>
@@ -94,7 +94,7 @@ export function EscanerOffline() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-muted text-xs">
+      <p className="text-muted text-small">
         {meta.usuarioNombre} · {meta.panelNombre} · catálogo actualizado{" "}
         {haceCuantoTexto(meta.sincronizadoEn)} ({meta.cantidad} productos)
       </p>
@@ -102,7 +102,7 @@ export function EscanerOffline() {
         // Navegación completa a propósito: sale de la página de respaldo del service worker.
         <a
           href={rutaPanel(meta.panelSlug)}
-          className="bg-success-soft text-success-soft-foreground flex min-h-11 items-center gap-2 rounded-control px-4 py-3 text-sm font-medium"
+          className="bg-success-soft text-success-soft-foreground rounded-card flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-medium"
         >
           <Wifi className="size-4" strokeWidth={1.75} aria-hidden /> Volvió la conexión: tocá para
           abrir la app
@@ -134,7 +134,7 @@ export function EscanerOffline() {
           autoFocus
           containerClassName="flex-1"
         />
-        <Button type="submit" aria-label="Buscar">
+        <Button type="submit" size="icon" aria-label="Buscar">
           <ScanBarcode strokeWidth={1.75} />
         </Button>
       </form>
@@ -144,14 +144,14 @@ export function EscanerOffline() {
         </p>
       )}
       {ultima && (
-        <section aria-label="Producto" className="bg-card rounded-card p-4">
-          <p className="text-lg font-semibold">{ultima.titulo}</p>
-          <p className="text-muted text-sm">
+        <section aria-label="Producto" className="bg-card rounded-card p-5">
+          <p className="text-h3 font-semibold">{ultima.titulo}</p>
+          <p className="text-muted text-small mt-1">
             {formatearPesos(ultima.precioVenta)} · En {dep(depositoId)}:{" "}
             <strong className="text-foreground">{stockEn(ultima)}</strong> · Total{" "}
             {ultima.stockTotal}
           </p>
-          <p className="text-muted mt-2 text-xs">
+          <p className="text-subtle text-small mt-3">
             Datos del último catálogo guardado: pueden no reflejar las ventas más recientes.
           </p>
         </section>

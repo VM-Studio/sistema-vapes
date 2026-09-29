@@ -160,7 +160,7 @@ export function VariantePicker({
         onKeyDown={onKeyDown}
         onFocus={() => resultados.length > 0 && setAbierto(true)}
         onBlur={() => setTimeout(() => setAbierto(false), 150)}
-        className={cn(controlClass, "h-11 pr-10 pl-9 [&::-webkit-search-cancel-button]:hidden")}
+        className={cn(controlClass, "h-11 pr-10 pl-9 md:h-10 [&::-webkit-search-cancel-button]:hidden")}
       />
       {cargando && (
         <Loader2
@@ -200,7 +200,7 @@ export function VariantePicker({
                     <span className="truncate text-sm font-medium">
                       {v.titulo}
                       {agregada && (
-                        <span className="text-primary ml-2 text-xs font-normal">(ya agregado)</span>
+                        <span className="text-subtle ml-2 text-xs font-normal">(ya agregado)</span>
                       )}
                     </span>
                     <span className="text-muted truncate text-xs">

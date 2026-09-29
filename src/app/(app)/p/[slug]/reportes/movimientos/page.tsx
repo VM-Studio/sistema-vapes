@@ -3,9 +3,9 @@ import { ArrowLeftRight } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SectionCard } from "@/components/ui/section-card";
 import { formatearNumero } from "@/lib/format";
 import { TIPO_MOVIMIENTO_UI, TIPOS_MOVIMIENTO_FILTRO } from "@/lib/movimientos-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
@@ -16,6 +16,7 @@ import {
   usuariosConMovimientos,
 } from "@/server/services/reporte.service";
 
+import { BarraFiltros, FilaMobile } from "../_componentes/barra-filtros";
 import { CabeceraReporte } from "../_componentes/cabecera-reporte";
 import { FiltroPeriodo } from "../_componentes/filtro-periodo";
 import { FiltroSelect } from "../_componentes/filtro-select";
@@ -49,7 +50,7 @@ export default async function ReporteMovimientosPage({
         subtitulo={r.etiqueta}
         params={plano}
       />
-      <div className="mb-5 flex flex-col gap-3">
+      <BarraFiltros>
         <FiltroPeriodo periodo={r.periodo} desde={r.desde} hasta={r.hasta} />
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           <FiltroSelect
@@ -77,70 +78,66 @@ export default async function ReporteMovimientosPage({
             opciones={usuarios.map((u) => ({ value: u.id, label: u.nombre }))}
           />
         </div>
-      </div>
-      <Card className="mb-5">
-        <CardHeader>
-          <CardTitle>Unidades por tipo</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <GraficoBarras
-            horizontal
-            nombre="Unidades"
-            datos={m.porTipo.map((x) => ({
-              etiqueta: TIPO_MOVIMIENTO_UI[x.tipo].label,
-              valor: x.unidades,
-            }))}
-          />
-        </CardContent>
-      </Card>
-      <DataTable
-        caption="Movimientos por tipo, galpón y usuario"
-        rows={m.filas}
-        getRowKey={(x) => `${x.tipo}-${x.deposito}-${x.usuario}`}
-        empty={<EmptyState icon={ArrowLeftRight} title="No hay movimientos con estos filtros" />}
-        columns={[
-          {
-            key: "tipo",
-            header: "Tipo",
-            cell: (x: Fila) => (
-              <Badge variant={TIPO_MOVIMIENTO_UI[x.tipo].variante}>
-                {TIPO_MOVIMIENTO_UI[x.tipo].label}
-              </Badge>
-            ),
-          },
-          { key: "deposito", header: "Galpón", cell: (x) => x.deposito },
-          { key: "usuario", header: "Usuario", cell: (x) => x.usuario },
-          {
-            key: "mov",
-            header: "Movimientos",
-            className: "text-right tabular-nums",
-            cell: (x) => formatearNumero(x.movimientos),
-          },
-          {
-            key: "u",
-            header: "Unidades",
-            className: "text-right tabular-nums font-medium",
-            cell: (x) => formatearNumero(x.unidades),
-          },
-        ]}
-        renderMobile={(x) => (
-          <div className="border-border bg-surface flex items-center justify-between gap-2 rounded-card border p-4">
-            <div className="flex flex-col gap-1">
-              <Badge variant={TIPO_MOVIMIENTO_UI[x.tipo].variante} className="w-fit">
-                {TIPO_MOVIMIENTO_UI[x.tipo].label}
-              </Badge>
-              <span className="text-muted text-xs">
-                {x.deposito} · {x.usuario} · {x.movimientos} mov.
-              </span>
-            </div>
-            <span className="font-semibold tabular-nums">{formatearNumero(x.unidades)} u.</span>
-          </div>
-        )}
-      />
-      <p className="text-muted mt-3 text-sm">
-        Total: {formatearNumero(m.total.movimientos)} movimientos ·{" "}
-        {formatearNumero(m.total.unidades)} unidades.
-      </p>
+      </BarraFiltros>
+      <SectionCard title="Unidades por tipo" className="mb-4">
+        <GraficoBarras
+          horizontal
+          nombre="Unidades"
+          datos={m.porTipo.map((x) => ({
+            etiqueta: TIPO_MOVIMIENTO_UI[x.tipo].label,
+            valor: x.unidades,
+          }))}
+        />
+      </SectionCard>
+      <SectionCard
+        title="Por tipo, galpón y usuario"
+        description={`Total: ${formatearNumero(m.total.movimientos)} movimientos · ${formatearNumero(m.total.unidades)} unidades.`}
+      >
+        <DataTable
+          caption="Movimientos por tipo, galpón y usuario"
+          rows={m.filas}
+          getRowKey={(x) => `${x.tipo}-${x.deposito}-${x.usuario}`}
+          empty={<EmptyState icon={ArrowLeftRight} title="No hay movimientos con estos filtros" />}
+          columns={[
+            {
+              key: "tipo",
+              header: "Tipo",
+              cell: (x: Fila) => (
+                <Badge variant={TIPO_MOVIMIENTO_UI[x.tipo].variante}>
+                  {TIPO_MOVIMIENTO_UI[x.tipo].label}
+                </Badge>
+              ),
+            },
+            { key: "deposito", header: "Galpón", cell: (x) => x.deposito },
+            { key: "usuario", header: "Usuario", cell: (x) => x.usuario },
+            {
+              key: "mov",
+              header: "Movimientos",
+              className: "text-right tabular-nums",
+              cell: (x) => formatearNumero(x.movimientos),
+            },
+            {
+              key: "u",
+              header: "Unidades",
+              className: "text-right tabular-nums font-medium",
+              cell: (x) => formatearNumero(x.unidades),
+            },
+          ]}
+          renderMobile={(x) => (
+            <FilaMobile className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <Badge variant={TIPO_MOVIMIENTO_UI[x.tipo].variante} className="w-fit">
+                  {TIPO_MOVIMIENTO_UI[x.tipo].label}
+                </Badge>
+                <span className="text-muted text-small">
+                  {x.deposito} · {x.usuario} · {x.movimientos} mov.
+                </span>
+              </div>
+              <span className="font-semibold tabular-nums">{formatearNumero(x.unidades)} u.</span>
+            </FilaMobile>
+          )}
+        />
+      </SectionCard>
     </>
   );
 }

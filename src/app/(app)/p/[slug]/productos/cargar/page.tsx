@@ -5,6 +5,7 @@ import { requirePaginaPanelAlguno } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { obtener } from "@/server/services/producto.service";
+import { resumenStock } from "@/server/services/stock.service";
 
 import { CargaStock } from "./carga-stock";
 
@@ -21,8 +22,9 @@ export default async function CargarStockPage({ searchParams }: { searchParams: 
   const ctx = await requirePaginaPanelAlguno([Modulo.PRODUCTOS, Modulo.STOCK], "crear");
   const sp = await searchParams;
   const productoId = typeof sp.producto === "string" ? sp.producto : null;
-  const [depositos, producto] = await Promise.all([
+  const [depositos, resumen, producto] = await Promise.all([
     listarDepositosActivos(ctx),
+    resumenStock(ctx),
     productoId
       ? obtener(ctx, productoId).catch((e: unknown) => {
           if (e instanceof NotFoundError) return null;
@@ -30,5 +32,11 @@ export default async function CargarStockPage({ searchParams }: { searchParams: 
         })
       : Promise.resolve(null),
   ]);
-  return <CargaStock depositos={depositos} buscarInicial={producto?.nombreCompleto ?? ""} />;
+  return (
+    <CargaStock
+      depositos={depositos}
+      buscarInicial={producto?.nombreCompleto ?? ""}
+      unidades={Object.fromEntries(resumen.porDeposito.map((d) => [d.id, d.unidades]))}
+    />
+  );
 }

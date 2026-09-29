@@ -1,16 +1,20 @@
 import { Modulo } from "@prisma/client";
-import { ArrowLeft, MessageCircle, Plus, Truck } from "lucide-react";
+import { MessageCircle, Plus, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
+import { BarraAccion } from "@/components/ui/barra-accion";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatearPesos } from "@/lib/format";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { formatearNumero, formatearPesos } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { puede } from "@/lib/permisos";
@@ -38,10 +42,33 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
   const verPrecios = veCostosCompras(ctx);
   const verCompras = puede(usuario, panelId, Modulo.COMPRAS, "ver");
 
+  const puedeNuevaCompra = p.activo && puede(usuario, panelId, Modulo.COMPRAS, "crear");
+  const nuevaCompra = (
+    <Link href={ruta(`/compras/nueva?proveedor=${p.id}`)} className={buttonVariants()}>
+      <Plus strokeWidth={1.75} /> Nueva compra a este proveedor
+    </Link>
+  );
+  const idCompra = (c: (typeof d.compras)[number]) =>
+    verCompras ? (
+      <Link
+        href={ruta(`/compras/${c.id}`)}
+        className="font-mono font-semibold underline-offset-4 hover:underline"
+      >
+        {formatearIdCompra(panel.slug, c.numero)}
+      </Link>
+    ) : (
+      <span className="font-mono font-semibold">{formatearIdCompra(panel.slug, c.numero)}</span>
+    );
+
   return (
     <>
       <PageHeader
         title={p.nombre}
+        breadcrumb={
+          <Breadcrumb
+            items={[{ label: "Proveedores", href: ruta("/proveedores") }, { label: p.nombre }]}
+          />
+        }
         subtitle={
           <span className="flex items-center gap-2">
             {p.nombreTienda}
@@ -50,54 +77,67 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
         }
         actions={
           <>
-            <Link href={ruta("/proveedores")} className={buttonVariants({ variant: "secondary" })}>
-              <ArrowLeft strokeWidth={1.75} /> Proveedores
-            </Link>
-            {p.activo && puede(usuario, panelId, Modulo.COMPRAS, "crear") && (
-              <Link href={ruta(`/compras/nueva?proveedor=${p.id}`)} className={buttonVariants()}>
-                <Plus strokeWidth={1.75} /> Nueva compra a este proveedor
-              </Link>
-            )}
+            <AccionesProveedor
+              proveedor={p}
+              verPrecios={verPrecios}
+              puedeEditar={puede(usuario, panelId, Modulo.PROVEEDORES, "editar")}
+              puedeEliminar={puede(usuario, panelId, Modulo.PROVEEDORES, "eliminar")}
+            />
+            {puedeNuevaCompra && <div className="hidden md:flex">{nuevaCompra}</div>}
           </>
         }
       />
-      <div className="flex flex-col gap-6">
-        <Card>
-          <CardContent className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-4">
-            <div>
-              <p className="text-muted">Teléfono</p>
-              {p.telefono ? (
-                <a
-                  href={enlaceWhatsApp(p.telefono)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary inline-flex min-h-11 items-center gap-1.5 font-medium"
-                >
-                  <MessageCircle className="size-4" strokeWidth={1.75} aria-hidden />
-                  {formatearTelefono(p.telefono)}
-                </a>
-              ) : (
-                <p>—</p>
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Card className="col-span-2 flex flex-col gap-4 p-5">
+            <h2 className="text-h3 font-semibold">Contacto</h2>
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <dt className="text-muted text-small">Teléfono</dt>
+                <dd className="flex flex-wrap items-center gap-3">
+                  {p.telefono ? (
+                    <>
+                      <span className="tabular-nums">{formatearTelefono(p.telefono)}</span>
+                      <a
+                        href={enlaceWhatsApp(p.telefono)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`WhatsApp a ${p.nombre}`}
+                        className={buttonVariants({
+                          variant: "secondary",
+                          size: "sm",
+                          className: "max-md:h-11",
+                        })}
+                      >
+                        <MessageCircle strokeWidth={1.75} /> WhatsApp
+                      </a>
+                    </>
+                  ) : (
+                    <span className="text-subtle">Sin teléfono</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex flex-col gap-1">
+                <dt className="text-muted text-small">Tienda</dt>
+                <dd>{p.nombreTienda}</dd>
+              </div>
+              {p.notas && (
+                <div className="flex flex-col gap-1 sm:col-span-2">
+                  <dt className="text-muted text-small">Notas</dt>
+                  <dd className="whitespace-pre-line">{p.notas}</dd>
+                </div>
               )}
-            </div>
-            <div>
-              <p className="text-muted">Compras</p>
-              <p className="tabular-nums">{d.cantidadCompras}</p>
-            </div>
-            {d.totalComprado !== null && (
-              <div>
-                <p className="text-muted">Total comprado</p>
-                <p className="font-semibold tabular-nums">{formatearPesos(d.totalComprado)}</p>
-              </div>
-            )}
-            {p.notas && (
-              <div className="col-span-2 md:col-span-4">
-                <p className="text-muted">Notas</p>
-                <p className="whitespace-pre-line">{p.notas}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </dl>
+          </Card>
+          <StatCard
+            label="Compras"
+            value={formatearNumero(d.cantidadCompras)}
+            className={d.totalComprado === null ? "col-span-2" : undefined}
+          />
+          {d.totalComprado !== null && (
+            <StatCard label="Total comprado" value={formatearPesos(d.totalComprado)} />
+          )}
+        </div>
 
         <ProductosProveedor
           proveedorId={p.id}
@@ -106,34 +146,23 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
           puedeEditar={puede(usuario, panelId, Modulo.PROVEEDORES, "editar")}
         />
 
-        <section aria-labelledby="historial" className="flex flex-col gap-3">
-          <h2 id="historial" className="text-lg font-semibold">
-            Historial de compras
-            {d.compras.length === 50 && (
-              <span className="text-muted ml-2 text-sm font-normal">(últimas 50)</span>
-            )}
-          </h2>
+        <SectionCard
+          title="Historial de compras"
+          description={d.compras.length === 50 ? "Últimas 50 compras" : undefined}
+        >
           <DataTable
             caption="Compras del proveedor"
             rows={d.compras}
             getRowKey={(c) => c.id}
-            empty={<EmptyState icon={Truck} title="Todavía no hay compras a este proveedor" />}
+            empty={
+              <EmptyState
+                icon={Truck}
+                title="Todavía no hay compras a este proveedor"
+                className="bg-surface"
+              />
+            }
             columns={[
-              {
-                key: "numero",
-                header: "ID",
-                cell: (c) =>
-                  verCompras ? (
-                    <Link
-                      href={ruta(`/compras/${c.id}`)}
-                      className="text-primary font-semibold hover:underline"
-                    >
-                      {formatearIdCompra(panel.slug, c.numero)}
-                    </Link>
-                  ) : (
-                    <span className="font-semibold">{formatearIdCompra(panel.slug, c.numero)}</span>
-                  ),
-              },
+              { key: "numero", header: "ID", cell: idCompra },
               {
                 key: "fecha",
                 header: "Fecha",
@@ -143,15 +172,15 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
               {
                 key: "unidades",
                 header: "Unidades",
-                className: "text-right tabular-nums",
-                cell: (c) => c.unidades,
+                className: "text-right",
+                cell: (c) => formatearNumero(c.unidades),
               },
               ...(verPrecios
                 ? [
                     {
                       key: "total",
                       header: "Total",
-                      className: "text-right tabular-nums",
+                      className: "text-right font-medium",
                       cell: (c: (typeof d.compras)[number]) => formatearPesos(c.total),
                     },
                   ]
@@ -167,21 +196,15 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
               },
             ]}
             renderMobile={(c) => (
-              <div className="border-border bg-surface rounded-card border p-4">
+              <div className="border-border bg-surface rounded-card flex flex-col gap-1.5 border p-4">
                 <div className="flex items-center justify-between gap-2">
-                  {verCompras ? (
-                    <Link href={ruta(`/compras/${c.id}`)} className="text-primary font-semibold">
-                      {formatearIdCompra(panel.slug, c.numero)}
-                    </Link>
-                  ) : (
-                    <span className="font-semibold">{formatearIdCompra(panel.slug, c.numero)}</span>
-                  )}
+                  {idCompra(c)}
                   <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>
                     {ESTADO_COMPRA_UI[c.estado].label}
                   </Badge>
                 </div>
-                <div className="mt-1 flex items-end justify-between gap-2">
-                  <p className="text-muted text-xs">
+                <div className="flex items-end justify-between gap-2">
+                  <p className="text-muted text-small">
                     {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
                   </p>
                   {c.total !== null && (
@@ -191,15 +214,9 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
               </div>
             )}
           />
-        </section>
-
-        <AccionesProveedor
-          proveedor={p}
-          verPrecios={verPrecios}
-          puedeEditar={puede(usuario, panelId, Modulo.PROVEEDORES, "editar")}
-          puedeEliminar={puede(usuario, panelId, Modulo.PROVEEDORES, "eliminar")}
-        />
+        </SectionCard>
       </div>
+      {puedeNuevaCompra && <BarraAccion soloMobile>{nuevaCompra}</BarraAccion>}
     </>
   );
 }

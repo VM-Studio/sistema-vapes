@@ -18,14 +18,14 @@ export default async function ConfigNegocioPage() {
     <>
       <TabsNav
         items={tabsConfiguracion("/configuracion/negocio")}
-        className="mb-4"
+        className="mb-6"
         ariaLabel="Configuración"
       />
       <PageHeader
         title="Negocio y app"
         subtitle="Nombre e ícono de la app instalada (valen para todos los sistemas)."
       />
-      <div className="flex flex-col gap-4">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         <NombreForm nombre={nombre} />
         <IconoForm propio={propio} />
       </div>

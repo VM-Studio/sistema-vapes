@@ -78,7 +78,7 @@ export default async function PanelesPage({
               <li key={panel.id}>
                 <Link
                   href={rutaPanel(panel.slug)}
-                  className="group bg-card hover:bg-card-hover hover:shadow-card-hover flex h-full flex-col gap-5 rounded-card p-4 transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 md:p-5"
+                  className="group bg-card hover:bg-card-hover hover:shadow-card-hover rounded-card flex h-full flex-col gap-5 p-4 transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 md:p-5"
                 >
                   <LogoTarjeta nombre={panel.nombre} logoUrl={panel.logoUrl} />
                   <div className="flex flex-1 items-end justify-between gap-3 px-1">

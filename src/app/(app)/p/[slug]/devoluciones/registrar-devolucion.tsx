@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  AlertTriangle,
-  Camera,
-  Link2,
-  Minus,
-  Plus,
-  ScanBarcode,
-  Trash2,
-  Warehouse,
-} from "lucide-react";
+import { Camera, Info, Link2, Minus, Plus, ScanBarcode, Trash2, Warehouse } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -34,6 +25,7 @@ import {
   variantesParaDevolucionAction,
   ventasDeClienteAction,
 } from "./actions";
+import { StepperVenta } from "../ventas/_componentes/stepper-venta";
 
 export interface VentaVinculable {
   id: string;
@@ -61,6 +53,8 @@ const TITULOS: Record<Paso, string> = {
   3: "Productos",
   4: "Observación y confirmar",
 };
+
+const PASOS_STEPPER = ["Cliente", "Galpón", "Productos", "Observación"];
 
 const AVISO_STOCK = "Se descuenta del stock la unidad nueva que se entrega al cliente.";
 
@@ -238,13 +232,14 @@ export function RegistrarDevolucion({
         className="md:w-[36rem]"
         footer={footer}
       >
+        <StepperVenta ariaLabel="Pasos" pasos={PASOS_STEPPER} actual={paso - 1} className="mb-6" />
         {paso === 1 && (
           <div className="flex flex-col gap-5">
             <SelectorCliente valor={cliente} onCambiar={elegirCliente} permitirNuevo={false} />
             {clienteId && (
               <section aria-labelledby="vincular-venta" className="flex flex-col gap-2">
-                <h3 id="vincular-venta" className="flex items-center gap-2 text-sm font-semibold">
-                  <Link2 className="size-4" strokeWidth={1.75} aria-hidden />
+                <h3 id="vincular-venta" className="text-h3 flex items-center gap-2 font-semibold">
+                  <Link2 className="text-muted size-5" strokeWidth={1.75} aria-hidden />
                   Vincular a una venta <span className="text-muted font-normal">(opcional)</span>
                 </h3>
                 {ventas === null ? (
@@ -297,12 +292,12 @@ export function RegistrarDevolucion({
 
         {paso === 3 && (
           <div className="flex flex-col gap-4">
-            <p className="bg-warning-soft text-warning-soft-foreground flex items-start gap-2 rounded-control px-4 py-3 text-sm">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+            <p className="bg-surface-3 text-foreground rounded-card flex items-start gap-2 px-4 py-3 text-sm">
+              <Info className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
               {AVISO_STOCK}
             </p>
-            <div className="border-primary bg-primary-soft flex items-center gap-3 rounded-card border px-4 py-3">
-              <Warehouse className="text-primary size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+            <div className="bg-surface rounded-card flex items-center gap-3 px-4 py-3">
+              <Warehouse className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
               <p className="min-w-0 flex-1 text-sm">
                 Sale de <strong data-testid="galpon-devolucion">{deposito?.nombre}</strong>
               </p>
@@ -311,9 +306,7 @@ export function RegistrarDevolucion({
               </Button>
             </div>
             <div className="flex items-center gap-3">
-              <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-circle">
-                <ScanBarcode className="size-5" strokeWidth={1.75} aria-hidden />
-              </span>
+              <ScanBarcode className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
               <p className="text-muted min-w-0 flex-1 text-sm">
                 Escaneá el producto con la pistola o la cámara, o buscalo a mano.
               </p>
@@ -332,11 +325,14 @@ export function RegistrarDevolucion({
               placeholder="Buscar: producto, sabor o código…"
             />
             {items.length === 0 ? (
-              <p className="border-border text-muted rounded-card border border-dashed px-4 py-6 text-center text-sm">
+              <p className="bg-surface text-muted rounded-card px-4 py-6 text-center text-sm">
                 Todavía no agregaste productos.
               </p>
             ) : (
-              <ul aria-label="Productos a entregar" className="flex flex-col gap-2">
+              <ul
+                aria-label="Productos a entregar"
+                className="bg-surface divide-border rounded-card flex flex-col divide-y"
+              >
                 {items.map((i) => {
                   const v = i.variante;
                   const hay = stockEn(v, depositoId);
@@ -345,7 +341,7 @@ export function RegistrarDevolucion({
                     <li
                       key={v.varianteId}
                       aria-label={v.titulo}
-                      className="border-border bg-surface flex flex-col gap-2 rounded-card border p-3"
+                      className="flex flex-col gap-2 p-4"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className="min-w-0 leading-tight font-semibold break-words">
@@ -354,7 +350,7 @@ export function RegistrarDevolucion({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="text-danger -mt-1 -mr-1 shrink-0"
+                          className="text-muted hover:text-danger -mt-2 -mr-2 shrink-0"
                           onClick={() => quitar(v.varianteId)}
                           aria-label={`Quitar ${v.titulo}`}
                         >
@@ -362,19 +358,30 @@ export function RegistrarDevolucion({
                         </Button>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-muted text-xs">
+                        <div className="text-muted min-w-0 text-xs">
                           <p className={cn(i.cantidad > hay && "text-danger font-medium")}>
                             Stock en {deposito?.nombre}: {hay}
                           </p>
                           {venta && (
                             <p
                               className={cn(
-                                vendido !== null && i.cantidad > vendido && "text-warning",
+                                vendido !== null &&
+                                  i.cantidad > vendido &&
+                                  "text-warning font-medium",
                               )}
                             >
-                              {vendido
-                                ? `Vendidos en ${venta.codigo}: ${vendido}`
-                                : `No está en ${venta.codigo}`}
+                              {vendido ? (
+                                <>
+                                  Vendidos en{" "}
+                                  <span className="whitespace-nowrap">{venta.codigo}</span>:{" "}
+                                  {vendido}
+                                </>
+                              ) : (
+                                <>
+                                  No está en{" "}
+                                  <span className="whitespace-nowrap">{venta.codigo}</span>
+                                </>
+                              )}
                             </p>
                           )}
                         </div>
@@ -393,7 +400,7 @@ export function RegistrarDevolucion({
                             valor={i.cantidad}
                             onCambio={(n) => cambiarCantidad(v.varianteId, n)}
                             max={10_000}
-                            className="w-16 text-lg font-semibold"
+                            className="w-14 font-semibold"
                           />
                           <Button
                             variant="secondary"
@@ -435,8 +442,9 @@ export function RegistrarDevolucion({
             />
             <section
               aria-label="Resumen"
-              className="border-border bg-surface-2 flex flex-col gap-2 rounded-card border p-4 text-sm"
+              className="bg-surface rounded-card flex flex-col gap-2 p-4 text-sm"
             >
+              <h3 className="text-h3 mb-1 font-semibold">Resumen</h3>
               {cliente && (
                 <p>
                   <span className="text-muted">Cliente:</span> <strong>{cliente.nombre}</strong>{" "}
@@ -447,13 +455,14 @@ export function RegistrarDevolucion({
               )}
               {venta && (
                 <p>
-                  <span className="text-muted">Venta:</span> <strong>{venta.codigo}</strong>
+                  <span className="text-muted">Venta:</span>{" "}
+                  <strong className="font-mono">{venta.codigo}</strong>
                 </p>
               )}
               <p>
                 <span className="text-muted">Sale de:</span> <strong>{deposito?.nombre}</strong>
               </p>
-              <ul className="flex flex-col gap-1">
+              <ul className="border-border flex flex-col gap-1 border-t pt-2">
                 {items.map((i) => (
                   <li key={i.variante.varianteId} className="flex justify-between gap-3">
                     <span className="truncate">{i.variante.titulo}</span>
@@ -461,7 +470,10 @@ export function RegistrarDevolucion({
                   </li>
                 ))}
               </ul>
-              <p className="text-muted text-xs">{AVISO_STOCK}</p>
+              <p className="text-muted flex items-start gap-1.5 text-xs">
+                <Info className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                {AVISO_STOCK}
+              </p>
             </section>
             {error && (
               <p
@@ -495,8 +507,10 @@ function OpcionVenta({
       aria-checked={activa}
       onClick={onClick}
       className={cn(
-        "flex min-h-12 w-full flex-col items-start gap-0.5 rounded-control border-2 px-4 py-2.5 text-left text-sm transition-colors",
-        activa ? "border-primary bg-primary-soft" : "border-border bg-surface hover:bg-surface-2",
+        "rounded-control flex min-h-12 w-full flex-col items-start gap-0.5 border px-4 py-2.5 text-left text-sm transition-colors",
+        activa
+          ? "border-foreground bg-surface ring-foreground ring-1 ring-inset"
+          : "border-border bg-surface hover:border-input",
       )}
     >
       {children}
@@ -507,8 +521,8 @@ function OpcionVenta({
 function ResumenVenta({ venta }: { venta: VentaVinculable }) {
   return (
     <>
-      <span className="font-semibold tabular-nums">
-        {venta.codigo}{" "}
+      <span className="font-semibold">
+        <span className="font-mono">{venta.codigo}</span>{" "}
         <span className="text-muted font-normal">· {formatearFecha(venta.fecha)}</span>
       </span>
       <span className="text-muted line-clamp-2 text-xs">

@@ -13,6 +13,7 @@ import {
   ShoppingCart,
   Table2,
   Trash2,
+  TrendingDown,
   UserRound,
   X,
 } from "lucide-react";
@@ -24,8 +25,10 @@ import { VariantePicker } from "@/components/catalogo/variante-picker";
 import { SelectorCliente, type ClienteElegido } from "@/components/clientes/selector-cliente";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { CantidadInput } from "@/components/ui/cantidad-input";
+import { Card } from "@/components/ui/card";
 import { controlClass } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -352,29 +355,41 @@ export function EditorCotizacion({
     <ResumenEscalones calculo={calculo} onTabla={(productoId) => setTablaDe(productoId)} />
   );
 
+  const deshabilitado = ocupado !== null || items.length === 0;
+
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       {/* Cabecera --------------------------------------------------------------- */}
       <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">
+        <Breadcrumb
+          items={[
+            { label: "Cotizador", href: ruta("/cotizador") },
+            { label: mayorista ? "Por mayor" : "Por unidad" },
+          ]}
+        />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="text-h1 font-semibold">
             {mayorista ? "Cotización por mayor" : "Cotización por unidad"}
           </h1>
           {guardada && (
-            <Badge variant="primary" data-testid="codigo-cotizacion">
+            <Badge
+              variant="neutral"
+              className="text-foreground font-mono text-sm font-semibold"
+              data-testid="codigo-cotizacion"
+            >
               {guardada.codigo}
             </Badge>
           )}
         </div>
         {mayorista && (
           <p
-            className="bg-surface-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control px-3 py-2 text-sm"
+            className="text-muted text-small flex flex-wrap items-center gap-x-2 gap-y-1"
             data-testid="modo-escalon"
           >
-            <Layers className="text-primary size-4" strokeWidth={1.75} aria-hidden />
+            <Layers className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
             <span>
               Escalón{" "}
-              <strong>
+              <strong className="text-foreground font-medium">
                 {modoEscalon === "POR_PRODUCTO"
                   ? "por producto (suman todos los sabores del producto)"
                   : "por total de unidades de la cotización"}
@@ -383,161 +398,184 @@ export function EditorCotizacion({
             {esOwner && (
               <Link
                 href={ruta("/cotizador/configuracion")}
-                className="text-primary inline-flex items-center gap-1 hover:underline"
+                className="text-foreground inline-flex min-h-8 items-center gap-1 font-medium underline-offset-4 hover:underline"
               >
                 <Settings2 className="size-3.5" strokeWidth={1.75} aria-hidden /> Configurar
               </Link>
             )}
           </p>
         )}
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem]">
-          <section
-            aria-label="Cliente"
-            className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4"
-          >
-            {cliente || verCliente ? (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">Cliente (opcional)</p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setCliente(null);
-                      setVerCliente(false);
-                    }}
-                  >
-                    <X strokeWidth={1.75} /> Sin cliente
-                  </Button>
-                </div>
-                <SelectorCliente valor={cliente} onCambiar={setCliente} permitirNuevo />
-              </>
-            ) : (
+      </header>
+
+      {/* Cliente y validez ------------------------------------------------------ */}
+      <Card className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_11rem] md:p-6">
+        <section aria-label="Cliente" className="flex min-w-0 flex-col gap-3">
+          {cliente || verCliente ? (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-small font-medium">Cliente (opcional)</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setCliente(null);
+                    setVerCliente(false);
+                  }}
+                >
+                  <X strokeWidth={1.75} /> Sin cliente
+                </Button>
+              </div>
+              <SelectorCliente valor={cliente} onCambiar={setCliente} permitirNuevo />
+            </>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-small font-medium">Cliente</p>
               <button
                 type="button"
                 onClick={() => setVerCliente(true)}
-                className="text-muted hover:text-foreground flex min-h-11 items-center gap-2 text-left text-sm"
+                className="border-input bg-surface text-muted hover:border-subtle hover:text-foreground rounded-control flex min-h-11 items-center gap-2 border border-dashed px-3 text-left text-sm transition-colors md:min-h-10"
               >
-                <UserRound className="size-5" strokeWidth={1.75} aria-hidden />
-                Sin cliente. <span className="text-primary font-medium">Agregar cliente</span>
+                <UserRound className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+                Sin cliente.{" "}
+                <span className="text-foreground font-medium underline-offset-4">
+                  Agregar cliente
+                </span>
               </button>
-            )}
-          </section>
-          <Input
-            label="Validez (días)"
-            inputMode="numeric"
-            value={String(validez)}
-            onChange={(e) => {
-              const n = Number(e.target.value.replace(/\D/g, "").slice(0, 3));
-              setValidez(Math.max(1, n || 1));
-            }}
-            containerClassName="self-start"
-          />
-        </div>
-      </header>
-
-      <div className={cn("grid gap-5", mayorista && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
-        <div className="flex min-w-0 flex-col gap-5">
-          {/* Buscador + cámara --------------------------------------------------- */}
-          <div className="flex gap-2">
-            <VariantePicker
-              id={ID_BUSCADOR_COTIZADOR}
-              className="flex-1"
-              yaAgregadas={yaAgregadas}
-              placeholder="Escaneá o buscá producto, sabor o código"
-              onSelect={(v: VarianteEncontrada) => agregar(v)}
-            />
-            <BotonCamara
-              onClick={() => {
-                feedback.prepararAudio();
-                setCamara(true);
-              }}
-            />
-          </div>
-          {aviso && (
-            <p
-              role="alert"
-              className="bg-warning-soft text-warning-soft-foreground rounded-control px-4 py-3 text-sm"
-            >
-              {aviso}
-            </p>
-          )}
-          {errorCalculo && (
-            <p
-              role="alert"
-              className="bg-danger-soft text-danger-soft-foreground rounded-control px-4 py-3 text-sm"
-            >
-              {errorCalculo}
-            </p>
-          )}
-
-          {/* Ítems ---------------------------------------------------------------- */}
-          {items.length === 0 ? (
-            <div className="border-border text-muted flex flex-col items-center gap-2 rounded-card border border-dashed px-4 py-8 text-center text-sm">
-              <PackageSearch className="size-8" strokeWidth={1.75} aria-hidden />
-              <p>
-                Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.
-              </p>
             </div>
-          ) : (
-            <ul aria-label="Productos de la cotización" className="flex flex-col gap-2">
-              {items.map((i) => (
-                <FilaCotizacion
-                  key={i.varianteId}
-                  item={i}
-                  calculado={porVariante.get(i.varianteId)}
-                  mayorista={mayorista}
-                  mostrarStock={mostrarStock}
-                  puedeEditar={puedeEditar}
-                  enfocar={enfocar === i.varianteId}
-                  onEnfocado={() => setEnfocar(null)}
-                  onCantidad={(cantidad) => cambiarItem(i.varianteId, { cantidad })}
-                  onPrecio={(precioManual) => cambiarItem(i.varianteId, { precioManual })}
-                  onQuitar={() => quitar(i.varianteId)}
-                  onTabla={() => setTablaDe(i.productoId)}
-                />
-              ))}
-            </ul>
           )}
+        </section>
+        <Input
+          label="Validez (días)"
+          inputMode="numeric"
+          value={String(validez)}
+          onChange={(e) => {
+            const n = Number(e.target.value.replace(/\D/g, "").slice(0, 3));
+            setValidez(Math.max(1, n || 1));
+          }}
+          containerClassName="self-start"
+          className="tabular-nums"
+        />
+      </Card>
 
-          {/* Más vendidos --------------------------------------------------------- */}
-          <section aria-labelledby="mas-vendidos-cot" className="flex flex-col gap-2">
-            <h2 id="mas-vendidos-cot" className="text-muted text-sm font-medium">
-              Más vendidos
-            </h2>
-            {masVendidos === null ? (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                {Array.from({ length: 4 }, (_, n) => (
-                  <div key={n} className="bg-surface-2 h-16 animate-pulse rounded-card" />
-                ))}
+      <div className={cn("grid gap-4", mayorista && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* Productos ------------------------------------------------------------ */}
+          <Card className="flex flex-col gap-4 p-4 md:p-6">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-h3 font-semibold">Productos</h2>
+              {items.length > 0 && (
+                <span className="text-muted text-small tabular-nums">
+                  {items.length} {items.length === 1 ? "renglón" : "renglones"}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <VariantePicker
+                id={ID_BUSCADOR_COTIZADOR}
+                className="flex-1"
+                yaAgregadas={yaAgregadas}
+                placeholder="Escaneá o buscá producto, sabor o código"
+                onSelect={(v: VarianteEncontrada) => agregar(v)}
+              />
+              <BotonCamara
+                onClick={() => {
+                  feedback.prepararAudio();
+                  setCamara(true);
+                }}
+              />
+            </div>
+            {aviso && (
+              <p
+                role="alert"
+                className="bg-warning-soft text-warning-soft-foreground rounded-control px-4 py-3 text-sm"
+              >
+                {aviso}
+              </p>
+            )}
+            {errorCalculo && (
+              <p
+                role="alert"
+                className="bg-danger-soft text-danger-soft-foreground rounded-control px-4 py-3 text-sm"
+              >
+                {errorCalculo}
+              </p>
+            )}
+
+            {items.length === 0 ? (
+              <div className="border-input bg-surface text-muted rounded-card flex flex-col items-center gap-3 border border-dashed px-4 py-10 text-center text-sm">
+                <PackageSearch className="text-subtle size-10" strokeWidth={1.25} aria-hidden />
+                <p className="max-w-xs">
+                  Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.
+                </p>
               </div>
-            ) : masVendidos.length === 0 ? (
-              <p className="text-muted text-sm">Todavía no hay ventas para sugerir.</p>
             ) : (
-              <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                {masVendidos.map((p) => (
-                  <li key={p.varianteId}>
-                    <button
-                      type="button"
-                      onClick={() => agregar(p)}
-                      className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-16 w-full flex-col justify-between gap-1 rounded-card border p-3 text-left transition-colors"
-                    >
-                      <span className="line-clamp-2 text-sm leading-snug font-medium">
-                        {p.nombreCompleto}
-                        {p.sabor && <span className="text-muted block">{p.sabor}</span>}
-                      </span>
-                      <span className="text-xs font-semibold tabular-nums">
-                        {formatearPesos(p.precioVenta)}
-                      </span>
-                    </button>
-                  </li>
+              <ul
+                aria-label="Productos de la cotización"
+                className="border-border bg-surface divide-border rounded-card flex flex-col divide-y border"
+              >
+                {items.map((i) => (
+                  <FilaCotizacion
+                    key={i.varianteId}
+                    item={i}
+                    calculado={porVariante.get(i.varianteId)}
+                    mayorista={mayorista}
+                    mostrarStock={mostrarStock}
+                    puedeEditar={puedeEditar}
+                    enfocar={enfocar === i.varianteId}
+                    onEnfocado={() => setEnfocar(null)}
+                    onCantidad={(cantidad) => cambiarItem(i.varianteId, { cantidad })}
+                    onPrecio={(precioManual) => cambiarItem(i.varianteId, { precioManual })}
+                    onQuitar={() => quitar(i.varianteId)}
+                    onTabla={() => setTablaDe(i.productoId)}
+                  />
                 ))}
               </ul>
             )}
-          </section>
+
+            {/* Más vendidos ------------------------------------------------------- */}
+            <section aria-labelledby="mas-vendidos-cot" className="flex flex-col gap-2">
+              <h3 id="mas-vendidos-cot" className="text-muted text-small font-medium">
+                Más vendidos
+              </h3>
+              {masVendidos === null ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                  {Array.from({ length: 4 }, (_, n) => (
+                    <div key={n} className="bg-surface-2 rounded-control h-16 animate-pulse" />
+                  ))}
+                </div>
+              ) : masVendidos.length === 0 ? (
+                <p className="text-subtle text-sm">Todavía no hay ventas para sugerir.</p>
+              ) : (
+                <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                  {masVendidos.map((p) => (
+                    <li key={p.varianteId}>
+                      <button
+                        type="button"
+                        onClick={() => agregar(p)}
+                        className="border-border bg-surface hover:border-input hover:bg-surface-2 rounded-control flex min-h-16 w-full flex-col justify-between gap-1 border p-3 text-left transition-colors"
+                      >
+                        <span className="line-clamp-2 text-sm leading-snug font-medium">
+                          {p.nombreCompleto}
+                          {p.sabor && <span className="text-muted block">{p.sabor}</span>}
+                        </span>
+                        <span className="text-xs font-semibold tabular-nums">
+                          {formatearPesos(p.precioVenta)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </Card>
 
           {/* Descuento y notas ---------------------------------------------------- */}
-          <div className={cn("grid gap-3", puedeEditar && "md:grid-cols-[14rem_minmax(0,1fr)]")}>
+          <Card
+            className={cn(
+              "grid gap-4 p-5 md:p-6",
+              puedeEditar && "md:grid-cols-[12rem_minmax(0,1fr)]",
+            )}
+          >
             {puedeEditar && (
               <Input
                 label="Descuento ($)"
@@ -557,25 +595,34 @@ export function EditorCotizacion({
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
             />
-          </div>
+          </Card>
         </div>
 
         {mayorista && (
           <>
             <aside className="hidden lg:block">
-              <div className="sticky top-20">{resumen}</div>
+              <div className="sticky top-20">
+                {resumen || (
+                  <Card className="flex flex-col gap-2 p-5">
+                    <h2 className="text-h3 font-semibold">Resumen de escalones</h2>
+                    <p className="text-muted text-small">
+                      Agregá productos para ver qué escalón aplica a cada uno.
+                    </p>
+                  </Card>
+                )}
+              </div>
             </aside>
             {resumen && (
-              <details className="border-border bg-surface group rounded-card border lg:hidden">
-                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-4 font-medium">
+              <details className="bg-card group rounded-card lg:hidden">
+                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-5 font-semibold [&::-webkit-details-marker]:hidden">
                   Resumen de escalones
                   <ChevronDown
-                    className="size-4 transition-transform group-open:rotate-180"
+                    className="text-muted size-5 transition-transform group-open:rotate-180"
                     strokeWidth={1.75}
                     aria-hidden
                   />
                 </summary>
-                <div className="px-2 pb-2">{resumen}</div>
+                <div className="px-5 pb-4">{resumen}</div>
               </details>
             )}
           </>
@@ -583,16 +630,19 @@ export function EditorCotizacion({
       </div>
 
       {/* Pie fijo ----------------------------------------------------------------- */}
-      <footer className="border-border bg-surface/95 shadow-sheet sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 -mx-4 rounded-card border px-4 py-3 backdrop-blur md:bottom-4 md:mx-0">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <div className="flex min-w-0 flex-1 items-baseline justify-between gap-3 md:justify-start">
-            <p className="text-muted text-sm">
-              {unidades} {unidades === 1 ? "unidad" : "unidades"}
-              {descuentoCent > 0 && <> · desc. −{formatearPesos(deCentavos(descuentoCent))}</>}
-            </p>
+      <footer className="border-border bg-surface md:rounded-card md:shadow-pop sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-10 -mx-4 border-t px-4 py-3 md:bottom-4 md:mx-0 md:border md:px-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-6">
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-3 md:justify-start md:gap-4">
+            <div className="flex flex-col">
+              <span className="text-muted text-small">Total</span>
+              <span className="text-subtle text-xs tabular-nums">
+                {unidades} {unidades === 1 ? "unidad" : "unidades"}
+                {descuentoCent > 0 && <> · desc. −{formatearPesos(deCentavos(descuentoCent))}</>}
+              </span>
+            </div>
             <p
               className={cn(
-                "text-3xl font-bold tracking-tight tabular-nums",
+                "text-2xl font-bold tracking-tight tabular-nums md:text-3xl",
                 calculando && "opacity-60",
               )}
               data-testid="total-cotizacion"
@@ -600,46 +650,55 @@ export function EditorCotizacion({
               {formatearPesos(total)}
             </p>
           </div>
-          <div className="grid grid-cols-4 gap-2 md:flex">
+          <div
+            className={cn(
+              "grid gap-2 md:flex",
+              puedeVender ? "grid-cols-[auto_auto_auto_minmax(0,1fr)]" : "grid-cols-3",
+            )}
+          >
             <Button
               variant="secondary"
               onClick={() => void accion("guardar")}
               loading={ocupado === "guardar"}
-              disabled={ocupado !== null || items.length === 0}
+              disabled={deshabilitado}
               aria-label="Guardar"
+              className="max-md:w-11 max-md:px-0"
             >
-              <Save strokeWidth={1.75} />
-              <span className="hidden sm:inline">Guardar</span>
+              {ocupado !== "guardar" && <Save strokeWidth={1.75} />}
+              <span className="hidden md:inline">Guardar</span>
             </Button>
             <Button
               variant="secondary"
               onClick={() => void accion("whatsapp")}
               loading={ocupado === "whatsapp"}
-              disabled={ocupado !== null || items.length === 0}
+              disabled={deshabilitado}
               aria-label="WhatsApp"
+              className="max-md:w-11 max-md:px-0"
             >
-              <MessageCircle strokeWidth={1.75} />
-              <span className="hidden sm:inline">WhatsApp</span>
+              {ocupado !== "whatsapp" && <MessageCircle strokeWidth={1.75} />}
+              <span className="hidden md:inline">WhatsApp</span>
             </Button>
             <Button
               variant="secondary"
               onClick={() => void accion("pdf")}
               loading={ocupado === "pdf"}
-              disabled={ocupado !== null || items.length === 0}
+              disabled={deshabilitado}
               aria-label="PDF"
+              className="max-md:w-11 max-md:px-0"
             >
-              <FileText strokeWidth={1.75} />
-              <span className="hidden sm:inline">PDF</span>
+              {ocupado !== "pdf" && <FileText strokeWidth={1.75} />}
+              <span className="hidden md:inline">PDF</span>
             </Button>
             {puedeVender && (
               <Button
                 onClick={() => void accion("convertir")}
                 loading={ocupado === "convertir"}
-                disabled={ocupado !== null || items.length === 0}
+                disabled={deshabilitado}
                 aria-label="Convertir en venta"
+                className="max-md:px-3"
               >
-                <ShoppingCart strokeWidth={1.75} />
-                <span className="hidden sm:inline">Convertir en venta</span>
+                {ocupado !== "convertir" && <ShoppingCart strokeWidth={1.75} />}
+                Convertir en venta
               </Button>
             )}
           </div>
@@ -701,17 +760,14 @@ function FilaCotizacion({
   const precioInvalido = precioTexto.trim() !== "" && montoTipeado(precioTexto) === null;
 
   return (
-    <li
-      data-testid="fila-cotizacion"
-      className="border-border bg-surface flex flex-col gap-3 rounded-card border p-3 md:p-4"
-    >
+    <li data-testid="fila-cotizacion" className="flex flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium">{item.titulo}</p>
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="leading-snug font-medium">{item.titulo}</p>
           <p className="text-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             {c ? (
               <>
-                {mostrarStock && <span>Stock total: {c.stockTotal}</span>}
+                {mostrarStock && <span className="tabular-nums">Stock total: {c.stockTotal}</span>}
                 {sinStock && (
                   <Badge variant="warning" title="Se puede cotizar igual">
                     Sin stock
@@ -726,7 +782,7 @@ function FilaCotizacion({
         <Button
           variant="ghost"
           size="icon"
-          className="text-danger -mt-1 -mr-1 shrink-0"
+          className="text-muted hover:text-danger -mt-2 -mr-2 shrink-0"
           aria-label={`Quitar ${item.titulo}`}
           onClick={onQuitar}
         >
@@ -736,7 +792,7 @@ function FilaCotizacion({
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         {mayorista ? (
-          <label className="flex flex-col gap-1 text-xs font-medium">
+          <label className="text-muted flex flex-col gap-1 text-xs font-medium">
             Cantidad
             <input
               ref={cantidadRef}
@@ -745,7 +801,7 @@ function FilaCotizacion({
               aria-label={`Cantidad de ${item.titulo}`}
               className={cn(
                 controlClass,
-                "h-14 w-28 text-center text-2xl font-semibold tabular-nums",
+                "h-14 w-28 text-center text-2xl font-semibold tabular-nums md:text-2xl",
               )}
               value={String(item.cantidad)}
               onFocus={(e) => e.target.select()}
@@ -786,48 +842,66 @@ function FilaCotizacion({
         <div className="flex flex-col items-end gap-0.5 text-right tabular-nums">
           {c ? (
             <>
-              <p className="text-sm">
+              <p className="flex flex-wrap items-baseline justify-end gap-x-2 text-sm">
                 {conEscalon || c.esPrecioManual ? (
                   <>
-                    <s className="text-muted" data-testid="precio-lista">
+                    <s className="text-subtle" data-testid="precio-lista">
                       {formatearPesos(c.precioLista)}
-                    </s>{" "}
+                    </s>
                     <span
-                      className="text-primary text-base font-semibold"
+                      className={cn(
+                        "text-foreground font-semibold",
+                        mayorista ? "text-h2" : "text-base",
+                      )}
                       data-testid="precio-unitario"
                     >
                       {formatearPesos(c.precioUnitario)}
                     </span>
                   </>
                 ) : (
-                  <span data-testid="precio-unitario">{formatearPesos(c.precioUnitario)}</span>
-                )}{" "}
+                  <span
+                    className={cn(
+                      "text-foreground font-semibold",
+                      mayorista ? "text-h2" : "text-base",
+                    )}
+                    data-testid="precio-unitario"
+                  >
+                    {formatearPesos(c.precioUnitario)}
+                  </span>
+                )}
                 <span className="text-muted text-xs">c/u</span>
               </p>
-              <p className="text-lg font-semibold" data-testid="subtotal-fila">
-                {formatearPesos(c.subtotal)}
+              <p className="text-muted text-sm">
+                Subtotal{" "}
+                <span className="text-foreground font-semibold" data-testid="subtotal-fila">
+                  {formatearPesos(c.subtotal)}
+                </span>
               </p>
             </>
           ) : (
-            <p className="bg-surface-2 h-10 w-28 animate-pulse rounded-control" />
+            <p className="bg-surface-2 rounded-control h-10 w-28 animate-pulse" />
           )}
         </div>
       </div>
 
       {mayorista && c && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
           {conEscalon && (
-            <Badge variant="primary" data-testid="chip-escalon">
+            <Badge variant="neutral" className="text-foreground" data-testid="chip-escalon">
               Escalón desde {c.escalonAplicado} u.
             </Badge>
           )}
           {c.proximoEscalon && !c.esPrecioManual && (
-            <span className="text-success font-medium" data-testid="hint-escalon">
+            <span
+              className="text-muted inline-flex items-center gap-1.5"
+              data-testid="hint-escalon"
+            >
+              <TrendingDown className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
               Agregá {c.proximoEscalon.faltan} más y baja a{" "}
               {formatearPesos(c.proximoEscalon.precioUnitario)} c/u
             </span>
           )}
-          <Button variant="ghost" size="sm" className="ml-auto" onClick={onTabla}>
+          <Button variant="ghost" size="sm" className="-mr-2 ml-auto" onClick={onTabla}>
             <Table2 strokeWidth={1.75} /> Ver tabla de precios
           </Button>
         </div>
@@ -874,28 +948,31 @@ function ResumenEscalones({
   return (
     <section
       aria-labelledby="resumen-escalones"
-      className="lg:border-border lg:bg-surface flex flex-col gap-3 lg:rounded-card lg:border lg:p-4"
+      className="lg:bg-card lg:rounded-card flex flex-col gap-3 lg:p-5"
       data-testid="resumen-escalones"
     >
-      <h2 id="resumen-escalones" className="hidden font-semibold lg:block">
+      <h2 id="resumen-escalones" className="text-h3 hidden font-semibold lg:block">
         Resumen de escalones
       </h2>
-      <ul className="divide-border flex flex-col divide-y text-sm">
+      <ul className="border-border bg-surface divide-border rounded-card flex flex-col divide-y border text-sm">
         {calculo.resumenEscalones.map((r) => (
-          <li key={r.productoId} className="flex flex-col gap-1 py-2">
-            <span className="font-medium">{r.nombreCompleto}</span>
-            <span className="flex items-center justify-between gap-2 tabular-nums">
+          <li key={r.productoId} className="flex flex-col gap-1 px-4 py-3">
+            <span className="leading-snug font-medium">{r.nombreCompleto}</span>
+            <span className="flex items-baseline justify-between gap-2 tabular-nums">
               <span className="text-muted">
                 {r.unidades} u. ·{" "}
                 {r.escalonAplicado !== null ? `escalón ${r.escalonAplicado}+` : "precio de lista"}
               </span>
-              <span className="font-semibold">{formatearPesos(r.precioUnitario)} c/u</span>
+              <span className="font-semibold whitespace-nowrap">
+                {formatearPesos(r.precioUnitario)} c/u
+              </span>
             </span>
             <button
               type="button"
               onClick={() => onTabla(r.productoId)}
-              className="text-primary self-start text-xs hover:underline"
+              className="text-muted hover:text-foreground -my-1 inline-flex min-h-8 items-center gap-1.5 self-start text-xs font-medium underline-offset-4 hover:underline"
             >
+              <Table2 className="size-3.5" strokeWidth={1.75} aria-hidden />
               Ver tabla de precios
             </button>
           </li>

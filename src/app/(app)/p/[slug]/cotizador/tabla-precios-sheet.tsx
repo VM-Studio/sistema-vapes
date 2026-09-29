@@ -52,42 +52,57 @@ export function TablaPreciosSheet({
           {error}
         </p>
       ) : !tabla ? (
-        <div className="bg-surface-2 h-40 animate-pulse rounded-card" />
+        <div className="bg-surface-2 rounded-card h-40 animate-pulse" aria-busy />
       ) : (
         <div className="flex flex-col gap-5">
-          <table className="w-full text-sm" data-testid="tabla-precios">
-            <thead>
-              <tr className="text-muted border-border border-b text-left text-xs">
-                <th className="py-2 font-medium">Desde</th>
-                <th className="py-2 text-right font-medium">Precio c/u</th>
-                <th className="py-2 text-right font-medium">Descuento</th>
-              </tr>
-            </thead>
-            <tbody className="divide-border divide-y tabular-nums">
-              <tr>
-                <td className="py-2">1 u. (lista)</td>
-                <td className="py-2 text-right font-medium">{formatearPesos(tabla.precioLista)}</td>
-                <td className="text-muted py-2 text-right">—</td>
-              </tr>
-              {tabla.escalones.map((e) => (
-                <tr key={e.cantidadMinima}>
-                  <td className="py-2">{e.cantidadMinima} u.</td>
-                  <td className="text-primary py-2 text-right font-semibold">
-                    {formatearPesos(e.precioUnitario)}
-                  </td>
-                  <td className="text-muted py-2 text-right">
-                    −{Number(e.descuento).toLocaleString("es-AR")} %
-                  </td>
+          <div className="border-border bg-surface rounded-card overflow-hidden border">
+            <table className="w-full text-sm" data-testid="tabla-precios">
+              <thead className="bg-card">
+                <tr className="text-muted border-border border-b text-left text-xs">
+                  <th scope="col" className="h-10 px-4 font-medium">
+                    Desde
+                  </th>
+                  <th scope="col" className="h-10 px-4 text-right font-medium">
+                    Precio c/u
+                  </th>
+                  <th scope="col" className="h-10 px-4 text-right font-medium">
+                    Descuento
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-border divide-y tabular-nums">
+                <tr>
+                  <td className="h-12 px-4">
+                    1 u. <span className="text-muted">(lista)</span>
+                  </td>
+                  <td className="h-12 px-4 text-right font-medium">
+                    {formatearPesos(tabla.precioLista)}
+                  </td>
+                  <td className="text-subtle h-12 px-4 text-right">—</td>
+                </tr>
+                {tabla.escalones.map((e) => (
+                  <tr key={e.cantidadMinima}>
+                    <td className="h-12 px-4">{e.cantidadMinima} u.</td>
+                    <td className="h-12 px-4 text-right font-semibold">
+                      {formatearPesos(e.precioUnitario)}
+                    </td>
+                    <td className="text-muted h-12 px-4 text-right">
+                      −{Number(e.descuento).toLocaleString("es-AR")} %
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {tabla.saboresConPrecioPropio.length > 0 && (
             <section className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">Sabores con precio propio</h3>
+              <h3 className="text-h3 font-semibold">Sabores con precio propio</h3>
               <ul className="flex flex-col gap-2 text-sm">
                 {tabla.saboresConPrecioPropio.map((s) => (
-                  <li key={s.varianteId} className="bg-surface-2 rounded-control p-3">
+                  <li
+                    key={s.varianteId}
+                    className="border-border bg-surface rounded-control flex flex-col gap-1 border p-3"
+                  >
                     <p className="font-medium">
                       {s.sabor ?? tabla.nombreCompleto} · lista {formatearPesos(s.precioLista)}
                     </p>

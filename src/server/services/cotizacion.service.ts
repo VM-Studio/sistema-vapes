@@ -38,7 +38,14 @@ import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
-import { aWinAnsi, envolver, recortar } from "@/server/pdf";
+import {
+  aWinAnsi,
+  COLOR_PDF,
+  envolver,
+  leerArchivoPublico,
+  recortar,
+  rectRedondeado,
+} from "@/server/pdf";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { ClienteDuplicadoError, crearCliente } from "@/server/services/cliente.service";
 import { obtenerConfigCotizacion } from "@/server/services/configuracion.service";
@@ -747,6 +754,8 @@ async function cargarLogo(doc: PDFDocument, logoUrl: string | null): Promise<PDF
     } else if (/^https?:\/\//.test(logoUrl)) {
       const r = await fetch(logoUrl, { signal: AbortSignal.timeout(3000) });
       if (r.ok) datos = new Uint8Array(await r.arrayBuffer());
+    } else if (logoUrl.startsWith("/")) {
+      datos = await leerArchivoPublico(logoUrl);
     }
     if (!datos || datos.length < 4) return null;
     if (datos[0] === 0x89 && datos[1] === 0x50) return await doc.embedPng(datos);
@@ -784,12 +793,18 @@ export async function generarPDF(ctx: Ctx, id: string): Promise<{ url: string }>
   const negrita = await doc.embedFont(StandardFonts.HelveticaBold);
   const logo = await cargarLogo(doc, panel.logoUrl);
 
+  const mono = await doc.embedFont(StandardFonts.CourierBold);
+
   const ANCHO = 595.28;
   const ALTO = 841.89;
   const M = 40;
   const util = ANCHO - 2 * M;
-  const gris = rgb(0.4, 0.4, 0.4);
-  const negro = rgb(0, 0, 0);
+  const negro = COLOR_PDF.texto;
+  const gris = COLOR_PDF.muted;
+  const grisClaro = COLOR_PDF.subtle;
+  const fondo = COLOR_PDF.card;
+  const linea = COLOR_PDF.borde;
+  const PIE = 44;
   let page: PDFPage = doc.addPage([ANCHO, ALTO]);
   let y = ALTO - M;
 
@@ -805,124 +820,157 @@ export async function generarPDF(ctx: Ctx, id: string): Promise<{ url: string }>
     const dx = opts.derecha ? font.widthOfTextAtSize(s, size) : 0;
     page.drawText(s, { x: x - dx, y: yy, size, font, color: opts.color ?? negro });
   };
+  const raya = (yy: number, grosor = 0.4, color = linea) =>
+    page.drawLine({
+      start: { x: M, y: yy },
+      end: { x: ANCHO - M, y: yy },
+      thickness: grosor,
+      color,
+    });
 
-  // Encabezado
-  let xTitulo = M;
+  // Cabecera: logo del panel a la izquierda, datos del negocio a la derecha.
+  const ALTO_CAB = 48;
   if (logo) {
-    const escala = Math.min(56 / logo.width, 56 / logo.height);
+    const escala = Math.min(170 / logo.width, ALTO_CAB / logo.height);
     page.drawImage(logo, {
       x: M,
-      y: y - logo.height * escala,
+      y: y - ALTO_CAB + (ALTO_CAB - logo.height * escala) / 2,
       width: logo.width * escala,
       height: logo.height * escala,
     });
-    xTitulo = M + logo.width * escala + 12;
+  } else {
+    texto(panel.nombre, M, y - 30, { size: 20, font: negrita });
   }
-  texto(negocio, xTitulo, y - 16, { size: 16, font: negrita });
-  texto(panel.nombre, xTitulo, y - 32, { size: 10, color: gris });
-  texto("COTIZACIÓN", ANCHO - M, y - 14, { size: 14, font: negrita, derecha: true });
-  texto(c.codigo, ANCHO - M, y - 30, { size: 11, font: negrita, derecha: true });
-  texto(`Tipo: ${ETIQUETA_TIPO_COTIZACION[c.tipo]}`, ANCHO - M, y - 44, {
-    derecha: true,
+  texto(negocio, ANCHO - M, y - 14, { size: 11, font: negrita, derecha: true });
+  texto(panel.nombre, ANCHO - M, y - 28, { size: 9, color: gris, derecha: true });
+  texto(`Vendedor: ${c.vendedor.nombre}`, ANCHO - M, y - 41, {
+    size: 8.5,
     color: gris,
+    derecha: true,
   });
-  y -= 72;
-  page.drawLine({ start: { x: M, y }, end: { x: ANCHO - M, y }, thickness: 0.8, color: gris });
-  y -= 18;
-  texto(`Fecha: ${formatearFecha(c.fecha)}`, M, y);
-  texto(`Válida hasta: ${formatearFecha(c.validaHasta)}`, M + 160, y, { font: negrita });
-  y -= 14;
-  texto(
-    `Cliente: ${c.cliente ? `${c.cliente.nombre}${c.cliente.telefono ? ` (${c.cliente.telefono})` : ""}` : "—"}`,
-    M,
-    y,
-  );
+  y -= ALTO_CAB + 16;
+  raya(y, 0.6);
+  y -= 34;
+
+  // Título + código
+  texto(`Cotización ${ETIQUETA_TIPO_COTIZACION[c.tipo].toLowerCase()}`, M, y, {
+    size: 20,
+    font: negrita,
+  });
+  texto(c.codigo, ANCHO - M, y, { size: 14, font: mono, derecha: true });
   y -= 22;
+
+  // Datos: fecha, validez y cliente en una banda gris.
+  const altoDatos = 44;
+  rectRedondeado(page, M, y - altoDatos, util, altoDatos, 6, fondo);
+  const celda = (x: number, etiqueta: string, valor: string, fuerte = false) => {
+    texto(etiqueta, x, y - 16, { size: 7.5, color: gris });
+    texto(valor, x, y - 31, { size: 10, font: fuerte ? negrita : normal });
+  };
+  const colDatos = util / 4;
+  celda(M + 12, "Fecha", formatearFecha(c.fecha));
+  celda(M + 12 + colDatos, "Válida hasta", formatearFecha(c.validaHasta), true);
+  const cliente = c.cliente
+    ? `${c.cliente.nombre}${c.cliente.telefono ? ` · ${c.cliente.telefono}` : ""}`
+    : "—";
+  texto("Cliente", M + 12 + 2 * colDatos, y - 16, { size: 7.5, color: gris });
+  texto(
+    recortar(aWinAnsi(cliente, normal), normal, 10, 2 * colDatos - 24),
+    M + 12 + 2 * colDatos,
+    y - 31,
+    { size: 10 },
+  );
+  y -= altoDatos + 26;
 
   // Tabla
   const cols = mayorista
-    ? { cant: 50, esc: 60, precio: 80, sub: 90 }
-    : { cant: 50, esc: 0, precio: 90, sub: 100 };
+    ? { cant: 50, esc: 64, precio: 84, sub: 92 }
+    : { cant: 56, esc: 0, precio: 96, sub: 104 };
   const anchoProducto = util - cols.cant - cols.esc - cols.precio - cols.sub;
   const xCant = M + anchoProducto + cols.cant;
   const xEsc = xCant + cols.esc;
   const xPrecio = xEsc + cols.precio;
   const xSub = xPrecio + cols.sub;
   const encabezado = () => {
-    page.drawRectangle({ x: M, y: y - 5, width: util, height: 18, color: rgb(0.93, 0.93, 0.93) });
-    texto("Producto — sabor", M + 4, y, { font: negrita });
-    texto("Cant.", xCant - 4, y, { font: negrita, derecha: true });
-    if (mayorista) texto("Escalón", xEsc - 4, y, { font: negrita, derecha: true });
-    texto("Precio", xPrecio - 4, y, { font: negrita, derecha: true });
-    texto("Subtotal", xSub - 4, y, { font: negrita, derecha: true });
-    y -= 20;
+    rectRedondeado(page, M, y - 7, util, 22, 4, fondo);
+    const o = { font: negrita, size: 8, color: gris };
+    texto("Producto", M + 10, y, o);
+    texto("Cant.", xCant - 8, y, { ...o, derecha: true });
+    if (mayorista) texto("Escalón", xEsc - 8, y, { ...o, derecha: true });
+    texto("Precio c/u", xPrecio - 8, y, { ...o, derecha: true });
+    texto("Subtotal", xSub - 10, y, { ...o, derecha: true });
+    y -= 26;
   };
   const nuevaPagina = () => {
     page = doc.addPage([ANCHO, ALTO]);
     y = ALTO - M;
-    texto(`${c.codigo} (continuación)`, M, y, { color: gris });
-    y -= 20;
+    texto(`${c.codigo} (continuación)`, M, y, { color: gris, font: negrita });
+    y -= 10;
+    raya(y, 0.6);
+    y -= 22;
   };
   encabezado();
   for (const i of c.items) {
-    if (y < M + 40) {
+    if (y < M + PIE + 10) {
       nuevaPagina();
       encabezado();
     }
-    texto(recortar(aWinAnsi(i.titulo, normal), normal, 9, anchoProducto - 8), M + 4, y);
-    texto(String(i.cantidad), xCant - 4, y, { derecha: true });
+    texto(recortar(aWinAnsi(i.titulo, normal), normal, 9.5, anchoProducto - 16), M + 10, y, {
+      size: 9.5,
+    });
+    texto(String(i.cantidad), xCant - 8, y, { derecha: true, size: 9.5 });
     if (mayorista)
       texto(
         i.esPrecioManual ? "Especial" : i.escalonAplicado ? `${i.escalonAplicado}+` : "Lista",
-        xEsc - 4,
+        xEsc - 8,
         y,
-        {
-          derecha: true,
-          color: gris,
-        },
+        { derecha: true, color: gris, size: 9 },
       );
-    texto(formatearPesos(i.precioUnitario), xPrecio - 4, y, { derecha: true });
-    texto(formatearPesos(i.subtotal), xSub - 4, y, { derecha: true });
-    y -= 6;
-    page.drawLine({
-      start: { x: M, y },
-      end: { x: ANCHO - M, y },
-      thickness: 0.3,
-      color: rgb(0.85, 0.85, 0.85),
-    });
+    texto(formatearPesos(i.precioUnitario), xPrecio - 8, y, { derecha: true, size: 9.5 });
+    texto(formatearPesos(i.subtotal), xSub - 10, y, { derecha: true, size: 9.5, font: negrita });
+    y -= 8;
+    raya(y, 0.4);
+    y -= 15;
+  }
+
+  // Totales (alineados a la derecha, total en negrita con línea negra)
+  const bloqueTotales = (Number(c.descuento) > 0 ? 3 : 1) * 18 + 20;
+  if (y < M + PIE + bloqueTotales) nuevaPagina();
+  y -= 4;
+  const xEtiqueta = xPrecio - 8;
+  if (Number(c.descuento) > 0) {
+    texto("Subtotal", xEtiqueta, y, { derecha: true, color: gris });
+    texto(formatearPesos(c.subtotal), xSub - 10, y, { derecha: true });
+    y -= 16;
+    texto("Descuento", xEtiqueta, y, { derecha: true, color: gris });
+    texto(`−${formatearPesos(c.descuento)}`, xSub - 10, y, { derecha: true });
     y -= 12;
   }
+  page.drawLine({
+    start: { x: xEsc - (mayorista ? 0 : 20), y: y + 1 },
+    end: { x: ANCHO - M, y: y + 1 },
+    thickness: 0.8,
+    color: negro,
+  });
+  y -= 18;
+  texto("Total", xEtiqueta, y, { font: negrita, size: 12, derecha: true });
+  texto(formatearPesos(c.total), xSub - 10, y, { font: negrita, size: 14, derecha: true });
+  y -= 34;
 
-  // Totales
-  const bloqueTotales = (Number(c.descuento) > 0 ? 3 : 1) * 16 + 10;
-  if (y < M + bloqueTotales) nuevaPagina();
-  y -= 4;
-  if (Number(c.descuento) > 0) {
-    texto("Subtotal", xPrecio - 4, y, { derecha: true });
-    texto(formatearPesos(c.subtotal), xSub - 4, y, { derecha: true });
-    y -= 16;
-    texto("Descuento", xPrecio - 4, y, { derecha: true });
-    texto(`−${formatearPesos(c.descuento)}`, xSub - 4, y, { derecha: true });
-    y -= 16;
-  }
-  texto("TOTAL", xPrecio - 4, y, { font: negrita, size: 12, derecha: true });
-  texto(formatearPesos(c.total), xSub - 4, y, { font: negrita, size: 12, derecha: true });
-  y -= 26;
-
-  const parrafo = (titulo: string | null, lineas: string[]) => {
-    if (y < M + 30) nuevaPagina();
+  const parrafo = (titulo: string | null, lineas: string[], color = negro) => {
+    if (y < M + PIE + 20) nuevaPagina();
     if (titulo) {
-      texto(titulo, M, y, { font: negrita });
-      y -= 14;
+      texto(titulo, M, y, { font: negrita, size: 10 });
+      y -= 15;
     }
     for (const l of lineas) {
-      for (const linea of envolver(aWinAnsi(l, normal), normal, 9, util)) {
-        if (y < M + 12) nuevaPagina();
-        texto(linea, M, y);
-        y -= 12;
+      for (const lin of envolver(aWinAnsi(l, normal), normal, 9, util)) {
+        if (y < M + PIE) nuevaPagina();
+        texto(lin, M, y, { color });
+        y -= 13;
       }
     }
-    y -= 8;
+    y -= 10;
   };
 
   if (mayorista && c.resumenEscalones.length) {
@@ -938,11 +986,38 @@ export async function generarPDF(ctx: Ctx, id: string): Promise<{ url: string }>
               : "precio de lista"
           }`,
       ),
+      gris,
     );
   }
-  if (c.notas) parrafo("Notas", [c.notas]);
-  if (config.leyenda) parrafo(null, [config.leyenda]);
-  parrafo(null, [`Vendedor: ${c.vendedor.nombre}`]);
+  if (c.notas) parrafo("Notas", [c.notas], gris);
+  // Leyenda corta: al pie de cada página; larga: como párrafo al final.
+  const lineasLeyenda = config.leyenda
+    ? envolver(aWinAnsi(config.leyenda, normal), normal, 7.5, util - 120)
+    : [];
+  if (lineasLeyenda.length > 2) parrafo(null, [config.leyenda], gris);
+
+  // Pie de cada página: leyenda + código y página.
+  const paginas = doc.getPages();
+  const leyenda = lineasLeyenda.length <= 2 ? lineasLeyenda : [];
+  paginas.forEach((p, n) => {
+    p.drawLine({
+      start: { x: M, y: M + 4 },
+      end: { x: ANCHO - M, y: M + 4 },
+      thickness: 0.4,
+      color: linea,
+    });
+    leyenda.forEach((l, k) =>
+      p.drawText(l, { x: M, y: M - 8 - k * 10, size: 7.5, font: normal, color: gris }),
+    );
+    const t = aWinAnsi(`${c.codigo} · Página ${n + 1} de ${paginas.length}`, normal);
+    p.drawText(t, {
+      x: ANCHO - M - normal.widthOfTextAtSize(t, 7.5),
+      y: M - 8,
+      size: 7.5,
+      font: normal,
+      color: grisClaro,
+    });
+  });
 
   const bytes = await doc.save();
   const url = await obtenerStorage().guardar(

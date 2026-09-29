@@ -1,13 +1,14 @@
 "use client";
 
-import { Check, Loader2, Search, UserPlus, UserRound, Users } from "lucide-react";
+import { Check, Loader2, Search, UserPlus, Users } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import {
   buscarClientesAction,
   clientePorTelefonoAction,
 } from "@/app/(app)/p/[slug]/clientes/actions";
-import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/ui/avatar";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { mostrarTelefono, telefonoValido } from "@/lib/validations/cliente";
@@ -65,24 +66,30 @@ export function SelectorCliente({
   if (modo === "pregunta") {
     return (
       <section aria-labelledby="pregunta-cliente-nuevo" className="flex flex-col gap-4">
-        <h3 id="pregunta-cliente-nuevo" className="text-xl font-semibold tracking-tight">
+        <h2 id="pregunta-cliente-nuevo" className="text-h2 font-semibold">
           ¿Es cliente nuevo?
-        </h3>
+        </h2>
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() => setModo("nuevo")}
-            className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-24 flex-col items-center justify-center gap-2 rounded-card border-2 p-4 text-lg font-semibold transition-colors"
+            className={cn(
+              buttonVariants({ variant: "primary" }),
+              "h-auto min-h-24 flex-col gap-2 text-lg font-semibold md:h-auto [&_svg]:size-6",
+            )}
           >
-            <UserPlus className="text-primary size-7" strokeWidth={1.75} aria-hidden />
+            <UserPlus strokeWidth={1.75} aria-hidden />
             Sí
           </button>
           <button
             type="button"
             onClick={() => setModo("buscar")}
-            className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-24 flex-col items-center justify-center gap-2 rounded-card border-2 p-4 text-lg font-semibold transition-colors"
+            className={cn(
+              buttonVariants({ variant: "secondary" }),
+              "h-auto min-h-24 flex-col gap-2 text-lg font-semibold md:h-auto [&_svg]:size-6",
+            )}
           >
-            <Users className="text-primary size-7" strokeWidth={1.75} aria-hidden />
+            <Users strokeWidth={1.75} aria-hidden />
             No
           </button>
         </div>
@@ -136,11 +143,14 @@ function ClienteSeleccionado({
 }) {
   return (
     <div
-      className="border-primary bg-primary-soft flex items-center gap-3 rounded-card border p-4"
+      className="border-foreground bg-surface rounded-card flex items-center gap-3 border p-4"
       data-testid="cliente-seleccionado"
     >
-      <span className="bg-primary text-primary-foreground flex size-11 shrink-0 items-center justify-center rounded-control">
-        <Check className="size-5" strokeWidth={1.75} aria-hidden />
+      <span className="relative shrink-0">
+        <Avatar nombre={nombre} className="size-11 text-sm" />
+        <span className="bg-foreground text-background ring-surface rounded-circle absolute -right-0.5 -bottom-0.5 flex size-4.5 items-center justify-center ring-2">
+          <Check className="size-3" strokeWidth={2.5} aria-hidden />
+        </span>
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold">{nombre}</span>
@@ -238,7 +248,7 @@ function ClienteNuevo({
       {existente && (
         <div
           role="alert"
-          className="bg-warning-soft text-warning-soft-foreground flex flex-col gap-3 rounded-control p-4 text-sm"
+          className="bg-warning-soft text-warning-soft-foreground rounded-card flex flex-col gap-3 p-4 text-sm"
         >
           <p>
             Ese teléfono es de <strong>{existente.nombre}</strong>. ¿Querés seleccionarlo?
@@ -296,7 +306,7 @@ function BuscadorClientes({
 
   return (
     <div className="flex flex-col gap-3">
-      <label htmlFor={idInput} className="text-sm font-medium">
+      <label htmlFor={idInput} className="text-small font-medium">
         Buscá el cliente por nombre o teléfono
       </label>
       <div className="relative">
@@ -329,22 +339,23 @@ function BuscadorClientes({
       </div>
       {error && <p className="text-danger text-sm">{error}</p>}
       {resultados && resultados.length === 0 && !cargando && (
-        <p className="text-muted rounded-control border border-dashed px-4 py-5 text-center text-sm">
+        <p className="border-border bg-surface text-muted rounded-card border px-4 py-5 text-center text-sm">
           No hay clientes con “{q.trim()}”.
         </p>
       )}
       {resultados && resultados.length > 0 && (
-        <ul aria-label="Clientes encontrados" className="flex flex-col gap-2">
+        <ul
+          aria-label="Clientes encontrados"
+          className="border-border bg-surface divide-border rounded-card flex flex-col divide-y overflow-hidden border"
+        >
           {resultados.map((c) => (
             <li key={c.id}>
               <button
                 type="button"
                 onClick={() => onElegir({ id: c.id, nombre: c.nombre, telefono: c.telefono })}
-                className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-14 w-full items-center gap-3 rounded-card border p-3 text-left transition-colors"
+                className="hover:bg-card flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:-outline-offset-2"
               >
-                <span className="bg-surface-2 text-muted flex size-10 shrink-0 items-center justify-center rounded-control">
-                  <UserRound className="size-5" strokeWidth={1.75} aria-hidden />
-                </span>
+                <Avatar nombre={c.nombre} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{c.nombre}</span>
                   <span className="text-muted block truncate text-xs tabular-nums">

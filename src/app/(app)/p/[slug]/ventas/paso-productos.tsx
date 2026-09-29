@@ -1,12 +1,13 @@
 "use client";
 
-import { Minus, PackageSearch, Plus, Tag, Trash2 } from "lucide-react";
+import { Minus, PackageSearch, Plus, ScanBarcode, Tag, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AltaRapidaSheet } from "@/components/catalogo/alta-rapida-sheet";
 import { VariantePicker } from "@/components/catalogo/variante-picker";
 import { usePanel } from "@/components/layout/panel-context";
 import { Button } from "@/components/ui/button";
+import { cardVariants } from "@/components/ui/card";
 import { CantidadInput } from "@/components/ui/cantidad-input";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -162,23 +163,32 @@ export function PasoProductos({
   const yaAgregadas = new Set(items.map((i) => i.varianteId));
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex gap-2">
-        <VariantePicker
-          id={ID_BUSCADOR_VENTA}
-          className="flex-1"
-          depositoId={deposito.id}
-          yaAgregadas={yaAgregadas}
-          placeholder="Escaneá o buscá producto, sabor o código (F2)"
-          onSelect={(v) => aceptar(desdeEncontrada(v, deposito.id))}
-        />
-        <BotonCamara
-          onClick={() => {
-            feedback.prepararAudio();
-            setCamara(true);
-          }}
-        />
-      </div>
+    <div className="flex flex-col gap-6">
+      <section
+        aria-label="Escanear o buscar"
+        className="bg-card rounded-card flex flex-col gap-3 p-4"
+      >
+        <p className="text-muted text-small flex items-center gap-2">
+          <ScanBarcode className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+          Escaneá con la pistola o la cámara, o buscá a mano.
+        </p>
+        <div className="flex gap-2">
+          <VariantePicker
+            id={ID_BUSCADOR_VENTA}
+            className="flex-1"
+            depositoId={deposito.id}
+            yaAgregadas={yaAgregadas}
+            placeholder="Escaneá o buscá producto, sabor o código (F2)"
+            onSelect={(v) => aceptar(desdeEncontrada(v, deposito.id))}
+          />
+          <BotonCamara
+            onClick={() => {
+              feedback.prepararAudio();
+              setCamara(true);
+            }}
+          />
+        </div>
+      </section>
 
       {aviso && (
         <p
@@ -190,35 +200,49 @@ export function PasoProductos({
       )}
 
       {items.length === 0 ? (
-        <div className="border-border text-muted flex flex-col items-center gap-2 rounded-card border border-dashed px-4 py-8 text-center text-sm">
-          <PackageSearch className="size-8" strokeWidth={1.75} aria-hidden />
-          <p>Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.</p>
+        <div className="border-border text-muted rounded-card flex flex-col items-center gap-3 border px-4 py-10 text-center text-sm">
+          <PackageSearch className="text-subtle size-10" strokeWidth={1.25} aria-hidden />
+          <p className="max-w-sm">
+            Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.
+          </p>
         </div>
       ) : (
-        <ul aria-label="Productos de la venta" className="flex flex-col gap-2">
-          {items.map((i) => (
-            <FilaItem
-              key={i.varianteId}
-              item={i}
-              stock={stock[i.varianteId]}
-              deposito={deposito.nombre}
-              puedeEditar={puedeEditar}
-              onCantidad={(n) => onCantidad(i.varianteId, n)}
-              onQuitar={() => onQuitar(i.varianteId)}
-              onPrecioEspecial={() => setPrecioDe(i)}
-            />
-          ))}
-        </ul>
+        <div className="border-border bg-surface rounded-card overflow-hidden border">
+          <div
+            aria-hidden
+            className="border-border bg-card text-muted hidden h-10 items-center gap-4 border-b px-4 text-xs font-medium md:grid md:grid-cols-[minmax(0,1fr)_8.5rem_9rem_6.5rem_2.5rem]"
+          >
+            <span>Producto</span>
+            <span className="text-center">Cantidad</span>
+            <span className="text-right">Precio</span>
+            <span className="text-right">Subtotal</span>
+            <span />
+          </div>
+          <ul aria-label="Productos de la venta" className="divide-border flex flex-col divide-y">
+            {items.map((i) => (
+              <FilaItem
+                key={i.varianteId}
+                item={i}
+                stock={stock[i.varianteId]}
+                deposito={deposito.nombre}
+                puedeEditar={puedeEditar}
+                onCantidad={(n) => onCantidad(i.varianteId, n)}
+                onQuitar={() => onQuitar(i.varianteId)}
+                onPrecioEspecial={() => setPrecioDe(i)}
+              />
+            ))}
+          </ul>
+        </div>
       )}
 
-      <section aria-labelledby="mas-vendidos" className="flex flex-col gap-2">
-        <h3 id="mas-vendidos" className="text-muted text-sm font-medium">
+      <section aria-labelledby="mas-vendidos" className="flex flex-col gap-3">
+        <h3 id="mas-vendidos" className="text-h3 font-semibold">
           Más vendidos
         </h3>
         {masVendidos === null ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, n) => (
-              <div key={n} className="bg-surface-2 h-20 animate-pulse rounded-card" />
+              <div key={n} className="bg-card rounded-card h-20 animate-pulse" />
             ))}
           </div>
         ) : masVendidos.length === 0 ? (
@@ -242,17 +266,18 @@ export function PasoProductos({
                       })
                     }
                     className={cn(
-                      "border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-20 w-full flex-col justify-between gap-1 rounded-card border p-3 text-left transition-colors",
+                      cardVariants({ variant: "clickable" }),
+                      "flex min-h-24 w-full flex-col justify-between gap-2 p-3 text-left",
                       sinStock && "opacity-60",
                     )}
                   >
-                    <span className="line-clamp-2 text-sm leading-snug font-medium">
-                      {p.nombreCompleto}
-                      {p.sabor && <span className="text-muted block">{p.sabor}</span>}
+                    <span className="text-sm leading-snug">
+                      <span className="line-clamp-2 font-medium">{p.nombreCompleto}</span>
+                      {p.sabor && <span className="text-muted block truncate">{p.sabor}</span>}
                     </span>
-                    <span className="flex items-center justify-between gap-2 text-xs tabular-nums">
-                      <span className="font-semibold">{formatearPesos(p.precioVenta)}</span>
-                      <span className={cn(sinStock ? "text-danger" : "text-muted")}>
+                    <span className="flex items-baseline justify-between gap-2 tabular-nums">
+                      <span className="text-sm font-semibold">{formatearPesos(p.precioVenta)}</span>
+                      <span className={cn("text-xs", sinStock ? "text-danger" : "text-subtle")}>
                         {p.stock} en stock
                       </span>
                     </span>
@@ -315,29 +340,47 @@ function FilaItem({
 }) {
   const sinStock = stock !== undefined && item.cantidad > stock;
   const subtotal = deCentavos(aCentavos(precioCobrado(item)) * item.cantidad);
+  const cantidad = (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="secondary"
+        size="icon"
+        className="md:size-9"
+        aria-label={`Restar uno de ${item.titulo}`}
+        disabled={item.cantidad <= 1}
+        onClick={() => onCantidad(item.cantidad - 1)}
+      >
+        <Minus strokeWidth={1.75} />
+      </Button>
+      <CantidadInput
+        etiqueta={`Cantidad de ${item.titulo}`}
+        valor={item.cantidad}
+        onCambio={onCantidad}
+        className="w-14 md:h-9"
+      />
+      <Button
+        variant="secondary"
+        size="icon"
+        className="md:size-9"
+        aria-label={`Sumar uno de ${item.titulo}`}
+        onClick={() => onCantidad(item.cantidad + 1)}
+      >
+        <Plus strokeWidth={1.75} />
+      </Button>
+    </div>
+  );
   return (
     <li
       data-sin-stock={sinStock || undefined}
       className={cn(
-        "flex flex-col gap-3 rounded-card border p-3 md:flex-row md:items-center md:gap-4 md:p-4",
-        sinStock ? "border-danger/40 bg-danger-soft" : "border-border bg-surface",
+        "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 px-4 py-3",
+        "md:grid-cols-[minmax(0,1fr)_8.5rem_9rem_6.5rem_2.5rem] md:gap-x-4",
+        sinStock && "bg-danger-soft/40",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <p className="font-medium">{item.titulo}</p>
-        <p className="text-sm tabular-nums">
-          {item.precioEspecial !== null ? (
-            <>
-              <s className="text-muted">{formatearPesos(item.precioLista)}</s>{" "}
-              <span className="text-primary font-semibold">
-                {formatearPesos(item.precioEspecial)}
-              </span>
-            </>
-          ) : (
-            <span className="text-muted">{formatearPesos(item.precioLista)}</span>
-          )}
-        </p>
-        <p className={cn("text-xs", sinStock ? "text-danger font-medium" : "text-muted")}>
+      <div className="min-w-0">
+        <p className="leading-snug font-medium">{item.titulo}</p>
+        <p className={cn("text-xs", sinStock ? "text-danger font-medium" : "text-subtle")}>
           {stock === undefined
             ? `Consultando stock en ${deposito}…`
             : sinStock
@@ -345,51 +388,42 @@ function FilaItem({
               : `Stock en ${deposito}: ${stock}`}
         </p>
       </div>
-      <div className="flex items-center justify-between gap-2 md:justify-end">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label={`Restar uno de ${item.titulo}`}
-            disabled={item.cantidad <= 1}
-            onClick={() => onCantidad(item.cantidad - 1)}
-          >
-            <Minus strokeWidth={1.75} />
-          </Button>
-          <CantidadInput
-            etiqueta={`Cantidad de ${item.titulo}`}
-            valor={item.cantidad}
-            onCambio={onCantidad}
-            className="w-16"
-          />
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label={`Sumar uno de ${item.titulo}`}
-            onClick={() => onCantidad(item.cantidad + 1)}
-          >
-            <Plus strokeWidth={1.75} />
-          </Button>
-        </div>
-        <p className="w-28 text-right font-semibold tabular-nums">{formatearPesos(subtotal)}</p>
-      </div>
-      <div className="flex items-center justify-end gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="text-muted hover:text-danger justify-self-end md:order-5 md:size-9"
+        aria-label={`Quitar ${item.titulo}`}
+        onClick={onQuitar}
+      >
+        <Trash2 strokeWidth={1.75} />
+      </Button>
+      <div className="md:order-2 md:flex md:justify-center">{cantidad}</div>
+      <p className="text-right font-semibold whitespace-nowrap tabular-nums md:order-4">
+        {formatearPesos(subtotal)}
+      </p>
+      <div className="col-span-2 flex items-center justify-between gap-2 tabular-nums md:order-3 md:col-span-1 md:flex-col md:items-end md:gap-0.5">
+        <span className="text-sm">
+          <PrecioUnitario item={item} /> <span className="text-subtle md:hidden">c/u</span>
+        </span>
         {puedeEditar && (
-          <Button variant="ghost" size="sm" onClick={onPrecioEspecial}>
+          <Button variant="ghost" size="sm" className="-mr-3 md:h-7" onClick={onPrecioEspecial}>
             <Tag strokeWidth={1.75} /> Precio especial
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-danger"
-          aria-label={`Quitar ${item.titulo}`}
-          onClick={onQuitar}
-        >
-          <Trash2 strokeWidth={1.75} />
-        </Button>
       </div>
     </li>
+  );
+}
+
+/** Precio de lista; con precio especial, el de lista tachado en gris y el especial en negro. */
+function PrecioUnitario({ item }: { item: ItemVenta }) {
+  return item.precioEspecial !== null ? (
+    <span className="text-sm whitespace-nowrap">
+      <s className="text-subtle">{formatearPesos(item.precioLista)}</s>{" "}
+      <span className="text-foreground font-semibold">{formatearPesos(item.precioEspecial)}</span>
+    </span>
+  ) : (
+    <span className="text-muted text-sm whitespace-nowrap">{formatearPesos(item.precioLista)}</span>
   );
 }
 

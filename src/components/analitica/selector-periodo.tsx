@@ -26,8 +26,14 @@ const PRESETS = [
   { valor: "anio", label: "Este año" },
 ] as const;
 
+/** Segmento del grupo de modos: rectangular, 44px en mobile; activo negro con texto blanco. */
+const segmento =
+  "inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-inner px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9 md:flex-none [&_svg]:size-4";
+const segmentoActivo = "bg-foreground text-background";
+const segmentoInactivo = "text-muted hover:bg-surface-2 hover:text-foreground";
+
 const chip =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-control border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
+  "inline-flex h-11 shrink-0 items-center rounded-control border px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9";
 const chipActivo = "border-foreground bg-foreground text-background";
 const chipInactivo = "border-border bg-surface text-muted hover:border-input hover:text-foreground";
 
@@ -43,6 +49,7 @@ export function SelectorPeriodo({
   preset,
   comparacion,
   etiqueta,
+  alinear = "inicio",
 }: {
   modo: ModoSelector;
   /** YYYY-MM-DD */
@@ -53,6 +60,8 @@ export function SelectorPeriodo({
   comparacion: string;
   /** "Hoy", "Esta semana", "1 sep – 15 sep 2026"… */
   etiqueta: string;
+  /** "fin": alineado a la derecha en desktop (cabecera del dashboard). */
+  alinear?: "inicio" | "fin";
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -76,8 +85,14 @@ export function SelectorPeriodo({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <ChipRow ariaLabel="Período">
+    <div
+      className={cn("flex w-full flex-col gap-2", alinear === "fin" && "md:w-auto md:items-end")}
+    >
+      <div
+        role="group"
+        aria-label="Período"
+        className="border-border bg-surface rounded-control flex w-full gap-0.5 border p-0.5 md:w-auto"
+      >
         {MODOS.map((m) =>
           m.modo === "PERSONALIZADO" ? (
             <button
@@ -86,9 +101,9 @@ export function SelectorPeriodo({
               aria-pressed={modo === m.modo}
               aria-expanded={abierto}
               onClick={() => setAbierto((a) => !a)}
-              className={cn(chip, modo === m.modo ? chipActivo : chipInactivo)}
+              className={cn(segmento, modo === m.modo ? segmentoActivo : segmentoInactivo)}
             >
-              <CalendarRange strokeWidth={1.75} aria-hidden />
+              <CalendarRange strokeWidth={1.75} aria-hidden className="hidden sm:block" />
               {m.label}
             </button>
           ) : (
@@ -98,17 +113,21 @@ export function SelectorPeriodo({
               scroll={false}
               aria-current={modo === m.modo ? "true" : undefined}
               onClick={() => setAbierto(false)}
-              className={cn(chip, modo === m.modo ? chipActivo : chipInactivo)}
+              className={cn(segmento, modo === m.modo ? segmentoActivo : segmentoInactivo)}
             >
               {m.label}
             </Link>
           ),
         )}
-      </ChipRow>
+      </div>
+
+      <p className="text-muted text-small" data-testid="texto-comparacion">
+        <span className="text-foreground font-medium">{etiqueta}</span> · {comparacion}
+      </p>
 
       {abierto && (
-        <div className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4">
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Rangos rápidos">
+        <div className="bg-card rounded-card flex w-full flex-col gap-4 p-4 md:w-auto">
+          <ChipRow ariaLabel="Rangos rápidos" className="-mx-4 px-4 py-0 md:mx-0 md:px-0">
             {PRESETS.map((p) => (
               <Link
                 key={p.valor}
@@ -117,47 +136,42 @@ export function SelectorPeriodo({
                 aria-current={modo === "PERSONALIZADO" && preset === p.valor ? "true" : undefined}
                 className={cn(
                   chip,
-                  "min-h-10 px-3",
                   modo === "PERSONALIZADO" && preset === p.valor ? chipActivo : chipInactivo,
                 )}
               >
                 {p.label}
               </Link>
             ))}
-          </div>
-          <form onSubmit={aplicar} className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
+          </ChipRow>
+          <form onSubmit={aplicar} className="grid grid-cols-2 items-end gap-3 md:flex">
+            <label className="text-small flex min-w-0 flex-col gap-1.5 font-medium">
               Desde
               <input
                 type="date"
                 value={d}
                 max={h || undefined}
                 onChange={(e) => setD(e.target.value)}
-                className={cn(controlClass, "h-11 w-40")}
+                className={cn(controlClass, "h-11 md:h-10 md:w-40")}
                 required
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
+            <label className="text-small flex min-w-0 flex-col gap-1.5 font-medium">
               Hasta
               <input
                 type="date"
                 value={h}
                 min={d || undefined}
                 onChange={(e) => setH(e.target.value)}
-                className={cn(controlClass, "h-11 w-40")}
+                className={cn(controlClass, "h-11 md:h-10 md:w-40")}
                 required
               />
             </label>
-            <Button type="submit" variant="secondary">
+            <Button type="submit" variant="secondary" className="col-span-2 md:col-span-1">
               Aplicar
             </Button>
           </form>
         </div>
       )}
-
-      <p className="text-muted text-sm" data-testid="texto-comparacion">
-        <span className="text-foreground font-medium">{etiqueta}</span> · {comparacion}
-      </p>
     </div>
   );
 }

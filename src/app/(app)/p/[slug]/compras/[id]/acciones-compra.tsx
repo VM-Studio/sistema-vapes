@@ -82,14 +82,16 @@ export function AccionesCompra({
     router.refresh();
   }
 
+  const puedeRecibir = estado === "BORRADOR" && puedeEditar;
+
   return (
-    <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">
+    <div className="flex flex-wrap gap-2 md:flex-nowrap max-md:[&>*]:flex-1">
       {puedeAnular && (
-        <Button variant="secondary" className="text-danger" onClick={() => setAnulando(true)}>
+        <Button variant="ghost" className="text-danger" onClick={() => setAnulando(true)}>
           Anular compra
         </Button>
       )}
-      {estado === "BORRADOR" && puedeEditar && (
+      {puedeRecibir && (
         <>
           <Link
             href={ruta(`/compras/${id}/editar`)}
@@ -97,7 +99,15 @@ export function AccionesCompra({
           >
             Editar borrador
           </Link>
-          <Button onClick={() => setRecibiendo(true)}>Recibir mercadería</Button>
+          <Button className="max-md:hidden" onClick={() => setRecibiendo(true)}>
+            Recibir mercadería
+          </Button>
+          {/* Mobile: la acción principal queda fija abajo, arriba de la bottom bar. */}
+          <div className="border-border bg-surface fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:hidden">
+            <Button fullWidth onClick={() => setRecibiendo(true)}>
+              Recibir mercadería
+            </Button>
+          </div>
         </>
       )}
 

@@ -31,17 +31,17 @@ export function CotizacionUsd({ valor }: { valor: number | null }) {
 
   return (
     <form onSubmit={guardar} className="flex items-end gap-2" data-testid="form-cotizacion">
-      <label className="text-muted flex flex-1 flex-col gap-1 text-xs md:w-56 md:flex-none">
+      <label className="text-muted text-small flex flex-1 flex-col gap-1 md:w-60 md:flex-none">
         Cotización del dólar ($ por US$)
         <span className="relative">
           <DollarSign
-            className="text-muted pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+            className="text-subtle pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
             strokeWidth={1.75}
             aria-hidden
           />
           <input
             inputMode="decimal"
-            className={cn(controlClass, "h-11 pl-9")}
+            className={cn(controlClass, "h-11 pl-9 tabular-nums md:h-10")}
             placeholder="Sin cotización"
             value={texto}
             onChange={(e) => setTexto(e.target.value)}

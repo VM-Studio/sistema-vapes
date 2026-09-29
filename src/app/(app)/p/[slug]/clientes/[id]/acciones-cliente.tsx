@@ -45,7 +45,7 @@ export function AccionesCliente({
 
   if (!puedeEditar && !puedeEliminar) return null;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="border-border flex flex-wrap gap-2 border-t pt-4 [&>button]:flex-1">
       {puedeEditar && (
         <Button variant="secondary" onClick={() => setAbierto("editar")}>
           <Pencil strokeWidth={1.75} /> Editar datos

@@ -38,7 +38,7 @@ export function AnularDevolucion({ id, codigo }: { id: string; codigo: string })
 
   return (
     <>
-      <Button variant="secondary" className="text-danger" onClick={() => setAbierto(true)}>
+      <Button variant="danger" onClick={() => setAbierto(true)}>
         <Ban strokeWidth={1.75} /> Anular
       </Button>
       <Dialog

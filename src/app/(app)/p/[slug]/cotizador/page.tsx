@@ -12,16 +12,17 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { cardVariants } from "@/components/ui/card";
+import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
-import { TabsNav } from "@/components/ui/tabs-nav";
 import { esFechaISO } from "@/lib/fechas";
 import { formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
-import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
+import { formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { listar } from "@/server/services/cotizacion.service";
 import { vendedoresDelPanel } from "@/server/services/venta.service";
@@ -49,16 +50,23 @@ function CardCotizar({
   return (
     <Link
       href={href}
-      className="border-border bg-surface hover:border-primary hover:bg-primary-soft group flex min-h-28 items-center gap-4 rounded-card border p-5 transition-colors"
+      className={cardVariants({
+        variant: "clickable",
+        className: "group flex min-h-28 items-center gap-4 p-5 md:p-6",
+      })}
     >
-      <span className="bg-primary-soft text-primary flex size-14 shrink-0 items-center justify-center rounded-card">
-        <Icono className="size-7" strokeWidth={1.75} aria-hidden />
+      <span className="bg-surface text-foreground rounded-control flex size-12 shrink-0 items-center justify-center">
+        <Icono className="size-6" strokeWidth={1.75} aria-hidden />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-lg font-semibold">{titulo}</span>
-        <span className="text-muted block text-sm">{descripcion}</span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-h2 font-semibold">{titulo}</span>
+        <span className="text-muted text-small">{descripcion}</span>
       </span>
-      <ChevronRight className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+      <ChevronRight
+        className="text-subtle group-hover:text-foreground size-5 shrink-0 transition-colors"
+        strokeWidth={1.75}
+        aria-hidden
+      />
     </Link>
   );
 }
@@ -135,7 +143,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
         }
       />
       {puedeCrear && (
-        <div className="mb-6 grid gap-3 md:grid-cols-2">
+        <div className="mb-8 grid gap-4 md:grid-cols-2">
           <CardCotizar
             href={rutaPanel(slug, "/cotizador/unitaria/nueva")}
             icono={Calculator}
@@ -151,16 +159,26 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
-      <TabsNav
-        className="mb-4"
-        ariaLabel="Tipo de cotización"
-        items={[
-          { href: tab(null), label: "Todas", activo: !tipo },
-          { href: tab("UNITARIA"), label: "Unitarias", activo: tipo === "UNITARIA" },
-          { href: tab("MAYORISTA"), label: "Mayoristas", activo: tipo === "MAYORISTA" },
-        ]}
-      />
-      <FiltrosCotizaciones params={plano} vendedores={vendedores} />
+      <div className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-h3 font-semibold">Cotizaciones</h2>
+          <span className="text-muted text-small tabular-nums">
+            {r.total} {r.total === 1 ? "cotización" : "cotizaciones"}
+          </span>
+        </div>
+        <ChipRow ariaLabel="Tipo de cotización">
+          <ChipLink href={tab(null)} activo={!tipo}>
+            Todas
+          </ChipLink>
+          <ChipLink href={tab("UNITARIA")} activo={tipo === "UNITARIA"}>
+            Unitarias
+          </ChipLink>
+          <ChipLink href={tab("MAYORISTA")} activo={tipo === "MAYORISTA"}>
+            Mayoristas
+          </ChipLink>
+        </ChipRow>
+        <FiltrosCotizaciones params={plano} vendedores={vendedores} />
+      </div>
 
       <DataTable
         caption="Cotizaciones"
@@ -202,7 +220,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
             cell: (c) => (
               <Link
                 href={href(c)}
-                className="text-primary font-semibold tabular-nums hover:underline"
+                className="text-foreground font-mono font-semibold whitespace-nowrap hover:underline"
               >
                 {c.codigo}
               </Link>
@@ -211,7 +229,9 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
           {
             key: "fecha",
             header: "Fecha",
-            cell: (c) => <span className="text-muted">{formatearFechaHora(c.fecha)}</span>,
+            cell: (c) => (
+              <span className="text-muted whitespace-nowrap">{formatearFechaHora(c.fecha)}</span>
+            ),
           },
           { key: "tipo", header: "Tipo", cell: (c) => ETIQUETA_TIPO_COTIZACION[c.tipo] },
           {
@@ -223,37 +243,46 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
           {
             key: "total",
             header: "Total",
-            className: "text-right tabular-nums font-medium",
+            className: "text-right tabular-nums font-semibold whitespace-nowrap",
             cell: (c) => formatearPesos(c.total),
           },
           { key: "estado", header: "Estado", cell: estadoBadge },
           {
             key: "validez",
             header: "Válida hasta",
-            cell: (c) => <span className="text-muted">{formatearFecha(c.validaHasta)}</span>,
+            cell: (c) => (
+              <span className="text-muted whitespace-nowrap">{formatearFecha(c.validaHasta)}</span>
+            ),
           },
-          { key: "acciones", header: <span className="sr-only">Acciones</span>, cell: acciones },
+          {
+            key: "acciones",
+            header: <span className="sr-only">Acciones</span>,
+            className: "w-14 text-right",
+            cell: acciones,
+          },
         ]}
         renderMobile={(c) => (
-          <div className="border-border bg-surface flex flex-col gap-2 rounded-card border p-4">
-            <Link href={href(c)} className="flex flex-col gap-2">
+          <div className="bg-card rounded-card flex items-start gap-2 py-3 pr-2 pl-4">
+            <Link href={href(c)} className="flex min-w-0 flex-1 flex-col gap-1.5">
               <span className="flex items-center justify-between gap-2">
-                <span className="text-primary font-semibold tabular-nums">{c.codigo}</span>
-                <span className="font-semibold tabular-nums">{formatearPesos(c.total)}</span>
-              </span>
-              <span className="flex items-center justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate">
-                  {c.clienteNombre ?? "Sin cliente"}
-                  <span className="text-muted"> · {ETIQUETA_TIPO_COTIZACION[c.tipo]}</span>
-                </span>
+                <span className="font-mono text-sm font-semibold">{c.codigo}</span>
                 {estadoBadge(c)}
               </span>
-              <span className={cn("text-muted text-xs")}>
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="min-w-0 truncate text-sm">
+                  {c.clienteNombre ?? <span className="text-muted">Sin cliente</span>}
+                  <span className="text-muted"> · {ETIQUETA_TIPO_COTIZACION[c.tipo]}</span>
+                </span>
+                <span className="shrink-0 font-semibold tabular-nums">
+                  {formatearPesos(c.total)}
+                </span>
+              </span>
+              <span className="text-subtle text-xs">
                 {formatearFecha(c.fecha)} · {c.vendedor} · válida hasta{" "}
                 {formatearFecha(c.validaHasta)}
               </span>
             </Link>
-            <div className="border-border border-t pt-1">{acciones(c)}</div>
+            <div className="-mt-1 shrink-0">{acciones(c)}</div>
           </div>
         )}
       />

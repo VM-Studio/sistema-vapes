@@ -1,5 +1,6 @@
 "use client";
 
+import { FilterChip } from "@/components/ui/chip";
 import { controlClass } from "@/components/ui/field";
 import { useUrlParams } from "@/hooks/use-url-params";
 import { cn } from "@/lib/utils";
@@ -18,38 +19,35 @@ export function FiltroPeriodo({
   hasta: string;
 }) {
   const { actualizar, pendiente } = useUrlParams();
-  const chip = (activo: boolean) =>
-    cn(
-      "inline-flex min-h-10 shrink-0 items-center rounded-circle border px-4 text-sm font-medium whitespace-nowrap transition-colors",
-      activo
-        ? "border-accent bg-accent text-accent-foreground"
-        : "border-border bg-surface text-foreground hover:border-input hover:bg-surface-2",
-    );
   return (
-    <div className={cn("flex flex-col gap-2 transition-opacity", pendiente && "opacity-60")}>
+    <div
+      className={cn(
+        "flex flex-col gap-3 transition-opacity lg:flex-row lg:items-end lg:justify-between",
+        pendiente && "opacity-60",
+      )}
+    >
       <div
-        className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0"
+        className="-mx-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0"
         role="group"
         aria-label="Período"
       >
         {PRESETS.map((p) => (
-          <button
+          <FilterChip
             key={p}
-            type="button"
-            className={chip(periodo === p)}
-            aria-pressed={periodo === p}
+            className="h-11 md:h-10"
+            activo={periodo === p}
             onClick={() => actualizar({ periodo: p, desde: null, hasta: null })}
           >
             {PERIODO_LABEL[p]}
-          </button>
+          </FilterChip>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-2 md:max-w-sm">
-        <label className="text-muted flex flex-col gap-1 text-xs">
+      <div className="grid grid-cols-2 gap-2 lg:w-80">
+        <label className="text-muted text-small flex flex-col gap-1">
           Desde
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 md:h-10")}
             value={desde}
             onChange={(e) =>
               e.target.value &&
@@ -57,11 +55,11 @@ export function FiltroPeriodo({
             }
           />
         </label>
-        <label className="text-muted flex flex-col gap-1 text-xs">
+        <label className="text-muted text-small flex flex-col gap-1">
           Hasta
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 md:h-10")}
             value={hasta}
             onChange={(e) =>
               e.target.value &&

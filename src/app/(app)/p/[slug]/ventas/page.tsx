@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -16,13 +17,7 @@ import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import { listarVentasSchema } from "@/lib/validations/venta";
-import {
-  CLASE_MEDIO_PAGO,
-  ESTADO_VENTA_UI,
-  ETIQUETA_MEDIO_PAGO,
-  ETIQUETA_TIPO_VENTA,
-  telefonoVisible,
-} from "@/lib/ventas-ui";
+import { ESTADO_VENTA_UI, ETIQUETA_TIPO_VENTA, telefonoVisible } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { obtenerClienteBasico } from "@/server/services/cliente.service";
 import { prepararConversion } from "@/server/services/cotizacion.service";
@@ -34,6 +29,7 @@ import {
   type VentaListada,
 } from "@/server/services/venta.service";
 
+import { MedioPagoBadge } from "./_componentes/medio-pago";
 import { FiltrosVentas } from "./filtros-ventas";
 import { GenerarVenta } from "./generar-venta";
 import type { ConversionVenta } from "./modal-venta";
@@ -41,19 +37,6 @@ import type { ConversionVenta } from "./modal-venta";
 export const metadata: Metadata = { title: "Ventas" };
 
 type SP = Record<string, string | string[] | undefined>;
-
-function MedioPagoBadge({ medio }: { medio: VentaListada["medioPago"] }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-control px-2.5 py-1 text-xs leading-none font-medium whitespace-nowrap",
-        CLASE_MEDIO_PAGO[medio],
-      )}
-    >
-      {ETIQUETA_MEDIO_PAGO[medio]}
-    </span>
-  );
-}
 
 export default async function VentasPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanel(Modulo.VENTAS, "ver");
@@ -126,14 +109,18 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
       <section
         aria-label="Totales del período"
         className={cn(
-          "mb-4 grid gap-3",
+          "mb-4 grid gap-4 max-md:gap-3",
           r.resumen.gananciaBruta !== null ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2",
         )}
       >
         <StatCard label="Ventas" value={formatearNumero(r.resumen.cantidad)} />
         <StatCard label="Total vendido" value={formatearPesos(r.resumen.total)} />
         {r.resumen.gananciaBruta !== null && (
-          <StatCard label="Ganancia bruta" value={formatearPesos(r.resumen.gananciaBruta)} />
+          <StatCard
+            label="Ganancia bruta"
+            value={formatearPesos(r.resumen.gananciaBruta)}
+            className="max-md:col-span-2"
+          />
         )}
       </section>
       <FiltrosVentas
@@ -186,7 +173,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             cell: (v) => (
               <Link
                 href={href(v)}
-                className="text-primary font-semibold tabular-nums hover:underline"
+                className="text-foreground font-mono font-semibold hover:underline"
               >
                 {v.codigo}
               </Link>
@@ -195,14 +182,16 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
           {
             key: "fecha",
             header: "Fecha y hora",
-            cell: (v) => <span className="text-muted">{formatearFechaHora(v.fecha)}</span>,
+            cell: (v) => (
+              <span className="text-muted whitespace-nowrap">{formatearFechaHora(v.fecha)}</span>
+            ),
           },
           {
             key: "cliente",
             header: "Cliente",
             cell: (v) => (
               <span className="flex flex-col">
-                <span>{v.cliente.nombre}</span>
+                <span className="font-medium">{v.cliente.nombre}</span>
                 <span className="text-muted text-xs tabular-nums">
                   {telefonoVisible(v.cliente.telefono)}
                 </span>
@@ -218,13 +207,26 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             cell: (v) => `${v.unidades} u.`,
           },
           { key: "medio", header: "Pago", cell: (v) => <MedioPagoBadge medio={v.medioPago} /> },
-          { key: "tipo", header: "Tipo", cell: (v) => ETIQUETA_TIPO_VENTA[v.tipo] },
+          {
+            key: "tipo",
+            header: "Tipo",
+            cell: (v) => (
+              <Badge variant={v.tipo === "MAYORISTA" ? "primary" : "neutral"}>
+                {ETIQUETA_TIPO_VENTA[v.tipo]}
+              </Badge>
+            ),
+          },
           {
             key: "total",
             header: "Total",
-            className: "text-right tabular-nums font-medium",
+            className: "text-right tabular-nums",
             cell: (v) => (
-              <span className={cn(v.estado === "ANULADA" && "text-muted line-through")}>
+              <span
+                className={cn(
+                  "font-semibold whitespace-nowrap",
+                  v.estado === "ANULADA" && "text-muted line-through",
+                )}
+              >
                 {formatearPesos(v.total)}
               </span>
             ),
@@ -234,10 +236,10 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         renderMobile={(v) => (
           <Link
             href={href(v)}
-            className="border-border bg-surface flex flex-col gap-2 rounded-card border p-4"
+            className={cn(cardVariants({ variant: "clickable" }), "flex flex-col gap-2 p-4")}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-primary font-semibold tabular-nums">{v.codigo}</span>
+              <span className="font-mono font-semibold">{v.codigo}</span>
               <span
                 className={cn(
                   "font-semibold tabular-nums",
@@ -257,7 +259,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
               <MedioPagoBadge medio={v.medioPago} />
             </div>
             <div className="flex items-center justify-between gap-2">
-              <p className="text-muted text-xs">
+              <p className="text-muted text-small">
                 {formatearFechaHora(v.fecha)} · {v.vendedor} · {v.deposito} · {v.unidades} u.
                 {v.tipo === "MAYORISTA" && " · Mayorista"}
               </p>
@@ -274,6 +276,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         pathname={rutaPanel(slug, "/ventas")}
         params={plano}
       />
+      {puedeCrear && <div className="h-[4.5rem] md:hidden" aria-hidden />}
     </>
   );
 }

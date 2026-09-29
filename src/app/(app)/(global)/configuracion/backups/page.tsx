@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
 import { TabsNav } from "@/components/ui/tabs-nav";
 import { formatearFechaHora } from "@/lib/utils";
 import { requirePaginaOwner } from "@/server/auth/permissions";
@@ -29,18 +30,27 @@ export default async function BackupsPage() {
     <>
       <TabsNav
         items={tabsConfiguracion("/configuracion/backups")}
-        className="mb-4"
+        className="mb-6"
         ariaLabel="Configuración"
       />
       <PageHeader
         title="Backups"
-        subtitle={`Copia completa de la base todos los días a las 4:00. Se guardan 30 diarios, 12 semanales y 12 mensuales. ${
-          ultimoOk
-            ? `Último correcto: ${formatearFechaHora(ultimoOk.createdAt)}.`
-            : "Todavía no hay ninguno."
-        }`}
+        subtitle="Copias completas de la base, verificadas y guardadas fuera del servidor."
         actions={<BotonBackup />}
       />
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Último backup correcto"
+          value={ultimoOk ? formatearFechaHora(ultimoOk.createdAt) : "Ninguno"}
+          hint={ultimoOk ? kib(ultimoOk.tamanio) : "Todavía no hay ninguno."}
+        />
+        <StatCard label="Frecuencia" value="Diario" hint="Todos los días a las 4:00" />
+        <StatCard
+          label="Se conservan"
+          value="30 · 12 · 12"
+          hint="Diarios · semanales · mensuales"
+        />
+      </div>
       <DataTable
         caption="Backups"
         rows={backups}
@@ -53,11 +63,11 @@ export default async function BackupsPage() {
             cell: (b) =>
               b.ok ? (
                 <Badge variant="success">
-                  <CheckCircle2 className="size-3" aria-hidden /> Verificado
+                  <CheckCircle2 strokeWidth={1.75} aria-hidden /> Verificado
                 </Badge>
               ) : (
                 <Badge variant="danger">
-                  <XCircle className="size-3" aria-hidden /> Falló
+                  <XCircle strokeWidth={1.75} aria-hidden /> Falló
                 </Badge>
               ),
           },
@@ -82,12 +92,13 @@ export default async function BackupsPage() {
           },
           {
             key: "x",
-            header: "",
+            header: <span className="sr-only">Acciones</span>,
+            className: "text-right",
             cell: (b) =>
               b.ok ? (
                 <BotonDescargar id={b.id} />
               ) : (
-                <span className="text-danger text-xs">{b.error}</span>
+                <span className="text-danger text-small">{b.error}</span>
               ),
           },
         ]}

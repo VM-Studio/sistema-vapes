@@ -16,7 +16,7 @@ export default async function Page() {
     <>
       <TabsNav
         items={tabsAjustesPanel(ctx.panel.slug, "/configuracion/marcas")}
-        className="mb-4"
+        className="mb-6"
         ariaLabel="Ajustes del panel"
       />
       <ClasificacionView tipo="marca" filas={filas} />

@@ -1,14 +1,14 @@
-import { ChevronLeft, FileSpreadsheet, FileText } from "lucide-react";
-import Link from "next/link";
+import { FileSpreadsheet, FileText } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { rutaPanel } from "@/lib/paneles";
 
 /**
- * Cabecera de un reporte: volver al índice + Exportar PDF / Excel (la misma
- * URL de filtros que se está viendo, hacia /api/p/{slug}/reportes/{clave}).
+ * Cabecera de un reporte: migas hacia el índice + Exportar PDF / Excel (la
+ * misma URL de filtros que se está viendo, hacia /api/p/{slug}/reportes/{clave}).
  */
 export function CabeceraReporte({
   slug,
@@ -36,41 +36,38 @@ export function CabeceraReporte({
     return `/api/p/${slug}/reportes/${clave}?${q.toString()}`;
   };
   return (
-    <>
-      <Link
-        href={rutaPanel(slug, "/reportes")}
-        className="text-muted hover:text-foreground mb-2 inline-flex min-h-10 items-center gap-1 text-sm"
-      >
-        <ChevronLeft className="size-4" strokeWidth={1.75} aria-hidden /> Reportes
-      </Link>
-      <PageHeader
-        title={titulo}
-        subtitle={subtitulo}
-        actions={
-          <>
-            {extra}
+    <PageHeader
+      title={titulo}
+      subtitle={subtitulo}
+      breadcrumb={
+        <Breadcrumb
+          items={[{ label: "Reportes", href: rutaPanel(slug, "/reportes") }, { label: titulo }]}
+        />
+      }
+      actions={
+        <>
+          {extra}
+          <a
+            href={url("pdf")}
+            target="_blank"
+            rel="noopener"
+            data-testid="exportar-pdf"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            <FileText strokeWidth={1.75} /> Exportar PDF
+          </a>
+          {excel && (
             <a
-              href={url("pdf")}
-              target="_blank"
-              rel="noopener"
-              data-testid="exportar-pdf"
+              href={url("xlsx")}
+              download
+              data-testid="exportar-excel"
               className={buttonVariants({ variant: "secondary" })}
             >
-              <FileText strokeWidth={1.75} /> Exportar PDF
+              <FileSpreadsheet strokeWidth={1.75} /> Exportar Excel
             </a>
-            {excel && (
-              <a
-                href={url("xlsx")}
-                download
-                data-testid="exportar-excel"
-                className={buttonVariants({ variant: "secondary" })}
-              >
-                <FileSpreadsheet strokeWidth={1.75} /> Excel
-              </a>
-            )}
-          </>
-        }
-      />
-    </>
+          )}
+        </>
+      }
+    />
   );
 }

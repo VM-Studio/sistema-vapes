@@ -15,7 +15,7 @@ export default async function EscanerPage() {
     <>
       <TabsNav
         items={tabsAjustesPanel(ctx.panel.slug, "/configuracion/escaner")}
-        className="mb-4"
+        className="mb-6"
         ariaLabel="Ajustes del panel"
       />
       <EscanerView config={await obtenerConfigEscaner(ctx)} />

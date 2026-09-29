@@ -1,6 +1,8 @@
 "use client";
 
 import { TipoVenta } from "@prisma/client";
+import { ChevronDown, SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
 
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
@@ -30,10 +32,14 @@ export function FiltrosVentas({
   const { actualizar } = useUrlParams();
   const ruta = useRutaPanel();
   const { slug } = usePanel();
+  // En mobile, fechas y selects van plegados (salvo que ya haya alguno aplicado).
+  const avanzados = ["desde", "hasta", "depositoId", "vendedorId", "medioPago", "tipo"];
+  const activos = avanzados.filter((k) => params[k]).length;
+  const [masFiltros, setMasFiltros] = useState(activos > 0);
   const link = (cambios: Record<string, string | null>) =>
     hrefCon(ruta("/ventas"), params, { page: null, ...cambios });
   return (
-    <div className="mb-4 flex flex-col gap-3">
+    <section aria-label="Filtros" className="bg-card rounded-card mb-4 flex flex-col gap-3 p-4">
       <SearchInput
         placeholder={`ID de venta (${formatearIdVenta(slug, 123)} o 123), cliente o teléfono`}
       />
@@ -54,21 +60,46 @@ export function FiltrosVentas({
           Todo
         </ChipLink>
       </ChipRow>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
-        <label className="text-muted flex flex-col gap-1 text-xs">
+      <button
+        type="button"
+        onClick={() => setMasFiltros((v) => !v)}
+        aria-expanded={masFiltros}
+        aria-controls="filtros-ventas-avanzados"
+        className="text-foreground text-small rounded-control -mx-1 flex min-h-11 items-center gap-2 px-1 font-medium md:hidden"
+      >
+        <SlidersHorizontal className="text-muted size-5" strokeWidth={1.75} aria-hidden />
+        Más filtros
+        {activos > 0 && <span className="text-muted tabular-nums">({activos})</span>}
+        <ChevronDown
+          className={cn(
+            "text-muted ml-auto size-5 transition-transform",
+            masFiltros && "rotate-180",
+          )}
+          strokeWidth={1.75}
+          aria-hidden
+        />
+      </button>
+      <div
+        id="filtros-ventas-avanzados"
+        className={cn(
+          "grid-cols-2 gap-2 md:grid md:grid-cols-3 lg:grid-cols-6",
+          masFiltros ? "grid" : "hidden",
+        )}
+      >
+        <label className="text-muted text-small flex flex-col gap-1">
           Desde
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 md:h-10")}
             value={fechas.desde}
             onChange={(e) => actualizar({ desde: e.target.value || null, rango: null })}
           />
         </label>
-        <label className="text-muted flex flex-col gap-1 text-xs">
+        <label className="text-muted text-small flex flex-col gap-1">
           Hasta
           <input
             type="date"
-            className={cn(controlClass, "h-11")}
+            className={cn(controlClass, "h-11 md:h-10")}
             value={fechas.hasta}
             onChange={(e) => actualizar({ hasta: e.target.value || null, rango: null })}
           />
@@ -114,6 +145,6 @@ export function FiltrosVentas({
           onChange={(e) => actualizar({ tipo: e.target.value || null })}
         />
       </div>
-    </div>
+    </section>
   );
 }

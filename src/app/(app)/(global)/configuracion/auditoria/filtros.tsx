@@ -20,7 +20,11 @@ export function FiltrosAuditoria({
 }) {
   const { actualizar } = useUrlParams();
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
+    <div
+      role="group"
+      aria-label="Filtros"
+      className="bg-card rounded-card grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 lg:grid-cols-6"
+    >
       <Select
         aria-label="Sistema"
         options={[
@@ -61,14 +65,14 @@ export function FiltrosAuditoria({
       <input
         type="date"
         aria-label="Desde"
-        className={cn(controlClass, "h-11")}
+        className={cn(controlClass, "h-11 md:h-10")}
         value={params.desde ?? ""}
         onChange={(e) => actualizar({ desde: e.target.value || null })}
       />
       <input
         type="date"
         aria-label="Hasta"
-        className={cn(controlClass, "h-11")}
+        className={cn(controlClass, "h-11 md:h-10")}
         value={params.hasta ?? ""}
         onChange={(e) => actualizar({ hasta: e.target.value || null })}
       />

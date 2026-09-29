@@ -3,10 +3,10 @@ import { Receipt } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
+import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
@@ -26,6 +26,7 @@ import {
   type VentaReporte,
 } from "@/server/services/reporte.service";
 
+import { BarraFiltros, FilaMobile, GrillaKpis } from "../_componentes/barra-filtros";
 import { CabeceraReporte } from "../_componentes/cabecera-reporte";
 import { FiltroPeriodo } from "../_componentes/filtro-periodo";
 import { FiltroSelect } from "../_componentes/filtro-select";
@@ -55,9 +56,9 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
         subtitulo={r.etiqueta}
         params={plano}
       />
-      <div className="mb-5 flex flex-col gap-3">
+      <BarraFiltros>
         <FiltroPeriodo periodo={r.periodo} desde={r.desde} hasta={r.hasta} />
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
           <FiltroSelect
             param="vendedorId"
             valor={f.vendedorId}
@@ -100,110 +101,115 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
             ]}
           />
         </div>
-      </div>
+      </BarraFiltros>
 
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <GrillaKpis>
         <StatCard label="Ventas" value={formatearNumero(v.resumen.ventas)} />
         <StatCard label={ctx.panel.etiquetaUnidades} value={formatearNumero(v.resumen.unidades)} />
         <StatCard label="Total" value={formatearPesos(v.resumen.total)} />
         {v.resumen.ganancia !== null && (
-          <StatCard label="Ganancia bruta" value={formatearPesos(v.resumen.ganancia)} tono="ok" />
+          <StatCard label="Ganancia bruta" value={formatearPesos(v.resumen.ganancia)} />
         )}
-      </div>
+      </GrillaKpis>
 
-      <Card className="mb-5">
-        <CardHeader>
-          <CardTitle>Total por día</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <GraficoBarras
-            moneda
-            nombre="Total"
-            datos={v.porDia.map((d) => ({
-              etiqueta: `${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}`,
-              valor: Number(d.total),
-            }))}
-          />
-        </CardContent>
-      </Card>
+      <SectionCard title="Total por día" className="mb-4 md:mb-6">
+        <GraficoBarras
+          moneda
+          nombre="Total"
+          datos={v.porDia.map((d) => ({
+            etiqueta: `${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}`,
+            valor: Number(d.total),
+          }))}
+        />
+      </SectionCard>
 
-      <DataTable
-        caption="Ventas del período"
-        rows={v.filas}
-        getRowKey={(x) => x.id}
-        empty={<EmptyState icon={Receipt} title="No hay ventas con estos filtros" />}
-        columns={[
-          {
-            key: "codigo",
-            header: "ID",
-            cell: (x: VentaReporte) => <span className="font-semibold">{x.codigo}</span>,
-          },
-          {
-            key: "fecha",
-            header: "Fecha",
-            cell: (x) => <span className="text-muted">{formatearFechaHora(x.fecha)}</span>,
-          },
-          { key: "cliente", header: "Cliente", cell: (x) => x.cliente },
-          { key: "vendedor", header: "Vendedor", cell: (x) => x.vendedor },
-          { key: "deposito", header: "Galpón", cell: (x) => x.deposito },
-          { key: "tipo", header: "Tipo", cell: (x) => ETIQUETA_TIPO_VENTA[x.tipo] },
-          { key: "medio", header: "Medio", cell: (x) => ETIQUETA_MEDIO_PAGO[x.medioPago] },
-          {
-            key: "estado",
-            header: "Estado",
-            cell: (x) => (
-              <Badge variant={ESTADO_VENTA_UI[x.estado].variante}>
-                {ESTADO_VENTA_UI[x.estado].label}
-              </Badge>
-            ),
-          },
-          {
-            key: "unidades",
-            header: "Unid.",
-            className: "text-right tabular-nums",
-            cell: (x) => x.unidades,
-          },
-          {
-            key: "total",
-            header: "Total",
-            className: "text-right tabular-nums font-medium",
-            cell: (x) => formatearPesos(x.total),
-          },
-          ...(owner
-            ? [
-                {
-                  key: "ganancia",
-                  header: "Ganancia",
-                  className: "text-right tabular-nums text-success",
-                  cell: (x: VentaReporte) => formatearPesos(x.ganancia),
-                },
-              ]
-            : []),
-        ]}
-        renderMobile={(x) => (
-          <div className="border-border bg-surface rounded-card border p-4">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold">
-                {x.codigo} · {x.cliente}
-              </span>
-              <span className="font-semibold tabular-nums">{formatearPesos(x.total)}</span>
-            </div>
-            <p className="text-muted mt-1 text-xs">
-              {formatearFechaHora(x.fecha)} · {x.vendedor} · {x.deposito} · {x.unidades} u. ·{" "}
-              {ETIQUETA_MEDIO_PAGO[x.medioPago]}
-              {x.estado === "ANULADA" ? " · Anulada" : ""}
-            </p>
-          </div>
-        )}
-      />
-      <Pagination
-        className="mt-4"
-        page={v.page}
-        pageSize={v.pageSize}
-        total={v.cantidad}
-        pathname={PATH}
-        params={plano}
-      />
+      <SectionCard
+        title="Detalle de ventas"
+        description={`${formatearNumero(v.cantidad)} ${v.cantidad === 1 ? "venta" : "ventas"} en el período`}
+      >
+        <DataTable
+          caption="Ventas del período"
+          rows={v.filas}
+          getRowKey={(x) => x.id}
+          empty={<EmptyState icon={Receipt} title="No hay ventas con estos filtros" />}
+          columns={[
+            {
+              key: "codigo",
+              header: "ID",
+              cell: (x: VentaReporte) => (
+                <span className="font-mono font-semibold whitespace-nowrap">{x.codigo}</span>
+              ),
+            },
+            {
+              key: "fecha",
+              header: "Fecha",
+              cell: (x) => (
+                <span className="text-muted whitespace-nowrap">{formatearFechaHora(x.fecha)}</span>
+              ),
+            },
+            { key: "cliente", header: "Cliente", cell: (x) => x.cliente },
+            { key: "vendedor", header: "Vendedor", cell: (x) => x.vendedor },
+            { key: "deposito", header: "Galpón", cell: (x) => x.deposito },
+            { key: "tipo", header: "Tipo", cell: (x) => ETIQUETA_TIPO_VENTA[x.tipo] },
+            { key: "medio", header: "Medio", cell: (x) => ETIQUETA_MEDIO_PAGO[x.medioPago] },
+            {
+              key: "estado",
+              header: "Estado",
+              cell: (x) => (
+                <Badge variant={ESTADO_VENTA_UI[x.estado].variante}>
+                  {ESTADO_VENTA_UI[x.estado].label}
+                </Badge>
+              ),
+            },
+            {
+              key: "unidades",
+              header: "Unid.",
+              className: "text-right tabular-nums",
+              cell: (x) => x.unidades,
+            },
+            {
+              key: "total",
+              header: "Total",
+              className: "text-right tabular-nums font-medium",
+              cell: (x) => formatearPesos(x.total),
+            },
+            ...(owner
+              ? [
+                  {
+                    key: "ganancia",
+                    header: "Ganancia",
+                    className: "text-right tabular-nums",
+                    cell: (x: VentaReporte) => formatearPesos(x.ganancia),
+                  },
+                ]
+              : []),
+          ]}
+          renderMobile={(x) => (
+            <FilaMobile>
+              <div className="flex items-start justify-between gap-3">
+                <span className="flex min-w-0 flex-col">
+                  <span className="font-mono text-sm font-semibold">{x.codigo}</span>
+                  <span className="truncate font-medium">{x.cliente}</span>
+                </span>
+                <span className="font-semibold tabular-nums">{formatearPesos(x.total)}</span>
+              </div>
+              <p className="text-muted text-small mt-1">
+                {formatearFechaHora(x.fecha)} · {x.vendedor} · {x.deposito} · {x.unidades} u. ·{" "}
+                {ETIQUETA_MEDIO_PAGO[x.medioPago]}
+                {x.estado === "ANULADA" ? " · Anulada" : ""}
+              </p>
+            </FilaMobile>
+          )}
+        />
+        <Pagination
+          className="mt-4"
+          page={v.page}
+          pageSize={v.pageSize}
+          total={v.cantidad}
+          pathname={PATH}
+          params={plano}
+        />
+      </SectionCard>
     </>
   );
 }

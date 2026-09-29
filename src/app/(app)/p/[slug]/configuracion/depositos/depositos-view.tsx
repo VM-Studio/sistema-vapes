@@ -7,9 +7,11 @@ import { useEffect, useState } from "react";
 
 import { usePuede } from "@/components/layout/usuario-context";
 import { Badge } from "@/components/ui/badge";
+import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   aplicarErroresServidor,
   Form,
@@ -49,7 +51,7 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
       {d.nombre}
       {d.esPrincipal && (
         <Badge variant="primary">
-          <Star className="size-3" aria-hidden /> Principal
+          <Star strokeWidth={1.75} aria-hidden /> Principal
         </Badge>
       )}
     </span>
@@ -62,12 +64,19 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
         subtitle="El principal es el que se usa por defecto en ventas e ingresos."
         actions={
           puedeCrear && (
-            <Button onClick={() => setEditando("nuevo")}>
-              <Plus /> Nuevo depósito
+            <Button onClick={() => setEditando("nuevo")} className="hidden md:inline-flex">
+              <Plus strokeWidth={1.75} /> Nuevo depósito
             </Button>
           )
         }
       />
+      {puedeCrear && (
+        <BarraAccion soloMobile>
+          <Button onClick={() => setEditando("nuevo")}>
+            <Plus strokeWidth={1.75} /> Nuevo depósito
+          </Button>
+        </BarraAccion>
+      )}
       <DataTable
         caption="Depósitos"
         rows={depositos}
@@ -83,7 +92,7 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
           {
             key: "unidades",
             header: "Unidades",
-            className: "text-right tabular-nums",
+            className: "text-right",
             cell: (d) => formatearNumero(d.unidades),
           },
           {
@@ -106,19 +115,14 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
             className: "w-px",
             cell: (d) =>
               puedeEditar && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setEditando(d)}
-                  aria-label={`Editar ${d.nombre}`}
-                >
-                  <Pencil />
-                </Button>
+                <IconButton onClick={() => setEditando(d)} aria-label={`Editar ${d.nombre}`}>
+                  <Pencil strokeWidth={1.75} />
+                </IconButton>
               ),
           },
         ]}
         renderMobile={(d) => (
-          <div className="border-border bg-surface rounded-control border p-4">
+          <div className="bg-card rounded-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-1">
                 {nombreCelda(d)}
@@ -128,18 +132,13 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
                 </span>
               </div>
               {puedeEditar && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setEditando(d)}
-                  aria-label={`Editar ${d.nombre}`}
-                >
-                  <Pencil />
-                </Button>
+                <IconButton onClick={() => setEditando(d)} aria-label={`Editar ${d.nombre}`}>
+                  <Pencil strokeWidth={1.75} />
+                </IconButton>
               )}
             </div>
             <Switch
-              className="border-border mt-2 border-t pt-2"
+              className="border-border mt-3 border-t pt-1"
               checked={d.activo}
               onCheckedChange={(v) => cambiarActivo(d, v)}
               disabled={!puedeEditar}

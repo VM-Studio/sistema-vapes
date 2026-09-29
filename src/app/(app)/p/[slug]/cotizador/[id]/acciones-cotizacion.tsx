@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { useRutaPanel } from "@/components/layout/panel-context";
+import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -107,83 +108,91 @@ export function AccionesCotizacion({
     }
   }, [convertirAlCargar, convertible]);
 
+  const botonConvertir = convertible && (
+    <Button onClick={() => void convertir()} loading={ocupado === "convertir"}>
+      {ocupado !== "convertir" && <ShoppingCart strokeWidth={1.75} />} Convertir en venta
+    </Button>
+  );
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        {convertible && (
-          <Button onClick={() => void convertir()} loading={ocupado === "convertir"}>
-            <ShoppingCart strokeWidth={1.75} /> Convertir en venta
-          </Button>
-        )}
-        <a
-          href={whatsapp}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={buttonVariants({ variant: "secondary" })}
-          data-testid="whatsapp-cotizacion"
-        >
-          <MessageCircle strokeWidth={1.75} /> WhatsApp
-        </a>
-        <Button variant="secondary" onClick={() => void generarPdf()} loading={ocupado === "pdf"}>
-          <FileText strokeWidth={1.75} /> PDF
-        </Button>
-        {editable && (
-          <Link
-            href={ruta(`/cotizador/${id}/editar`)}
-            className={buttonVariants({ variant: "secondary" })}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        {puedeCrear && abierta && !vencida ? (
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Cambiar estado"
           >
-            <Pencil strokeWidth={1.75} /> Editar
-          </Link>
-        )}
-        {puedeCrear && (
-          <Button
-            variant="secondary"
-            onClick={() => void duplicarla()}
-            loading={ocupado === "duplicar"}
-          >
-            <Copy strokeWidth={1.75} /> Duplicar
-          </Button>
-        )}
-      </div>
-      {puedeCrear && abierta && !vencida && (
-        <div className="flex flex-wrap gap-2">
-          {estado === "BORRADOR" && (
+            <span className="text-muted text-small mr-1 hidden lg:inline">Estado:</span>
+            {estado === "BORRADOR" && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void estadoA("ENVIADA")}
+                loading={ocupado === "ENVIADA"}
+              >
+                <Send strokeWidth={1.75} /> Marcar enviada
+              </Button>
+            )}
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
-              onClick={() => void estadoA("ENVIADA")}
-              loading={ocupado === "ENVIADA"}
+              onClick={() => void estadoA("ACEPTADA")}
+              loading={ocupado === "ACEPTADA"}
             >
-              <Send strokeWidth={1.75} /> Marcar enviada
+              <Check strokeWidth={1.75} /> Marcar aceptada
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setRechazo(true)}>
+              <X strokeWidth={1.75} /> Marcar rechazada
+            </Button>
+          </div>
+        ) : (
+          <span className="hidden lg:block" />
+        )}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:justify-end">
+          <a
+            href={whatsapp}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({ variant: "secondary" })}
+            data-testid="whatsapp-cotizacion"
+          >
+            <MessageCircle strokeWidth={1.75} /> WhatsApp
+          </a>
+          <Button variant="secondary" onClick={() => void generarPdf()} loading={ocupado === "pdf"}>
+            {ocupado !== "pdf" && <FileText strokeWidth={1.75} />} PDF
+          </Button>
+          {editable && (
+            <Link
+              href={ruta(`/cotizador/${id}/editar`)}
+              className={buttonVariants({ variant: "secondary" })}
+            >
+              <Pencil strokeWidth={1.75} /> Editar
+            </Link>
+          )}
+          {puedeCrear && (
+            <Button
+              variant="secondary"
+              onClick={() => void duplicarla()}
+              loading={ocupado === "duplicar"}
+            >
+              {ocupado !== "duplicar" && <Copy strokeWidth={1.75} />} Duplicar
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void estadoA("ACEPTADA")}
-            loading={ocupado === "ACEPTADA"}
-          >
-            <Check strokeWidth={1.75} /> Marcar aceptada
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-danger"
-            onClick={() => setRechazo(true)}
-          >
-            <X strokeWidth={1.75} /> Marcar rechazada
-          </Button>
+          {botonConvertir && <span className="hidden md:contents">{botonConvertir}</span>}
         </div>
-      )}
+      </div>
+      {botonConvertir && <BarraAccion soloMobile>{botonConvertir}</BarraAccion>}
       {pdf && (
         <a
           href={pdf}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary text-sm hover:underline"
+          className="text-foreground inline-flex items-center gap-1.5 self-start text-sm font-medium underline underline-offset-4"
           data-testid="pdf-cotizacion"
         >
-          Abrir el PDF de {codigo}
+          <FileText className="size-4" strokeWidth={1.75} aria-hidden />
+          Abrir el PDF de <span className="font-mono">{codigo}</span>
         </a>
       )}
 

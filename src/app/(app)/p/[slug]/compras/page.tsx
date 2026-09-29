@@ -4,10 +4,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { BarraAccion } from "@/components/ui/barra-accion";
 import { buttonVariants } from "@/components/ui/button";
+import { cardVariants } from "@/components/ui/card";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MenuFila } from "@/components/ui/menu-fila";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { formatearPesos } from "@/lib/format";
@@ -46,21 +49,22 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
     <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>{ESTADO_COMPRA_UI[c.estado].label}</Badge>
   );
 
+  const puedeEditar = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "editar");
+  const botonNueva = (
+    <Link href={`${PATH}/nueva`} className={buttonVariants()}>
+      <Plus strokeWidth={1.75} /> Nueva compra
+    </Link>
+  );
+
   return (
     <>
       <PageHeader
         title="Compras"
         subtitle="Mercadería recibida de proveedores. El stock entra al recibir la compra."
-        actions={
-          puedeCrear && (
-            <Link href={`${PATH}/nueva`} className={buttonVariants()}>
-              <Plus strokeWidth={1.75} /> Nueva compra
-            </Link>
-          )
-        }
+        actions={puedeCrear && <div className="hidden md:flex">{botonNueva}</div>}
       />
-      <div className="mb-4 flex flex-col gap-3">
-        <ChipRow ariaLabel="Estado">
+      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <ChipRow ariaLabel="Estado" className="lg:pb-0.5">
           <ChipLink
             href={hrefCon(PATH, plano, { estado: null, page: null })}
             activo={!filtros.estado}
@@ -114,7 +118,10 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
             key: "numero",
             header: "ID",
             cell: (c) => (
-              <Link href={`${PATH}/${c.id}`} className="text-primary font-semibold hover:underline">
+              <Link
+                href={`${PATH}/${c.id}`}
+                className="font-mono font-semibold underline-offset-4 hover:underline"
+              >
                 {idDe(c)}
               </Link>
             ),
@@ -122,48 +129,72 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
           {
             key: "fecha",
             header: "Fecha",
-            cell: (c) => <span className="text-muted">{formatearFechaHora(c.fecha)}</span>,
+            cell: (c) => (
+              <span className="text-muted whitespace-nowrap">{formatearFechaHora(c.fecha)}</span>
+            ),
           },
           {
             key: "proveedor",
             header: "Proveedor",
-            cell: (c) => c.proveedor ?? <span className="text-muted">—</span>,
+            cell: (c) => c.proveedor ?? <span className="text-subtle">—</span>,
           },
           { key: "deposito", header: "Galpón", cell: (c) => c.deposito },
           {
             key: "items",
             header: "Productos",
-            className: "text-right tabular-nums",
-            cell: (c) => `${c.items} (${c.unidades} u.)`,
+            className: "text-right",
+            cell: (c) => (
+              <span className="whitespace-nowrap">
+                {c.items} <span className="text-subtle">({c.unidades} u.)</span>
+              </span>
+            ),
           },
           ...(verCostos
             ? [
                 {
                   key: "total",
                   header: "Total",
-                  className: "text-right tabular-nums font-medium",
+                  className: "text-right font-medium",
                   cell: (c: CompraListada) => formatearPesos(c.total),
                 },
               ]
             : []),
           { key: "estado", header: "Estado", cell: estadoBadge },
+          {
+            key: "acciones",
+            header: <span className="sr-only">Acciones</span>,
+            className: "w-12 text-right",
+            ocultarEnMobile: true,
+            cell: (c: CompraListada) => (
+              <MenuFila
+                label={`Acciones de la compra ${idDe(c)}`}
+                acciones={[
+                  { label: "Ver detalle", href: `${PATH}/${c.id}` },
+                  ...(c.estado === "BORRADOR" && puedeEditar
+                    ? [{ label: "Editar borrador", href: `${PATH}/${c.id}/editar` }]
+                    : []),
+                ]}
+              />
+            ),
+          },
         ]}
         renderMobile={(c) => (
           <Link
             href={`${PATH}/${c.id}`}
-            className="border-border bg-surface block rounded-card border p-4"
+            className={cardVariants({ variant: "clickable", className: "flex flex-col gap-2 p-4" })}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold">
-                {idDe(c)} · {c.proveedor ?? "Sin proveedor"}
-              </span>
+              <span className="font-mono font-semibold">{idDe(c)}</span>
               {estadoBadge(c)}
             </div>
-            <div className="mt-1 flex items-end justify-between gap-2">
-              <p className="text-muted text-xs">
+            <p className="truncate font-medium">{c.proveedor ?? "Sin proveedor"}</p>
+            <div className="flex items-end justify-between gap-2">
+              <p className="text-muted text-small">
                 {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
               </p>
-              {verCostos && <p className="font-semibold tabular-nums">{formatearPesos(c.total)}</p>}
+              {verCostos && (
+                <p className="shrink-0 font-semibold tabular-nums">{formatearPesos(c.total)}</p>
+              )}
             </div>
           </Link>
         )}
@@ -176,6 +207,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         pathname={PATH}
         params={plano}
       />
+      {puedeCrear && <BarraAccion soloMobile>{botonNueva}</BarraAccion>}
     </>
   );
 }

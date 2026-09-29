@@ -58,7 +58,7 @@ function Muestra({ nombre, hex, borde }: { nombre: string; hex: string; borde?: 
   return (
     <div className="flex flex-col gap-2">
       <div
-        className={`h-16 rounded-control ${borde ? "border-border border" : ""}`}
+        className={`rounded-control h-16 ${borde ? "border-border border" : ""}`}
         style={{ background: hex }}
       />
       <div className="flex flex-col">
@@ -156,7 +156,7 @@ export function Catalogo() {
           <Muestra nombre="Borde" hex="#E6E8EB" />
           <Muestra nombre="Texto" hex="#0A0A0A" />
           <Muestra nombre="Secundario" hex="#525252" />
-          <Muestra nombre="Terciario" hex="#8A8A8A" />
+          <Muestra nombre="Terciario" hex="#6D6D6D" />
         </div>
         <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
           <Muestra nombre="Azul oscuro" hex={COLORES_MARCA.azulOscuro.toUpperCase()} />

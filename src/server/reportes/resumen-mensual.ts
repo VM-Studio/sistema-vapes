@@ -1,9 +1,8 @@
 import "server-only";
 
-import { rgb } from "pdf-lib";
-
 import { formatearCompacto, formatearDelta, formatearNumero, formatearPesos } from "@/lib/format";
 import type { CtxPanel } from "@/server/auth/permissions";
+import { COLOR_PDF, rectRedondeado } from "@/server/pdf";
 import {
   cerrarLienzo,
   GRIS,
@@ -48,11 +47,23 @@ export async function datosResumenMensual(ctx: CtxPanel, mes: string) {
 
 export type DatosResumenMensual = Awaited<ReturnType<typeof datosResumenMensual>>;
 
-const VERDE = rgb(0.09, 0.6, 0.35);
-const ROJO = rgb(0.8, 0.2, 0.2);
-const BORDE = rgb(0.86, 0.86, 0.88);
-const BARRA = rgb(0.2, 0.36, 0.85);
-const BARRA_ANT = rgb(0.8, 0.82, 0.86);
+// Deltas: azul sube / naranja baja; barras: Actual azul, Anterior naranja (como en la app).
+const SUBE = COLOR_PDF.sube;
+const BAJA = COLOR_PDF.baja;
+const BORDE = COLOR_PDF.borde;
+const FONDO = COLOR_PDF.card;
+const BARRA = COLOR_PDF.actual;
+const BARRA_ANT = COLOR_PDF.anterior;
+
+/** Banda gris clarito de encabezado de tabla. */
+function bandaEncabezado(
+  page: Parameters<typeof rectRedondeado>[0],
+  x: number,
+  y: number,
+  ancho: number,
+) {
+  rectRedondeado(page, x, y - 6, ancho, 18, 3, FONDO);
+}
 
 export async function pdfResumenMensual(
   cab: CabeceraPanel,
@@ -96,31 +107,46 @@ export async function pdfResumenMensual(
   ];
   const gap = 8;
   const w = (util - 2 * gap) / 3;
-  const h = 50;
+  const h = 58;
   tarjetas.forEach((t, i) => {
     const x = M + (i % 3) * (w + gap);
     const y = l.y - Math.floor(i / 3) * (h + gap) - h;
-    page.drawRectangle({ x, y, width: w, height: h, borderColor: BORDE, borderWidth: 0.8 });
-    l.texto(t.label, x + 8, y + h - 13, { size: 8, color: GRIS });
-    l.texto(t.valor, x + 8, y + h - 30, { size: 14, font: l.negrita });
+    rectRedondeado(page, x, y, w, h, 6, FONDO);
+    l.texto(t.label, x + 10, y + h - 15, { size: 8, color: GRIS });
+    l.texto(t.valor, x + 10, y + h - 34, { size: 15, font: l.negrita, max: w - 20 });
     const pct = t.c?.deltaPct ?? null;
-    const texto = `${pct === null ? "sin datos del mes anterior" : `${formatearDelta(pct)} vs. mes anterior`}${t.extra ? ` · ${t.extra}` : ""}`;
-    l.texto(texto, x + 8, y + 7, {
+    const delta =
+      pct === null ? "sin datos del mes anterior" : formatearDelta(pct).replace(/−/g, "-");
+    l.texto(delta, x + 10, y + 9, {
       size: 7.5,
-      color: pct === null ? GRIS : pct >= 0 ? VERDE : ROJO,
-      max: w - 12,
+      font: pct === null ? l.normal : l.negrita,
+      color: pct === null ? GRIS : pct >= 0 ? SUBE : BAJA,
+      max: w - 20,
     });
+    if (pct !== null) {
+      const dx = l.negrita.widthOfTextAtSize(delta, 7.5) + 4;
+      l.texto(`vs. mes anterior${t.extra ? ` · ${t.extra}` : ""}`, x + 10 + dx, y + 9, {
+        size: 7.5,
+        color: GRIS,
+        max: w - 20 - dx,
+      });
+    }
   });
-  l.y -= 2 * h + gap + 22;
+  l.y -= 2 * h + gap + 26;
 
   // --- Gráfico: facturación por día ------------------------------------------
-  l.texto("Facturación por día", M, l.y, { size: 10.5, font: l.negrita });
-  page.drawRectangle({ x: ancho - M - 150, y: l.y, width: 7, height: 7, color: BARRA });
-  l.texto("este mes", ancho - M - 140, l.y, { size: 7.5, color: GRIS });
-  page.drawRectangle({ x: ancho - M - 80, y: l.y, width: 7, height: 7, color: BARRA_ANT });
-  l.texto("mes anterior", ancho - M - 70, l.y, { size: 7.5, color: GRIS });
-  l.y -= 12;
-  const altoG = 120;
+  l.texto("Facturación por día", M, l.y, { size: 11, font: l.negrita });
+  // Leyenda a la derecha: cuadrado de color pegado a su etiqueta.
+  const anchoAnt = l.normal.widthOfTextAtSize("Mes anterior", 7.5);
+  const anchoAct = l.normal.widthOfTextAtSize("Este mes", 7.5);
+  const xAnt = ancho - M - anchoAnt - 11;
+  const xAct = xAnt - 16 - anchoAct - 11;
+  rectRedondeado(page, xAct, l.y, 7, 7, 1.5, BARRA);
+  l.texto("Este mes", xAct + 11, l.y, { size: 7.5, color: GRIS });
+  rectRedondeado(page, xAnt, l.y, 7, 7, 1.5, BARRA_ANT);
+  l.texto("Mes anterior", xAnt + 11, l.y, { size: 7.5, color: GRIS });
+  l.y -= 16;
+  const altoG = 116;
   const base = l.y - altoG;
   const ejeX = M + 42;
   const anchoG = ancho - M - ejeX;
@@ -172,19 +198,32 @@ export async function pdfResumenMensual(
   const col = (util - 16) / 2;
   const x2 = M + col + 16;
   const yTabla = l.y;
-  l.texto("Top 5 productos", M, l.y, { size: 10.5, font: l.negrita });
-  l.texto("Compras vs. ventas", x2, l.y, { size: 10.5, font: l.negrita });
-  l.y -= 15;
-  l.texto("Producto", M, l.y, { size: 7.5, color: GRIS });
-  l.texto("Unid.", M + col - 70, l.y, { size: 7.5, color: GRIS, derecha: true });
-  l.texto("Facturado", M + col, l.y, { size: 7.5, color: GRIS, derecha: true });
-  let yTop = l.y - 13;
-  if (d.top.length === 0) l.texto("Sin ventas en el mes.", M, yTop, { color: GRIS });
+  l.texto("Top 5 productos", M, l.y, { size: 11, font: l.negrita });
+  l.texto("Compras vs. ventas", x2, l.y, { size: 11, font: l.negrita });
+  l.y -= 18;
+  bandaEncabezado(page, M, l.y, col);
+  bandaEncabezado(page, x2, l.y, col);
+  l.texto("Producto", M + 5, l.y, { size: 7.5, color: GRIS, font: l.negrita });
+  l.texto("Unid.", M + col - 70, l.y, { size: 7.5, color: GRIS, derecha: true, font: l.negrita });
+  l.texto("Facturado", M + col - 5, l.y, {
+    size: 7.5,
+    color: GRIS,
+    derecha: true,
+    font: l.negrita,
+  });
+  let yTop = l.y - 18;
+  if (d.top.length === 0) l.texto("Sin ventas en el mes.", M + 5, yTop, { color: GRIS });
   d.top.forEach((t, i) => {
-    l.texto(`${i + 1}. ${t.nombre}`, M, yTop, { max: col - 120 });
+    l.texto(`${i + 1}. ${t.nombre}`, M + 5, yTop, { max: col - 125 });
     l.texto(formatearNumero(t.unidades), M + col - 70, yTop, { derecha: true });
-    l.texto(formatearPesos(t.facturado), M + col, yTop, { derecha: true });
-    yTop -= 13;
+    l.texto(formatearPesos(t.facturado), M + col - 5, yTop, { derecha: true });
+    page.drawLine({
+      start: { x: M, y: yTop - 5 },
+      end: { x: M + col, y: yTop - 5 },
+      thickness: 0.3,
+      color: BORDE,
+    });
+    yTop -= 15;
   });
   const cv = d.compras;
   const filasCv: [string, string, string][] = [
@@ -206,38 +245,65 @@ export async function pdfResumenMensual(
       "",
     ],
   ];
-  l.texto("Concepto", x2, yTabla - 15, { size: 7.5, color: GRIS });
-  l.texto("Mes", x2 + col - 60, yTabla - 15, { size: 7.5, color: GRIS, derecha: true });
-  l.texto("vs. ant.", x2 + col, yTabla - 15, { size: 7.5, color: GRIS, derecha: true });
-  let yCv = yTabla - 28;
+  l.texto("Concepto", x2 + 5, yTabla - 18, { size: 7.5, color: GRIS, font: l.negrita });
+  l.texto("Mes", x2 + col - 60, yTabla - 18, {
+    size: 7.5,
+    color: GRIS,
+    derecha: true,
+    font: l.negrita,
+  });
+  l.texto("vs. ant.", x2 + col - 5, yTabla - 18, {
+    size: 7.5,
+    color: GRIS,
+    derecha: true,
+    font: l.negrita,
+  });
+  let yCv = yTabla - 36;
   for (const [a, b, c] of filasCv) {
-    l.texto(a, x2, yCv, { max: col - 150 });
-    l.texto(b, x2 + col - 60, yCv, {
-      derecha: true,
-      font: a.startsWith("Ventas -") ? l.negrita : l.normal,
-    });
-    l.texto(c, x2 + col, yCv, { derecha: true, color: GRIS });
-    yCv -= 13;
+    const total = a.startsWith("Ventas -");
+    if (total) {
+      page.drawLine({
+        start: { x: x2, y: yCv + 10 },
+        end: { x: x2 + col, y: yCv + 10 },
+        thickness: 0.8,
+        color: NEGRO,
+      });
+    }
+    l.texto(a, x2 + 5, yCv, { max: col - 150, font: total ? l.negrita : l.normal });
+    l.texto(b, x2 + col - 60, yCv, { derecha: true, font: total ? l.negrita : l.normal });
+    l.texto(c, x2 + col - 5, yCv, { derecha: true, color: GRIS });
+    if (!total) {
+      page.drawLine({
+        start: { x: x2, y: yCv - 5 },
+        end: { x: x2 + col, y: yCv - 5 },
+        thickness: 0.3,
+        color: BORDE,
+      });
+    }
+    yCv -= 15;
   }
-  l.y = Math.min(yTop, yCv) - 16;
+  l.y = Math.min(yTop, yCv) - 18;
 
   // --- Rendimiento del equipo ------------------------------------------------
-  l.texto("Rendimiento del equipo", M, l.y, { size: 10.5, font: l.negrita });
-  l.y -= 15;
+  l.texto("Rendimiento del equipo", M, l.y, { size: 11, font: l.negrita });
+  l.y -= 18;
   const cols = [
-    { t: "Vendedor", x: M, der: false },
+    { t: "Vendedor", x: M + 5, der: false },
     { t: "Ventas", x: M + util * 0.42, der: true },
     { t: "Unidades", x: M + util * 0.54, der: true },
     { t: "Facturado", x: M + util * 0.7, der: true },
     { t: "Ticket prom.", x: M + util * 0.85, der: true },
-    { t: "Comisión est.", x: M + util, der: true },
+    { t: "Comisión est.", x: M + util - 5, der: true },
   ];
-  cols.forEach((c) => l.texto(c.t, c.x, l.y, { size: 7.5, color: GRIS, derecha: c.der }));
-  l.y -= 13;
+  bandaEncabezado(page, M, l.y, util);
+  cols.forEach((c) =>
+    l.texto(c.t, c.x, l.y, { size: 7.5, color: GRIS, derecha: c.der, font: l.negrita }),
+  );
+  l.y -= 18;
   const equipo = d.equipo
     .filter((v) => v.cantidadVentas > 0)
-    .slice(0, Math.max(1, Math.floor((l.y - M - 20) / 13)));
-  if (equipo.length === 0) l.texto("Nadie vendió en el mes.", M, l.y, { color: GRIS });
+    .slice(0, Math.max(1, Math.floor((l.y - M - 20) / 15)));
+  if (equipo.length === 0) l.texto("Nadie vendió en el mes.", M + 5, l.y, { color: GRIS });
   for (const v of equipo) {
     const valores = [
       v.nombre,
@@ -254,7 +320,13 @@ export async function pdfResumenMensual(
         max: i === 0 ? util * 0.38 : undefined,
       }),
     );
-    l.y -= 13;
+    page.drawLine({
+      start: { x: M, y: l.y - 5 },
+      end: { x: M + util, y: l.y - 5 },
+      thickness: 0.3,
+      color: BORDE,
+    });
+    l.y -= 15;
   }
   return cerrarLienzo(l);
 }

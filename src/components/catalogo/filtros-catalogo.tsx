@@ -1,7 +1,7 @@
 "use client";
 
 import { SlidersHorizontal } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,6 +32,8 @@ interface FiltrosCatalogoProps {
   marcas: OpcionFiltro[];
   extras?: FiltroExtra[];
   placeholder?: string;
+  /** Control extra al principio de la barra (ej: un selector de vista). */
+  inicio?: ReactNode;
 }
 
 /**
@@ -43,6 +45,7 @@ export function FiltrosCatalogo({
   marcas,
   extras = [],
   placeholder,
+  inicio,
 }: FiltrosCatalogoProps) {
   const { params, actualizar } = useUrlParams();
   const [abierto, setAbierto] = useState(false);
@@ -100,18 +103,19 @@ export function FiltrosCatalogo({
   ).length;
 
   return (
-    <div className="mb-4 flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+    <div role="search" className="mb-4 flex flex-col gap-2 md:flex-row md:items-center">
+      {inicio}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <SearchInput placeholder={placeholder} className="flex-1" />
         <Button
           variant="secondary"
-          className="md:hidden"
+          className="shrink-0 md:hidden"
           onClick={() => setAbierto(true)}
           aria-label={`Filtros${activos ? ` (${activos} activos)` : ""}`}
         >
-          <SlidersHorizontal />
+          <SlidersHorizontal strokeWidth={1.75} />
           {activos > 0 && (
-            <span className="bg-primary text-primary-foreground rounded-control px-1.5 text-xs tabular-nums">
+            <span className="bg-foreground text-background rounded-inner px-1.5 text-xs tabular-nums">
               {activos}
             </span>
           )}

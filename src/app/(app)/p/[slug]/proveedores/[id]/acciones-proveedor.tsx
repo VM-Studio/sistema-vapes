@@ -39,9 +39,9 @@ export function AccionesProveedor({
   }
 
   return (
-    <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">
+    <div className="flex gap-2 max-md:[&>button]:flex-1">
       {puedeEliminar && proveedor.activo && (
-        <Button variant="secondary" className="text-danger" onClick={() => setBaja(true)}>
+        <Button variant="ghost" className="text-danger" onClick={() => setBaja(true)}>
           Desactivar
         </Button>
       )}

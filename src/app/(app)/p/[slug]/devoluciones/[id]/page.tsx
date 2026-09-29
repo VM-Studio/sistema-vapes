@@ -1,5 +1,4 @@
 import { EstadoDevolucion, Modulo } from "@prisma/client";
-import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,7 +6,9 @@ import { notFound } from "next/navigation";
 import { ESTADO_DEVOLUCION_UI } from "@/components/clientes/etiquetas";
 import { TelefonoWhatsApp } from "@/components/clientes/telefono-whatsapp";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
@@ -34,120 +35,109 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
 
   return (
     <>
-      <PageHeaderDevolucion
-        codigo={d.codigo}
-        estado={
-          <Badge variant={ESTADO_DEVOLUCION_UI[d.estado].variante}>
-            {ESTADO_DEVOLUCION_UI[d.estado].label}
-          </Badge>
+      <PageHeader
+        title={`Devolución ${d.codigo}`}
+        className="[&_h1]:font-mono"
+        breadcrumb={
+          <Breadcrumb
+            items={[
+              { label: "Devoluciones", href: rutaPanel(slug, "/devoluciones") },
+              { label: d.codigo },
+            ]}
+          />
         }
-        volver={rutaPanel(slug, "/devoluciones")}
-        accion={
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
+            <Badge variant={ESTADO_DEVOLUCION_UI[d.estado].variante}>
+              {ESTADO_DEVOLUCION_UI[d.estado].label}
+            </Badge>
+            <span>{formatearFechaHora(d.fecha)} · Garantía: se entregó una unidad nueva</span>
+          </span>
+        }
+        actions={
           !anulada && esOwner(ctx.usuario) ? <AnularDevolucion id={d.id} codigo={d.codigo} /> : null
         }
       />
       {anulada && (
-        <div className="bg-danger-soft text-danger-soft-foreground mb-4 rounded-card px-4 py-3 text-sm">
+        <div className="bg-danger-soft text-danger-soft-foreground rounded-card mb-4 px-4 py-3 text-sm">
           Anulada {d.anuladaAt ? `el ${formatearFechaHora(d.anuladaAt)}` : ""}
           {d.anuladaPor ? ` por ${d.anuladaPor}` : ""}. Motivo: {d.motivoAnulacion}. La unidad
           volvió al stock de {d.deposito.nombre}.
         </div>
       )}
-      <div className="grid gap-4 md:grid-cols-2">
-        <section className="bg-card rounded-card p-5">
-          <h2 className="mb-3 text-sm font-semibold">Datos</h2>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <div className="flex min-w-0 flex-col gap-4">
+          <SectionCard title="Observación">
+            <p className="text-body whitespace-pre-line" data-testid="observacion-devolucion">
+              {d.observacion}
+            </p>
+          </SectionCard>
+          <SectionCard
+            title="Unidades nuevas entregadas"
+            description={
+              anulada
+                ? "Se repusieron al stock al anular."
+                : `Se descontaron ${unidades} unidad${unidades === 1 ? "" : "es"} del stock de ${d.deposito.nombre}.`
+            }
+          >
+            <ul className="divide-border border-border bg-surface rounded-card flex flex-col divide-y border text-sm">
+              {d.items.map((i) => (
+                <li
+                  key={i.varianteId}
+                  className="flex items-center justify-between gap-3 px-4 py-3"
+                >
+                  <span className="min-w-0 font-medium">{i.titulo}</span>
+                  <span className="shrink-0 font-semibold tabular-nums">{i.cantidad}</span>
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
+        </div>
+        <SectionCard title="Datos">
+          <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3 text-sm">
             <dt className="text-muted">Fecha</dt>
-            <dd>{formatearFechaHora(d.fecha)}</dd>
+            <dd className="text-right">{formatearFechaHora(d.fecha)}</dd>
             <dt className="text-muted">Cliente</dt>
-            <dd>
+            <dd className="text-right">
               {verClientes ? (
                 <Link
                   href={rutaPanel(slug, `/clientes/${d.cliente.id}`)}
-                  className="text-primary font-medium hover:underline"
+                  className="text-foreground font-medium hover:underline"
                 >
                   {d.cliente.nombre}
                 </Link>
               ) : (
-                d.cliente.nombre
+                <span className="font-medium">{d.cliente.nombre}</span>
               )}
-              <TelefonoWhatsApp telefono={d.cliente.telefono} className="text-muted ml-2 text-xs" />
+            </dd>
+            <dt className="text-muted">Teléfono</dt>
+            <dd className="flex justify-end">
+              <TelefonoWhatsApp telefono={d.cliente.telefono} />
             </dd>
             <dt className="text-muted">Venta</dt>
-            <dd>
+            <dd className="text-right">
               {d.venta ? (
                 verVentas ? (
                   <Link
                     href={rutaPanel(slug, `/ventas/${d.venta.id}`)}
-                    className="text-primary font-semibold tabular-nums hover:underline"
+                    className="text-foreground font-mono font-semibold hover:underline"
                   >
                     {d.venta.codigo}
                   </Link>
                 ) : (
-                  <span className="tabular-nums">{d.venta.codigo}</span>
+                  <span className="font-mono font-semibold">{d.venta.codigo}</span>
                 )
               ) : (
                 <span className="text-muted">Sin vincular</span>
               )}
             </dd>
             <dt className="text-muted">Galpón</dt>
-            <dd>{d.deposito.nombre}</dd>
+            <dd className="text-right">{d.deposito.nombre}</dd>
             <dt className="text-muted">Registró</dt>
-            <dd>{d.usuario}</dd>
+            <dd className="text-right">{d.usuario}</dd>
           </dl>
-        </section>
-        <section className="bg-card rounded-card p-5">
-          <h2 className="mb-3 text-sm font-semibold">Observación</h2>
-          <p className="text-sm whitespace-pre-line" data-testid="observacion-devolucion">
-            {d.observacion}
-          </p>
-        </section>
+        </SectionCard>
       </div>
-      <section className="border-border bg-surface mt-4 rounded-card border p-5">
-        <h2 className="mb-1 text-sm font-semibold">Unidades nuevas entregadas</h2>
-        <p className="text-muted mb-3 text-xs">
-          {anulada
-            ? "Se repusieron al stock al anular."
-            : `Se descontaron ${unidades} unidad${unidades === 1 ? "" : "es"} del stock de ${d.deposito.nombre}.`}
-        </p>
-        <ul className="divide-border flex flex-col divide-y text-sm">
-          {d.items.map((i) => (
-            <li key={i.varianteId} className="flex items-center justify-between gap-3 py-2">
-              <span className="min-w-0">{i.titulo}</span>
-              <strong className="shrink-0 tabular-nums">{i.cantidad}</strong>
-            </li>
-          ))}
-        </ul>
-      </section>
     </>
-  );
-}
-
-function PageHeaderDevolucion({
-  codigo,
-  estado,
-  volver,
-  accion,
-}: {
-  codigo: string;
-  estado: React.ReactNode;
-  volver: string;
-  accion: React.ReactNode;
-}) {
-  return (
-    <div className="mb-6 flex flex-col gap-4 md:mb-8 md:flex-row md:items-end md:justify-between">
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <h1 className="flex items-center gap-3 text-2xl leading-tight font-semibold tracking-tight tabular-nums md:text-3xl">
-          Devolución {codigo} {estado}
-        </h1>
-        <p className="text-muted text-sm md:text-base">Garantía: se entregó una unidad nueva</p>
-      </div>
-      <div className="flex flex-wrap gap-2 md:flex-nowrap [&>*]:flex-1 md:[&>*]:flex-none">
-        <Link href={volver} className={buttonVariants({ variant: "secondary" })}>
-          <ArrowLeft strokeWidth={1.75} /> Devoluciones
-        </Link>
-        {accion}
-      </div>
-    </div>
   );
 }

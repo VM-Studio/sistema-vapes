@@ -30,28 +30,27 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
   );
 
   return (
-    <div className="mx-auto flex max-w-lg flex-col items-center gap-5 py-4 text-center">
-      <CircleCheck className="text-success size-14" strokeWidth={1.75} aria-hidden />
+    <div className="mx-auto flex max-w-lg flex-col items-center gap-6 py-4 text-center md:py-8">
+      <span className="bg-success-soft rounded-circle flex size-14 items-center justify-center">
+        <CircleCheck className="text-success size-7" strokeWidth={1.75} aria-hidden />
+      </span>
       <div className="flex flex-col gap-1">
-        <p className="text-muted text-sm">ID de venta</p>
-        <p
-          className="text-4xl font-bold tracking-tight tabular-nums md:text-5xl"
-          data-testid="id-venta"
-        >
+        <p className="text-muted text-small font-medium">ID de venta</p>
+        <p className="text-display font-mono font-semibold" data-testid="id-venta">
           {venta.codigo}
         </p>
       </div>
       <div className="flex flex-col gap-0.5">
-        <p className="text-2xl font-semibold tabular-nums">{formatearPesos(venta.total)}</p>
+        <p className="text-h1 font-semibold tabular-nums">{formatearPesos(venta.total)}</p>
         <p className="text-muted text-sm">
           {ETIQUETA_MEDIO_PAGO[venta.medioPago]} · {venta.deposito.nombre}
         </p>
       </div>
-      <div className="border-border w-full rounded-card border p-4 text-left">
+      <div className="bg-card rounded-card w-full p-4 text-left md:p-5">
         <p className="font-semibold">
           {venta.cliente.nombre}
           {venta.clienteNuevo && (
-            <span className="text-primary text-sm font-normal"> · cliente nuevo</span>
+            <span className="text-muted text-sm font-normal"> · cliente nuevo</span>
           )}
         </p>
         <p className="text-muted text-sm tabular-nums">{telefonoVisible(venta.cliente.telefono)}</p>
@@ -91,7 +90,10 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
           <MessageCircle strokeWidth={1.75} /> Enviar resumen por WhatsApp
         </a>
       </div>
-      <Link href={ruta(`/ventas/${venta.id}`)} className="text-primary text-sm hover:underline">
+      <Link
+        href={ruta(`/ventas/${venta.id}`)}
+        className="text-foreground text-sm font-medium underline-offset-4 hover:underline"
+      >
         Ver el detalle de la venta
       </Link>
     </div>

@@ -14,6 +14,7 @@ import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import { diasDelMes, mesResumen, nombreMes } from "@/server/reportes/filtros";
 import { periodoDelMes } from "@/server/reportes/resumen-mensual";
 
+import { BarraFiltros } from "../_componentes/barra-filtros";
 import { CabeceraReporte } from "../_componentes/cabecera-reporte";
 import { paramsPlanos } from "../_componentes/params";
 import { SelectorMes } from "./selector-mes";
@@ -41,14 +42,14 @@ export default async function ResumenMensualPage({
         params={{ mes }}
         excel={false}
       />
-      <div className="mb-6">
+      <BarraFiltros>
         <SelectorMes mes={mes} max={diaEn(new Date(), ZONA_DEFAULT).slice(0, 7)} />
-      </div>
-      <div className="flex flex-col gap-4 md:gap-6">
+      </BarraFiltros>
+      <div className="flex flex-col gap-4">
         <Suspense key={`k${mes}`} fallback={<SkeletonKpis n={6} />}>
           <SeccionKpis {...props} />
         </Suspense>
-        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Suspense key={`t${mes}`} fallback={<SkeletonTarjeta />}>
             <SeccionTop {...props} que="productos" verProductos={false} />
           </Suspense>

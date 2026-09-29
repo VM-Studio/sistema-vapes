@@ -1,9 +1,10 @@
-import { KeyRound } from "lucide-react";
+import { KeyRound, MonitorSmartphone } from "lucide-react";
 import type { Metadata } from "next";
 
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
 import { esOwner } from "@/lib/permisos";
 import { dispositivo } from "@/lib/dispositivo";
 import { requirePaginaUsuario } from "@/server/auth/permissions";
@@ -21,15 +22,15 @@ export default async function CuentaPage() {
   const sesiones = await listarSesionesActivas(usuario.id);
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
-      <PageHeader title="Mi cuenta" subtitle="Tus datos y tu contraseña" />
+    <>
+      <PageHeader title="Mi cuenta" subtitle="Tus datos, tu contraseña y tus sesiones" />
 
       {usuario.debeCambiarPassword && (
         <div
           role="alert"
-          className="border-warning-soft-foreground/20 bg-warning-soft text-warning-soft-foreground flex gap-3 rounded-control border p-4 text-sm"
+          className="bg-warning-soft text-warning-soft-foreground rounded-card mb-4 flex gap-3 p-4 text-sm"
         >
-          <KeyRound className="mt-0.5 size-5 shrink-0" aria-hidden />
+          <KeyRound className="mt-0.5 size-5 shrink-0" strokeWidth={1.75} aria-hidden />
           <p>
             <strong className="font-semibold">
               Tenés que cambiar tu contraseña para continuar.
@@ -39,50 +40,63 @@ export default async function CuentaPage() {
         </div>
       )}
 
-      <Card>
-        <CardContent className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-          <span className="text-muted">Nombre</span>
-          <span className="font-medium">{usuario.nombre}</span>
-          <span className="text-muted">Email</span>
-          <span className="font-medium break-all">{usuario.email}</span>
-          <span className="text-muted">Rol</span>
-          <span>
-            <Badge variant={esOwner(usuario) ? "primary" : "neutral"}>
-              {esOwner(usuario) ? "Dueño" : "Empleado"}
-            </Badge>
-          </span>
-        </CardContent>
-      </Card>
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-4">
+          <SectionCard title="Datos">
+            <div className="flex items-center gap-3">
+              <Avatar nombre={usuario.nombre} className="size-12 text-sm" />
+              <div className="flex min-w-0 flex-col">
+                <p className="truncate font-medium">{usuario.nombre}</p>
+                <p className="text-muted text-small break-all">{usuario.email}</p>
+              </div>
+            </div>
+            <dl className="text-small mt-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-3">
+              <dt className="text-muted">Rol</dt>
+              <dd>
+                <Badge
+                  variant={esOwner(usuario) ? "primary" : "neutral"}
+                  className={esOwner(usuario) ? undefined : "bg-surface-3"}
+                >
+                  {esOwner(usuario) ? "Dueño" : "Empleado"}
+                </Badge>
+              </dd>
+            </dl>
+          </SectionCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Sesiones abiertas</CardTitle>
-          <CardDescription>Dispositivos donde tu usuario está ingresado.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <ul className="divide-border flex flex-col divide-y text-sm">
-            {sesiones.map((s) => (
-              <li key={s.id} className="flex flex-wrap justify-between gap-2 py-2">
-                <span className="min-w-0 truncate">{dispositivo(s.userAgent)}</span>
-                <span className="text-muted text-xs">
-                  {s.ip ?? "IP desconocida"} · último uso {formatearFechaHora(s.ultimoUso)}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <CerrarTodas />
-        </CardContent>
-      </Card>
+          <SectionCard
+            title="Sesiones abiertas"
+            description="Dispositivos donde tu usuario está ingresado."
+            contentClassName="flex flex-col gap-4"
+          >
+            <ul className="border-border bg-surface divide-border rounded-card max-h-[28rem] divide-y overflow-y-auto overscroll-contain border">
+              {sesiones.map((s) => (
+                <li key={s.id} className="flex items-start gap-3 p-4">
+                  <MonitorSmartphone
+                    className="text-muted mt-0.5 size-5 shrink-0"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{dispositivo(s.userAgent)}</p>
+                    <p className="text-muted text-small">
+                      {s.ip ?? "IP desconocida"} · último uso {formatearFechaHora(s.ultimoUso)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <CerrarTodas />
+          </SectionCard>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Cambiar contraseña</CardTitle>
-          <CardDescription>Te vamos a pedir la actual para confirmar que sos vos.</CardDescription>
-        </CardHeader>
-        <CardContent>
+        <SectionCard
+          title="Cambiar contraseña"
+          description="Te vamos a pedir la actual para confirmar que sos vos."
+          className={usuario.debeCambiarPassword ? "order-first lg:order-none" : undefined}
+        >
           <CambiarPasswordForm />
-        </CardContent>
-      </Card>
-    </div>
+        </SectionCard>
+      </div>
+    </>
   );
 }

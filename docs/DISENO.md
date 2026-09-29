@@ -167,3 +167,17 @@ ventas en este período" y los gráficos con placeholder.
   maskable (zona segura 80%, fondo blanco), apple 180, splash de iPhone/iPad,
   screenshots del manifest y la imagen Open Graph.
 - Sin logo, un panel muestra su nombre tipografiado (nunca iniciales).
+
+## Contraste (WCAG AA, texto normal ≥ 4,5:1)
+
+| Texto | Sobre tarjeta `#F4F5F7` | Sobre hover `#EEF0F3` | Sobre blanco |
+| --- | --- | --- | --- |
+| Principal `#0A0A0A` | 18,15 | 17,34 | 19,80 |
+| Secundario `#525252` | 7,16 | 6,84 | 7,81 |
+| Terciario `#6D6D6D` | 4,74 | 4,53 | 5,17 |
+| Éxito `#3E7A56` | 4,67 | 4,46* | 5,09 |
+| Error `#B04A45` | 4,92 | 4,70 | 5,37 |
+| Alerta `#7D5816` | 5,87 | 5,61 | 6,40 |
+
+Badges sobre su fondo suave: éxito 5,99 · error 6,47 · alerta 5,74.
+\* El verde de éxito no se usa como texto sobre el hover de tarjeta.

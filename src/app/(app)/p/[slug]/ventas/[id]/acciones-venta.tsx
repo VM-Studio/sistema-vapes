@@ -49,19 +49,13 @@ export function AnularVenta({
   return (
     <>
       <Button
-        variant="secondary"
-        className="text-danger"
+        variant="danger"
         disabled={bloqueada}
         title={bloqueada ? "Tiene devoluciones registradas: anulalas primero" : undefined}
         onClick={() => setAbierto(true)}
       >
         <Ban strokeWidth={1.75} /> Anular venta
       </Button>
-      {bloqueada && (
-        <p className="text-muted text-xs">
-          Tiene devoluciones registradas: para anularla, primero anulá las devoluciones.
-        </p>
-      )}
       <Dialog
         open={abierto}
         onOpenChange={(o) => !enviando && setAbierto(o)}

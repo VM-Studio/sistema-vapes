@@ -50,11 +50,8 @@ export function ComisionForm({
   }
 
   return (
-    <form
-      onSubmit={guardar}
-      className="border-border bg-surface flex flex-col gap-4 rounded-card border p-5"
-    >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <form onSubmit={guardar} className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
         <Input
           label="Comisión unitaria %"
           inputMode="decimal"
@@ -72,13 +69,13 @@ export function ComisionForm({
           error={errores.comisionMayoristaPct?.[0]}
         />
       </div>
-      <p className="text-muted flex items-start gap-2 text-sm">
+      <p className="text-muted text-small flex items-start gap-2">
         <Info className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
         Es orientativa: el dashboard muestra una comisión estimada sobre lo que vendió en cada
         período. No genera pagos ni movimientos.
       </p>
-      <div>
-        <Button type="submit" disabled={!hayCambios || guardando}>
+      <div className="flex justify-end">
+        <Button type="submit" variant="secondary" disabled={!hayCambios || guardando}>
           {guardando ? "Guardando…" : "Guardar comisión"}
         </Button>
       </div>
