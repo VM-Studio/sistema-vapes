@@ -17,7 +17,7 @@ export function LogoTarjeta({
   return (
     <div
       className={cn(
-        "flex h-[120px] items-center justify-center overflow-hidden rounded-[var(--radius-control)] bg-white px-6 py-4",
+        "flex h-[120px] items-center justify-center overflow-hidden rounded-control bg-white px-6 py-4",
         className,
       )}
     >

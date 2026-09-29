@@ -129,7 +129,7 @@ function TarjetaProveedor({
   return (
     <li
       aria-label={`${p.nombre} · ${p.nombreTienda}`}
-      className="border-border bg-surface shadow-card flex flex-col gap-3 rounded-2xl border p-4"
+      className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -174,7 +174,7 @@ function TarjetaProveedor({
         aria-controls={panelId}
         onClick={() => setAbierta((a) => !a)}
         disabled={p.cantidadProductos === 0}
-        className="border-border hover:bg-surface-2 flex min-h-11 items-center justify-between gap-2 rounded-xl border px-3 text-sm font-medium disabled:opacity-60"
+        className="border-border hover:bg-surface-2 flex min-h-11 items-center justify-between gap-2 rounded-control border px-3 text-sm font-medium disabled:opacity-60"
       >
         <span>
           {p.cantidadProductos === 0

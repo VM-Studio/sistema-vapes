@@ -65,7 +65,7 @@ export function SaboresProducto({
       </h2>
 
       {/* Desktop */}
-      <div className="border-border bg-surface hidden overflow-x-auto rounded-2xl border md:block">
+      <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
         <table className="w-full text-sm">
           <caption className="sr-only">Sabores</caption>
           <thead className="border-border bg-surface-2/60 text-muted border-b text-xs tracking-wide uppercase">
@@ -150,7 +150,7 @@ export function SaboresProducto({
       {/* Mobile */}
       <ul className="flex flex-col gap-2 md:hidden">
         {producto.sabores.map((s) => (
-          <li key={s.id} className="border-border bg-surface rounded-2xl border p-4">
+          <li key={s.id} className="border-border bg-surface rounded-card border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-medium">{titulo(s)}</p>
@@ -169,13 +169,13 @@ export function SaboresProducto({
               {depositos.map((d) => (
                 <span
                   key={d.id}
-                  className="bg-surface-2 rounded-[var(--radius-control)] px-2.5 py-1 text-xs"
+                  className="bg-surface-2 rounded-control px-2.5 py-1 text-xs"
                 >
                   {d.nombre}{" "}
                   <strong className="tabular-nums">{s.stockPorDeposito[d.id] ?? 0}</strong>
                 </span>
               ))}
-              <span className="bg-surface-2 text-muted rounded-[var(--radius-control)] px-2.5 py-1 text-xs">
+              <span className="bg-surface-2 text-muted rounded-control px-2.5 py-1 text-xs">
                 mín. {s.stockMinimo}
               </span>
             </div>
@@ -256,14 +256,14 @@ function CodigosDialog({
       }
     >
       <ul className="flex flex-col gap-1.5 text-sm">
-        <li className="bg-surface-2 flex items-center justify-between gap-2 rounded-xl px-3 py-2">
+        <li className="bg-surface-2 flex items-center justify-between gap-2 rounded-control px-3 py-2">
           <span className="font-mono">{sabor?.codigoBarras ?? "Sin código principal"}</span>
           <Badge variant="primary">Principal</Badge>
         </li>
         {sabor?.codigosAlternativos.map((c) => (
           <li
             key={c.id}
-            className="border-border flex items-center justify-between gap-2 rounded-xl border px-3 py-1.5"
+            className="border-border flex items-center justify-between gap-2 rounded-control border px-3 py-1.5"
           >
             <span className="min-w-0">
               <span className="block font-mono">{c.codigo}</span>

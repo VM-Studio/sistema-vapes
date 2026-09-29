@@ -62,7 +62,7 @@ export function ClientesView({
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
         <SearchInput placeholder="Nombre o teléfono" className="flex-1" />
         <p
-          className="bg-primary-soft text-primary-soft-foreground inline-flex items-center gap-2 self-start rounded-xl px-4 py-2.5 text-sm font-medium md:self-auto"
+          className="bg-primary-soft text-primary-soft-foreground inline-flex items-center gap-2 self-start rounded-control px-4 py-2.5 text-sm font-medium md:self-auto"
           data-testid="clientes-nuevos-mes"
         >
           <UserPlus className="size-4" strokeWidth={1.75} aria-hidden />
@@ -140,7 +140,7 @@ export function ClientesView({
           },
         ]}
         renderMobile={(c) => (
-          <div className="border-border bg-surface shadow-card flex items-center gap-3 rounded-2xl border p-4">
+          <div className="border-border bg-surface flex items-center gap-3 rounded-card border p-4">
             <Link href={ruta(`/clientes/${c.id}`)} className="min-w-0 flex-1">
               <span className="flex items-center gap-2">
                 <span className="truncate font-medium">{c.nombre}</span>

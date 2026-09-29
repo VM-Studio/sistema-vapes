@@ -131,7 +131,7 @@ export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
             stroke={ACTUAL}
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }}
+            activeDot={{ r: 5, stroke: "var(--background)", strokeWidth: 2 }}
             connectNulls={false}
             isAnimationActive={false}
           />

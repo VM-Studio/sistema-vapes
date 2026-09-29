@@ -12,7 +12,7 @@ export function Avatar({
   className?: string;
 }) {
   const clase = cn(
-    "bg-surface-3 text-foreground flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-semibold",
+    "bg-surface-3 text-foreground flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-circle text-xs font-semibold",
     className,
   );
   if (src) return <img src={src} alt="" aria-hidden className={cn(clase, "object-cover")} />;

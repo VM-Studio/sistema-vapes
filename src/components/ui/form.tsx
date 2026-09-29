@@ -112,7 +112,7 @@ export function Form<TIn extends FieldValues, TOut>({
         {errorGeneral && (
           <div
             role="alert"
-            className="bg-danger-soft text-danger-soft-foreground rounded-[var(--radius-control)] px-4 py-3 text-sm"
+            className="bg-danger-soft text-danger-soft-foreground rounded-control px-4 py-3 text-sm"
           >
             {errorGeneral}
           </div>

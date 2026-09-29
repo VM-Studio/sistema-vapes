@@ -140,7 +140,7 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
         renderMobile={(t) => (
           <Link
             href={`${PATH}/${t.id}`}
-            className="border-border bg-surface block rounded-2xl border p-4"
+            className="border-border bg-surface block rounded-card border p-4"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold">#{t.numero}</span>

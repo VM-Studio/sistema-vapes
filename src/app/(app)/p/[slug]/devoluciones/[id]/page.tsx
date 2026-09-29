@@ -47,14 +47,14 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
         }
       />
       {anulada && (
-        <div className="bg-danger-soft text-danger-soft-foreground mb-4 rounded-2xl px-4 py-3 text-sm">
+        <div className="bg-danger-soft text-danger-soft-foreground mb-4 rounded-card px-4 py-3 text-sm">
           Anulada {d.anuladaAt ? `el ${formatearFechaHora(d.anuladaAt)}` : ""}
           {d.anuladaPor ? ` por ${d.anuladaPor}` : ""}. Motivo: {d.motivoAnulacion}. La unidad
           volvió al stock de {d.deposito.nombre}.
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="border-border bg-surface shadow-card rounded-2xl border p-5">
+        <section className="bg-card rounded-card p-5">
           <h2 className="mb-3 text-sm font-semibold">Datos</h2>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             <dt className="text-muted">Fecha</dt>
@@ -96,14 +96,14 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
             <dd>{d.usuario}</dd>
           </dl>
         </section>
-        <section className="border-border bg-surface shadow-card rounded-2xl border p-5">
+        <section className="bg-card rounded-card p-5">
           <h2 className="mb-3 text-sm font-semibold">Observación</h2>
           <p className="text-sm whitespace-pre-line" data-testid="observacion-devolucion">
             {d.observacion}
           </p>
         </section>
       </div>
-      <section className="border-border bg-surface shadow-card mt-4 rounded-2xl border p-5">
+      <section className="border-border bg-surface mt-4 rounded-card border p-5">
         <h2 className="mb-1 text-sm font-semibold">Unidades nuevas entregadas</h2>
         <p className="text-muted mb-3 text-xs">
           {anulada

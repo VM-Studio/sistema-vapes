@@ -45,7 +45,7 @@ export function CabeceraProducto({
   return (
     <header className="mb-5 flex flex-col gap-4">
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
-        <div className="border-border bg-surface-2 flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border md:size-24">
+        <div className="border-border bg-surface-2 flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-card border md:size-24">
           {producto.imagenUrl ? (
             // URL externa arbitraria cargada por el usuario: sin next/image (requeriría whitelist de dominios).
             // eslint-disable-next-line @next/next/no-img-element
@@ -108,14 +108,14 @@ export function CabeceraProducto({
 
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {depositos.map((d) => (
-          <div key={d.id} className="border-border bg-surface rounded-2xl border p-3">
+          <div key={d.id} className="border-border bg-surface rounded-card border p-3">
             <dt className="text-muted text-xs">{d.nombre}</dt>
             <dd className="text-2xl font-bold tabular-nums">
               {formatearNumero(producto.stockPorDeposito[d.id] ?? 0)}
             </dd>
           </div>
         ))}
-        <div className="bg-primary-soft text-primary-soft-foreground rounded-2xl p-3">
+        <div className="bg-primary-soft text-primary-soft-foreground rounded-card p-3">
           <dt className="text-xs">Total</dt>
           <dd className="text-2xl font-bold tabular-nums">
             {formatearNumero(producto.stockTotal)}

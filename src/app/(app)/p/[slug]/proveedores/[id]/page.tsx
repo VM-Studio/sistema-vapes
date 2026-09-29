@@ -167,7 +167,7 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
               },
             ]}
             renderMobile={(c) => (
-              <div className="border-border bg-surface rounded-2xl border p-4">
+              <div className="border-border bg-surface rounded-card border p-4">
                 <div className="flex items-center justify-between gap-2">
                   {verCompras ? (
                     <Link href={ruta(`/compras/${c.id}`)} className="text-primary font-semibold">

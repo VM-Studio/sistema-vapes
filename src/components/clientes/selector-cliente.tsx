@@ -72,7 +72,7 @@ export function SelectorCliente({
           <button
             type="button"
             onClick={() => setModo("nuevo")}
-            className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border-2 p-4 text-lg font-semibold transition-colors"
+            className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-24 flex-col items-center justify-center gap-2 rounded-card border-2 p-4 text-lg font-semibold transition-colors"
           >
             <UserPlus className="text-primary size-7" strokeWidth={1.75} aria-hidden />
             Sí
@@ -80,7 +80,7 @@ export function SelectorCliente({
           <button
             type="button"
             onClick={() => setModo("buscar")}
-            className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border-2 p-4 text-lg font-semibold transition-colors"
+            className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-24 flex-col items-center justify-center gap-2 rounded-card border-2 p-4 text-lg font-semibold transition-colors"
           >
             <Users className="text-primary size-7" strokeWidth={1.75} aria-hidden />
             No
@@ -136,10 +136,10 @@ function ClienteSeleccionado({
 }) {
   return (
     <div
-      className="border-primary bg-primary-soft flex items-center gap-3 rounded-2xl border p-4"
+      className="border-primary bg-primary-soft flex items-center gap-3 rounded-card border p-4"
       data-testid="cliente-seleccionado"
     >
-      <span className="bg-primary text-primary-foreground flex size-11 shrink-0 items-center justify-center rounded-xl">
+      <span className="bg-primary text-primary-foreground flex size-11 shrink-0 items-center justify-center rounded-control">
         <Check className="size-5" strokeWidth={1.75} aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
@@ -238,7 +238,7 @@ function ClienteNuevo({
       {existente && (
         <div
           role="alert"
-          className="bg-warning-soft text-warning-soft-foreground flex flex-col gap-3 rounded-xl p-4 text-sm"
+          className="bg-warning-soft text-warning-soft-foreground flex flex-col gap-3 rounded-control p-4 text-sm"
         >
           <p>
             Ese teléfono es de <strong>{existente.nombre}</strong>. ¿Querés seleccionarlo?
@@ -329,7 +329,7 @@ function BuscadorClientes({
       </div>
       {error && <p className="text-danger text-sm">{error}</p>}
       {resultados && resultados.length === 0 && !cargando && (
-        <p className="text-muted rounded-xl border border-dashed px-4 py-5 text-center text-sm">
+        <p className="text-muted rounded-control border border-dashed px-4 py-5 text-center text-sm">
           No hay clientes con “{q.trim()}”.
         </p>
       )}
@@ -340,9 +340,9 @@ function BuscadorClientes({
               <button
                 type="button"
                 onClick={() => onElegir({ id: c.id, nombre: c.nombre, telefono: c.telefono })}
-                className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-14 w-full items-center gap-3 rounded-2xl border p-3 text-left transition-colors"
+                className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-14 w-full items-center gap-3 rounded-card border p-3 text-left transition-colors"
               >
-                <span className="bg-surface-2 text-muted flex size-10 shrink-0 items-center justify-center rounded-xl">
+                <span className="bg-surface-2 text-muted flex size-10 shrink-0 items-center justify-center rounded-control">
                   <UserRound className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">

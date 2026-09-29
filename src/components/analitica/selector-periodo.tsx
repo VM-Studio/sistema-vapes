@@ -27,7 +27,7 @@ const PRESETS = [
 ] as const;
 
 const chip =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-control border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
 const chipActivo = "border-foreground bg-foreground text-background";
 const chipInactivo = "border-border bg-surface text-muted hover:border-input hover:text-foreground";
 
@@ -107,7 +107,7 @@ export function SelectorPeriodo({
       </ChipRow>
 
       {abierto && (
-        <div className="border-border bg-surface flex flex-col gap-3 rounded-2xl border p-4">
+        <div className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4">
           <div className="flex flex-wrap gap-2" role="group" aria-label="Rangos rápidos">
             {PRESETS.map((p) => (
               <Link

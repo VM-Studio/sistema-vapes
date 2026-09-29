@@ -43,7 +43,7 @@ export function MenuFila({
 
   const claseItem = (peligro?: boolean) =>
     cn(
-      "flex min-h-10 w-full items-center gap-2.5 rounded-[4px] px-2.5 text-left text-sm transition-colors hover:bg-surface-2",
+      "flex min-h-10 w-full items-center gap-2.5 rounded-inner px-2.5 text-left text-sm transition-colors hover:bg-surface-2",
       peligro ? "text-danger" : "text-foreground",
     );
 
@@ -55,14 +55,14 @@ export function MenuFila({
         aria-haspopup="menu"
         aria-expanded={abierto}
         onClick={() => setAbierto((a) => !a)}
-        className="text-muted hover:bg-surface-2 hover:text-foreground flex size-9 items-center justify-center rounded-[var(--radius-control)]"
+        className="text-muted hover:bg-surface-2 hover:text-foreground flex size-9 items-center justify-center rounded-control"
       >
         <Ellipsis className="size-5" strokeWidth={1.75} aria-hidden />
       </button>
       {abierto && (
         <div
           role="menu"
-          className="bg-surface shadow-pop border-border absolute top-[calc(100%+4px)] right-0 z-40 min-w-44 rounded-[var(--radius-control)] border p-1"
+          className="bg-surface shadow-pop border-border absolute top-[calc(100%+4px)] right-0 z-40 min-w-44 rounded-control border p-1"
         >
           {acciones.map((a) => {
             const Icono = a.icon;

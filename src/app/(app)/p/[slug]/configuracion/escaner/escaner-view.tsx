@@ -246,7 +246,7 @@ function ProbarPistola({ config, cambiado }: { config: ConfigEscaner; cambiado: 
                 key={i}
                 title={`${ms} ms`}
                 className={cn(
-                  "w-1.5 rounded-sm",
+                  "w-1.5 rounded-inner",
                   ms <= config.maxIntervalMs ? "bg-success" : "bg-danger",
                 )}
                 style={{
@@ -257,7 +257,7 @@ function ProbarPistola({ config, cambiado }: { config: ConfigEscaner; cambiado: 
           </div>
         )}
         {lecturas.length === 0 ? (
-          <div className="border-border text-muted flex flex-col items-center gap-2 rounded-xl border border-dashed p-6 text-sm">
+          <div className="border-border text-muted flex flex-col items-center gap-2 rounded-control border border-dashed p-6 text-sm">
             <ScanBarcode className="size-8" aria-hidden />
             Esperando un escaneo…
           </div>
@@ -267,7 +267,7 @@ function ProbarPistola({ config, cambiado }: { config: ConfigEscaner; cambiado: 
               <li
                 key={l.id}
                 className={cn(
-                  "flex items-start gap-2 rounded-lg p-2",
+                  "flex items-start gap-2 rounded-control p-2",
                   l.ok ? "bg-success-soft" : "bg-danger-soft",
                 )}
               >

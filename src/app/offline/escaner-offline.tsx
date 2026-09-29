@@ -82,7 +82,7 @@ export function EscanerOffline() {
   if (catalogos === undefined) return null;
   if (!meta)
     return (
-      <p className="bg-card text-muted rounded-2xl p-6 text-center text-sm">
+      <p className="bg-card text-muted rounded-card p-6 text-center text-sm">
         Este celular todavía no tiene ningún catálogo guardado. Entrá una vez al panel con conexión
         y queda listo para consultar sin señal.
       </p>
@@ -102,7 +102,7 @@ export function EscanerOffline() {
         // Navegación completa a propósito: sale de la página de respaldo del service worker.
         <a
           href={rutaPanel(meta.panelSlug)}
-          className="bg-success-soft text-success-soft-foreground flex min-h-11 items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium"
+          className="bg-success-soft text-success-soft-foreground flex min-h-11 items-center gap-2 rounded-control px-4 py-3 text-sm font-medium"
         >
           <Wifi className="size-4" strokeWidth={1.75} aria-hidden /> Volvió la conexión: tocá para
           abrir la app
@@ -144,7 +144,7 @@ export function EscanerOffline() {
         </p>
       )}
       {ultima && (
-        <section aria-label="Producto" className="bg-card rounded-2xl p-4">
+        <section aria-label="Producto" className="bg-card rounded-card p-4">
           <p className="text-lg font-semibold">{ultima.titulo}</p>
           <p className="text-muted text-sm">
             {formatearPesos(ultima.precioVenta)} · En {dep(depositoId)}:{" "}

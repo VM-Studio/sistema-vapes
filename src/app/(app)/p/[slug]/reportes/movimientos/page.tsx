@@ -124,7 +124,7 @@ export default async function ReporteMovimientosPage({
           },
         ]}
         renderMobile={(x) => (
-          <div className="border-border bg-surface flex items-center justify-between gap-2 rounded-2xl border p-4">
+          <div className="border-border bg-surface flex items-center justify-between gap-2 rounded-card border p-4">
             <div className="flex flex-col gap-1">
               <Badge variant={TIPO_MOVIMIENTO_UI[x.tipo].variante} className="w-fit">
                 {TIPO_MOVIMIENTO_UI[x.tipo].label}

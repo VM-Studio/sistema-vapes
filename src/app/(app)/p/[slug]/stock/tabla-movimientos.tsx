@@ -57,7 +57,7 @@ export function TablaMovimientos({
 
   return (
     <>
-      <div className="border-border bg-surface hidden overflow-x-auto rounded-2xl border md:block">
+      <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
         <table className="w-full text-sm">
           <caption className="sr-only">Movimientos de stock</caption>
           <thead className="border-border bg-surface-2/60 text-muted border-b text-xs tracking-wide uppercase">
@@ -127,7 +127,7 @@ export function TablaMovimientos({
 
       <ul className="flex flex-col gap-2 md:hidden">
         {movimientos.map((m) => (
-          <li key={m.id} className="border-border bg-surface rounded-2xl border p-4">
+          <li key={m.id} className="border-border bg-surface rounded-card border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <Badge variant={TIPO_MOVIMIENTO_UI[m.tipo].variante}>

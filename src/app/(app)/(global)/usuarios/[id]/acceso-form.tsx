@@ -119,7 +119,7 @@ export function AccesoForm({
   return (
     <div className="flex flex-col gap-4">
       {esOwner && (
-        <p className="bg-primary-soft text-primary-soft-foreground flex items-start gap-2 rounded-xl p-4 text-sm">
+        <p className="bg-primary-soft text-primary-soft-foreground flex items-start gap-2 rounded-control p-4 text-sm">
           <ShieldCheck className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
           Es dueño: accede a todos los sistemas y a todos sus módulos. Los permisos no se pueden
           restringir.
@@ -130,7 +130,7 @@ export function AccesoForm({
         return (
           <section
             key={panel.id}
-            className="border-border bg-surface rounded-2xl border p-4 md:p-5"
+            className="border-border bg-surface rounded-card border p-4 md:p-5"
           >
             <div className="flex items-center gap-3">
               <LogoPanel panel={panel} size={36} />

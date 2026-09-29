@@ -148,7 +148,7 @@ export function ClasificacionView({ tipo, filas }: { tipo: Tipo; filas: Clasific
           },
         ]}
         renderMobile={(f) => (
-          <div className="border-border bg-surface rounded-xl border p-4">
+          <div className="border-border bg-surface rounded-control border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-medium">{f.nombre}</span>

@@ -131,7 +131,7 @@ export function ProductosProveedor({
       ) : (
         <ul
           aria-label="Productos del proveedor"
-          className="divide-border border-border bg-surface shadow-card flex flex-col divide-y rounded-2xl border"
+          className="divide-border border-border bg-surface flex flex-col divide-y rounded-card border"
         >
           {filas.map((f) => {
             const cambio =

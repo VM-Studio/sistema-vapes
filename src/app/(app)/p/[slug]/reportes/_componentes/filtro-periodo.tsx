@@ -20,7 +20,7 @@ export function FiltroPeriodo({
   const { actualizar, pendiente } = useUrlParams();
   const chip = (activo: boolean) =>
     cn(
-      "inline-flex min-h-10 shrink-0 items-center rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors",
+      "inline-flex min-h-10 shrink-0 items-center rounded-circle border px-4 text-sm font-medium whitespace-nowrap transition-colors",
       activo
         ? "border-accent bg-accent text-accent-foreground"
         : "border-border bg-surface text-foreground hover:border-input hover:bg-surface-2",

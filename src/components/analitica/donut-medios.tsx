@@ -31,7 +31,7 @@ export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
               innerRadius="62%"
               outerRadius="100%"
               paddingAngle={datos.filter((d) => d.total > 0).length > 1 ? 2 : 0}
-              stroke="#fff"
+              stroke="var(--background)"
               strokeWidth={2}
               isAnimationActive={false}
             >
@@ -54,7 +54,7 @@ export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
         {datos.map((d, i) => (
           <li key={d.etiqueta} className="flex items-center gap-2">
             <span
-              className="size-2.5 shrink-0 rounded-full"
+              className="size-2.5 shrink-0 rounded-circle"
               style={{ background: COLORES[i % COLORES.length] }}
               aria-hidden
             />

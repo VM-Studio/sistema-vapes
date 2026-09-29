@@ -173,7 +173,7 @@ export function VariantePicker({
         <ul
           id={listaId}
           role="listbox"
-          className="border-border bg-surface absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-xl border p-1 shadow-lg"
+          className="border-border bg-surface absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-control border p-1 shadow-pop"
         >
           {resultados.length === 0 ? (
             <li className="text-muted px-3 py-3 text-sm">Sin resultados para “{q.trim()}”.</li>
@@ -192,7 +192,7 @@ export function VariantePicker({
                   }}
                   onMouseEnter={() => setResaltado(i)}
                   className={cn(
-                    "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2",
+                    "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-control px-3 py-2",
                     i === resaltado && "bg-surface-2",
                   )}
                 >

@@ -181,7 +181,7 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
             : []),
         ]}
         renderMobile={(x) => (
-          <div className="border-border bg-surface rounded-2xl border p-4">
+          <div className="border-border bg-surface rounded-card border p-4">
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold">
                 {x.codigo} · {x.cliente}

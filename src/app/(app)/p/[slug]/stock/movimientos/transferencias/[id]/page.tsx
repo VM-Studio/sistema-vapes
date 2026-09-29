@@ -80,7 +80,7 @@ export default async function TransferenciaPage({ params }: { params: Promise<{ 
           </CardContent>
         </Card>
 
-        <ul className="divide-border border-border bg-surface flex flex-col divide-y rounded-2xl border">
+        <ul className="divide-border border-border bg-surface flex flex-col divide-y rounded-card border">
           {t.items.map((i) => {
             const falta = pendiente && i.stockOrigen < i.cantidad;
             return (

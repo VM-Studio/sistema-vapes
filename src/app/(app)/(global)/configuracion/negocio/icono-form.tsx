@@ -53,13 +53,13 @@ export function IconoForm({ propio }: { propio: boolean }) {
           <img
             src={`/icons/512?v=${version}`}
             alt="Ícono actual"
-            className="size-20 rounded-2xl border"
+            className="size-20 rounded-card border"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/icons/maskable?v=${version}`}
             alt="Ícono maskable"
-            className="size-20 rounded-full border"
+            className="size-20 rounded-circle border"
           />
         </div>
         <form onSubmit={subir} className="flex flex-1 flex-col gap-2 md:flex-row md:items-center">
@@ -68,7 +68,7 @@ export function IconoForm({ propio }: { propio: boolean }) {
             type="file"
             accept="image/png,image/jpeg,image/webp"
             required
-            className="file:bg-surface-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:px-3 file:py-2"
+            className="file:bg-surface-2 text-sm file:mr-3 file:rounded-control file:border-0 file:px-3 file:py-2"
           />
           <Button type="submit" loading={enviando}>
             <ImageUp /> Usar este ícono

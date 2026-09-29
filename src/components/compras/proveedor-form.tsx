@@ -171,7 +171,7 @@ export function ProveedorForm({
               {filas.map((f, i) => (
                 <li
                   key={f.productoId}
-                  className="border-border grid grid-cols-[1fr_6rem_auto] items-start gap-2 rounded-xl border p-3"
+                  className="border-border grid grid-cols-[1fr_6rem_auto] items-start gap-2 rounded-control border p-3"
                 >
                   <p className="col-span-3 text-sm font-medium">{f.nombreCompleto}</p>
                   <label className="flex flex-col gap-1">

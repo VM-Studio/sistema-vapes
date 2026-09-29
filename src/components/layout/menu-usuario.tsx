@@ -46,7 +46,7 @@ export function MenuUsuario({
   }, [abierto]);
 
   const item =
-    "flex min-h-11 items-center gap-3 rounded-[4px] px-3 text-sm font-medium text-foreground hover:bg-surface-2 md:min-h-10";
+    "flex min-h-11 items-center gap-3 rounded-inner px-3 text-sm font-medium text-foreground hover:bg-surface-2 md:min-h-10";
   const cerrar = () => setAbierto(false);
 
   return (
@@ -57,7 +57,7 @@ export function MenuUsuario({
         aria-label="Menú de cuenta"
         aria-haspopup="menu"
         aria-expanded={abierto}
-        className="hover:bg-surface-2 flex h-11 items-center gap-2 rounded-[var(--radius-control)] px-1 md:h-10 md:px-1.5"
+        className="hover:bg-surface-2 flex h-11 items-center gap-2 rounded-control px-1 md:h-10 md:px-1.5"
       >
         <Avatar nombre={usuario.nombre} className="size-8" />
         {mostrarNombre && (
@@ -74,7 +74,7 @@ export function MenuUsuario({
       {abierto && (
         <div
           role="menu"
-          className="bg-surface border-border shadow-pop absolute top-[calc(100%+6px)] right-0 z-50 w-64 rounded-[var(--radius-card)] border p-1.5"
+          className="bg-surface border-border shadow-pop absolute top-[calc(100%+6px)] right-0 z-50 w-64 rounded-card border p-1.5"
         >
           <div className="flex items-center gap-3 px-3 py-2.5">
             <Avatar nombre={usuario.nombre} />

@@ -297,11 +297,11 @@ export function RegistrarDevolucion({
 
         {paso === 3 && (
           <div className="flex flex-col gap-4">
-            <p className="bg-warning-soft text-warning-soft-foreground flex items-start gap-2 rounded-xl px-4 py-3 text-sm">
+            <p className="bg-warning-soft text-warning-soft-foreground flex items-start gap-2 rounded-control px-4 py-3 text-sm">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
               {AVISO_STOCK}
             </p>
-            <div className="border-primary bg-primary-soft flex items-center gap-3 rounded-2xl border px-4 py-3">
+            <div className="border-primary bg-primary-soft flex items-center gap-3 rounded-card border px-4 py-3">
               <Warehouse className="text-primary size-5 shrink-0" strokeWidth={1.75} aria-hidden />
               <p className="min-w-0 flex-1 text-sm">
                 Sale de <strong data-testid="galpon-devolucion">{deposito?.nombre}</strong>
@@ -311,7 +311,7 @@ export function RegistrarDevolucion({
               </Button>
             </div>
             <div className="flex items-center gap-3">
-              <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-full">
+              <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-circle">
                 <ScanBarcode className="size-5" strokeWidth={1.75} aria-hidden />
               </span>
               <p className="text-muted min-w-0 flex-1 text-sm">
@@ -332,7 +332,7 @@ export function RegistrarDevolucion({
               placeholder="Buscar: producto, sabor o código…"
             />
             {items.length === 0 ? (
-              <p className="border-border text-muted rounded-2xl border border-dashed px-4 py-6 text-center text-sm">
+              <p className="border-border text-muted rounded-card border border-dashed px-4 py-6 text-center text-sm">
                 Todavía no agregaste productos.
               </p>
             ) : (
@@ -345,7 +345,7 @@ export function RegistrarDevolucion({
                     <li
                       key={v.varianteId}
                       aria-label={v.titulo}
-                      className="border-border bg-surface flex flex-col gap-2 rounded-2xl border p-3"
+                      className="border-border bg-surface flex flex-col gap-2 rounded-card border p-3"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className="min-w-0 leading-tight font-semibold break-words">
@@ -435,7 +435,7 @@ export function RegistrarDevolucion({
             />
             <section
               aria-label="Resumen"
-              className="border-border bg-surface-2 flex flex-col gap-2 rounded-2xl border p-4 text-sm"
+              className="border-border bg-surface-2 flex flex-col gap-2 rounded-card border p-4 text-sm"
             >
               {cliente && (
                 <p>
@@ -466,7 +466,7 @@ export function RegistrarDevolucion({
             {error && (
               <p
                 role="alert"
-                className="bg-danger-soft text-danger-soft-foreground rounded-xl px-4 py-3 text-sm"
+                className="bg-danger-soft text-danger-soft-foreground rounded-control px-4 py-3 text-sm"
               >
                 {error}
               </p>
@@ -495,7 +495,7 @@ function OpcionVenta({
       aria-checked={activa}
       onClick={onClick}
       className={cn(
-        "flex min-h-12 w-full flex-col items-start gap-0.5 rounded-xl border-2 px-4 py-2.5 text-left text-sm transition-colors",
+        "flex min-h-12 w-full flex-col items-start gap-0.5 rounded-control border-2 px-4 py-2.5 text-left text-sm transition-colors",
         activa ? "border-primary bg-primary-soft" : "border-border bg-surface hover:bg-surface-2",
       )}
     >

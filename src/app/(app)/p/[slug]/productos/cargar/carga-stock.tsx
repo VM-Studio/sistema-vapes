@@ -226,7 +226,7 @@ export function CargaStock({
         {guardada && (
           <div
             role="status"
-            className="border-primary/40 bg-primary-soft flex flex-col gap-3 rounded-2xl border p-4 text-sm md:flex-row md:items-center md:justify-between"
+            className="border-primary/40 bg-primary-soft flex flex-col gap-3 rounded-card border p-4 text-sm md:flex-row md:items-center md:justify-between"
           >
             <span>
               Tenés una carga sin terminar:{" "}
@@ -263,8 +263,8 @@ export function CargaStock({
   if (paso === "exito" && resumen) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col gap-5">
-        <section className="border-border bg-surface flex flex-col items-center gap-3 rounded-2xl border p-6 text-center">
-          <span className="bg-success-soft text-success-soft-foreground flex size-14 items-center justify-center rounded-full">
+        <section className="border-border bg-surface flex flex-col items-center gap-3 rounded-card border p-6 text-center">
+          <span className="bg-success-soft text-success-soft-foreground flex size-14 items-center justify-center rounded-circle">
             <CircleCheck className="size-7" strokeWidth={1.75} aria-hidden />
           </span>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -276,14 +276,14 @@ export function CargaStock({
           </p>
         </section>
 
-        <section className="border-border bg-surface rounded-2xl border p-4">
+        <section className="border-border bg-surface rounded-card border p-4">
           <h2 className="mb-2 text-sm font-semibold">Stock de lo cargado, por galpón</h2>
           <ul className="grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="Totales por galpón">
             {resumen.porDeposito.map((d) => (
               <li
                 key={d.depositoId}
                 className={cn(
-                  "rounded-xl p-3",
+                  "rounded-control p-3",
                   d.depositoId === resumen.deposito.id
                     ? "bg-primary-soft text-primary-soft-foreground"
                     : "bg-surface-2",
@@ -328,7 +328,7 @@ export function CargaStock({
     <div
       className={cn("mx-auto flex max-w-3xl flex-col gap-4", items.length > 0 && "pb-28 md:pb-0")}
     >
-      <header className="border-primary bg-primary-soft sticky top-0 z-10 flex items-center gap-3 rounded-2xl border px-4 py-3">
+      <header className="border-primary bg-primary-soft sticky top-0 z-10 flex items-center gap-3 rounded-card border px-4 py-3">
         <Warehouse className="text-primary size-6 shrink-0" strokeWidth={1.75} aria-hidden />
         <div className="min-w-0 flex-1">
           <p className="text-muted text-xs">Cargando en</p>
@@ -347,13 +347,13 @@ export function CargaStock({
 
       <section
         aria-label="Escáner"
-        className="border-border bg-surface flex flex-col gap-3 rounded-2xl border p-4"
+        className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4"
       >
         <div className="flex items-center gap-3">
-          <span className="bg-primary-soft text-primary-soft-foreground relative flex size-12 shrink-0 items-center justify-center rounded-full">
+          <span className="bg-primary-soft text-primary-soft-foreground relative flex size-12 shrink-0 items-center justify-center rounded-circle">
             <ScanBarcode className="size-6" strokeWidth={1.75} aria-hidden />
             <span
-              className="bg-primary/15 absolute inset-0 animate-ping rounded-full motion-reduce:hidden"
+              className="bg-primary/15 absolute inset-0 animate-ping rounded-circle motion-reduce:hidden"
               aria-hidden
             />
           </span>
@@ -397,7 +397,7 @@ export function CargaStock({
       </section>
 
       {items.length === 0 ? (
-        <p className="border-border text-muted rounded-2xl border border-dashed px-4 py-8 text-center text-sm">
+        <p className="border-border text-muted rounded-card border border-dashed px-4 py-8 text-center text-sm">
           Todavía no escaneaste nada.
         </p>
       ) : (
@@ -411,7 +411,7 @@ export function CargaStock({
                 key={v.varianteId}
                 aria-label={v.titulo}
                 className={cn(
-                  "bg-surface flex flex-col gap-3 rounded-2xl border p-3 transition-colors sm:flex-row sm:items-center",
+                  "bg-surface flex flex-col gap-3 rounded-card border p-3 transition-colors sm:flex-row sm:items-center",
                   recien ? "border-primary bg-primary-soft" : "border-border",
                 )}
               >

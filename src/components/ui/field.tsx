@@ -49,4 +49,4 @@ export function describedBy(id: string, error?: string, hint?: ReactNode): strin
 
 /** Estilo común de inputs/selects/textareas. text-base en mobile evita el zoom de iOS. */
 export const controlClass =
-  "w-full rounded-[var(--radius-control)] border border-input bg-surface px-3 text-base text-foreground placeholder:text-subtle transition-[border-color,box-shadow] duration-150 hover:border-subtle focus:border-foreground focus:ring-2 focus:ring-foreground/10 focus:outline-none disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted aria-invalid:border-danger aria-invalid:focus:ring-danger/15 md:text-sm";
+  "w-full rounded-control border border-input bg-surface px-3 text-base text-foreground placeholder:text-subtle transition-[border-color,box-shadow] duration-150 hover:border-subtle focus:border-foreground focus:ring-2 focus:ring-foreground/10 focus:outline-none disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted aria-invalid:border-danger aria-invalid:focus:ring-danger/15 md:text-sm";

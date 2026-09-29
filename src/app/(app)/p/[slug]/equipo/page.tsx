@@ -50,7 +50,7 @@ export default async function EquipoPage({ searchParams }: { searchParams: Searc
             <li key={r.usuarioId}>
               <Link
                 href={`${rutaPanel(ctx.panel.slug, `/equipo/${r.usuarioId}`)}${qs}`}
-                className="border-border bg-surface shadow-card hover:bg-surface-2 flex min-h-11 items-center gap-3 rounded-2xl border p-4"
+                className="border-border bg-surface hover:bg-surface-2 flex min-h-11 items-center gap-3 rounded-card border p-4"
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex items-center gap-2">

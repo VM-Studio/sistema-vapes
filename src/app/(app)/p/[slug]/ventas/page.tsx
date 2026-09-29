@@ -46,7 +46,7 @@ function MedioPagoBadge({ medio }: { medio: VentaListada["medioPago"] }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-[var(--radius-control)] px-2.5 py-1 text-xs leading-none font-medium whitespace-nowrap",
+        "inline-flex items-center rounded-control px-2.5 py-1 text-xs leading-none font-medium whitespace-nowrap",
         CLASE_MEDIO_PAGO[medio],
       )}
     >
@@ -234,7 +234,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         renderMobile={(v) => (
           <Link
             href={href(v)}
-            className="border-border bg-surface shadow-card flex flex-col gap-2 rounded-2xl border p-4"
+            className="border-border bg-surface flex flex-col gap-2 rounded-card border p-4"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="text-primary font-semibold tabular-nums">{v.codigo}</span>

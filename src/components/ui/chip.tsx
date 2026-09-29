@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 const base =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-control border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
 
 /** Filtro rápido (link): activo = relleno con el primario. */
 export function ChipLink({

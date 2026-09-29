@@ -112,7 +112,7 @@ export function AjusteRapidoDialog({
           onChange={(e) => setDepositoId(e.target.value)}
         />
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-surface-2 rounded-lg p-3">
+          <div className="bg-surface-2 rounded-control p-3">
             <p className="text-muted text-xs">Sistema</p>
             <p className="text-2xl font-semibold tabular-nums">{sistema}</p>
           </div>
@@ -130,7 +130,7 @@ export function AjusteRapidoDialog({
         {diferencia !== null && (
           <p
             className={cn(
-              "rounded-lg px-3 py-2 text-sm font-medium",
+              "rounded-control px-3 py-2 text-sm font-medium",
               diferencia === 0
                 ? "bg-surface-2 text-muted"
                 : diferencia > 0

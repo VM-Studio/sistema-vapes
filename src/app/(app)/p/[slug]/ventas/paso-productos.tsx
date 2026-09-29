@@ -183,14 +183,14 @@ export function PasoProductos({
       {aviso && (
         <p
           role="alert"
-          className="bg-warning-soft text-warning-soft-foreground rounded-xl px-4 py-3 text-sm"
+          className="bg-warning-soft text-warning-soft-foreground rounded-control px-4 py-3 text-sm"
         >
           {aviso}
         </p>
       )}
 
       {items.length === 0 ? (
-        <div className="border-border text-muted flex flex-col items-center gap-2 rounded-2xl border border-dashed px-4 py-8 text-center text-sm">
+        <div className="border-border text-muted flex flex-col items-center gap-2 rounded-card border border-dashed px-4 py-8 text-center text-sm">
           <PackageSearch className="size-8" strokeWidth={1.75} aria-hidden />
           <p>Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.</p>
         </div>
@@ -218,7 +218,7 @@ export function PasoProductos({
         {masVendidos === null ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, n) => (
-              <div key={n} className="bg-surface-2 h-20 animate-pulse rounded-2xl" />
+              <div key={n} className="bg-surface-2 h-20 animate-pulse rounded-card" />
             ))}
           </div>
         ) : masVendidos.length === 0 ? (
@@ -242,7 +242,7 @@ export function PasoProductos({
                       })
                     }
                     className={cn(
-                      "border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-20 w-full flex-col justify-between gap-1 rounded-2xl border p-3 text-left transition-colors",
+                      "border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-20 w-full flex-col justify-between gap-1 rounded-card border p-3 text-left transition-colors",
                       sinStock && "opacity-60",
                     )}
                   >
@@ -319,7 +319,7 @@ function FilaItem({
     <li
       data-sin-stock={sinStock || undefined}
       className={cn(
-        "flex flex-col gap-3 rounded-2xl border p-3 md:flex-row md:items-center md:gap-4 md:p-4",
+        "flex flex-col gap-3 rounded-card border p-3 md:flex-row md:items-center md:gap-4 md:p-4",
         sinStock ? "border-danger/40 bg-danger-soft" : "border-border bg-surface",
       )}
     >

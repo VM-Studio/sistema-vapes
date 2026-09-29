@@ -71,7 +71,7 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
         }
       />
       {!c.activo && (
-        <p className="bg-warning-soft text-warning-soft-foreground mb-4 rounded-xl px-4 py-3 text-sm">
+        <p className="bg-warning-soft text-warning-soft-foreground mb-4 rounded-control px-4 py-3 text-sm">
           Cliente desactivado: no aparece en los buscadores. Sus ventas y devoluciones se conservan.
         </p>
       )}
@@ -89,7 +89,7 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
         />
       </section>
 
-      <dl className="border-border bg-surface mb-4 grid gap-3 rounded-2xl border p-4 text-sm md:grid-cols-2">
+      <dl className="border-border bg-surface mb-4 grid gap-3 rounded-card border p-4 text-sm md:grid-cols-2">
         <div>
           <dt className="text-muted">Cliente desde</dt>
           <dd>{formatearFecha(c.createdAt)}</dd>
@@ -188,7 +188,7 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
               </div>
             </>
           );
-          const clase = "border-border bg-surface block rounded-2xl border p-4";
+          const clase = "border-border bg-surface block rounded-card border p-4";
           return verVentas ? (
             <Link href={hrefVenta(v.id)} className={clase}>
               {contenido}
@@ -269,7 +269,7 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
               </p>
             </>
           );
-          const clase = "border-border bg-surface block rounded-2xl border p-4";
+          const clase = "border-border bg-surface block rounded-card border p-4";
           return verDevoluciones ? (
             <Link href={hrefDevolucion(d.id)} className={clase}>
               {contenido}

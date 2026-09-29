@@ -32,7 +32,7 @@ export function KpiCard({
   return (
     <div
       className={cn(
-        "bg-card flex min-w-0 flex-col gap-1.5 rounded-[var(--radius-card)] p-4 md:p-5",
+        "bg-card flex min-w-0 flex-col gap-1.5 rounded-card p-4 md:p-5",
         className,
       )}
       data-testid={`kpi-${label}`}
@@ -44,7 +44,7 @@ export function KpiCard({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span
           className={cn(
-            "inline-flex items-center gap-0.5 rounded-[4px] px-1.5 py-0.5 font-semibold tabular-nums",
+            "inline-flex items-center gap-0.5 rounded-inner px-1.5 py-0.5 font-semibold tabular-nums",
             sube && "bg-success-soft text-success-soft-foreground",
             baja && "bg-danger-soft text-danger-soft-foreground",
             !sube && !baja && "bg-surface-3 text-muted",

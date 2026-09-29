@@ -86,7 +86,7 @@ export default async function ReporteStockPage({
       {s.filas.length === 0 ? (
         <EmptyState icon={Boxes} title="No hay sabores con estos filtros" />
       ) : (
-        <div className="border-border bg-surface overflow-x-auto rounded-2xl border">
+        <div className="border-border bg-surface overflow-x-auto rounded-card border">
           <table className="w-full text-sm" data-testid="matriz-stock">
             <thead className="bg-surface-2 text-muted text-left text-xs">
               <tr>

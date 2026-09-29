@@ -57,11 +57,11 @@ export default async function ReportesPage() {
                 data-testid={`reporte-${r.clave}`}
                 className={
                   principal
-                    ? "border-primary/30 bg-primary-soft shadow-card hover:shadow-card-hover flex h-full items-center gap-4 rounded-2xl border p-5 transition-shadow"
-                    : "border-border bg-surface shadow-card hover:border-input hover:shadow-card-hover flex h-full items-center gap-4 rounded-2xl border p-5 transition-[border-color,box-shadow]"
+                    ? "border-primary/30 bg-primary-soft hover:shadow-card-hover flex h-full items-center gap-4 rounded-card border p-5 transition-shadow"
+                    : "border-border bg-surface hover:border-input hover:shadow-card-hover flex h-full items-center gap-4 rounded-card border p-5 transition-[border-color,box-shadow]"
                 }
               >
-                <span className="bg-primary-soft text-primary flex size-12 shrink-0 items-center justify-center rounded-xl">
+                <span className="bg-primary-soft text-primary flex size-12 shrink-0 items-center justify-center rounded-control">
                   <Icono className="size-6" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-1">

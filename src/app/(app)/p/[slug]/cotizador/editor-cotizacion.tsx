@@ -368,7 +368,7 @@ export function EditorCotizacion({
         </div>
         {mayorista && (
           <p
-            className="bg-surface-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2 text-sm"
+            className="bg-surface-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control px-3 py-2 text-sm"
             data-testid="modo-escalon"
           >
             <Layers className="text-primary size-4" strokeWidth={1.75} aria-hidden />
@@ -393,7 +393,7 @@ export function EditorCotizacion({
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem]">
           <section
             aria-label="Cliente"
-            className="border-border bg-surface flex flex-col gap-3 rounded-2xl border p-4"
+            className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4"
           >
             {cliente || verCliente ? (
               <>
@@ -457,7 +457,7 @@ export function EditorCotizacion({
           {aviso && (
             <p
               role="alert"
-              className="bg-warning-soft text-warning-soft-foreground rounded-xl px-4 py-3 text-sm"
+              className="bg-warning-soft text-warning-soft-foreground rounded-control px-4 py-3 text-sm"
             >
               {aviso}
             </p>
@@ -465,7 +465,7 @@ export function EditorCotizacion({
           {errorCalculo && (
             <p
               role="alert"
-              className="bg-danger-soft text-danger-soft-foreground rounded-xl px-4 py-3 text-sm"
+              className="bg-danger-soft text-danger-soft-foreground rounded-control px-4 py-3 text-sm"
             >
               {errorCalculo}
             </p>
@@ -473,7 +473,7 @@ export function EditorCotizacion({
 
           {/* Ítems ---------------------------------------------------------------- */}
           {items.length === 0 ? (
-            <div className="border-border text-muted flex flex-col items-center gap-2 rounded-2xl border border-dashed px-4 py-8 text-center text-sm">
+            <div className="border-border text-muted flex flex-col items-center gap-2 rounded-card border border-dashed px-4 py-8 text-center text-sm">
               <PackageSearch className="size-8" strokeWidth={1.75} aria-hidden />
               <p>
                 Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.
@@ -508,7 +508,7 @@ export function EditorCotizacion({
             {masVendidos === null ? (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                 {Array.from({ length: 4 }, (_, n) => (
-                  <div key={n} className="bg-surface-2 h-16 animate-pulse rounded-2xl" />
+                  <div key={n} className="bg-surface-2 h-16 animate-pulse rounded-card" />
                 ))}
               </div>
             ) : masVendidos.length === 0 ? (
@@ -520,7 +520,7 @@ export function EditorCotizacion({
                     <button
                       type="button"
                       onClick={() => agregar(p)}
-                      className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-16 w-full flex-col justify-between gap-1 rounded-2xl border p-3 text-left transition-colors"
+                      className="border-border bg-surface hover:border-primary hover:bg-primary-soft flex min-h-16 w-full flex-col justify-between gap-1 rounded-card border p-3 text-left transition-colors"
                     >
                       <span className="line-clamp-2 text-sm leading-snug font-medium">
                         {p.nombreCompleto}
@@ -566,7 +566,7 @@ export function EditorCotizacion({
               <div className="sticky top-20">{resumen}</div>
             </aside>
             {resumen && (
-              <details className="border-border bg-surface group rounded-2xl border lg:hidden">
+              <details className="border-border bg-surface group rounded-card border lg:hidden">
                 <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-4 font-medium">
                   Resumen de escalones
                   <ChevronDown
@@ -583,7 +583,7 @@ export function EditorCotizacion({
       </div>
 
       {/* Pie fijo ----------------------------------------------------------------- */}
-      <footer className="border-border bg-surface/95 shadow-sheet sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 -mx-4 rounded-2xl border px-4 py-3 backdrop-blur md:bottom-4 md:mx-0">
+      <footer className="border-border bg-surface/95 shadow-sheet sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 -mx-4 rounded-card border px-4 py-3 backdrop-blur md:bottom-4 md:mx-0">
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex min-w-0 flex-1 items-baseline justify-between gap-3 md:justify-start">
             <p className="text-muted text-sm">
@@ -703,7 +703,7 @@ function FilaCotizacion({
   return (
     <li
       data-testid="fila-cotizacion"
-      className="border-border bg-surface flex flex-col gap-3 rounded-2xl border p-3 md:p-4"
+      className="border-border bg-surface flex flex-col gap-3 rounded-card border p-3 md:p-4"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -809,7 +809,7 @@ function FilaCotizacion({
               </p>
             </>
           ) : (
-            <p className="bg-surface-2 h-10 w-28 animate-pulse rounded-lg" />
+            <p className="bg-surface-2 h-10 w-28 animate-pulse rounded-control" />
           )}
         </div>
       </div>
@@ -874,7 +874,7 @@ function ResumenEscalones({
   return (
     <section
       aria-labelledby="resumen-escalones"
-      className="lg:border-border lg:bg-surface flex flex-col gap-3 lg:rounded-2xl lg:border lg:p-4"
+      className="lg:border-border lg:bg-surface flex flex-col gap-3 lg:rounded-card lg:border lg:p-4"
       data-testid="resumen-escalones"
     >
       <h2 id="resumen-escalones" className="hidden font-semibold lg:block">

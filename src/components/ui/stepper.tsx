@@ -25,7 +25,7 @@ export function Stepper({
           >
             <span
               className={cn(
-                "flex size-6 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-xs font-semibold tabular-nums",
+                "flex size-6 shrink-0 items-center justify-center rounded-control text-xs font-semibold tabular-nums",
                 hecho || activo ? "bg-foreground text-background" : "bg-surface-3 text-muted",
               )}
             >

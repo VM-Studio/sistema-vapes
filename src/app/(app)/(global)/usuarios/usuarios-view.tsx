@@ -46,7 +46,7 @@ function ChipsPaneles({ u }: { u: UsuarioListado }) {
       {u.paneles.map((p) => (
         <li
           key={p.id}
-          className="border-border bg-surface-2 flex min-h-8 items-center gap-1.5 rounded-[var(--radius-control)] border py-0.5 pr-3 pl-1 text-sm font-medium"
+          className="border-border bg-surface-2 flex min-h-8 items-center gap-1.5 rounded-control border py-0.5 pr-3 pl-1 text-sm font-medium"
         >
           <LogoPanel panel={p} size={18} />
           {p.nombre}
@@ -219,7 +219,7 @@ export function UsuariosView({
           {usuarios.map((u) => (
             <li
               key={u.id}
-              className="border-border bg-surface shadow-card flex flex-col gap-4 rounded-2xl border p-5"
+              className="border-border bg-surface flex flex-col gap-4 rounded-card border p-5"
             >
               <div className="flex items-start gap-3">
                 <Avatar nombre={u.nombre} />
@@ -318,7 +318,7 @@ export function UsuariosView({
           </Button>
         }
       >
-        <div className="border-border bg-surface-2 flex items-center gap-2 rounded-lg border p-2 pl-4">
+        <div className="border-border bg-surface-2 flex items-center gap-2 rounded-control border p-2 pl-4">
           <code className="flex-1 font-mono text-lg tracking-wider select-all">
             {temporal?.password}
           </code>

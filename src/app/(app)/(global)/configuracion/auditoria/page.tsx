@@ -65,7 +65,7 @@ export default async function AuditoriaPage({
       />
       <ul className="mt-4 flex flex-col gap-2">
         {r.filas.map((a) => (
-          <li key={a.id} className="border-border bg-surface rounded-2xl border p-4 text-sm">
+          <li key={a.id} className="border-border bg-surface rounded-card border p-4 text-sm">
             <details>
               <summary className="flex cursor-pointer flex-wrap items-center gap-2">
                 <Badge variant={VARIANTE[a.accion] ?? "neutral"}>{a.accion}</Badge>

@@ -25,7 +25,7 @@ export default async function SistemasPage() {
         subtitle="Sistemas (paneles). Para crear uno nuevo usá «Agregar sistema» en la pantalla de sistemas."
       />
       <TabsNav items={tabsConfiguracion("/configuracion/sistemas")} className="mb-6" />
-      <ul className="border-border bg-surface divide-border divide-y rounded-2xl border">
+      <ul className="border-border bg-surface divide-border divide-y rounded-card border">
         {paneles.map((p) => (
           <li key={p.id} className="flex flex-wrap items-center gap-4 p-4 md:p-5">
             <LogoPanel panel={p} size={40} />

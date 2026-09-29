@@ -136,7 +136,7 @@ export default async function EquipoVendedorPage({
           ],
           ["Devoluciones registradas", formatearNumero(d.actual.devoluciones)],
         ].map(([label, valor]) => (
-          <div key={label} className="border-border bg-surface rounded-2xl border p-4">
+          <div key={label} className="border-border bg-surface rounded-card border p-4">
             <p className="text-muted text-xs">{label}</p>
             <p className="font-medium tabular-nums">{valor}</p>
           </div>

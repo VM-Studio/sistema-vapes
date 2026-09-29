@@ -58,7 +58,7 @@ function Muestra({ nombre, hex, borde }: { nombre: string; hex: string; borde?: 
   return (
     <div className="flex flex-col gap-2">
       <div
-        className={`h-16 rounded-[var(--radius-control)] ${borde ? "border-border border" : ""}`}
+        className={`h-16 rounded-control ${borde ? "border-border border" : ""}`}
         style={{ background: hex }}
       />
       <div className="flex flex-col">
@@ -136,7 +136,7 @@ export function Catalogo() {
           <a
             key={id}
             href={`#${id}`}
-            className="text-muted hover:text-foreground border-border rounded-[var(--radius-control)] border px-3 py-1.5 text-sm"
+            className="text-muted hover:text-foreground border-border rounded-control border px-3 py-1.5 text-sm"
           >
             {label}
           </a>

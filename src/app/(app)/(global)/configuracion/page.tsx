@@ -30,9 +30,9 @@ export default async function ConfiguracionPage() {
             <li key={s.href}>
               <Link
                 href={s.href}
-                className="group border-border bg-surface shadow-card hover:shadow-card-hover flex min-h-20 items-center gap-4 rounded-2xl border p-5 transition-shadow"
+                className="group border-border bg-surface hover:shadow-card-hover flex min-h-20 items-center gap-4 rounded-card border p-5 transition-shadow"
               >
-                <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-lg">
+                <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-control">
                   <Icono className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">

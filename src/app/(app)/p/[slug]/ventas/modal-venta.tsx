@@ -371,7 +371,7 @@ export function ModalVenta({
       data-testid="modal-venta"
       className={cn(
         "anim-dialog bg-surface text-foreground shadow-sheet m-0 h-dvh max-h-none w-full max-w-none p-0",
-        "md:m-auto md:h-[min(92dvh,60rem)] md:w-[min(72rem,calc(100%-3rem))] md:rounded-2xl",
+        "md:m-auto md:h-[min(92dvh,60rem)] md:w-[min(72rem,calc(100%-3rem))] md:rounded-card",
       )}
     >
       {abierto && (
@@ -390,7 +390,7 @@ export function ModalVenta({
                   <button
                     type="button"
                     onClick={() => irA("galpon")}
-                    className="bg-primary-soft text-primary-soft-foreground inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-control)] px-3 text-sm font-medium"
+                    className="bg-primary-soft text-primary-soft-foreground inline-flex min-h-9 items-center gap-1.5 rounded-control px-3 text-sm font-medium"
                     aria-label={`Galpón: ${deposito.nombre}. Cambiar`}
                     data-testid="galpon-venta"
                   >
@@ -431,7 +431,7 @@ export function ModalVenta({
                       >
                         <span
                           className={cn(
-                            "h-1.5 rounded-full",
+                            "h-1.5 rounded-circle",
                             actual || hecho ? "bg-primary" : "bg-surface-2",
                           )}
                         />
@@ -451,7 +451,7 @@ export function ModalVenta({
             {!enLinea && !exito ? (
               <div
                 role="alert"
-                className="bg-warning-soft text-warning-soft-foreground flex flex-col items-center gap-3 rounded-2xl px-6 py-10 text-center"
+                className="bg-warning-soft text-warning-soft-foreground flex flex-col items-center gap-3 rounded-card px-6 py-10 text-center"
               >
                 <WifiOff className="size-10" strokeWidth={1.75} aria-hidden />
                 <p className="text-lg font-semibold">Sin conexión</p>
@@ -465,7 +465,7 @@ export function ModalVenta({
                 {conversion && (
                   <p
                     role="status"
-                    className="bg-success-soft text-success-soft-foreground mx-auto mb-4 max-w-lg rounded-xl px-4 py-3 text-center text-sm"
+                    className="bg-success-soft text-success-soft-foreground mx-auto mb-4 max-w-lg rounded-control px-4 py-3 text-center text-sm"
                   >
                     La cotización {conversion.codigo} quedó convertida en esta venta.
                   </p>
@@ -477,7 +477,7 @@ export function ModalVenta({
                 {error && (
                   <p
                     role="alert"
-                    className="bg-danger-soft text-danger-soft-foreground mb-4 rounded-xl px-4 py-3 text-sm"
+                    className="bg-danger-soft text-danger-soft-foreground mb-4 rounded-control px-4 py-3 text-sm"
                   >
                     {error}
                   </p>
@@ -541,7 +541,7 @@ export function ModalVenta({
                     {avisoCliente && (
                       <p
                         role="status"
-                        className="bg-warning-soft text-warning-soft-foreground rounded-xl px-4 py-3 text-sm"
+                        className="bg-warning-soft text-warning-soft-foreground rounded-control px-4 py-3 text-sm"
                       >
                         {avisoCliente}
                       </p>
@@ -559,7 +559,7 @@ export function ModalVenta({
                 {venta.paso === "pago" && conversion && (
                   <div className="mb-5 flex flex-col gap-3">
                     <p
-                      className="bg-primary-soft text-primary-soft-foreground flex items-center gap-2 rounded-xl px-4 py-3 text-sm"
+                      className="bg-primary-soft text-primary-soft-foreground flex items-center gap-2 rounded-control px-4 py-3 text-sm"
                       data-testid="conversion-bloqueada"
                     >
                       <Lock className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />

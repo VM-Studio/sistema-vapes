@@ -149,7 +149,7 @@ export default async function ReporteComprasPage({
             },
           ]}
           renderMobile={(x) => (
-            <div className="border-border bg-surface flex items-center justify-between rounded-2xl border p-4">
+            <div className="border-border bg-surface flex items-center justify-between rounded-card border p-4">
               <span>
                 <span className="font-semibold">{x.proveedor}</span>
                 <span className="text-muted block text-xs">
@@ -226,7 +226,7 @@ export default async function ReporteComprasPage({
           ]}
           renderMobile={(h) => (
             <div
-              className="border-border bg-surface rounded-2xl border p-4"
+              className="border-border bg-surface rounded-card border p-4"
               data-testid="fila-historial"
             >
               <div className="flex items-center justify-between gap-2">

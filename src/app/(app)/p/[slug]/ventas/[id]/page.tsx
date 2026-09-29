@@ -71,7 +71,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-4">
           {v.anulacion && (
-            <p className="bg-danger-soft text-danger-soft-foreground rounded-2xl px-4 py-3 text-sm">
+            <p className="bg-danger-soft text-danger-soft-foreground rounded-card px-4 py-3 text-sm">
               Anulada por {v.anulacion.por} el {formatearFechaHora(v.anulacion.at)}:{" "}
               {v.anulacion.motivo}
             </p>
@@ -104,7 +104,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                 <p className="text-muted">Medio de pago</p>
                 <span
                   className={cn(
-                    "mt-0.5 inline-flex rounded-[var(--radius-control)] px-2.5 py-1 text-xs font-medium",
+                    "mt-0.5 inline-flex rounded-control px-2.5 py-1 text-xs font-medium",
                     CLASE_MEDIO_PAGO[v.medioPago],
                   )}
                 >
@@ -126,7 +126,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
 
           <ul
             aria-label="Ítems"
-            className="divide-border border-border bg-surface flex flex-col divide-y rounded-2xl border"
+            className="divide-border border-border bg-surface flex flex-col divide-y rounded-card border"
           >
             {v.items.map((i) => (
               <li key={i.id} className="flex items-start justify-between gap-3 px-4 py-3">
@@ -195,7 +195,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                   </Link>
                 )}
               </div>
-              <ul className="divide-border border-border bg-surface flex flex-col divide-y rounded-2xl border text-sm">
+              <ul className="divide-border border-border bg-surface flex flex-col divide-y rounded-card border text-sm">
                 {v.movimientos.map((m) => (
                   <li key={m.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                     <span className="min-w-0">
@@ -230,7 +230,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
               <h2 id="devoluciones-venta" className="font-semibold">
                 Devoluciones
               </h2>
-              <ul className="divide-border border-border bg-surface flex flex-col divide-y rounded-2xl border text-sm">
+              <ul className="divide-border border-border bg-surface flex flex-col divide-y rounded-card border text-sm">
                 {v.devoluciones.map((d) => (
                   <li key={d.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                     <Link

@@ -153,7 +153,7 @@ export function EditarUsuarioForm({
       {esUnoMismo ? (
         // Sin inputs deshabilitados: react-hook-form los excluiría del envío.
         // Los valores (OWNER, activo) viajan igual desde defaultValues.
-        <p className="bg-surface-2 text-muted rounded-lg px-3 py-2.5 text-sm">
+        <p className="bg-surface-2 text-muted rounded-control px-3 py-2.5 text-sm">
           Sos vos: no podés cambiar tu propio rol ni desactivarte.
         </p>
       ) : (

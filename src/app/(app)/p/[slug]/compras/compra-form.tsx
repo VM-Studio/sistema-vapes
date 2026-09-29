@@ -373,13 +373,13 @@ export function CompraForm({
                     setPaso(depositoId && compraId ? 3 : 2);
                   }}
                   className={cn(
-                    "flex min-h-20 items-center gap-4 rounded-2xl border-2 p-4 text-left transition-colors",
+                    "flex min-h-20 items-center gap-4 rounded-card border-2 p-4 text-left transition-colors",
                     p.id === proveedorId
                       ? "border-primary bg-primary-soft"
                       : "border-border bg-surface hover:bg-surface-2",
                   )}
                 >
-                  <span className="bg-surface-2 text-muted flex size-11 shrink-0 items-center justify-center rounded-xl">
+                  <span className="bg-surface-2 text-muted flex size-11 shrink-0 items-center justify-center rounded-control">
                     <Store className="size-5" strokeWidth={1.75} aria-hidden />
                   </span>
                   <span className="flex min-w-0 flex-col">
@@ -557,7 +557,7 @@ export function CompraForm({
               return (
                 <li
                   key={it.varianteId}
-                  className="border-border bg-surface grid grid-cols-2 items-start gap-3 rounded-2xl border p-3 md:grid-cols-[1fr_6rem_8rem_8rem_auto] md:items-center"
+                  className="border-border bg-surface grid grid-cols-2 items-start gap-3 rounded-card border p-3 md:grid-cols-[1fr_6rem_8rem_8rem_auto] md:items-center"
                 >
                   <div className="col-span-2 min-w-0 md:col-span-1">
                     <p className="font-medium">{it.nombreCompleto}</p>

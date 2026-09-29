@@ -34,7 +34,7 @@ export function Tabs<V extends string>({
         role="tablist"
         aria-label={ariaLabel}
         className={cn(
-          "bg-card inline-flex gap-0.5 rounded-[var(--radius-control)] p-0.5",
+          "bg-card inline-flex gap-0.5 rounded-control p-0.5",
           className,
         )}
       >
@@ -48,9 +48,9 @@ export function Tabs<V extends string>({
               aria-selected={activo}
               onClick={() => onChange(t.value)}
               className={cn(
-                "h-9 rounded-[5px] px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-8",
+                "h-9 rounded-inner px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-8",
                 activo
-                  ? "bg-surface text-foreground shadow-[0_1px_2px_rgb(10_10_10/0.08)]"
+                  ? "bg-surface text-foreground shadow-control"
                   : "text-muted hover:text-foreground",
               )}
             >
@@ -88,7 +88,7 @@ export function Tabs<V extends string>({
               {t.badge !== undefined && (
                 <span
                   className={cn(
-                    "min-w-5 rounded-[4px] px-1.5 py-0.5 text-center text-xs leading-none tabular-nums",
+                    "min-w-5 rounded-inner px-1.5 py-0.5 text-center text-xs leading-none tabular-nums",
                     activo ? "bg-foreground text-background" : "bg-surface-2 text-muted",
                   )}
                 >

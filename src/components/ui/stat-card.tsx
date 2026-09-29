@@ -5,8 +5,6 @@ import type { ReactNode } from "react";
 import { formatearDelta } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-import { ChartTheme } from "./chart-theme";
-
 export interface StatCardProps {
   label: string;
   value: ReactNode;
@@ -19,7 +17,7 @@ export interface StatCardProps {
   anterior?: ReactNode;
   /** "Ayer", "Mes pasado"… (default "Anterior"). */
   etiquetaAnterior?: string;
-  /** Variación %: sube en azul, baja en naranja (comparación de datos), con flecha. */
+  /** Variación %: sube en verde apagado, baja en rojo apagado, con flecha. */
   deltaPct?: number | null;
 }
 
@@ -57,8 +55,12 @@ export function StatCard({
         <div className="text-small flex flex-wrap items-center gap-x-2 gap-y-1">
           {conDelta && (
             <span
-              className="inline-flex items-center gap-0.5 font-semibold tabular-nums"
-              style={{ color: sube ? ChartTheme.sube : baja ? ChartTheme.baja : undefined }}
+              className={cn(
+                "inline-flex items-center gap-0.5 font-semibold tabular-nums",
+                sube && "text-success",
+                baja && "text-danger",
+                !sube && !baja && "text-subtle",
+              )}
             >
               <Flecha className="size-3.5" strokeWidth={2} aria-hidden />
               {deltaPct == null ? "—" : formatearDelta(deltaPct)}
@@ -76,7 +78,7 @@ export function StatCard({
     </>
   );
   const clase = cn(
-    "flex flex-col gap-1.5 rounded-[var(--radius-card)] p-5",
+    "flex flex-col gap-1.5 rounded-card p-5",
     tono === "alerta" ? "bg-danger-soft" : "bg-card",
     href &&
       "transition-[background-color,box-shadow] duration-150 hover:bg-card-hover hover:shadow-card-hover",

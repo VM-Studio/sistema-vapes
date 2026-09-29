@@ -52,7 +52,7 @@ export function ComisionForm({
   return (
     <form
       onSubmit={guardar}
-      className="border-border bg-surface flex flex-col gap-4 rounded-2xl border p-5"
+      className="border-border bg-surface flex flex-col gap-4 rounded-card border p-5"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input

@@ -127,7 +127,7 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
                       <li key={p.id}>
                         <Link
                           href={hrefCon(PATH, {}, { productoId: p.id })}
-                          className="hover:bg-surface-2 flex min-h-11 items-center rounded-xl px-3 text-sm font-medium"
+                          className="hover:bg-surface-2 flex min-h-11 items-center rounded-control px-3 text-sm font-medium"
                         >
                           {p.nombreCompleto}
                         </Link>
@@ -164,7 +164,7 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
                     <Link
                       href={hrefCon(PATH, {}, { productoId: s.productoId })}
                       className={cn(
-                        "border-border bg-surface hover:border-input flex min-h-14 items-center gap-3 rounded-2xl border p-4 text-sm transition-colors",
+                        "border-border bg-surface hover:border-input flex min-h-14 items-center gap-3 rounded-card border p-4 text-sm transition-colors",
                         plano.productoId === s.productoId && "border-primary bg-primary-soft",
                       )}
                     >
@@ -245,7 +245,7 @@ function ListaComparacion({
       </div>
       {c.monedasSinConvertir && (
         <p
-          className="bg-warning-soft text-warning-soft-foreground rounded-xl p-3 text-sm"
+          className="bg-warning-soft text-warning-soft-foreground rounded-control p-3 text-sm"
           data-testid="aviso-monedas"
         >
           Hay precios en pesos y en dólares: se ordenan por separado. Cargá la cotización del dólar
@@ -274,14 +274,14 @@ function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; p
       data-testid="oferta"
       data-proveedor={o.proveedor}
       className={cn(
-        "bg-surface shadow-card flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center md:gap-6 md:p-5",
+        "bg-surface flex flex-col gap-4 rounded-card border p-4 md:flex-row md:items-center md:gap-6 md:p-5",
         o.masBarato ? "border-success/50 ring-success/30 ring-1" : "border-border",
       )}
     >
       <div className="flex items-start gap-4 md:flex-1">
         <span
           className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-full text-lg font-semibold tabular-nums",
+            "flex size-10 shrink-0 items-center justify-center rounded-circle text-lg font-semibold tabular-nums",
             o.masBarato
               ? "bg-success-soft text-success-soft-foreground"
               : "bg-surface-2 text-muted",
@@ -313,7 +313,7 @@ function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; p
             )}
           </span>
           {o.desactualizado && (
-            <span className="text-warning-soft-foreground bg-warning-soft inline-flex w-fit items-center gap-1 rounded-[var(--radius-control)] px-2.5 py-1 text-xs font-medium">
+            <span className="text-warning-soft-foreground bg-warning-soft inline-flex w-fit items-center gap-1 rounded-control px-2.5 py-1 text-xs font-medium">
               <AlertTriangle className="size-3.5" strokeWidth={1.75} aria-hidden /> Precio
               posiblemente desactualizado
             </span>
@@ -373,7 +373,7 @@ function Matriz({ slug, m }: { slug: string; m: Awaited<ReturnType<typeof matriz
   const PATH = rutaPanel(slug, "/reportes/comparador");
   return (
     <div
-      className="border-border bg-surface overflow-x-auto rounded-2xl border"
+      className="border-border bg-surface overflow-x-auto rounded-card border"
       data-testid="matriz"
     >
       <table className="w-full text-sm">

@@ -52,7 +52,7 @@ export default async function AyudaPage() {
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
         <nav
           aria-label="Índice del manual"
-          className="border-border bg-surface rounded-xl border p-4 lg:sticky lg:top-4 lg:w-64 lg:shrink-0"
+          className="border-border bg-surface rounded-control border p-4 lg:sticky lg:top-4 lg:w-64 lg:shrink-0"
         >
           <p className="mb-2 text-sm font-semibold">Contenido</p>
           <ol className="flex flex-col gap-1 text-sm">

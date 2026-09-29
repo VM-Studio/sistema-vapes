@@ -151,7 +151,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         renderMobile={(c) => (
           <Link
             href={`${PATH}/${c.id}`}
-            className="border-border bg-surface block rounded-2xl border p-4"
+            className="border-border bg-surface block rounded-card border p-4"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold">

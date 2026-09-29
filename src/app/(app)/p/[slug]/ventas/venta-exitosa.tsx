@@ -47,7 +47,7 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
           {ETIQUETA_MEDIO_PAGO[venta.medioPago]} · {venta.deposito.nombre}
         </p>
       </div>
-      <div className="border-border w-full rounded-2xl border p-4 text-left">
+      <div className="border-border w-full rounded-card border p-4 text-left">
         <p className="font-semibold">
           {venta.cliente.nombre}
           {venta.clienteNuevo && (

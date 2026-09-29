@@ -49,9 +49,9 @@ function CardCotizar({
   return (
     <Link
       href={href}
-      className="border-border bg-surface shadow-card hover:border-primary hover:bg-primary-soft group flex min-h-28 items-center gap-4 rounded-2xl border p-5 transition-colors"
+      className="border-border bg-surface hover:border-primary hover:bg-primary-soft group flex min-h-28 items-center gap-4 rounded-card border p-5 transition-colors"
     >
-      <span className="bg-primary-soft text-primary flex size-14 shrink-0 items-center justify-center rounded-2xl">
+      <span className="bg-primary-soft text-primary flex size-14 shrink-0 items-center justify-center rounded-card">
         <Icono className="size-7" strokeWidth={1.75} aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
@@ -235,7 +235,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
           { key: "acciones", header: <span className="sr-only">Acciones</span>, cell: acciones },
         ]}
         renderMobile={(c) => (
-          <div className="border-border bg-surface shadow-card flex flex-col gap-2 rounded-2xl border p-4">
+          <div className="border-border bg-surface flex flex-col gap-2 rounded-card border p-4">
             <Link href={href(c)} className="flex flex-col gap-2">
               <span className="flex items-center justify-between gap-2">
                 <span className="text-primary font-semibold tabular-nums">{c.codigo}</span>

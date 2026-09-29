@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * - `clickable`: hover con sombra sutil (usar sobre <a>/<button> o con onClick).
  * - `outline`: fondo blanco con borde fino (contenido que va DENTRO de otra tarjeta).
  */
-export const cardVariants = cva("rounded-[var(--radius-card)] text-foreground", {
+export const cardVariants = cva("rounded-card text-foreground", {
   variants: {
     variant: {
       default: "bg-card",

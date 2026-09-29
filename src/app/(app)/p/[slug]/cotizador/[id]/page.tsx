@@ -83,7 +83,7 @@ export default async function DetalleCotizacionPage({
           </p>
         )}
         {c.venta && (
-          <p className="bg-success-soft text-success-soft-foreground rounded-xl px-4 py-3 text-sm">
+          <p className="bg-success-soft text-success-soft-foreground rounded-control px-4 py-3 text-sm">
             Convertida en la venta{" "}
             <Link
               href={rutaPanel(ctx.panel.slug, `/ventas/${c.venta.id}`)}
@@ -113,7 +113,7 @@ export default async function DetalleCotizacionPage({
         convertirAlCargar={sp.convertir === "1"}
       />
 
-      <section aria-label="Productos" className="border-border bg-surface mt-4 rounded-2xl border">
+      <section aria-label="Productos" className="border-border bg-surface mt-4 rounded-card border">
         <ul className="divide-border divide-y">
           {c.items.map((i) => (
             <li key={i.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
@@ -154,7 +154,7 @@ export default async function DetalleCotizacionPage({
       </section>
 
       {mayorista && c.resumenEscalones.length > 0 && (
-        <section className="border-border bg-surface mt-4 rounded-2xl border p-4">
+        <section className="border-border bg-surface mt-4 rounded-card border p-4">
           <h2 className="mb-2 font-semibold">Resumen de escalones</h2>
           <ul className="flex flex-col gap-1 text-sm tabular-nums">
             {c.resumenEscalones.map((r) => (

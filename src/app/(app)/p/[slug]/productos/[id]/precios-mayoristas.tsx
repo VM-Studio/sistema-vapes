@@ -66,7 +66,7 @@ export function PreciosMayoristas({
         Precio por unidad desde cierta cantidad (suman todos los sabores). Lista:{" "}
         {formatearPesos(precioLista)}. Sin escalones propios se usan los del panel.
       </p>
-      <div className="border-border bg-surface flex flex-col gap-3 rounded-2xl border p-4">
+      <div className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4">
         <TablaEscalones
           filas={filas}
           onCambiar={setFilas}

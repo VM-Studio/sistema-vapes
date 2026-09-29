@@ -102,11 +102,11 @@ export default async function UsuarioPage({ params }: { params: Promise<{ id: st
           />
         </div>
         {sesiones.length === 0 ? (
-          <p className="border-border bg-surface-2 rounded-2xl border p-5 text-sm">
+          <p className="border-border bg-surface-2 rounded-card border p-5 text-sm">
             No tiene sesiones abiertas.
           </p>
         ) : (
-          <ul className="border-border bg-surface divide-border divide-y rounded-2xl border">
+          <ul className="border-border bg-surface divide-border divide-y rounded-card border">
             {sesiones.map((s) => (
               <li key={s.id} className="flex items-center gap-3 p-4">
                 <MonitorSmartphone

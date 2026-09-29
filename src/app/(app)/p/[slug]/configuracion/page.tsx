@@ -27,9 +27,9 @@ export default async function AjustesPanelPage() {
             <li key={s.ruta}>
               <Link
                 href={rutaPanel(ctx.panel.slug, s.ruta)}
-                className="group border-border bg-surface hover:border-primary/40 flex min-h-20 items-center gap-4 rounded-2xl border p-4 transition-colors"
+                className="group border-border bg-surface hover:border-primary/40 flex min-h-20 items-center gap-4 rounded-card border p-4 transition-colors"
               >
-                <span className="bg-primary-soft text-primary flex size-11 shrink-0 items-center justify-center rounded-xl">
+                <span className="bg-primary-soft text-primary flex size-11 shrink-0 items-center justify-center rounded-control">
                   <Icono className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">

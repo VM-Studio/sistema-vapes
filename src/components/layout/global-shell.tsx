@@ -67,7 +67,7 @@ export function GlobalShell({
                   aria-current={activo ? "page" : undefined}
                   aria-label={label}
                   className={cn(
-                    "flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius-control)] px-2.5 text-sm font-medium transition-colors",
+                    "flex h-9 shrink-0 items-center gap-2 rounded-control px-2.5 text-sm font-medium transition-colors",
                     activo
                       ? "bg-card text-foreground"
                       : "text-muted hover:bg-surface-2 hover:text-foreground",
@@ -83,7 +83,7 @@ export function GlobalShell({
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"
-              className="hover:bg-surface-2 flex h-10 items-center gap-2 rounded-[var(--radius-control)] px-1.5"
+              className="hover:bg-surface-2 flex h-10 items-center gap-2 rounded-control px-1.5"
             >
               <Avatar nombre={usuario.nombre} className="size-8" />
               <span className="hidden max-w-40 truncate text-sm font-medium md:inline">

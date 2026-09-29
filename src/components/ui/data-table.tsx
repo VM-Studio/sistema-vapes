@@ -43,7 +43,7 @@ export function DataTable<T>({
   return (
     <div className={className}>
       {/* Desktop */}
-      <div className="border-border bg-surface hidden overflow-x-auto rounded-[var(--radius-card)] border md:block">
+      <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
         <table className="w-full text-left text-sm tabular-nums">
           {caption && <caption className="sr-only">{caption}</caption>}
           <thead className="border-border bg-card text-muted border-b text-xs font-medium">
@@ -80,7 +80,7 @@ export function DataTable<T>({
             {renderMobile ? (
               renderMobile(row)
             ) : (
-              <div className="bg-card rounded-[var(--radius-card)] p-4">
+              <div className="bg-card rounded-card p-4">
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
                   {columns
                     .filter((c) => !c.ocultarEnMobile)

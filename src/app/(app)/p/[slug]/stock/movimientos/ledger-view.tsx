@@ -62,7 +62,7 @@ export function LedgerView({
         {params.referenciaId && (
           <div
             role="status"
-            className="border-primary bg-primary-soft text-primary-soft-foreground flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 text-sm"
+            className="border-primary bg-primary-soft text-primary-soft-foreground flex min-h-11 items-center justify-between gap-2 rounded-control border px-3 text-sm"
           >
             <span>
               Solo los movimientos de{" "}
@@ -143,7 +143,7 @@ export function LedgerView({
           />
           <div className="col-span-2 self-end md:col-span-4 lg:col-span-1">
             {varianteFiltro || productoFiltro ? (
-              <span className="border-primary bg-primary-soft text-primary-soft-foreground flex h-11 items-center justify-between gap-2 rounded-lg border px-3 text-sm">
+              <span className="border-primary bg-primary-soft text-primary-soft-foreground flex h-11 items-center justify-between gap-2 rounded-control border px-3 text-sm">
                 <span className="truncate">
                   {varianteFiltro?.titulo ?? `${productoFiltro?.nombre} (todas las variantes)`}
                 </span>

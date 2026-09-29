@@ -118,7 +118,7 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
           },
         ]}
         renderMobile={(d) => (
-          <div className="border-border bg-surface rounded-xl border p-4">
+          <div className="border-border bg-surface rounded-control border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-1">
                 {nombreCelda(d)}

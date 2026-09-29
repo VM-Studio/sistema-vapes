@@ -69,7 +69,7 @@ export function PasoPago({
                   aria-checked={activo}
                   onClick={() => onMedioPago(m)}
                   className={cn(
-                    "flex min-h-20 items-center gap-3 rounded-2xl border-2 p-4 text-left text-lg font-semibold transition-colors sm:flex-col sm:justify-center sm:text-center",
+                    "flex min-h-20 items-center gap-3 rounded-card border-2 p-4 text-left text-lg font-semibold transition-colors sm:flex-col sm:justify-center sm:text-center",
                     activo
                       ? "border-primary bg-primary-soft"
                       : "border-border bg-surface hover:border-input hover:bg-surface-2",
@@ -118,7 +118,7 @@ export function PasoPago({
 
       <section
         aria-label="Resumen de la venta"
-        className="border-border bg-surface-2 flex flex-col gap-3 self-start rounded-2xl border p-4"
+        className="border-border bg-surface-2 flex flex-col gap-3 self-start rounded-card border p-4"
       >
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
           <dt className="text-muted">Galpón</dt>

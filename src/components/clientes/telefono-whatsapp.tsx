@@ -18,7 +18,7 @@ export function TelefonoWhatsApp({
         href={linkWhatsApp(telefono)}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-success hover:bg-success-soft inline-flex size-9 items-center justify-center rounded-lg"
+        className="text-success hover:bg-success-soft inline-flex size-9 items-center justify-center rounded-control"
         aria-label={`WhatsApp a ${mostrarTelefono(telefono)}`}
         title="Abrir WhatsApp"
       >

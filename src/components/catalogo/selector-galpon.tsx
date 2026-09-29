@@ -42,7 +42,7 @@ export function SelectorGalpon({
       </div>
 
       {depositos.length === 0 ? (
-        <p className="bg-warning-soft text-warning-soft-foreground rounded-xl px-4 py-3 text-sm">
+        <p className="bg-warning-soft text-warning-soft-foreground rounded-control px-4 py-3 text-sm">
           Este panel no tiene depósitos activos. Creá uno en Configuración → Depósitos.
         </p>
       ) : (
@@ -57,7 +57,7 @@ export function SelectorGalpon({
                 aria-checked={activo}
                 onClick={() => setElegido(d.id)}
                 className={cn(
-                  "flex min-h-24 items-center gap-4 rounded-2xl border-2 p-5 text-left transition-colors",
+                  "flex min-h-24 items-center gap-4 rounded-card border-2 p-5 text-left transition-colors",
                   activo
                     ? "border-primary bg-primary-soft"
                     : "border-border bg-surface hover:border-input hover:bg-surface-2",
@@ -65,7 +65,7 @@ export function SelectorGalpon({
               >
                 <span
                   className={cn(
-                    "flex size-12 shrink-0 items-center justify-center rounded-xl",
+                    "flex size-12 shrink-0 items-center justify-center rounded-control",
                     activo ? "bg-primary text-primary-foreground" : "bg-surface-2 text-muted",
                   )}
                 >

@@ -91,7 +91,7 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
 
         <ul
           aria-label="Ítems"
-          className="divide-border border-border bg-surface shadow-card flex flex-col divide-y rounded-2xl border"
+          className="divide-border border-border bg-surface flex flex-col divide-y rounded-card border"
         >
           {c.items.map((i) => (
             <li key={i.varianteId} className="flex items-center justify-between gap-3 px-4 py-3">

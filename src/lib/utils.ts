@@ -4,13 +4,13 @@ import { extendTailwindMerge } from "tailwind-merge";
 /**
  * tailwind-merge con la escala tipográfica y los colores propios del sistema
  * (globals.css): sin esto, `text-body` se tomaría como color y borraría
- * `text-primary-foreground`, y `rounded-[var(--radius-card)]` no pisaría a `rounded-2xl`.
+ * `text-primary-foreground`, y `rounded-card` no pisaría a `rounded-card`.
  */
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
       text: ["display", "h1", "h2", "h3", "body", "small"],
-      radius: ["control", "card"],
+      radius: ["control", "card", "inner", "circle"],
     },
   },
 });

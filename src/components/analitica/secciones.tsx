@@ -107,7 +107,7 @@ export function SkeletonKpis({ n = 6 }: { n?: number }) {
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
       {Array.from({ length: n }, (_, i) => (
-        <Skeleton key={i} className="h-28 rounded-2xl" />
+        <Skeleton key={i} className="h-28 rounded-card" />
       ))}
     </div>
   );
@@ -124,7 +124,7 @@ export function SkeletonTarjeta({
     <Card className={className}>
       <div className="flex flex-col gap-4 p-5 md:p-6">
         <Skeleton className="h-5 w-40" />
-        <Skeleton className={`${alto} w-full rounded-xl`} />
+        <Skeleton className={`${alto} w-full rounded-control`} />
       </div>
     </Card>
   );
@@ -342,7 +342,7 @@ function ListaTop({ items, hrefDe }: { items: TopItem[]; hrefDe?: (i: TopItem) =
       {items.map((p, i) => {
         const contenido = (
           <>
-            <span className="bg-primary-soft text-primary-soft-foreground flex size-8 shrink-0 items-center justify-center rounded-xl text-sm font-semibold tabular-nums">
+            <span className="bg-primary-soft text-primary-soft-foreground flex size-8 shrink-0 items-center justify-center rounded-control text-sm font-semibold tabular-nums">
               {i + 1}
             </span>
             <span className="min-w-0 flex-1">
@@ -362,7 +362,7 @@ function ListaTop({ items, hrefDe }: { items: TopItem[]; hrefDe?: (i: TopItem) =
             {hrefDe ? (
               <Link
                 href={hrefDe(p)}
-                className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-xl px-2 py-2.5 transition-colors"
+                className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-control px-2 py-2.5 transition-colors"
               >
                 {contenido}
               </Link>
@@ -479,7 +479,7 @@ export async function SeccionEquipo({
           {empleados.map((r) => (
             <li
               key={r.usuarioId}
-              className="border-border flex flex-col gap-4 rounded-2xl border p-4"
+              className="border-border flex flex-col gap-4 rounded-card border p-4"
               data-testid={`vendedor-${r.nombre}`}
             >
               <div className="flex items-center gap-3">
@@ -505,7 +505,7 @@ export async function SeccionEquipo({
       )}
       {duenos.length > 0 && (
         <ul
-          className="border-border mt-4 flex flex-col divide-y rounded-2xl border"
+          className="border-border mt-4 flex flex-col divide-y rounded-card border"
           aria-label="Dueños"
         >
           {duenos.map((r) => (
@@ -683,9 +683,9 @@ export async function SeccionPendientes({
             <li>
               <Link
                 href={ruta("/compras?estado=BORRADOR")}
-                className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-xl px-2 py-2.5"
+                className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-control px-2 py-2.5"
               >
-                <span className="bg-warning-soft text-warning-soft-foreground flex size-8 shrink-0 items-center justify-center rounded-xl">
+                <span className="bg-warning-soft text-warning-soft-foreground flex size-8 shrink-0 items-center justify-center rounded-control">
                   <ClipboardList className="size-4" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="flex-1 font-medium">
@@ -699,9 +699,9 @@ export async function SeccionPendientes({
             <li key={c.id}>
               <Link
                 href={ruta(`/cotizador/${c.id}`)}
-                className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-xl px-2 py-2.5"
+                className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-control px-2 py-2.5"
               >
-                <span className="bg-surface-2 text-muted flex size-8 shrink-0 items-center justify-center rounded-xl">
+                <span className="bg-surface-2 text-muted flex size-8 shrink-0 items-center justify-center rounded-control">
                   <FileClock className="size-4" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">

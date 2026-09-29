@@ -20,7 +20,7 @@ export function Checkbox({ label, hint, error, id, className, ...props }: Checkb
         <input
           id={checkboxId}
           type="checkbox"
-          className="border-input size-[1.125rem] shrink-0 cursor-pointer rounded-[4px] accent-[#0a0a0a]"
+          className="border-input size-[1.125rem] shrink-0 cursor-pointer rounded-inner accent-foreground"
           aria-invalid={error ? true : undefined}
           {...props}
         />

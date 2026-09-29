@@ -180,7 +180,7 @@ export function DevolucionesView({
         renderMobile={(d) => (
           <Link
             href={ruta(`/devoluciones/${d.id}`)}
-            className="border-border bg-surface shadow-card block rounded-2xl border p-4"
+            className="border-border bg-surface block rounded-card border p-4"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold tabular-nums">{d.codigo}</span>

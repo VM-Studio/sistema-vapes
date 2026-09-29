@@ -52,7 +52,7 @@ export function TablaPreciosSheet({
           {error}
         </p>
       ) : !tabla ? (
-        <div className="bg-surface-2 h-40 animate-pulse rounded-2xl" />
+        <div className="bg-surface-2 h-40 animate-pulse rounded-card" />
       ) : (
         <div className="flex flex-col gap-5">
           <table className="w-full text-sm" data-testid="tabla-precios">
@@ -87,7 +87,7 @@ export function TablaPreciosSheet({
               <h3 className="text-sm font-semibold">Sabores con precio propio</h3>
               <ul className="flex flex-col gap-2 text-sm">
                 {tabla.saboresConPrecioPropio.map((s) => (
-                  <li key={s.varianteId} className="bg-surface-2 rounded-xl p-3">
+                  <li key={s.varianteId} className="bg-surface-2 rounded-control p-3">
                     <p className="font-medium">
                       {s.sabor ?? tabla.nombreCompleto} · lista {formatearPesos(s.precioLista)}
                     </p>

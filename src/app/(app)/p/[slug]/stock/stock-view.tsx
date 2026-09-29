@@ -236,7 +236,7 @@ export function StockView({
 
       {deposito ? (
         <section aria-label="Resumen del galpón" className="mb-4 grid grid-cols-2 gap-3">
-          <div className="border-border bg-surface flex flex-col gap-1 rounded-2xl border p-4">
+          <div className="border-border bg-surface flex flex-col gap-1 rounded-card border p-4">
             <p className="text-muted text-sm font-medium">Unidades en {deposito.nombre}</p>
             <p className="text-3xl leading-tight font-bold tabular-nums lg:text-4xl">
               {formatearNumero(deposito.unidades)}
@@ -246,7 +246,7 @@ export function StockView({
             href={link({ soloBajoMinimo: soloBajoMinimo ? null : "1" })}
             scroll={false}
             className={cn(
-              "border-border bg-surface hover:bg-surface-2/60 flex flex-col gap-1 rounded-2xl border p-4 transition-colors",
+              "border-border bg-surface hover:bg-surface-2/60 flex flex-col gap-1 rounded-card border p-4 transition-colors",
               soloBajoMinimo && "border-primary",
             )}
           >
@@ -266,7 +266,7 @@ export function StockView({
         </section>
       ) : (
         <section aria-label="Resumen global" className="mb-4 flex flex-col gap-3">
-          <div className="border-border bg-surface flex flex-wrap items-end justify-between gap-3 rounded-2xl border p-4">
+          <div className="border-border bg-surface flex flex-wrap items-end justify-between gap-3 rounded-card border p-4">
             <div>
               <p className="text-muted text-sm font-medium">Unidades en todos los galpones</p>
               <p className="text-4xl leading-tight font-bold tabular-nums">
@@ -277,7 +277,7 @@ export function StockView({
               href={link({ soloBajoMinimo: soloBajoMinimo ? null : "1" })}
               scroll={false}
               className={cn(
-                "rounded-xl px-3 py-2 text-sm font-medium",
+                "rounded-control px-3 py-2 text-sm font-medium",
                 resumen.bajoMinimo > 0
                   ? "bg-danger-soft text-danger-soft-foreground"
                   : "bg-success-soft text-success-soft-foreground",
@@ -291,7 +291,7 @@ export function StockView({
               <li key={d.id}>
                 <Link
                   href={linkTab(d.id)}
-                  className="border-border bg-surface hover:bg-surface-2/60 flex flex-col gap-0.5 rounded-2xl border p-3 transition-colors"
+                  className="border-border bg-surface hover:bg-surface-2/60 flex flex-col gap-0.5 rounded-card border p-3 transition-colors"
                 >
                   <span className="text-muted flex items-center gap-1.5 truncate text-sm">
                     <Warehouse className="size-4 shrink-0" {...ICONO} aria-hidden />
@@ -355,7 +355,7 @@ export function StockView({
         )
       ) : (
         <>
-          <div className="border-border bg-surface hidden overflow-x-auto rounded-2xl border md:block">
+          <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
             <table className="w-full text-sm" data-testid="tabla-stock">
               <caption className="sr-only">
                 {deposito ? `Stock en ${deposito.nombre}` : "Stock por galpón y total"}
@@ -434,7 +434,7 @@ export function StockView({
                   )}
                   <li
                     className={cn(
-                      "bg-surface rounded-2xl border p-4",
+                      "bg-surface rounded-card border p-4",
                       f.estado === "BAJO"
                         ? "border-warning-soft-foreground/30 bg-warning-soft/40"
                         : f.estado === "SIN_STOCK"
@@ -459,7 +459,7 @@ export function StockView({
                         depositos.map((d) => (
                           <span
                             key={d.id}
-                            className="bg-surface-2 rounded-[var(--radius-control)] px-2.5 py-1 text-xs"
+                            className="bg-surface-2 rounded-control px-2.5 py-1 text-xs"
                           >
                             {d.nombre}{" "}
                             <strong className="tabular-nums">{f.porDeposito[d.id] ?? 0}</strong>

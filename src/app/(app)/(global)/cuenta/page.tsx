@@ -27,7 +27,7 @@ export default async function CuentaPage() {
       {usuario.debeCambiarPassword && (
         <div
           role="alert"
-          className="border-warning-soft-foreground/20 bg-warning-soft text-warning-soft-foreground flex gap-3 rounded-xl border p-4 text-sm"
+          className="border-warning-soft-foreground/20 bg-warning-soft text-warning-soft-foreground flex gap-3 rounded-control border p-4 text-sm"
         >
           <KeyRound className="mt-0.5 size-5 shrink-0" aria-hidden />
           <p>

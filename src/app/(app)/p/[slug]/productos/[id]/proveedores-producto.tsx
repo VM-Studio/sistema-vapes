@@ -23,11 +23,11 @@ export function ProveedoresProducto({
         Proveedores que lo venden
       </h2>
       {proveedores.length === 0 ? (
-        <p className="border-border text-muted rounded-2xl border border-dashed px-4 py-6 text-center text-sm">
+        <p className="border-border text-muted rounded-card border border-dashed px-4 py-6 text-center text-sm">
           Todavía ningún proveedor tiene precio para este producto.
         </p>
       ) : (
-        <ol className="border-border bg-surface divide-border divide-y rounded-2xl border">
+        <ol className="border-border bg-surface divide-border divide-y rounded-card border">
           {proveedores.map((p, i) => (
             <li key={p.proveedorId}>
               <Link

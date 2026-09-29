@@ -178,9 +178,9 @@ function AccesosRapidos({ items }: { items: ItemNavegacion[] }) {
             <li key={`${item.global ? "g" : "p"}${item.href}`}>
               <Link
                 href={item.href}
-                className="group border-border bg-surface shadow-card hover:border-input hover:shadow-card-hover flex h-full min-h-16 items-center gap-4 rounded-2xl border p-4 transition-[border-color,box-shadow]"
+                className="group border-border bg-surface hover:border-input hover:shadow-card-hover flex h-full min-h-16 items-center gap-4 rounded-card border p-4 transition-[border-color,box-shadow]"
               >
-                <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-xl">
+                <span className="bg-primary-soft text-primary-soft-foreground flex size-11 shrink-0 items-center justify-center rounded-control">
                   <Icono className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">

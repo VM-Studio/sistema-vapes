@@ -229,7 +229,7 @@ export function EtiquetasView({
           ) : variantes.length === 0 ? (
             <EmptyState icon={Tags} title="No hay variantes con ese filtro" />
           ) : (
-            <div className="border-border bg-surface rounded-xl border">
+            <div className="border-border bg-surface rounded-control border">
               <div className="border-border flex items-center justify-between gap-2 border-b px-3">
                 <Checkbox
                   label={
@@ -326,7 +326,7 @@ export function EtiquetasView({
             {sinCodigo > 0 && (
               <p
                 className={cn(
-                  "rounded-lg p-2 text-sm",
+                  "rounded-control p-2 text-sm",
                   puedeGenerarCodigos
                     ? "bg-primary-soft text-primary-soft-foreground"
                     : "bg-danger-soft text-danger-soft-foreground",

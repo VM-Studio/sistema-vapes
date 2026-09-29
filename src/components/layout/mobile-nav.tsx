@@ -86,7 +86,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
       activo ? "text-foreground" : "text-subtle",
     );
   const claseLink =
-    "hover:bg-surface-3/60 flex min-h-12 items-center gap-3 rounded-[var(--radius-control)] px-3 text-sm font-medium";
+    "hover:bg-surface-3/60 flex min-h-12 items-center gap-3 rounded-control px-3 text-sm font-medium";
 
   return (
     <>
@@ -139,7 +139,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
                     onClick={() => setMasAbierto(false)}
                     aria-current={activo ? "page" : undefined}
                     className={cn(
-                      "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-[var(--radius-control)] px-1 text-center text-xs font-medium transition-colors",
+                      "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-control px-1 text-center text-xs font-medium transition-colors",
                       activo
                         ? "bg-foreground text-background"
                         : "bg-surface text-foreground hover:bg-surface-3/60",

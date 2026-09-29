@@ -66,7 +66,7 @@ export default async function PanelesPage({
       </header>
 
       {paneles.length === 0 && !owner ? (
-        <div className="bg-card rounded-[var(--radius-card)] p-10 text-center">
+        <div className="bg-card rounded-card p-10 text-center">
           <p className="text-h3 font-semibold">Todavía no tenés ningún sistema habilitado</p>
           <p className="text-muted mt-1 text-sm">Pedile acceso a un dueño.</p>
         </div>
@@ -78,7 +78,7 @@ export default async function PanelesPage({
               <li key={panel.id}>
                 <Link
                   href={rutaPanel(panel.slug)}
-                  className="group bg-card hover:bg-card-hover hover:shadow-card-hover flex h-full flex-col gap-5 rounded-[var(--radius-card)] p-4 transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 md:p-5"
+                  className="group bg-card hover:bg-card-hover hover:shadow-card-hover flex h-full flex-col gap-5 rounded-card p-4 transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 md:p-5"
                 >
                   <LogoTarjeta nombre={panel.nombre} logoUrl={panel.logoUrl} />
                   <div className="flex flex-1 items-end justify-between gap-3 px-1">

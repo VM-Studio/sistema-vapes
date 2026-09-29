@@ -32,7 +32,7 @@ export function GrillaPermisos({
 }) {
   return (
     <>
-      <div className="border-border hidden overflow-hidden rounded-xl border md:block">
+      <div className="border-border hidden overflow-hidden rounded-control border md:block">
         <table className="w-full text-sm">
           <caption className="sr-only">Permisos en {titulo}</caption>
           <thead className="border-border bg-surface-2 text-muted border-b text-xs">
@@ -84,7 +84,7 @@ export function GrillaPermisos({
       </div>
       <ul className="flex flex-col gap-2 md:hidden">
         {permisos.map((p) => (
-          <li key={p.modulo} className="border-border rounded-xl border px-4 py-3">
+          <li key={p.modulo} className="border-border rounded-control border px-4 py-3">
             <p className="font-medium">{MODULO_LABEL[p.modulo]}</p>
             {MODULO_AYUDA[p.modulo] && (
               <p className="text-muted text-xs">{MODULO_AYUDA[p.modulo]}</p>

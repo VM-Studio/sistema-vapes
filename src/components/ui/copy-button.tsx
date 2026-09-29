@@ -24,7 +24,7 @@ export function CopyButton({
         setTimeout(() => setCopiado(false), 1500);
       }}
       className={cn(
-        "text-muted hover:bg-surface-2 hover:text-foreground inline-flex size-9 items-center justify-center rounded-lg transition-colors",
+        "text-muted hover:bg-surface-2 hover:text-foreground inline-flex size-9 items-center justify-center rounded-control transition-colors",
         className,
       )}
       aria-label={copiado ? "Copiado" : `${etiqueta} ${valor}`}

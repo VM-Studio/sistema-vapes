@@ -81,7 +81,7 @@ export function ConfigVentasForm({
               error={errores.redondeoVentas}
               hint="Siempre hacia abajo: la diferencia es a favor del cliente. Se puede desactivar en cada venta."
             />
-            <p className="bg-surface-2 flex gap-2 rounded-xl p-3 text-sm">
+            <p className="bg-surface-2 flex gap-2 rounded-control p-3 text-sm">
               <Info
                 className="text-primary mt-0.5 size-4 shrink-0"
                 strokeWidth={1.75}

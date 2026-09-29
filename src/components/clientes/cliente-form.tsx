@@ -99,7 +99,7 @@ export function ClienteForm({
       {existente && (
         <p
           role="status"
-          className="bg-warning-soft text-warning-soft-foreground rounded-xl px-4 py-3 text-sm"
+          className="bg-warning-soft text-warning-soft-foreground rounded-control px-4 py-3 text-sm"
         >
           Ese teléfono es de{" "}
           <Link href={ruta(`/clientes/${existente.id}`)} className="font-semibold underline">

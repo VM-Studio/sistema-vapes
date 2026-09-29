@@ -231,7 +231,7 @@ function EditorSabores({ form, ocupados }: { form: FormProducto; ocupados: Codig
             key={field.id}
             data-testid="fila-sabor-form"
             className={cn(
-              "border-border grid grid-cols-2 gap-3 rounded-2xl border p-3 md:items-start md:gap-2 md:rounded-none md:border-0 md:border-t md:px-1 md:py-2 md:first-of-type:border-t-0",
+              "border-border grid grid-cols-2 gap-3 rounded-card border p-3 md:items-start md:gap-2 md:rounded-none md:border-0 md:border-t md:px-1 md:py-2 md:first-of-type:border-t-0",
               COLUMNAS,
             )}
           >
@@ -355,7 +355,7 @@ export function ProductoForm({
   if (creado) {
     return (
       <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-8 text-center">
-        <span className="bg-success-soft text-success-soft-foreground flex size-14 items-center justify-center rounded-full">
+        <span className="bg-success-soft text-success-soft-foreground flex size-14 items-center justify-center rounded-circle">
           <CircleCheck className="size-7" strokeWidth={1.75} aria-hidden />
         </span>
         <h1 className="text-2xl font-semibold tracking-tight">{creado.nombre} creado</h1>

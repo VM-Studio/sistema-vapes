@@ -164,7 +164,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
       ) : (
         <>
           {/* Desktop: tabla, cada producto se expande en sus sabores */}
-          <div className="border-border bg-surface hidden overflow-x-auto rounded-2xl border md:block">
+          <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
             <table className="w-full text-sm">
               <caption className="sr-only">Productos</caption>
               <thead className="border-border bg-surface-2/60 text-muted border-b text-xs tracking-wide uppercase">
@@ -202,7 +202,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
                           <button
                             type="button"
                             onClick={() => toggle(p.id)}
-                            className="text-muted hover:bg-surface-2 flex size-9 items-center justify-center rounded-lg"
+                            className="text-muted hover:bg-surface-2 flex size-9 items-center justify-center rounded-control"
                             aria-expanded={abierto}
                             aria-label={`${abierto ? "Ocultar" : "Ver"} sabores de ${p.nombreCompleto}`}
                           >
@@ -295,7 +295,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
             {productos.map((p) => {
               const abierto = expandidos.has(p.id);
               return (
-                <li key={p.id} className="border-border bg-surface rounded-2xl border">
+                <li key={p.id} className="border-border bg-surface rounded-card border">
                   <button
                     type="button"
                     onClick={() => toggle(p.id)}
@@ -349,7 +349,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
                               {depositos.map((d) => (
                                 <span
                                   key={d.id}
-                                  className="bg-surface-2 rounded-[var(--radius-control)] px-2.5 py-1 text-xs"
+                                  className="bg-surface-2 rounded-control px-2.5 py-1 text-xs"
                                 >
                                   {d.nombre}{" "}
                                   <strong className="tabular-nums">
@@ -357,7 +357,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
                                   </strong>
                                 </span>
                               ))}
-                              <span className="bg-primary-soft text-primary-soft-foreground rounded-[var(--radius-control)] px-2.5 py-1 text-xs">
+                              <span className="bg-primary-soft text-primary-soft-foreground rounded-control px-2.5 py-1 text-xs">
                                 Total <strong className="tabular-nums">{s.stockTotal}</strong>
                               </span>
                             </div>

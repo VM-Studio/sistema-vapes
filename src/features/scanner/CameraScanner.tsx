@@ -265,7 +265,7 @@ export function CameraScanner({
       aria-label={titulo}
       data-estado={estado}
       data-motor={motor ?? undefined}
-      className="anim-dialog m-0 h-dvh max-h-none w-screen max-w-none bg-black p-0 text-white md:m-auto md:h-[80dvh] md:w-[min(720px,92vw)] md:rounded-2xl"
+      className="anim-dialog m-0 h-dvh max-h-none w-screen max-w-none bg-black p-0 text-white md:m-auto md:h-[80dvh] md:w-[min(720px,92vw)] md:rounded-card"
     >
       {open && (
         <div className="relative flex h-full flex-col">
@@ -278,7 +278,7 @@ export function CameraScanner({
                   onClick={() => setRafaga((r) => !r)}
                   aria-pressed={rafaga}
                   className={cn(
-                    "flex h-11 items-center gap-1.5 rounded-full px-3 text-sm",
+                    "flex h-11 items-center gap-1.5 rounded-circle px-3 text-sm",
                     rafaga ? "bg-white text-black" : "bg-white/15",
                   )}
                   title="Modo ráfaga: acepta el mismo código repetido (para contar unidades iguales)"
@@ -292,7 +292,7 @@ export function CameraScanner({
                   onClick={alternarLinterna}
                   aria-pressed={torch.encendida}
                   aria-label={torch.encendida ? "Apagar linterna" : "Encender linterna"}
-                  className="flex size-11 items-center justify-center rounded-full bg-white/15"
+                  className="flex size-11 items-center justify-center rounded-circle bg-white/15"
                 >
                   {torch.encendida ? (
                     <FlashlightOff className="size-5" />
@@ -305,7 +305,7 @@ export function CameraScanner({
                 type="button"
                 onClick={() => onOpenChange(false)}
                 aria-label="Cerrar cámara"
-                className="flex size-11 items-center justify-center rounded-full bg-white/15"
+                className="flex size-11 items-center justify-center rounded-circle bg-white/15"
               >
                 <X className="size-5" />
               </button>
@@ -326,7 +326,7 @@ export function CameraScanner({
                 className="pointer-events-none absolute inset-0 flex items-center justify-center"
                 aria-hidden
               >
-                <div className="relative h-40 w-[78%] max-w-md rounded-2xl border-2 border-white/90 shadow-[0_0_0_100vmax_rgba(0,0,0,0.35)]">
+                <div className="relative h-40 w-[78%] max-w-md rounded-card border-2 border-white/90 shadow-scrim">
                   <div className="absolute inset-x-4 top-1/2 h-0.5 animate-pulse bg-red-500/80" />
                 </div>
               </div>
@@ -337,7 +337,7 @@ export function CameraScanner({
                 key={mensaje.clave}
                 role="status"
                 className={cn(
-                  "absolute inset-x-4 top-20 z-10 mx-auto max-w-md rounded-xl px-4 py-3 text-center shadow-lg",
+                  "absolute inset-x-4 top-20 z-10 mx-auto max-w-md rounded-control px-4 py-3 text-center shadow-pop",
                   mensaje.tipo === "ok" ? "bg-emerald-600" : "bg-red-600",
                 )}
               >

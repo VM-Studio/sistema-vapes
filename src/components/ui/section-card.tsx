@@ -19,7 +19,7 @@ export function SectionCard({
   contentClassName?: string;
 }) {
   return (
-    <section className={cn("bg-card rounded-[var(--radius-card)]", className)}>
+    <section className={cn("bg-card rounded-card", className)}>
       <header className="flex items-start justify-between gap-3 px-5 pt-5 md:px-6">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h2 className="text-h3 font-semibold">{title}</h2>

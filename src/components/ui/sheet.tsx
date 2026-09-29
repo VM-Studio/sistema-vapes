@@ -44,7 +44,7 @@ export function Sheet({
       className={cn(
         "anim-sheet bg-card text-foreground shadow-sheet m-0 max-h-none max-w-none p-0",
         // mobile: bottom sheet
-        "top-auto right-0 bottom-0 left-0 max-h-[90dvh] w-full rounded-t-[var(--radius-card)]",
+        "top-auto right-0 bottom-0 left-0 max-h-[90dvh] w-full rounded-t-card",
         // desktop: panel lateral
         "md:top-0 md:right-0 md:bottom-0 md:left-auto md:h-dvh md:max-h-dvh md:w-[30rem] md:rounded-none",
         className,
@@ -53,7 +53,7 @@ export function Sheet({
       {open && (
         <div className="flex max-h-[90dvh] flex-col md:h-dvh md:max-h-dvh">
           <div
-            className="bg-input mx-auto mt-2 h-1 w-9 shrink-0 rounded-full md:hidden"
+            className="bg-input mx-auto mt-2 h-1 w-9 shrink-0 rounded-circle md:hidden"
             aria-hidden
           />
           <header className="flex items-start justify-between gap-3 border-b border-black/[0.06] px-4 py-3 md:px-6 md:py-5">

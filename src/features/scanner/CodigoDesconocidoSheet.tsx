@@ -93,7 +93,7 @@ export function CodigoDesconocidoSheet({
     >
       <div className="flex flex-col gap-5">
         {!puedeAsociar && !puedeCrear && (
-          <p className="bg-warning-soft text-warning-soft-foreground rounded-lg px-3 py-2.5 text-sm">
+          <p className="bg-warning-soft text-warning-soft-foreground rounded-control px-3 py-2.5 text-sm">
             No tenés permiso para cargar productos. Pedile a alguien con permiso en Productos que lo
             agregue.
           </p>
@@ -105,7 +105,7 @@ export function CodigoDesconocidoSheet({
               Por ejemplo, el mismo producto que llegó de otro importador con otro código.
             </p>
             {elegida ? (
-              <div className="border-primary bg-primary-soft flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-sm">
+              <div className="border-primary bg-primary-soft flex items-center justify-between gap-2 rounded-control border px-3 py-2.5 text-sm">
                 <span className="text-primary-soft-foreground font-medium">{elegida.titulo}</span>
                 <Button variant="ghost" size="sm" onClick={() => setElegida(null)}>
                   Cambiar
