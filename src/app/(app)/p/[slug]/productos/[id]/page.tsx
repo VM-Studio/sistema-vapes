@@ -1,10 +1,8 @@
 import { Modulo } from "@prisma/client";
-import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { buttonVariants } from "@/components/ui/button";
+import { SectionCard } from "@/components/ui/section-card";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { requirePaginaPanel } from "@/server/auth/permissions";
@@ -46,38 +44,38 @@ export default async function FichaProductoPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <Link
-        href={rutaPanel(ctx.panel.slug, "/productos")}
-        className={buttonVariants({ variant: "ghost", size: "sm", className: "mb-2 -ml-2" })}
-      >
-        <ArrowLeft strokeWidth={1.75} /> Productos
-      </Link>
       <CabeceraProducto producto={producto} depositos={depositos} />
-      <SaboresProducto producto={producto} depositos={depositos} />
-      {escalones && (
-        <PreciosMayoristas
-          productoId={id}
-          precioLista={String(producto.precioVenta)}
-          escalones={escalones}
-        />
-      )}
-      {proveedores && (
-        <ProveedoresProducto
-          proveedores={proveedores}
-          baseProveedores={rutaPanel(ctx.panel.slug, "/proveedores")}
-        />
-      )}
-      <section aria-labelledby="movimientos" className="mt-6">
-        <h2 id="movimientos" className="mb-3 text-lg font-semibold">
-          Últimos movimientos
-        </h2>
-        <MovimientosProducto
-          movimientos={movimientos.movimientos}
-          total={movimientos.total}
-          verCostos={owner}
-          hrefTodos={rutaPanel(ctx.panel.slug, `/stock/movimientos?productoId=${id}`)}
-        />
-      </section>
+      <div className="flex flex-col gap-4">
+        <SaboresProducto producto={producto} depositos={depositos} />
+        {(escalones || proveedores) && (
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            {escalones && (
+              <PreciosMayoristas
+                productoId={id}
+                precioLista={String(producto.precioVenta)}
+                escalones={escalones}
+              />
+            )}
+            {proveedores && (
+              <ProveedoresProducto
+                proveedores={proveedores}
+                baseProveedores={rutaPanel(ctx.panel.slug, "/proveedores")}
+              />
+            )}
+          </div>
+        )}
+        <SectionCard
+          title="Últimos movimientos"
+          description="Entradas, salidas y transferencias de todos los sabores."
+        >
+          <MovimientosProducto
+            movimientos={movimientos.movimientos}
+            total={movimientos.total}
+            verCostos={owner}
+            hrefTodos={rutaPanel(ctx.panel.slug, `/stock/movimientos?productoId=${id}`)}
+          />
+        </SectionCard>
+      </div>
     </>
   );
 }

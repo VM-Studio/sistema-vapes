@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SectionCard } from "@/components/ui/section-card";
 import { useToast } from "@/components/ui/toast";
 import { formatearPesos } from "@/lib/format";
 import { esOwner } from "@/lib/permisos";
@@ -59,31 +60,32 @@ export function SaboresProducto({
   );
 
   return (
-    <section aria-labelledby="sabores">
-      <h2 id="sabores" className="mb-3 text-lg font-semibold">
-        {producto.sinSabores ? "Stock" : `Sabores (${producto.sabores.length})`}
-      </h2>
-
+    <SectionCard
+      title={producto.sinSabores ? "Stock" : `Sabores (${producto.sabores.length})`}
+      description="Código, precio y stock por galpón de cada sabor."
+    >
       {/* Desktop */}
-      <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
-        <table className="w-full text-sm">
+      <div className="border-border bg-surface rounded-card hidden overflow-x-auto border md:block">
+        <table className="w-full text-sm tabular-nums">
           <caption className="sr-only">Sabores</caption>
-          <thead className="border-border bg-surface-2/60 text-muted border-b text-xs tracking-wide uppercase">
+          <thead className="border-border bg-card text-muted border-b text-xs font-medium">
             <tr>
-              <th className="px-3 py-3 text-left font-medium">Sabor</th>
-              <th className="px-3 py-3 text-left font-medium">Código</th>
-              <th className="px-3 py-3 text-right font-medium">Precio</th>
-              {verCosto && <th className="px-3 py-3 text-right font-medium">Último costo</th>}
+              <th className="h-10 px-4 text-left font-medium whitespace-nowrap">Sabor</th>
+              <th className="h-10 px-4 text-left font-medium whitespace-nowrap">Código</th>
+              <th className="h-10 px-4 text-right font-medium whitespace-nowrap">Precio</th>
+              {verCosto && (
+                <th className="h-10 px-4 text-right font-medium whitespace-nowrap">Último costo</th>
+              )}
               {depositos.map((d) => (
-                <th key={d.id} className="px-3 py-3 text-right font-medium">
+                <th key={d.id} className="h-10 px-4 text-right font-medium whitespace-nowrap">
                   {d.nombre}
                 </th>
               ))}
-              <th className="px-3 py-3 text-right font-medium">Total</th>
-              <th className="px-3 py-3 text-right font-medium">Mín.</th>
-              <th className="px-3 py-3 text-left font-medium">Estado</th>
+              <th className="h-10 px-4 text-right font-medium whitespace-nowrap">Total</th>
+              <th className="h-10 px-4 text-right font-medium whitespace-nowrap">Mín.</th>
+              <th className="h-10 px-4 text-left font-medium whitespace-nowrap">Estado</th>
               {puedeEditar && (
-                <th className="px-3 py-3">
+                <th className="h-10 px-4">
                   <span className="sr-only">Acciones</span>
                 </th>
               )}
@@ -91,8 +93,12 @@ export function SaboresProducto({
           </thead>
           <tbody className="divide-border divide-y">
             {producto.sabores.map((s) => (
-              <tr key={s.id} aria-label={titulo(s)} className={cn(!s.activo && "text-muted")}>
-                <td className="px-3 py-2.5 font-medium">
+              <tr
+                key={s.id}
+                aria-label={titulo(s)}
+                className={cn("hover:bg-card/60 transition-colors", !s.activo && "text-muted")}
+              >
+                <td className="px-4 py-3 font-medium">
                   {titulo(s)}
                   {s.codigosAlternativos.length > 0 && (
                     <span className="text-muted block text-xs font-normal">
@@ -100,12 +106,12 @@ export function SaboresProducto({
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2.5">{codigo(s)}</td>
-                <td className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
+                <td className="px-4 py-3">{codigo(s)}</td>
+                <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">
                   {precio(s)}
                 </td>
                 {verCosto && (
-                  <td className="px-3 py-2.5 text-right tabular-nums">
+                  <td className="px-4 py-3 text-right tabular-nums">
                     {s.ultimoCosto === null ? "—" : formatearPesos(s.ultimoCosto)}
                   </td>
                 )}
@@ -113,19 +119,19 @@ export function SaboresProducto({
                   <td
                     key={d.id}
                     data-deposito={d.nombre}
-                    className="px-3 py-2.5 text-right tabular-nums"
+                    className="px-4 py-3 text-right tabular-nums"
                   >
                     {s.stockPorDeposito[d.id] ?? 0}
                   </td>
                 ))}
                 <td
                   data-deposito="Total"
-                  className="px-3 py-2.5 text-right font-semibold tabular-nums"
+                  className="px-4 py-3 text-right font-semibold tabular-nums"
                 >
                   {s.stockTotal}
                 </td>
-                <td className="text-muted px-3 py-2.5 text-right tabular-nums">{s.stockMinimo}</td>
-                <td className="px-3 py-2.5">
+                <td className="text-muted px-4 py-3 text-right tabular-nums">{s.stockMinimo}</td>
+                <td className="px-4 py-3">
                   {s.activo ? <EstadoStockBadge estado={s.estado} /> : <Badge>Inactivo</Badge>}
                 </td>
                 {puedeEditar && (
@@ -161,29 +167,27 @@ export function SaboresProducto({
                 )}
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold tabular-nums">{s.stockTotal}</p>
+                <p className="text-h2 font-semibold tabular-nums">{s.stockTotal}</p>
                 {s.activo ? <EstadoStockBadge estado={s.estado} /> : <Badge>Inactivo</Badge>}
               </div>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {depositos.map((d) => (
-                <span
-                  key={d.id}
-                  className="bg-surface-2 rounded-control px-2.5 py-1 text-xs"
-                >
+                <span key={d.id} className="bg-card rounded-control px-2.5 py-1 text-xs">
                   {d.nombre}{" "}
                   <strong className="tabular-nums">{s.stockPorDeposito[d.id] ?? 0}</strong>
                 </span>
               ))}
-              <span className="bg-surface-2 text-muted rounded-control px-2.5 py-1 text-xs">
+              <span className="bg-card text-muted rounded-control px-2.5 py-1 text-xs">
                 mín. {s.stockMinimo}
               </span>
             </div>
             {puedeEditar && (
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                className="mt-2 w-full"
+                fullWidth
+                className="mt-3"
                 onClick={() => setCodigos(s)}
               >
                 <Barcode strokeWidth={1.75} /> Códigos ({s.codigosAlternativos.length + 1})
@@ -199,7 +203,7 @@ export function SaboresProducto({
         titulo={codigos ? titulo(codigos) : ""}
         onClose={() => setCodigos(null)}
       />
-    </section>
+    </SectionCard>
   );
 }
 
@@ -256,14 +260,14 @@ function CodigosDialog({
       }
     >
       <ul className="flex flex-col gap-1.5 text-sm">
-        <li className="bg-surface-2 flex items-center justify-between gap-2 rounded-control px-3 py-2">
+        <li className="bg-surface rounded-control flex items-center justify-between gap-2 px-3 py-2">
           <span className="font-mono">{sabor?.codigoBarras ?? "Sin código principal"}</span>
           <Badge variant="primary">Principal</Badge>
         </li>
         {sabor?.codigosAlternativos.map((c) => (
           <li
             key={c.id}
-            className="border-border flex items-center justify-between gap-2 rounded-control border px-3 py-1.5"
+            className="border-border bg-surface rounded-control flex items-center justify-between gap-2 border px-3 py-1.5"
           >
             <span className="min-w-0">
               <span className="block font-mono">{c.codigo}</span>
@@ -318,7 +322,7 @@ function GenerarCodigo({ varianteId, nombre }: { varianteId: string; nombre: str
     <Button
       variant="ghost"
       size="sm"
-      className="text-primary -ml-2"
+      className="-ml-2"
       onClick={() => void generar()}
       loading={generando}
     >

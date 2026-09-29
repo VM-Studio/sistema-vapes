@@ -77,11 +77,7 @@ export function ConfigCotizadorForm({
         title="Configuración del cotizador"
         subtitle="Validez, escalones por defecto y lo que muestra el PDF."
         actions={
-          <Button
-            onClick={() => void guardar()}
-            loading={guardando}
-            className="max-md:hidden"
-          >
+          <Button onClick={() => void guardar()} loading={guardando} className="max-md:hidden">
             {!guardando && <Save strokeWidth={1.75} />} Guardar
           </Button>
         }

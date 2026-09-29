@@ -19,11 +19,14 @@ export const ETIQUETA_MEDIO_PAGO: Record<MedioPago, string> = {
   BINANCE: "Binance",
 };
 
-/** Badge del medio de pago: Efectivo verde, Transferencia azul, Binance amarillo. */
+/**
+ * Clases del badge de medio de pago (si no se usa `MedioPagoBadge`): neutro del
+ * sistema para los tres; se distinguen por etiqueta e ícono, nunca por color.
+ */
 export const CLASE_MEDIO_PAGO: Record<MedioPago, string> = {
-  EFECTIVO: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 ring-inset",
-  TRANSFERENCIA: "bg-blue-50 text-blue-700 ring-1 ring-blue-200 ring-inset",
-  BINANCE: "bg-amber-100 text-amber-800 ring-1 ring-amber-300 ring-inset",
+  EFECTIVO: "bg-surface-3 text-foreground",
+  TRANSFERENCIA: "bg-surface-3 text-foreground",
+  BINANCE: "bg-surface-3 text-foreground",
 };
 
 export const ETIQUETA_TIPO_VENTA: Record<TipoVenta, string> = {

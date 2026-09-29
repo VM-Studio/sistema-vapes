@@ -43,8 +43,8 @@ export function GlobalShell({
       ];
 
   return (
-    <div className="min-h-dvh bg-white">
-      <header className="pt-safe pl-safe pr-safe border-border sticky top-0 z-30 border-b bg-white">
+    <div className="bg-background min-h-dvh">
+      <header className="pt-safe pl-safe pr-safe border-border bg-background sticky top-0 z-30 border-b">
         <div className="mx-auto flex h-14 max-w-[1280px] items-center gap-2 px-4 md:gap-4 md:px-8">
           <Link
             href="/paneles"
@@ -67,7 +67,7 @@ export function GlobalShell({
                   aria-current={activo ? "page" : undefined}
                   aria-label={label}
                   className={cn(
-                    "flex h-9 shrink-0 items-center gap-2 rounded-control px-2.5 text-sm font-medium transition-colors",
+                    "rounded-control flex h-9 shrink-0 items-center gap-2 px-2.5 text-sm font-medium transition-colors",
                     activo
                       ? "bg-card text-foreground"
                       : "text-muted hover:bg-surface-2 hover:text-foreground",
@@ -83,7 +83,7 @@ export function GlobalShell({
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"
-              className="hover:bg-surface-2 flex h-10 items-center gap-2 rounded-control px-1.5"
+              className="hover:bg-surface-2 rounded-control flex h-10 items-center gap-2 px-1.5"
             >
               <Avatar nombre={usuario.nombre} className="size-8" />
               <span className="hidden max-w-40 truncate text-sm font-medium md:inline">

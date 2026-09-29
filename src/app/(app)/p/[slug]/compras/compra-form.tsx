@@ -13,6 +13,7 @@ import { ProveedorForm, soloDecimal } from "@/components/compras/proveedor-form"
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { BarraAccion } from "@/components/ui/barra-accion";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -312,6 +313,19 @@ export function CompraForm({
   }
 
   const titulo = compraId && inicial.id ? `Editar compra ${idVisible ?? ""}` : "Nueva compra";
+  const migas = (
+    <Breadcrumb
+      items={
+        compraId && inicial.id
+          ? [
+              { label: "Compras", href: ruta("/compras") },
+              { label: idVisible ?? "Compra", href: ruta(`/compras/${compraId}`) },
+              { label: "Editar" },
+            ]
+          : [{ label: "Compras", href: ruta("/compras") }, { label: "Nueva" }]
+      }
+    />
+  );
   const pasos = (
     <Stepper
       pasos={["Proveedor", "Galpón", "Ítems"]}
@@ -330,7 +344,11 @@ export function CompraForm({
       : proveedores;
     return (
       <>
-        <PageHeader title={titulo} subtitle="Paso 1 de 3 · ¿A quién le comprás?" />
+        <PageHeader
+          title={titulo}
+          breadcrumb={migas}
+          subtitle="Paso 1 de 3 · ¿A quién le comprás?"
+        />
         {pasos}
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -365,6 +383,13 @@ export function CompraForm({
                 puedeCrearProveedor
                   ? "Crealo con «Crear proveedor rápido»."
                   : "Pedile a un dueño que lo cargue en Proveedores."
+              }
+              action={
+                proveedores.length > 0 && f ? (
+                  <Button variant="secondary" onClick={() => setFiltroProveedor("")}>
+                    Limpiar búsqueda
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -446,7 +471,11 @@ export function CompraForm({
   if (paso === 2) {
     return (
       <>
-        <PageHeader title={titulo} subtitle={`Paso 2 de 3 · Compra a ${proveedor?.nombre ?? ""}`} />
+        <PageHeader
+          title={titulo}
+          breadcrumb={migas}
+          subtitle={`Paso 2 de 3 · Compra a ${proveedor?.nombre ?? ""}`}
+        />
         {pasos}
         <SelectorGalpon
           depositos={depositos}
@@ -458,7 +487,7 @@ export function CompraForm({
             setPaso(3);
           }}
         />
-        <Button variant="ghost" className="mt-4" onClick={() => setPaso(1)}>
+        <Button variant="ghost" className="mt-4 w-full md:w-auto" onClick={() => setPaso(1)}>
           <ArrowLeft strokeWidth={1.75} /> Volver al proveedor
         </Button>
       </>
@@ -472,6 +501,7 @@ export function CompraForm({
     <>
       <PageHeader
         title={titulo}
+        breadcrumb={migas}
         subtitle="Paso 3 de 3 · Escaneá la mercadería (pistola o cámara) o buscala a mano."
       />
       {pasos}

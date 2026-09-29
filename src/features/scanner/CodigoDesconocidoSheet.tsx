@@ -105,8 +105,8 @@ export function CodigoDesconocidoSheet({
               Por ejemplo, el mismo producto que llegó de otro importador con otro código.
             </p>
             {elegida ? (
-              <div className="border-primary bg-primary-soft flex items-center justify-between gap-2 rounded-control border px-3 py-2.5 text-sm">
-                <span className="text-primary-soft-foreground font-medium">{elegida.titulo}</span>
+              <div className="border-foreground bg-surface rounded-control flex items-center justify-between gap-2 border px-3 py-2.5 text-sm">
+                <span className="font-medium">{elegida.titulo}</span>
                 <Button variant="ghost" size="sm" onClick={() => setElegida(null)}>
                   Cambiar
                 </Button>

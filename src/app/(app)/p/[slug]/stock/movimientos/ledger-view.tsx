@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { VariantePicker } from "@/components/catalogo/variante-picker";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useRutaPanel } from "@/components/layout/panel-context";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
@@ -26,6 +27,8 @@ interface Props {
   deposito: string | null;
   /** Selector Global / depósito (lo arma el servidor). */
   selector: ReactNode;
+  /** Sub-navegación de Stock (debajo del encabezado). */
+  tabs?: ReactNode;
   usuarios: { id: string; nombre: string; activo: boolean }[];
   varianteFiltro: VarianteEncontrada | null;
   productoFiltro: { id: string; nombre: string } | null;
@@ -38,6 +41,7 @@ export function LedgerView({
   fechas,
   deposito,
   selector,
+  tabs,
   usuarios,
   varianteFiltro,
   productoFiltro,
@@ -53,14 +57,20 @@ export function LedgerView({
     <>
       <PageHeader
         title="Movimientos"
-        subtitle={`${resultado.total} movimientos ${deposito ? `en ${deposito}` : "de todos los depósitos"} · historial inmutable del stock`}
+        subtitle={`${resultado.total} movimientos ${deposito ? `en ${deposito}` : "de todos los galpones"} · historial inmutable del stock`}
+        breadcrumb={
+          <Breadcrumb
+            items={[{ label: "Stock", href: ruta("/stock") }, { label: "Movimientos" }]}
+          />
+        }
       />
+      {tabs}
       <div className="mb-4 flex flex-col gap-3">
         {selector}
         {params.referenciaId && (
           <div
             role="status"
-            className="bg-card flex min-h-11 items-center justify-between gap-2 rounded-control pl-3 text-sm"
+            className="bg-card rounded-control flex min-h-11 items-center justify-between gap-2 pl-3 text-sm"
           >
             <span>
               Solo los movimientos de{" "}
@@ -70,7 +80,7 @@ export function LedgerView({
               type="button"
               onClick={() => actualizar({ referenciaTipo: null, referenciaId: null })}
               aria-label="Quitar filtro de referencia"
-              className="text-muted hover:bg-surface-3 hover:text-foreground flex size-11 items-center justify-center rounded-control"
+              className="text-muted hover:bg-surface-3 hover:text-foreground rounded-control flex size-11 items-center justify-center"
             >
               <X className="size-5" strokeWidth={1.75} />
             </button>
@@ -137,7 +147,7 @@ export function LedgerView({
           />
           <div className="col-span-2 md:min-w-64 md:flex-1">
             {varianteFiltro || productoFiltro ? (
-              <span className="bg-card flex h-11 items-center justify-between gap-2 rounded-control pl-3 text-sm md:h-10">
+              <span className="bg-card rounded-control flex h-11 items-center justify-between gap-2 pl-3 text-sm md:h-10">
                 <span className="truncate">
                   {varianteFiltro?.titulo ?? `${productoFiltro?.nombre} (todas las variantes)`}
                 </span>
@@ -145,7 +155,7 @@ export function LedgerView({
                   type="button"
                   onClick={() => actualizar({ varianteId: null, productoId: null })}
                   aria-label="Quitar filtro de producto"
-                  className="text-muted hover:bg-surface-3 hover:text-foreground flex size-11 shrink-0 items-center justify-center rounded-control md:size-10"
+                  className="text-muted hover:bg-surface-3 hover:text-foreground rounded-control flex size-11 shrink-0 items-center justify-center md:size-10"
                 >
                   <X className="size-5" strokeWidth={1.75} />
                 </button>

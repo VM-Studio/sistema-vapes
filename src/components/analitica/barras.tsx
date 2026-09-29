@@ -1,5 +1,5 @@
 import { ChartPlaceholder } from "@/components/ui/chart-theme";
-import { formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export interface Barra {
@@ -15,6 +15,16 @@ const COLOR = {
   naranja: "bg-dato-anterior",
 } as const;
 
+/** Escala categórica fija (ChartTheme.escala): el color sigue a la categoría. */
+const ESCALA = [
+  "bg-serie-1",
+  "bg-serie-2",
+  "bg-serie-3",
+  "bg-serie-4",
+  "bg-serie-5",
+  "bg-serie-6",
+] as const;
+
 /**
  * Barras horizontales de una sola serie (azul de marca, o un color por barra
  * con `colores`): etiqueta a la izquierda, valor a la derecha y la barra
@@ -25,15 +35,20 @@ export function BarrasHorizontales({
   datos,
   moneda = true,
   colores,
+  categorias = false,
 }: {
   datos: Barra[];
   moneda?: boolean;
   /** Color de cada barra en orden (default: todas azules). */
   colores?: (keyof typeof COLOR)[];
+  /** Cada barra es una categoría: toma la escala fija en orden (azul, azul claro, naranja…). */
+  categorias?: boolean;
 }) {
-  const fmt = (v: number) => (moneda ? formatearPesos(v) : v.toLocaleString("es-AR"));
+  const fmt = (v: number) => (moneda ? formatearPesos(v) : formatearNumero(v));
   if (!datos.some((d) => d.valor)) {
-    return <ChartPlaceholder mensaje="Sin datos en el período" className="h-40 md:h-44" />;
+    return (
+      <ChartPlaceholder mensaje="Todavía no hay datos en este período" className="h-40 md:h-44" />
+    );
   }
   const max = Math.max(...datos.map((d) => d.valor), 0);
   return (
@@ -51,7 +66,12 @@ export function BarrasHorizontales({
             </div>
             <div className="bg-surface-3 h-2.5 w-full" aria-hidden>
               <div
-                className={cn("h-full", COLOR[colores?.[i] ?? "azul"])}
+                className={cn(
+                  "h-full",
+                  categorias
+                    ? ESCALA[Math.min(i, ESCALA.length - 1)]
+                    : COLOR[colores?.[i] ?? "azul"],
+                )}
                 style={{ width: `${pct}%` }}
               />
             </div>

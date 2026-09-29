@@ -16,7 +16,7 @@ export function BotonCamara({ onClick, className }: { onClick: () => void; class
       aria-label="Escanear con la cámara"
       title="Escanear con la cámara"
     >
-      <Camera />
+      <Camera strokeWidth={1.75} />
     </Button>
   );
 }

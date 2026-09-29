@@ -109,7 +109,20 @@ export function ClasificacionView({ tipo, filas }: { tipo: Tipo; filas: Clasific
         caption={textos.titulo}
         rows={filas}
         getRowKey={(f) => f.id}
-        empty={<EmptyState icon={Tag} title={`No hay ${textos.titulo.toLowerCase()}`} />}
+        empty={
+          <EmptyState
+            icon={Tag}
+            title={`Todavía no hay ${textos.titulo.toLowerCase()}`}
+            description={textos.subtitulo}
+            action={
+              puedeCrear && (
+                <Button onClick={() => setEditando("nuevo")}>
+                  <Plus strokeWidth={1.75} /> Nueva {textos.singular}
+                </Button>
+              )
+            }
+          />
+        }
         columns={[
           {
             key: "nombre",

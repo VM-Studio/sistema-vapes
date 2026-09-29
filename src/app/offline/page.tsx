@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Sin conexión" };
  */
 export default function OfflinePage() {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-6 bg-white px-4 py-6 pt-[calc(1.5rem+env(safe-area-inset-top))]">
+    <main className="bg-background mx-auto flex min-h-dvh max-w-xl flex-col gap-6 px-4 py-6 pt-[calc(1.5rem+env(safe-area-inset-top))]">
       <header className="flex flex-col gap-3">
         <span className="bg-card rounded-card flex size-12 items-center justify-center">
           <WifiOff className="size-6" strokeWidth={1.75} aria-hidden />

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { SectionCard } from "@/components/ui/section-card";
 import { useToast } from "@/components/ui/toast";
 import { formatearPesos } from "@/lib/format";
 import type { EscalonGuardado } from "@/server/services/escalon.service";
@@ -58,33 +59,34 @@ export function PreciosMayoristas({
   }
 
   return (
-    <section aria-labelledby="precios-mayoristas" className="mt-6">
-      <h2 id="precios-mayoristas" className="mb-1 text-lg font-semibold">
-        Precios mayoristas
-      </h2>
-      <p className="text-muted mb-3 text-sm">
-        Precio por unidad desde cierta cantidad (suman todos los sabores). Lista:{" "}
-        {formatearPesos(precioLista)}. Sin escalones propios se usan los del panel.
-      </p>
-      <div className="border-border bg-surface flex flex-col gap-3 rounded-card border p-4">
-        <TablaEscalones
-          filas={filas}
-          onCambiar={setFilas}
-          etiquetaValor="Precio c/u ($)"
-          placeholderValor="9000"
-        />
-        {preview && (
-          <p
-            className="text-primary text-sm font-medium tabular-nums"
-            data-testid="preview-escalones"
-          >
-            Con {preview}
-          </p>
-        )}
-        <Button className="self-end" onClick={() => void guardar()} loading={guardando}>
-          Guardar precios mayoristas
-        </Button>
-      </div>
-    </section>
+    <SectionCard
+      title="Precios mayoristas"
+      description={
+        <>
+          Precio por unidad desde cierta cantidad (suman todos los sabores). Lista:{" "}
+          {formatearPesos(precioLista)}. Sin escalones propios se usan los del panel.
+        </>
+      }
+      contentClassName="flex flex-col gap-4"
+    >
+      <TablaEscalones
+        filas={filas}
+        onCambiar={setFilas}
+        etiquetaValor="Precio c/u ($)"
+        placeholderValor="9000"
+      />
+      {preview && (
+        <p className="text-small font-medium tabular-nums" data-testid="preview-escalones">
+          Con {preview}
+        </p>
+      )}
+      <Button
+        className="w-full md:w-auto md:self-end"
+        onClick={() => void guardar()}
+        loading={guardando}
+      >
+        Guardar precios mayoristas
+      </Button>
+    </SectionCard>
   );
 }

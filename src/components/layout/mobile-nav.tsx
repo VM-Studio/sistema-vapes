@@ -139,7 +139,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
                     onClick={() => setMasAbierto(false)}
                     aria-current={activo ? "page" : undefined}
                     className={cn(
-                      "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-control px-1 text-center text-xs font-medium transition-colors",
+                      "rounded-control flex min-h-20 flex-col items-center justify-center gap-1.5 px-1 text-center text-xs font-medium transition-colors",
                       activo
                         ? "bg-foreground text-background"
                         : "bg-surface text-foreground hover:bg-surface-3/60",
@@ -153,7 +153,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
             })}
           </ul>
         )}
-        <div className="mt-4 flex flex-col gap-1 border-t border-black/[0.06] pt-3">
+        <div className="border-border mt-4 flex flex-col gap-1 border-t pt-3">
           <Link href="/paneles" onClick={() => setMasAbierto(false)} className={claseLink}>
             <LayoutGrid className="text-muted size-5" strokeWidth={1.75} aria-hidden />
             Cambiar de sistema

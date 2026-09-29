@@ -1,4 +1,5 @@
 import { Modulo } from "@prisma/client";
+import { UserPlus, UserRound, UserX } from "lucide-react";
 import type { Metadata } from "next";
 
 import { DataTable } from "@/components/ui/data-table";
@@ -78,7 +79,7 @@ export default async function ReporteClientesPage({
             caption="Clientes nuevos"
             rows={c.nuevos.slice(0, 100)}
             getRowKey={(x) => x.id}
-            empty={<EmptyState title="No hubo clientes nuevos en el período" />}
+            empty={<EmptyState icon={UserPlus} title="No hubo clientes nuevos en el período" />}
             columns={[
               {
                 key: "n",
@@ -120,7 +121,7 @@ export default async function ReporteClientesPage({
             caption="Mejores compradores"
             rows={c.top}
             getRowKey={(x) => x.id}
-            empty={<EmptyState title="No hubo ventas en el período" />}
+            empty={<EmptyState icon={UserRound} title="No hubo ventas en el período" />}
             columns={[
               {
                 key: "n",
@@ -168,7 +169,7 @@ export default async function ReporteClientesPage({
           caption="Clientes inactivos"
           rows={c.inactivos.slice(0, 200)}
           getRowKey={(x) => x.id}
-          empty={<EmptyState title="No hay clientes inactivos" />}
+          empty={<EmptyState icon={UserX} title="No hay clientes inactivos" />}
           columns={[
             {
               key: "n",

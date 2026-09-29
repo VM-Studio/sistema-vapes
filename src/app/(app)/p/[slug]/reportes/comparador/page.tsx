@@ -17,7 +17,7 @@ import { hrefCon } from "@/components/ui/pagination";
 import { SearchInput } from "@/components/ui/search-input";
 import { SectionCard } from "@/components/ui/section-card";
 import { TabsNav } from "@/components/ui/tabs-nav";
-import { formatearPesos } from "@/lib/format";
+import { formatearDolares, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
 import { cn, formatearFecha } from "@/lib/utils";
 import { telefonoVisible, telefonoWhatsApp } from "@/lib/ventas-ui";
@@ -42,9 +42,7 @@ export const metadata: Metadata = { title: "Comparador de proveedores" };
 type SP = Record<string, string | string[] | undefined>;
 
 const precioEn = (precio: string, moneda: "ARS" | "USD") =>
-  moneda === "USD"
-    ? `US$ ${Number(precio).toLocaleString("es-AR", { minimumFractionDigits: Number.isInteger(Number(precio)) ? 0 : 2 })}`
-    : formatearPesos(precio);
+  moneda === "USD" ? formatearDolares(precio) : formatearPesos(precio);
 
 /**
  * Comparador de proveedores (SOLO dueños): buscador de productos,
@@ -115,16 +113,14 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
           />
         ) : (
           opciones && (
-            <label className="text-muted text-small flex flex-col gap-1 md:w-72">
-              Marca
-              <FiltroSelect
-                param="marcaId"
-                valor={plano.marcaId}
-                etiqueta="Marca"
-                todos="Todas las marcas"
-                opciones={opciones.marcas.map((m) => ({ value: m.id, label: m.nombre }))}
-              />
-            </label>
+            <FiltroSelect
+              param="marcaId"
+              valor={plano.marcaId}
+              etiqueta="Marca"
+              todos="Todas las marcas"
+              opciones={opciones.marcas.map((m) => ({ value: m.id, label: m.nombre }))}
+              className="md:w-72"
+            />
           )
         )}
         <CotizacionUsd valor={cotizacionUsd} />
@@ -201,7 +197,10 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
                           <span className="text-muted text-small">
                             {s.proveedores} proveedores · ahorrás hasta{" "}
                             <span className="text-foreground font-medium tabular-nums">
-                              {s.moneda === "USD" ? `US$ ${s.ahorro}` : formatearPesos(s.ahorro)}/u
+                              {s.moneda === "USD"
+                                ? formatearDolares(s.ahorro)
+                                : formatearPesos(s.ahorro)}
+                              /u
                             </span>
                           </span>
                         </span>
@@ -274,8 +273,8 @@ function ListaComparacion({
         )}
         {c.cotizacionUsd && c.ofertas.some((o) => o.moneda === "USD") && (
           <p className="text-muted text-sm" data-testid="aviso-conversion">
-            Los precios en dólares se convierten a pesos a ${" "}
-            {c.cotizacionUsd.toLocaleString("es-AR")} solo para ordenarlos.
+            Los precios en dólares se convierten a pesos a {formatearPesos(c.cotizacionUsd)} solo
+            para ordenarlos.
           </p>
         )}
       </Card>
@@ -358,7 +357,7 @@ function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; p
           >
             {o.masBarato
               ? "El mejor precio"
-              : `+${o.grupo === "USD" ? `US$ ${o.diferencia}` : formatearPesos(o.diferencia)} (+${o.diferenciaPct.toLocaleString("es-AR")} %)`}
+              : `+${o.grupo === "USD" ? formatearDolares(o.diferencia) : formatearPesos(o.diferencia)} (+${o.diferenciaPct.toLocaleString("es-AR")} %)`}
           </span>
         </span>
       </div>

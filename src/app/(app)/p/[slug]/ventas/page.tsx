@@ -154,12 +154,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
           ) : (
             <EmptyState
               icon={ShoppingCart}
-              title="Todavía no hay ventas"
-              description="Las ventas de hoy van a aparecer acá, con su total y medio de pago."
+              title="Todavía no hay ventas hoy"
+              description="Las ventas del día aparecen acá, con su total y medio de pago. Para ver días anteriores, elegí otro período."
               action={
                 puedeCrear ? (
                   <Link href={rutaPanel(slug, "/ventas?nueva=1")} className={buttonVariants()}>
-                    <Plus strokeWidth={1.75} /> Generar la primera venta
+                    <Plus strokeWidth={1.75} /> Generar una venta
                   </Link>
                 ) : null
               }

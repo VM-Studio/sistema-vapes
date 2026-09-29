@@ -4,6 +4,7 @@ import { Check, Warehouse } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { formatearNumero } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -59,21 +60,21 @@ export function SelectorGalpon({
                 onClick={() => setElegido(d.id)}
                 className={cn(
                   // Tarjeta gris en la página; dentro de un modal/sheet, blanca con borde fino.
-                  "bg-card relative flex min-h-32 flex-col items-start gap-4 rounded-card p-5 text-left transition-[background-color,box-shadow] duration-150 md:p-6",
+                  "bg-card rounded-card relative flex min-h-32 flex-col items-start gap-4 p-5 text-left transition-[background-color,box-shadow] duration-150 md:p-6",
                   "in-[dialog]:border-border in-[dialog]:bg-surface in-[dialog]:border",
                   activo
                     ? "ring-foreground ring-2 in-[dialog]:border-transparent"
                     : "hover:bg-card-hover hover:shadow-card-hover in-[dialog]:hover:bg-surface",
                 )}
               >
-                <span className="bg-surface text-foreground in-[dialog]:bg-card flex size-11 items-center justify-center rounded-control">
+                <span className="bg-surface text-foreground in-[dialog]:bg-card rounded-control flex size-11 items-center justify-center">
                   <Warehouse className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-h2 truncate font-semibold">{d.nombre}</span>
                   {(d.esPrincipal || unidades) && (
                     <span className="text-muted text-small tabular-nums">
-                      {unidades && `${n.toLocaleString("es-AR")} ${n === 1 ? "unidad" : "unidades"}`}
+                      {unidades && `${formatearNumero(n)} ${n === 1 ? "unidad" : "unidades"}`}
                       {unidades && d.esPrincipal && " · "}
                       {d.esPrincipal && "Principal"}
                     </span>
@@ -82,7 +83,7 @@ export function SelectorGalpon({
                 <span
                   aria-hidden
                   className={cn(
-                    "absolute top-5 right-5 flex size-6 items-center justify-center rounded-circle border transition-colors md:top-6 md:right-6",
+                    "rounded-circle absolute top-5 right-5 flex size-6 items-center justify-center border transition-colors md:top-6 md:right-6",
                     activo
                       ? "border-foreground bg-foreground text-background"
                       : "border-input bg-surface",

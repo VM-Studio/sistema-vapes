@@ -23,7 +23,7 @@ export default async function LoginPage({
     <div className="grid min-h-dvh md:grid-cols-2">
       {/* La portada es cuadrada y su fondo es blanco: "contain" la muestra entera (con
           "cover" se recortaba la marca) y se funde con el panel a pantalla completa. */}
-      <div className="border-border relative h-[40vh] overflow-hidden border-b bg-white md:sticky md:top-0 md:h-dvh md:border-r md:border-b-0">
+      <div className="border-border bg-background relative h-[40vh] overflow-hidden border-b md:sticky md:top-0 md:h-dvh md:border-r md:border-b-0">
         <Image
           src={portada}
           alt={negocio}

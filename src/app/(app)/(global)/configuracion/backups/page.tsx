@@ -1,8 +1,9 @@
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, DatabaseBackup, XCircle } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { TabsNav } from "@/components/ui/tabs-nav";
@@ -55,6 +56,13 @@ export default async function BackupsPage() {
         caption="Backups"
         rows={backups}
         getRowKey={(b) => b.id}
+        empty={
+          <EmptyState
+            icon={DatabaseBackup}
+            title="Todavía no hay backups"
+            description="El primero se hace solo esta noche a las 4:00, o podés hacerlo ahora."
+          />
+        }
         columns={[
           { key: "f", header: "Fecha", cell: (b) => formatearFechaHora(b.createdAt) },
           {

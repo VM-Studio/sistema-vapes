@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-white p-4">
+    <main className="bg-background flex min-h-dvh items-center justify-center p-4">
       <EmptyState
         icon={SearchX}
         title="No encontramos esta página"

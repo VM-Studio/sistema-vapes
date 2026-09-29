@@ -200,7 +200,7 @@ export function PasoProductos({
       )}
 
       {items.length === 0 ? (
-        <div className="border-border text-muted rounded-card flex flex-col items-center gap-3 border px-4 py-10 text-center text-sm">
+        <div className="bg-card text-muted rounded-card flex flex-col items-center gap-3 px-4 py-10 text-center text-sm">
           <PackageSearch className="text-subtle size-10" strokeWidth={1.25} aria-hidden />
           <p className="max-w-sm">
             Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.

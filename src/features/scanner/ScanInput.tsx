@@ -87,7 +87,7 @@ export function ScanInput({
           onClick={onAbrirCamara}
           aria-label="Escanear con la cámara"
         >
-          <Camera className="size-5" />
+          <Camera className="size-5" strokeWidth={1.75} />
         </Button>
       )}
     </form>

@@ -96,7 +96,7 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
         />
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
+      <div className="grid gap-4 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start">
         <SectionCard title="Datos">
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-3">

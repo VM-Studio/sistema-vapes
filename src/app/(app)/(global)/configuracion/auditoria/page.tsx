@@ -1,8 +1,10 @@
 import { ChevronRight, History } from "lucide-react";
 import { AccionAuditoria } from "@prisma/client";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -42,6 +44,7 @@ export default async function AuditoriaPage({
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   const f = filtrosAuditoriaSchema.parse(plano);
+  const hayFiltros = Object.entries(plano).some(([k, v]) => k !== "page" && v !== "");
   const [r, usuarios, sistemas] = await Promise.all([
     listarAuditoria(f),
     listarUsuariosBasico(),
@@ -68,7 +71,26 @@ export default async function AuditoriaPage({
       <ul className="mt-4 flex flex-col gap-2">
         {r.filas.length === 0 && (
           <li>
-            <EmptyState icon={History} title="No hay registros con esos filtros" />
+            {hayFiltros ? (
+              <EmptyState
+                icon={History}
+                title="No hay registros con esos filtros"
+                action={
+                  <Link
+                    href="/configuracion/auditoria"
+                    className={buttonVariants({ variant: "secondary" })}
+                  >
+                    Limpiar filtros
+                  </Link>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon={History}
+                title="Todavía no hay registros"
+                description="Cada alta, cambio, baja y acceso denegado queda anotado acá."
+              />
+            )}
           </li>
         )}
         {r.filas.map((a) => (

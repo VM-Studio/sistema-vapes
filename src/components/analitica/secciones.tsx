@@ -235,7 +235,10 @@ export async function SeccionMedios({
           }))}
         />
       ) : (
-        <ChartPlaceholder mensaje="Sin ventas en el período" className="h-40 md:h-44" />
+        <ChartPlaceholder
+          mensaje="Todavía no hay ventas en este período"
+          className="h-40 md:h-44"
+        />
       )}
     </Tarjeta>
   );
@@ -256,7 +259,7 @@ export async function SeccionTipo({
       {tipos.some((t) => t.cantidad > 0) ? (
         <>
           <BarrasHorizontales
-            colores={tipos.map((_, i) => (i === 0 ? "azul" : "naranja"))}
+            categorias
             datos={tipos.map((t) => ({
               etiqueta: t.etiqueta,
               valor: Number(t.total),
@@ -275,7 +278,10 @@ export async function SeccionTipo({
           </dl>
         </>
       ) : (
-        <ChartPlaceholder mensaje="Sin ventas en el período" className="h-40 md:h-44" />
+        <ChartPlaceholder
+          mensaje="Todavía no hay ventas en este período"
+          className="h-40 md:h-44"
+        />
       )}
     </Tarjeta>
   );
@@ -302,7 +308,10 @@ export async function SeccionGalpones({
           }))}
         />
       ) : (
-        <ChartPlaceholder mensaje="Sin ventas en el período" className="h-40 md:h-44" />
+        <ChartPlaceholder
+          mensaje="Todavía no hay ventas en este período"
+          className="h-40 md:h-44"
+        />
       )}
     </Tarjeta>
   );
@@ -324,7 +333,7 @@ export async function SeccionComprasVentas({
     { label: "Costo de lo vendido", c: c.costoVendido },
     { label: `Compras recibidas (${c.cantidadCompras.actual})`, c: c.compras },
   ];
-  // Proporción de lo vendido: cuánto fue costo (azul) y cuánto ganancia bruta (naranja).
+  // Proporción de lo vendido: cuánto fue costo y cuánto ganancia bruta (escala fija: 1.ª y 2.ª categoría).
   const ventas = Number(c.ventas.actual);
   const costo = Math.min(Math.max(Number(c.costoVendido.actual), 0), ventas);
   const pctCosto = ventas > 0 ? (costo / ventas) * 100 : 0;
@@ -339,19 +348,19 @@ export async function SeccionComprasVentas({
             aria-label={
               ventas > 0
                 ? `Costo ${Math.round(pctCosto)} % y ganancia ${Math.round(pctGanancia)} % de lo vendido`
-                : "Sin ventas en el período"
+                : "Todavía no hay ventas en este período"
             }
           >
-            <div className="bg-dato-actual h-full" style={{ width: `${pctCosto}%` }} />
-            <div className="bg-dato-anterior h-full" style={{ width: `${pctGanancia}%` }} />
+            <div className="bg-serie-1 h-full" style={{ width: `${pctCosto}%` }} />
+            <div className="bg-serie-2 h-full" style={{ width: `${pctGanancia}%` }} />
           </div>
           <ul className="text-muted text-small flex flex-wrap gap-x-4 gap-y-1" aria-hidden>
             <li className="flex items-center gap-1.5">
-              <span className="bg-dato-actual inline-block h-2.5 w-3.5" />
+              <span className="bg-serie-1 inline-block h-2.5 w-3.5" />
               Costo {ventas > 0 && <span className="tabular-nums">{Math.round(pctCosto)} %</span>}
             </li>
             <li className="flex items-center gap-1.5">
-              <span className="bg-dato-anterior inline-block h-2.5 w-3.5" />
+              <span className="bg-serie-2 inline-block h-2.5 w-3.5" />
               Ganancia{" "}
               {ventas > 0 && <span className="tabular-nums">{Math.round(pctGanancia)} %</span>}
             </li>
@@ -381,7 +390,7 @@ export async function SeccionComprasVentas({
 // --- Rankings -----------------------------------------------------------------
 
 function ListaTop({ items, hrefDe }: { items: TopItem[]; hrefDe?: (i: TopItem) => string }) {
-  if (items.length === 0) return <Vacio>Sin ventas en el período.</Vacio>;
+  if (items.length === 0) return <Vacio>Todavía no hay ventas en este período.</Vacio>;
   const max = Math.max(...items.map((p) => Number(p.facturado)), 0);
   return (
     <ol className="flex flex-col gap-1">

@@ -211,9 +211,17 @@ function nuevaPagina(l: Lienzo, titulo: string) {
 /** Pie de cada página: línea fina, negocio · panel a la izquierda y "Página n de m". */
 function numerarPaginas(l: Lienzo) {
   const paginas = l.doc.getPages();
-  const pie = aWinAnsi(l.doc.getCreator() ?? "", l.normal);
   paginas.forEach((p, i) => {
     const w = p.getWidth();
+    // Todo texto variable pasa por aWinAnsi antes de medirlo o dibujarlo.
+    const t = aWinAnsi(`Página ${i + 1} de ${paginas.length}`, l.normal);
+    const anchoNumero = l.normal.widthOfTextAtSize(t, 7.5);
+    const pie = recortar(
+      aWinAnsi(l.doc.getCreator() ?? "", l.normal),
+      l.normal,
+      7.5,
+      w - 2 * l.margen - anchoNumero - 16,
+    );
     p.drawLine({
       start: { x: l.margen, y: 28 },
       end: { x: w - l.margen, y: 28 },
@@ -221,9 +229,8 @@ function numerarPaginas(l: Lienzo) {
       color: LINEA,
     });
     if (pie) p.drawText(pie, { x: l.margen, y: 16, size: 7.5, font: l.normal, color: GRIS });
-    const t = `Página ${i + 1} de ${paginas.length}`;
     p.drawText(t, {
-      x: w - l.margen - l.normal.widthOfTextAtSize(t, 7.5),
+      x: w - l.margen - anchoNumero,
       y: 16,
       size: 7.5,
       font: l.normal,
@@ -363,7 +370,7 @@ export async function exportarExcel(cab: CabeceraPanel, e: Exportacion): Promise
     hoja.addRow([]);
     const filaCab = hoja.addRow(t.columnas.map((c) => c.titulo));
     filaCab.font = { bold: true };
-    filaCab.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFEFF1" } };
+    filaCab.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F5F7" } };
     const inicio = filaCab.number;
     for (const f of t.filas)
       hoja.addRow(t.columnas.map((c, i) => valorExcel(f[i] ?? null, c.tipo)));

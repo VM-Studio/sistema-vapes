@@ -74,9 +74,9 @@ export function AvisoActualizacion() {
   return (
     <div
       role="status"
-      className="border-border bg-surface fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 flex items-center gap-3 rounded-control border p-3 shadow-pop md:inset-x-auto md:right-6 md:bottom-6 md:max-w-sm"
+      className="border-border bg-surface rounded-card shadow-pop fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 flex items-center gap-3 border p-3 md:inset-x-auto md:right-6 md:bottom-6 md:max-w-sm"
     >
-      <RefreshCw className="text-primary size-5 shrink-0" aria-hidden />
+      <RefreshCw className="text-foreground size-5 shrink-0" strokeWidth={1.75} aria-hidden />
       <p className="min-w-0 flex-1 text-sm">
         <strong className="block">Hay una versión nueva</strong>
         <span className="text-muted">

@@ -14,6 +14,9 @@ import {
 import { ChartPlaceholder, ChartTheme } from "@/components/ui/chart-theme";
 import { formatearCompacto, formatearNumero, formatearPesos } from "@/lib/format";
 
+/** Etiquetas del eje de categorías: recortadas para que el gráfico entre en 375px (el tooltip muestra el nombre completo). */
+const recortarEtiqueta = (t: string) => (t.length > 16 ? `${t.slice(0, 15).trimEnd()}…` : t);
+
 export interface PuntoBarra {
   etiqueta: string;
   valor: number;
@@ -54,11 +57,7 @@ export function GraficoBarras({
           margin={{ top: 8, right: 12, bottom: 4, left: horizontal ? 8 : 0 }}
           barCategoryGap={horizontal ? 8 : "20%"}
         >
-          <CartesianGrid
-            stroke={ChartTheme.grilla}
-            vertical={horizontal}
-            horizontal={!horizontal}
-          />
+          <CartesianGrid {...ChartTheme.grid} vertical={horizontal} horizontal={!horizontal} />
           {horizontal ? (
             <>
               <XAxis
@@ -66,11 +65,22 @@ export function GraficoBarras({
                 tickFormatter={(n: number) => formatearCompacto(n, moneda)}
                 {...ChartTheme.ejeY}
               />
-              <YAxis type="category" dataKey="etiqueta" width={132} {...ChartTheme.ejeX} />
+              <YAxis
+                type="category"
+                dataKey="etiqueta"
+                width={116}
+                tickFormatter={recortarEtiqueta}
+                {...ChartTheme.ejeX}
+              />
             </>
           ) : (
             <>
-              <XAxis dataKey="etiqueta" interval="preserveStartEnd" {...ChartTheme.ejeX} />
+              <XAxis
+                dataKey="etiqueta"
+                interval="preserveStartEnd"
+                minTickGap={12}
+                {...ChartTheme.ejeX}
+              />
               <YAxis
                 tickFormatter={(n: number) => formatearCompacto(n, moneda)}
                 width={56}

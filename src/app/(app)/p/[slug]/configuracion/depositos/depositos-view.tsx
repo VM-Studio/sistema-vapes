@@ -81,7 +81,20 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
         caption="Depósitos"
         rows={depositos}
         getRowKey={(d) => d.id}
-        empty={<EmptyState icon={Warehouse} title="No hay depósitos" />}
+        empty={
+          <EmptyState
+            icon={Warehouse}
+            title="Todavía no hay depósitos"
+            description="Cada depósito lleva su propio stock."
+            action={
+              puedeCrear && (
+                <Button onClick={() => setEditando("nuevo")}>
+                  <Plus strokeWidth={1.75} /> Nuevo depósito
+                </Button>
+              )
+            }
+          />
+        }
         columns={[
           { key: "nombre", header: "Nombre", cell: nombreCelda },
           {

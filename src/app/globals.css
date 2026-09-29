@@ -74,6 +74,9 @@
   /* Radios */
   --radius-control: 6px;
   --radius-card: 10px;
+  /* rounded-inner: detalles dentro de un control; rounded-circle: avatares, puntos, switch. */
+  --radius-inner: 4px;
+  --radius-circle: 9999px;
 }
 
 @theme {

@@ -19,9 +19,9 @@ export function FiltrosCotizaciones({
 }) {
   const { actualizar } = useUrlParams();
   return (
-    <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+    <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
       <SearchInput placeholder="Código (VAP-Q-000012 o 12) o cliente" />
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:w-[40rem]">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:w-[40rem]">
         <Select
           aria-label="Estado"
           containerClassName="self-end"

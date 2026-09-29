@@ -57,8 +57,8 @@ export function StatCard({
             <span
               className={cn(
                 "inline-flex items-center gap-0.5 font-semibold tabular-nums",
-                sube && "text-success",
-                baja && "text-danger",
+                sube && "text-marca-azul",
+                baja && "text-marca-naranja-oscuro",
                 !sube && !baja && "text-subtle",
               )}
             >

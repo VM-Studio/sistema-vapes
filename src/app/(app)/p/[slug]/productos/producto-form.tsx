@@ -8,7 +8,7 @@ import { get, useFieldArray, useFormContext, useWatch, type UseFormReturn } from
 
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { controlClass } from "@/components/ui/field";
 import {
   aplicarErroresServidor,
@@ -19,6 +19,7 @@ import {
   useZodForm,
 } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
 import { useToast } from "@/components/ui/toast";
 import type { ActionError } from "@/lib/action-result";
 import { cn } from "@/lib/utils";
@@ -173,7 +174,7 @@ function CeldaCodigo({ index, ocupados }: { index: number; ocupados: CodigosOcup
           type="button"
           onClick={() => void generar()}
           disabled={generando}
-          className="text-primary self-start text-xs font-medium hover:underline disabled:opacity-60"
+          className="text-muted hover:text-foreground self-start text-xs font-medium underline underline-offset-4 disabled:opacity-60"
         >
           {generando ? "Generando…" : "Generar código interno"}
         </button>
@@ -203,18 +204,15 @@ function EditorSabores({ form, ocupados }: { form: FormProducto; ocupados: Codig
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Sabores ({fields.length})</CardTitle>
-        <p className="text-muted text-sm">
-          Si el producto no tiene sabores, dejá una sola fila con el sabor vacío. El precio de un
-          sabor solo va si es distinto al del producto.
-        </p>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2">
+    <SectionCard
+      title={`Sabores (${fields.length})`}
+      description="Si el producto no tiene sabores, dejá una sola fila con el sabor vacío. El precio de un sabor solo va si es distinto al del producto."
+      contentClassName="flex flex-col gap-3"
+    >
+      <div className="md:rounded-card md:border-border md:bg-surface flex flex-col gap-2 md:gap-0 md:overflow-hidden md:border">
         <div
           className={cn(
-            "text-muted hidden gap-2 px-1 text-xs font-medium tracking-wide uppercase md:grid",
+            "text-muted bg-card hidden gap-2 px-3 py-2.5 text-xs font-medium md:grid",
             COLUMNAS,
           )}
           aria-hidden
@@ -231,7 +229,7 @@ function EditorSabores({ form, ocupados }: { form: FormProducto; ocupados: Codig
             key={field.id}
             data-testid="fila-sabor-form"
             className={cn(
-              "border-border grid grid-cols-2 gap-3 rounded-card border p-3 md:items-start md:gap-2 md:rounded-none md:border-0 md:border-t md:px-1 md:py-2 md:first-of-type:border-t-0",
+              "border-border bg-surface rounded-card grid grid-cols-2 gap-3 border p-4 md:items-start md:gap-2 md:rounded-none md:border-0 md:border-t md:px-3 md:py-2",
               COLUMNAS,
             )}
           >
@@ -283,16 +281,20 @@ function EditorSabores({ form, ocupados }: { form: FormProducto; ocupados: Codig
             </div>
           </div>
         ))}
-        {(errorLista?.message || errorLista?.root?.message) && (
-          <p className="text-danger text-sm" role="alert">
-            {errorLista.message ?? errorLista.root?.message}
-          </p>
-        )}
-        <Button variant="secondary" onClick={() => agregar()} className="self-start">
-          <Plus strokeWidth={1.75} /> Agregar sabor
-        </Button>
-      </CardContent>
-    </Card>
+      </div>
+      {(errorLista?.message || errorLista?.root?.message) && (
+        <p className="text-danger text-sm" role="alert">
+          {errorLista.message ?? errorLista.root?.message}
+        </p>
+      )}
+      <Button
+        variant="secondary"
+        onClick={() => agregar()}
+        className="w-full md:w-auto md:self-start"
+      >
+        <Plus strokeWidth={1.75} /> Agregar sabor
+      </Button>
+    </SectionCard>
   );
 }
 
@@ -354,14 +356,16 @@ export function ProductoForm({
 
   if (creado) {
     return (
-      <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-8 text-center">
-        <span className="bg-success-soft text-success-soft-foreground flex size-14 items-center justify-center rounded-circle">
+      <div className="bg-card rounded-card mx-auto flex max-w-xl flex-col items-center gap-5 px-5 py-10 text-center md:px-10 md:py-14">
+        <span className="bg-success-soft text-success-soft-foreground rounded-card flex size-14 items-center justify-center">
           <CircleCheck className="size-7" strokeWidth={1.75} aria-hidden />
         </span>
-        <h1 className="text-2xl font-semibold tracking-tight">{creado.nombre} creado</h1>
-        <p className="text-muted text-sm">
-          ¿Ya tenés unidades? Cargalas escaneándolas en el galpón.
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-h1 font-semibold">{creado.nombre} creado</h1>
+          <p className="text-muted text-body">
+            ¿Ya tenés unidades? Cargalas escaneándolas en el galpón.
+          </p>
+        </div>
         <Link
           href={ruta(`/productos/cargar?producto=${creado.id}`)}
           className={buttonVariants({ size: "lg", fullWidth: true })}
@@ -393,64 +397,82 @@ export function ProductoForm({
 
   return (
     <>
-      <PageHeader title={esNuevo ? "Nuevo producto" : `Editar ${producto.nombreCompleto}`} />
-      <Form form={form} onSubmit={onSubmit} className="pb-40 md:pb-0">
-        <Card>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-            <FormInput
-              name="marca"
-              label="Marca"
-              required
-              list={idMarcas}
-              placeholder="Ej: Elf Bar"
-              autoComplete="off"
-              hint="Si no existe, se crea."
-            />
-            <datalist id={idMarcas}>
-              {marcas.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-            <FormInput
-              name="modelo"
-              label="Modelo"
-              required
-              placeholder="Ej: BC"
-              autoComplete="off"
-            />
-            <FormInput
-              name="especificacion"
-              label={panel.etiquetaEspecificacion || "Especificación"}
-              placeholder="Ej: 5000"
-              autoComplete="off"
-            />
-            <FormInput
-              name="precioVenta"
-              label="Precio de venta"
-              required
-              inputMode="decimal"
-              placeholder="Ej: 10000"
-              hint="Para todos los sabores (salvo los que tengan precio propio)."
-            />
-            <FormSelect
-              name="categoriaId"
-              label="Categoría"
-              options={[{ value: "", label: "Sin categoría" }, ...categorias]}
-            />
-            <FormInput
-              name="imagenUrl"
-              label="URL de imagen"
-              type="url"
-              inputMode="url"
-              placeholder="https://…"
-            />
-            <FormSwitch name="activo" label="Activo" />
-          </CardContent>
-        </Card>
+      <PageHeader
+        title={esNuevo ? "Nuevo producto" : `Editar ${producto.nombreCompleto}`}
+        subtitle={
+          esNuevo
+            ? "Cargá los datos y los sabores. El stock se suma después, escaneando."
+            : undefined
+        }
+        breadcrumb={
+          <Breadcrumb
+            items={
+              esNuevo
+                ? [{ label: "Productos", href: ruta("/productos") }, { label: "Nuevo" }]
+                : [
+                    { label: "Productos", href: ruta("/productos") },
+                    { label: producto.nombreCompleto, href: ruta(`/productos/${producto.id}`) },
+                    { label: "Editar" },
+                  ]
+            }
+          />
+        }
+      />
+      <Form form={form} onSubmit={onSubmit} className="gap-4 pb-24 md:pb-0">
+        <SectionCard title="Datos del producto" contentClassName="grid gap-4 md:grid-cols-3">
+          <FormInput
+            name="marca"
+            label="Marca"
+            required
+            list={idMarcas}
+            placeholder="Ej: Elf Bar"
+            autoComplete="off"
+            hint="Si no existe, se crea."
+          />
+          <datalist id={idMarcas}>
+            {marcas.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+          <FormInput
+            name="modelo"
+            label="Modelo"
+            required
+            placeholder="Ej: BC"
+            autoComplete="off"
+          />
+          <FormInput
+            name="especificacion"
+            label={panel.etiquetaEspecificacion || "Especificación"}
+            placeholder="Ej: 5000"
+            autoComplete="off"
+          />
+          <FormInput
+            name="precioVenta"
+            label="Precio de venta"
+            required
+            inputMode="decimal"
+            placeholder="Ej: 10000"
+            hint="Para todos los sabores (salvo los que tengan precio propio)."
+          />
+          <FormSelect
+            name="categoriaId"
+            label="Categoría"
+            options={[{ value: "", label: "Sin categoría" }, ...categorias]}
+          />
+          <FormInput
+            name="imagenUrl"
+            label="URL de imagen"
+            type="url"
+            inputMode="url"
+            placeholder="https://…"
+          />
+          <FormSwitch name="activo" label="Activo" />
+        </SectionCard>
 
         <EditorSabores form={form} ocupados={ocupados} />
 
-        <div className="border-border bg-surface/95 fixed inset-x-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-20 grid grid-cols-2 gap-2 border-t px-4 py-3 backdrop-blur md:static md:flex md:justify-end md:border-0 md:bg-transparent md:p-0">
+        <div className="border-border bg-surface pl-safe pr-safe fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 grid grid-cols-2 gap-2 border-t px-4 py-3 md:static md:flex md:justify-end md:border-0 md:bg-transparent md:p-0">
           <Button variant="secondary" onClick={() => router.back()} disabled={enviando}>
             Cancelar
           </Button>

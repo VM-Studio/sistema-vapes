@@ -57,8 +57,8 @@ function Contenido({
             <dd
               className={cn(
                 "border-border mt-1 border-t pt-1 text-right font-semibold",
-                dif > 0 && "text-success",
-                dif < 0 && "text-danger",
+                dif > 0 && "text-marca-azul",
+                dif < 0 && "text-marca-naranja-oscuro",
               )}
             >
               {dif > 0 ? "+" : dif < 0 ? "−" : ""}
@@ -94,7 +94,7 @@ export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
   if (!datos.some((p) => p.actual || p.anterior)) {
     return (
       <div data-testid="grafico-comparativo">
-        <ChartPlaceholder mensaje="Sin ventas en el período" className={ALTO} />
+        <ChartPlaceholder mensaje="Todavía no hay ventas en este período" className={ALTO} />
       </div>
     );
   }

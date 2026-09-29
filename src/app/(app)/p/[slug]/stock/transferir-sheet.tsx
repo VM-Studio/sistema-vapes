@@ -90,7 +90,7 @@ export function TransferirSheet({
     >
       {fila && (
         <div className="flex flex-col gap-4">
-          <p className="bg-surface-2 flex items-center gap-2 rounded-control px-3 py-2.5 text-sm">
+          <p className="bg-surface rounded-control flex flex-wrap items-center gap-2 px-3 py-2.5 text-sm">
             <strong>{origen.nombre}</strong>
             <ArrowRight className="text-muted size-4" strokeWidth={1.75} aria-label="a" />
             <strong>{destino?.nombre ?? "—"}</strong>

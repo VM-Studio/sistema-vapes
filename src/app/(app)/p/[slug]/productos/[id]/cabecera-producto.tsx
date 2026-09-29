@@ -10,8 +10,11 @@ import { EstadoStockBadge } from "@/components/catalogo/estado-stock-badge";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { PageHeader } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import type { DepositoBasico } from "@/server/services/deposito.service";
@@ -43,85 +46,98 @@ export function CabeceraProducto({
   }
 
   return (
-    <header className="mb-5 flex flex-col gap-4">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start">
-        <div className="border-border bg-surface-2 flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-card border md:size-24">
-          {producto.imagenUrl ? (
-            // URL externa arbitraria cargada por el usuario: sin next/image (requeriría whitelist de dominios).
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={producto.imagenUrl}
-              alt={producto.nombreCompleto}
-              className="size-full object-cover"
-            />
-          ) : (
-            <ImageOff className="text-muted size-6" strokeWidth={1.75} aria-hidden />
-          )}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="primary">{producto.marca}</Badge>
-            {producto.categoria && <Badge>{producto.categoria}</Badge>}
+    <>
+      <PageHeader
+        title={producto.nombreCompleto}
+        breadcrumb={
+          <Breadcrumb
+            items={[
+              { label: "Productos", href: ruta("/productos") },
+              { label: producto.nombreCompleto },
+            ]}
+          />
+        }
+        subtitle={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="neutral">{producto.marca}</Badge>
+            {producto.categoria && <Badge variant="neutral">{producto.categoria}</Badge>}
             {!producto.activo && <Badge variant="danger">Desactivado</Badge>}
             <EstadoStockBadge estado={producto.estado} />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            {producto.nombreCompleto}
-          </h1>
-          <p className="text-muted text-sm">
-            Precio de venta{" "}
-            <strong className="text-foreground text-base tabular-nums">
-              {formatearPesos(producto.precioVenta)}
-            </strong>
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-end">
-          {(cargaProductos || cargaStock) && (
+          </span>
+        }
+        actions={
+          <>
+            {puedeEditar && (
+              <Link
+                href={ruta(`/productos/${producto.id}/editar`)}
+                className={buttonVariants({ variant: "secondary" })}
+              >
+                <Pencil strokeWidth={1.75} /> Editar
+              </Link>
+            )}
             <Link
-              href={ruta(`/productos/cargar?producto=${producto.id}`)}
-              className={buttonVariants({ className: "col-span-2" })}
-            >
-              <ScanBarcode strokeWidth={1.75} /> Cargar stock
-            </Link>
-          )}
-          <Link
-            href={ruta(`/productos/etiquetas?producto=${producto.id}`)}
-            className={buttonVariants({ variant: "secondary" })}
-          >
-            <Tags strokeWidth={1.75} /> Etiquetas
-          </Link>
-          {puedeEditar && producto.activo && (
-            <Button variant="secondary" onClick={() => setDesactivar(true)}>
-              <EyeOff strokeWidth={1.75} /> Desactivar
-            </Button>
-          )}
-          {puedeEditar && (
-            <Link
-              href={ruta(`/productos/${producto.id}/editar`)}
+              href={ruta(`/productos/etiquetas?producto=${producto.id}`)}
               className={buttonVariants({ variant: "secondary" })}
             >
-              <Pencil strokeWidth={1.75} /> Editar
+              <Tags strokeWidth={1.75} /> Etiquetas
             </Link>
-          )}
-        </div>
-      </div>
+            {puedeEditar && producto.activo && (
+              <Button variant="secondary" onClick={() => setDesactivar(true)}>
+                <EyeOff strokeWidth={1.75} /> Desactivar
+              </Button>
+            )}
+            {(cargaProductos || cargaStock) && (
+              <Link
+                href={ruta(`/productos/cargar?producto=${producto.id}`)}
+                className={buttonVariants({ className: "basis-full md:basis-auto" })}
+              >
+                <ScanBarcode strokeWidth={1.75} /> Cargar stock
+              </Link>
+            )}
+          </>
+        }
+      />
 
-      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {depositos.map((d) => (
-          <div key={d.id} className="border-border bg-surface rounded-card border p-3">
-            <dt className="text-muted text-xs">{d.nombre}</dt>
-            <dd className="text-2xl font-bold tabular-nums">
-              {formatearNumero(producto.stockPorDeposito[d.id] ?? 0)}
+      <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,22rem)_1fr]">
+        <Card className="flex items-center gap-4 p-5">
+          <div className="bg-surface rounded-card flex size-20 shrink-0 items-center justify-center overflow-hidden">
+            {producto.imagenUrl ? (
+              // URL externa arbitraria cargada por el usuario: sin next/image (requeriría whitelist de dominios).
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={producto.imagenUrl}
+                alt={producto.nombreCompleto}
+                className="size-full object-cover"
+              />
+            ) : (
+              <ImageOff className="text-subtle size-5" strokeWidth={1.75} aria-hidden />
+            )}
+          </div>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <p className="text-muted text-small font-medium">Precio de venta</p>
+            <p className="text-2xl leading-tight font-semibold tracking-tight tabular-nums">
+              {formatearPesos(producto.precioVenta)}
+            </p>
+          </div>
+        </Card>
+
+        <dl className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {depositos.map((d) => (
+            <div key={d.id} className="bg-card rounded-card flex flex-col gap-1.5 p-5">
+              <dt className="text-muted text-small truncate font-medium">{d.nombre}</dt>
+              <dd className="text-2xl leading-tight font-semibold tracking-tight tabular-nums">
+                {formatearNumero(producto.stockPorDeposito[d.id] ?? 0)}
+              </dd>
+            </div>
+          ))}
+          <div className="bg-card rounded-card flex flex-col gap-1.5 p-5">
+            <dt className="text-small font-semibold">Total</dt>
+            <dd className="text-2xl leading-tight font-semibold tracking-tight tabular-nums">
+              {formatearNumero(producto.stockTotal)}
             </dd>
           </div>
-        ))}
-        <div className="bg-primary-soft text-primary-soft-foreground rounded-card p-3">
-          <dt className="text-xs">Total</dt>
-          <dd className="text-2xl font-bold tabular-nums">
-            {formatearNumero(producto.stockTotal)}
-          </dd>
-        </div>
-      </dl>
+        </dl>
+      </div>
 
       <ConfirmDialog
         open={desactivar}
@@ -132,6 +148,6 @@ export function CabeceraProducto({
         danger
         onConfirm={confirmarDesactivar}
       />
-    </header>
+    </>
   );
 }

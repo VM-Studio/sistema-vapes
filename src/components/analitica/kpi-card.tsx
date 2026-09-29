@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * KPI con comparación (mismo aspecto que StatCard): etiqueta gris arriba, valor
- * grande, variación % con flecha (verde apagado si sube, rojo apagado si baja:
- * no depende solo del color) y el valor del período anterior en gris.
+ * grande, variación % con flecha (azul de marca si sube, naranja si baja: no
+ * depende solo del color) y el valor del período anterior en gris.
  * El 1.er <p> es la etiqueta y el 2.º el valor (lo leen los E2E).
  */
 export function KpiCard({
@@ -44,8 +44,8 @@ export function KpiCard({
         <span
           className={cn(
             "inline-flex items-center gap-0.5 font-semibold tabular-nums",
-            sube && "text-success",
-            baja && "text-danger",
+            sube && "text-marca-azul",
+            baja && "text-marca-naranja-oscuro",
             !sube && !baja && "text-subtle",
           )}
           aria-label={

@@ -1,10 +1,11 @@
 import { Modulo } from "@prisma/client";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, LayoutGrid } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatearPesos } from "@/lib/format";
 import { esOwner, puede } from "@/lib/permisos";
 import { rutaPanel } from "@/lib/paneles";
@@ -66,10 +67,11 @@ export default async function PanelesPage({
       </header>
 
       {paneles.length === 0 && !owner ? (
-        <div className="bg-card rounded-card p-10 text-center">
-          <p className="text-h3 font-semibold">Todavía no tenés ningún sistema habilitado</p>
-          <p className="text-muted mt-1 text-sm">Pedile acceso a un dueño.</p>
-        </div>
+        <EmptyState
+          icon={LayoutGrid}
+          title="Todavía no tenés ningún sistema habilitado"
+          description="Pedile acceso a un dueño."
+        />
       ) : (
         <ul className="grid auto-rows-fr gap-4 md:grid-cols-2 lg:grid-cols-3">
           {paneles.map((panel) => {

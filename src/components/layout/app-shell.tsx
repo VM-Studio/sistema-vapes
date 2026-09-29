@@ -39,7 +39,7 @@ export function AppShell({ children, sidebarColapsadoInicial, restringido }: App
 
   if (restringido) {
     return (
-      <div className="min-h-dvh bg-white">
+      <div className="bg-background min-h-dvh">
         <TopBar restringido />
         <main className="mx-auto max-w-3xl px-4 pt-[calc(3.5rem+env(safe-area-inset-top)+1.5rem)] pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-8">
           {children}
@@ -49,7 +49,7 @@ export function AppShell({ children, sidebarColapsadoInicial, restringido }: App
   }
 
   return (
-    <div className="min-h-dvh bg-white">
+    <div className="bg-background min-h-dvh">
       <TopBar />
       <Sidebar items={items} colapsado={colapsado} onToggle={toggleSidebar} />
       <main

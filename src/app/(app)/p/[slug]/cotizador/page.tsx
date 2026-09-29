@@ -159,13 +159,13 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
-      <div className="mb-4 flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-h3 font-semibold">Cotizaciones</h2>
-          <span className="text-muted text-small tabular-nums">
-            {r.total} {r.total === 1 ? "cotización" : "cotizaciones"}
-          </span>
-        </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-h3 font-semibold">Cotizaciones</h2>
+        <span className="text-muted text-small tabular-nums">
+          {r.total} {r.total === 1 ? "cotización" : "cotizaciones"}
+        </span>
+      </div>
+      <section aria-label="Filtros" className="bg-card rounded-card mb-4 flex flex-col gap-3 p-4">
         <ChipRow ariaLabel="Tipo de cotización">
           <ChipLink href={tab(null)} activo={!tipo}>
             Todas
@@ -178,7 +178,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
           </ChipLink>
         </ChipRow>
         <FiltrosCotizaciones params={plano} vendedores={vendedores} />
-      </div>
+      </section>
 
       <DataTable
         caption="Cotizaciones"

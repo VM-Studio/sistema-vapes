@@ -6,14 +6,15 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CantidadInput } from "@/components/ui/cantidad-input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SearchInput } from "@/components/ui/search-input";
+import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
@@ -188,9 +189,14 @@ export function EtiquetasView({
       <PageHeader
         title="Etiquetas"
         subtitle="Code128 para productos sin código de fábrica (o para re-etiquetar). Se imprimen desde el PDF."
+        breadcrumb={
+          <Breadcrumb
+            items={[{ label: "Productos", href: ruta("/productos") }, { label: "Etiquetas" }]}
+          />
+        }
       />
       <div className="grid grid-cols-1 gap-4 pb-28 lg:grid-cols-[minmax(0,1fr)_22rem] lg:pb-0">
-        <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-4">
           <ScanInput
             onScan={(c, m) => void escaner.procesar(c, m.fuente)}
             onAbrirCamara={escaner.abrirCamara}
@@ -208,7 +214,7 @@ export function EtiquetasView({
             </ChipLink>
             {filtros.productoId && (
               <ChipLink href={hrefFiltro({ producto: "" })} activo>
-                Solo este producto <X className="size-3.5" aria-label="quitar filtro" />
+                Solo este producto <X strokeWidth={1.75} aria-label="quitar filtro" />
               </ChipLink>
             )}
           </ChipRow>
@@ -227,10 +233,22 @@ export function EtiquetasView({
               }
             />
           ) : variantes.length === 0 ? (
-            <EmptyState icon={Tags} title="No hay variantes con ese filtro" />
+            <EmptyState
+              icon={Tags}
+              title="No hay variantes con esos filtros"
+              description="Probá con otra búsqueda o quitá los filtros."
+              action={
+                <Link
+                  href={ruta("/productos/etiquetas")}
+                  className={buttonVariants({ variant: "secondary" })}
+                >
+                  Limpiar filtros
+                </Link>
+              }
+            />
           ) : (
-            <div className="border-border bg-surface rounded-control border">
-              <div className="border-border flex items-center justify-between gap-2 border-b px-3">
+            <div className="border-border bg-surface rounded-card overflow-hidden border">
+              <div className="border-border bg-card flex items-center justify-between gap-2 border-b px-4">
                 <Checkbox
                   label={
                     filtros.productoId
@@ -245,7 +263,7 @@ export function EtiquetasView({
                 {variantes.map((v) => (
                   <li
                     key={v.varianteId}
-                    className="border-border flex items-center gap-3 border-b px-3 last:border-0"
+                    className="border-border hover:bg-card/60 flex items-center gap-3 border-b px-4 transition-colors last:border-0"
                   >
                     <Checkbox
                       className="min-w-0 flex-1"
@@ -273,111 +291,111 @@ export function EtiquetasView({
           )}
         </div>
 
-        <Card className="lg:sticky lg:top-4 lg:self-start">
-          <CardHeader>
-            <CardTitle>
-              A imprimir: {total} {total === 1 ? "etiqueta" : "etiquetas"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {seleccion.size === 0 ? (
-              <p className="text-muted text-sm">Elegí o escaneá productos.</p>
-            ) : (
-              <ul aria-label="Selección" className="flex max-h-80 flex-col gap-2 overflow-y-auto">
-                {[...seleccion.values()].map((s) => (
-                  <li key={s.varianteId} className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm">{s.nombreCompleto}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => cantidad(s.varianteId, s.cantidad - 1)}
-                      aria-label={`Una etiqueta menos de ${s.nombreCompleto}`}
-                    >
-                      <Minus />
-                    </Button>
-                    <CantidadInput
-                      etiqueta={`Cantidad de etiquetas de ${s.nombreCompleto}`}
-                      valor={s.cantidad}
-                      max={500}
-                      onCambio={(n) => cantidad(s.varianteId, n)}
-                      className="h-9 w-14 px-1"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => cantidad(s.varianteId, s.cantidad + 1)}
-                      aria-label={`Una etiqueta más de ${s.nombreCompleto}`}
-                    >
-                      <Plus />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-danger"
-                      onClick={() => cambiar((m) => m.delete(s.varianteId))}
-                      aria-label={`Quitar ${s.nombreCompleto}`}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {sinCodigo > 0 && (
-              <p
-                className={cn(
-                  "rounded-control p-2 text-sm",
-                  puedeGenerarCodigos
-                    ? "bg-primary-soft text-primary-soft-foreground"
-                    : "bg-danger-soft text-danger-soft-foreground",
-                )}
-              >
-                {puedeGenerarCodigos
-                  ? `${sinCodigo} sin código: se les asigna un código interno al generar el PDF.`
-                  : `${sinCodigo} sin código: pedile a alguien con permiso de edición que les genere uno.`}
-              </p>
-            )}
-            <Select
-              label="Formato"
-              options={Object.entries(FORMATOS_ETIQUETA).map(([value, f]) => ({
-                value,
-                label: f.label,
-              }))}
-              value={formato}
-              onChange={(e) => {
-                const f = e.target.value as FormatoEtiqueta;
-                setFormato(f);
-                try {
-                  localStorage.setItem(FORMATO_KEY, f);
-                } catch {}
-              }}
-            />
-            <Switch
-              label="Mostrar precio de venta"
-              checked={mostrarPrecio}
-              onCheckedChange={setMostrarPrecio}
-            />
-            <div className="border-border bg-surface/95 fixed inset-x-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t px-4 py-3 backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0">
-              <Button
-                onClick={() => void generar()}
-                loading={generando}
-                disabled={seleccion.size === 0 || (sinCodigo > 0 && !puedeGenerarCodigos)}
-              >
-                <FileDown /> Generar PDF
-              </Button>
-              {pdf && (
-                <a
-                  ref={descarga}
-                  href={pdf.url}
-                  download={pdf.nombre}
-                  className="text-primary text-center text-sm font-medium hover:underline"
-                >
-                  Descargar de nuevo
-                </a>
+        <SectionCard
+          title={`A imprimir: ${total} ${total === 1 ? "etiqueta" : "etiquetas"}`}
+          className="lg:sticky lg:top-4 lg:self-start"
+          contentClassName="flex flex-col gap-4"
+        >
+          {seleccion.size === 0 ? (
+            <p className="text-muted text-sm">Elegí o escaneá productos.</p>
+          ) : (
+            <ul
+              aria-label="Selección"
+              className="border-border bg-surface divide-border rounded-card flex max-h-80 flex-col divide-y overflow-y-auto border"
+            >
+              {[...seleccion.values()].map((s) => (
+                <li key={s.varianteId} className="flex items-center gap-1 py-1 pr-1 pl-3">
+                  <span className="min-w-0 flex-1 truncate text-sm">{s.nombreCompleto}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => cantidad(s.varianteId, s.cantidad - 1)}
+                    aria-label={`Una etiqueta menos de ${s.nombreCompleto}`}
+                  >
+                    <Minus strokeWidth={1.75} />
+                  </Button>
+                  <CantidadInput
+                    etiqueta={`Cantidad de etiquetas de ${s.nombreCompleto}`}
+                    valor={s.cantidad}
+                    max={500}
+                    onCambio={(n) => cantidad(s.varianteId, n)}
+                    className="h-9 w-14 px-1"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => cantidad(s.varianteId, s.cantidad + 1)}
+                    aria-label={`Una etiqueta más de ${s.nombreCompleto}`}
+                  >
+                    <Plus strokeWidth={1.75} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-danger"
+                    onClick={() => cambiar((m) => m.delete(s.varianteId))}
+                    aria-label={`Quitar ${s.nombreCompleto}`}
+                  >
+                    <Trash2 strokeWidth={1.75} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {sinCodigo > 0 && (
+            <p
+              className={cn(
+                "rounded-control px-3 py-2 text-sm",
+                puedeGenerarCodigos
+                  ? "bg-surface text-muted"
+                  : "bg-danger-soft text-danger-soft-foreground",
               )}
-            </div>
-          </CardContent>
-        </Card>
+            >
+              {puedeGenerarCodigos
+                ? `${sinCodigo} sin código: se les asigna un código interno al generar el PDF.`
+                : `${sinCodigo} sin código: pedile a alguien con permiso de edición que les genere uno.`}
+            </p>
+          )}
+          <Select
+            label="Formato"
+            options={Object.entries(FORMATOS_ETIQUETA).map(([value, f]) => ({
+              value,
+              label: f.label,
+            }))}
+            value={formato}
+            onChange={(e) => {
+              const f = e.target.value as FormatoEtiqueta;
+              setFormato(f);
+              try {
+                localStorage.setItem(FORMATO_KEY, f);
+              } catch {}
+            }}
+          />
+          <Switch
+            label="Mostrar precio de venta"
+            checked={mostrarPrecio}
+            onCheckedChange={setMostrarPrecio}
+          />
+          <div className="border-border bg-surface pl-safe pr-safe fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t px-4 py-3 lg:static lg:border-0 lg:bg-transparent lg:p-0">
+            <Button
+              onClick={() => void generar()}
+              loading={generando}
+              disabled={seleccion.size === 0 || (sinCodigo > 0 && !puedeGenerarCodigos)}
+            >
+              <FileDown strokeWidth={1.75} /> Generar PDF
+            </Button>
+            {pdf && (
+              <a
+                ref={descarga}
+                href={pdf.url}
+                download={pdf.nombre}
+                className="text-muted hover:text-foreground text-center text-sm font-medium underline underline-offset-4"
+              >
+                Descargar de nuevo
+              </a>
+            )}
+          </div>
+        </SectionCard>
       </div>
       {escaner.ui}
     </>

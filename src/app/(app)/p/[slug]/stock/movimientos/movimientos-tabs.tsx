@@ -33,7 +33,7 @@ export function StockTabs({
   ] as const;
   return (
     <TabsNav
-      className="mb-4"
+      className="mb-6"
       ariaLabel="Stock"
       items={items.map((i) => ({ href: i.href, label: i.label, activo: i.id === actual }))}
     />

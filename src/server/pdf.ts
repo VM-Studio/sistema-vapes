@@ -9,12 +9,35 @@ import { rgb, type PDFFont, type PDFPage } from "pdf-lib";
 export const MM = 72 / 25.4;
 
 /**
+ * Equivalentes WinAnsi de caracteres que Intl y los textos de la UI usan
+ * seguido y que las fuentes estándar no tienen (el "−" de los descuentos, flechas…).
+ */
+const REEMPLAZOS_WINANSI: Record<string, string> = {
+  "\u2212": "-", // signo menos
+  "\u2010": "-",
+  "\u2011": "-",
+  "\u2012": "-",
+  "\u2192": "->",
+  "\u2190": "<-",
+  "\u2265": ">=",
+  "\u2264": "<=",
+  "\u2248": "~",
+};
+
+/**
  * pdf-lib con las fuentes estándar solo dibuja WinAnsi: los espacios finos que
- * mete Intl ("$ 1.000") se pasan a espacio común y lo que no se pueda, a "?".
+ * mete Intl ("$ 1.000") se pasan a espacio común, los caracteres invisibles
+ * (variación de emoji, ancho cero) se quitan, algunos símbolos comunes se
+ * reemplazan por su equivalente y lo que no se pueda, a "?". Pasar TODO texto
+ * por acá antes de medirlo o dibujarlo.
  */
 export function aWinAnsi(texto: string, fuente: PDFFont): string {
-  return [...texto.replace(/[   ]/g, " ")]
+  return [
+    ...texto.replace(/[\u202f\u2009\u00a0\u2007]/g, " ").replace(/[\u200b-\u200d\ufe0f]/g, ""),
+  ]
     .map((ch) => {
+      const reemplazo = REEMPLAZOS_WINANSI[ch];
+      if (reemplazo !== undefined) return reemplazo;
       try {
         fuente.encodeText(ch);
         return ch;
@@ -72,7 +95,7 @@ const hex = (h: string) =>
 export const COLOR_PDF = {
   texto: hex("#0A0A0A"),
   muted: hex("#525252"),
-  subtle: hex("#8A8A8A"),
+  subtle: hex("#6D6D6D"),
   card: hex("#F4F5F7"),
   borde: hex("#E6E8EB"),
   actual: hex("#0047B0"),

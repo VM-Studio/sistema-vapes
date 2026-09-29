@@ -111,7 +111,11 @@ export default async function EquipoPage({ searchParams }: { searchParams: Searc
       </header>
 
       {filas.length === 0 ? (
-        <EmptyState icon={Users} title="Sin ventas en el período" />
+        <EmptyState
+          icon={Users}
+          title="Todavía no hay ventas en este período"
+          description="Cuando el equipo registre ventas, acá vas a ver el rendimiento de cada vendedor."
+        />
       ) : (
         <>
           <section

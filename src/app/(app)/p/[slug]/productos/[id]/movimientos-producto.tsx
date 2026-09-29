@@ -28,7 +28,14 @@ export function MovimientosProducto({
         caption="Últimos movimientos"
         rows={movimientos}
         getRowKey={(m) => m.id}
-        empty={<EmptyState icon={History} title="Este producto todavía no tuvo movimientos" />}
+        empty={
+          <EmptyState
+            icon={History}
+            title="Este producto todavía no tuvo movimientos"
+            description="Acá vas a ver las cargas, ventas, ajustes y transferencias."
+            className="bg-surface py-10 md:py-12"
+          />
+        }
         columns={[
           {
             key: "fecha",
@@ -47,7 +54,7 @@ export function MovimientosProducto({
             ),
           },
           { key: "sabor", header: "Sabor", cell: (m) => m.nombre },
-          { key: "deposito", header: "Depósito", cell: (m) => m.deposito },
+          { key: "deposito", header: "Galpón", cell: (m) => m.deposito },
           {
             key: "cantidad",
             header: "Cantidad",
@@ -95,9 +102,12 @@ export function MovimientosProducto({
         ]}
       />
       {total > movimientos.length && (
-        <p className="mt-3 text-sm">
+        <p className="text-muted mt-4 text-sm">
           Mostrando los últimos {movimientos.length} de {total}.{" "}
-          <Link href={hrefTodos} className="text-primary hover:underline">
+          <Link
+            href={hrefTodos}
+            className="text-foreground font-medium underline underline-offset-4"
+          >
             Ver todos en Movimientos
           </Link>
         </p>

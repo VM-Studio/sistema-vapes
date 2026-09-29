@@ -28,6 +28,7 @@ import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede, useUsuario } from "@/components/layout/usuario-context";
 import { useEstadoOffline } from "@/components/pwa/sincronizacion-offline";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CantidadInput } from "@/components/ui/cantidad-input";
 import { Card } from "@/components/ui/card";
@@ -238,6 +239,11 @@ export function CargaStock({
       <PageHeader
         title="Cargar stock"
         className="mb-4 md:mb-5"
+        breadcrumb={
+          <Breadcrumb
+            items={[{ label: "Productos", href: ruta("/productos") }, { label: "Cargar stock" }]}
+          />
+        }
         subtitle={
           paso === "escaneo" && deposito ? (
             <span className="inline-flex flex-wrap items-center gap-2">
@@ -276,7 +282,7 @@ export function CargaStock({
         {guardada && (
           <div
             role="status"
-            className="bg-card text-body mb-6 flex flex-col gap-3 rounded-card p-4 md:flex-row md:items-center md:justify-between md:p-5"
+            className="bg-card text-body rounded-card mb-6 flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:p-5"
           >
             <span className="flex items-start gap-3">
               <History
@@ -342,7 +348,7 @@ export function CargaStock({
                   <li
                     key={d.depositoId}
                     className={cn(
-                      "bg-surface flex flex-col gap-0.5 rounded-control p-3",
+                      "bg-surface rounded-control flex flex-col gap-0.5 p-3",
                       actual && "ring-foreground ring-1",
                     )}
                   >
@@ -357,7 +363,7 @@ export function CargaStock({
                 );
               })}
             </ul>
-            <ul className="bg-surface divide-border mt-2 flex flex-col divide-y rounded-control px-4 text-sm">
+            <ul className="bg-surface divide-border rounded-control mt-2 flex flex-col divide-y px-4 text-sm">
               {resumen.items.map((i) => (
                 <li key={i.varianteId} className="flex items-center justify-between gap-3 py-2.5">
                   <span className="min-w-0 truncate">{i.titulo}</span>
@@ -406,7 +412,7 @@ export function CargaStock({
       <div className="flex flex-col gap-4">
         <Card aria-label="Escáner" className="flex flex-col gap-4 p-5 md:p-6" role="region">
           <div className="flex items-center gap-4">
-            <span className="bg-surface text-foreground relative flex size-14 shrink-0 items-center justify-center rounded-card">
+            <span className="bg-surface text-foreground rounded-card relative flex size-14 shrink-0 items-center justify-center">
               <ScanBarcode className="size-8" strokeWidth={1.5} aria-hidden />
             </span>
             <div className="min-w-0 flex-1" aria-live="polite">
@@ -459,18 +465,18 @@ export function CargaStock({
             <h2 className="text-h3 font-semibold">Lista de carga</h2>
             {items.length > 0 && (
               <p className="text-muted text-small tabular-nums">
-                {items.length} producto{items.length === 1 ? "" : "s"} ·{" "}
-                {formatearNumero(unidades)} u.
+                {items.length} producto{items.length === 1 ? "" : "s"} · {formatearNumero(unidades)}{" "}
+                u.
               </p>
             )}
           </div>
           {items.length === 0 ? (
-            <div className="bg-surface text-muted flex flex-col items-center gap-2 rounded-control px-4 py-10 text-center text-sm">
+            <div className="bg-surface text-muted rounded-control flex flex-col items-center gap-2 px-4 py-10 text-center text-sm">
               <PackageOpen className="text-subtle size-10" strokeWidth={1.25} aria-hidden />
               Todavía no escaneaste nada.
             </div>
           ) : (
-            <div className="border-border bg-surface overflow-hidden rounded-control border">
+            <div className="border-border bg-surface rounded-control overflow-hidden border">
               <div
                 aria-hidden
                 className="border-border bg-card text-muted hidden h-10 grid-cols-[minmax(0,1fr)_9rem_13rem] items-center gap-4 border-b px-4 text-xs font-medium sm:grid"
@@ -501,7 +507,9 @@ export function CargaStock({
                         <p className="text-muted text-small sm:hidden">
                           En {deposito?.nombre}: <span className="tabular-nums">{actual}</span>{" "}
                           <ArrowRight className="inline size-3.5" aria-hidden />{" "}
-                          <strong className="text-foreground tabular-nums">{actual + i.cantidad}</strong>
+                          <strong className="text-foreground tabular-nums">
+                            {actual + i.cantidad}
+                          </strong>
                         </p>
                       </div>
                       <p className="text-muted hidden text-right text-sm tabular-nums sm:block">

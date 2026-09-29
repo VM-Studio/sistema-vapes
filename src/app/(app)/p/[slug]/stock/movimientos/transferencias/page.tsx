@@ -4,7 +4,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { buttonVariants } from "@/components/ui/button";
+import { cardVariants } from "@/components/ui/card";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -48,18 +50,26 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
   );
   const ruta = (t: TransferenciaListada) => (
     <span className="inline-flex items-center gap-1.5">
-      {t.origen} <ArrowRight className="text-muted size-3.5" strokeWidth={1.75} aria-label="a" />{" "}
+      {t.origen} <ArrowRight className="text-muted size-4" strokeWidth={1.75} aria-label="a" />{" "}
       {t.destino}
     </span>
   );
 
   return (
     <>
-      <StockTabs panel={ctx.panel} actual="transferencias" depositoId={depositoId} />
       <PageHeader
         title="Transferencias"
         subtitle="Mercadería movida entre galpones. Para transferir, usá “Transferir” en la fila del sabor, en Stock."
+        breadcrumb={
+          <Breadcrumb
+            items={[
+              { label: "Stock", href: rutaPanel(ctx.panel.slug, "/stock") },
+              { label: "Transferencias" },
+            ]}
+          />
+        }
       />
+      <StockTabs panel={ctx.panel} actual="transferencias" depositoId={depositoId} />
       <SelectorDeposito
         depositos={depositos}
         actual={depositoId}
@@ -90,6 +100,7 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
             <EmptyState
               icon={ArrowLeftRight}
               title="No hay transferencias con esos filtros"
+              description="Probá con otro galpón o estado."
               action={
                 <Link href={PATH} className={buttonVariants({ variant: "secondary" })}>
                   Limpiar filtros
@@ -117,7 +128,10 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
             key: "numero",
             header: "N.º",
             cell: (t) => (
-              <Link href={`${PATH}/${t.id}`} className="text-primary font-semibold hover:underline">
+              <Link
+                href={`${PATH}/${t.id}`}
+                className="font-semibold underline-offset-4 hover:underline"
+              >
                 #{t.numero}
               </Link>
             ),
@@ -140,14 +154,14 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
         renderMobile={(t) => (
           <Link
             href={`${PATH}/${t.id}`}
-            className="border-border bg-surface block rounded-card border p-4"
+            className={cardVariants({ variant: "clickable", className: "flex flex-col gap-1 p-4" })}
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold">#{t.numero}</span>
               {estadoBadge(t)}
             </div>
-            <p className="mt-1 text-sm">{ruta(t)}</p>
-            <p className="text-muted text-xs">
+            <p className="font-medium">{ruta(t)}</p>
+            <p className="text-muted text-small">
               {t.items} productos · {t.unidades} unidades · {formatearFechaHora(t.fecha)}
             </p>
           </Link>

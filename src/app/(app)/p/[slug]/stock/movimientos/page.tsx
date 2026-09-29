@@ -57,8 +57,8 @@ export default async function MovimientosPage({ searchParams }: { searchParams: 
 
   return (
     <>
-      <StockTabs panel={ctx.panel} actual="ledger" depositoId={deposito?.id} />
       <LedgerView
+        tabs={<StockTabs panel={ctx.panel} actual="ledger" depositoId={deposito?.id} />}
         resultado={resultado}
         params={plano}
         rango={rango}

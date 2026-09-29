@@ -1,9 +1,18 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** Esqueleto mientras carga una pantalla del sistema (navegación instantánea). */
+/**
+ * Esqueleto mientras carga una pantalla del sistema (navegación instantánea).
+ * Este boundary está por encima de los layouts de panel y global: se muestra
+ * sin la barra ni el sidebar, así que lleva sus propios márgenes (los mismos
+ * que el contenido de AppShell) para no quedar pegado al borde.
+ */
 export default function Loading() {
   return (
-    <div className="flex flex-col" aria-busy="true" aria-label="Cargando">
+    <div
+      className="mx-auto flex w-full max-w-[1280px] min-w-0 flex-col px-4 pt-[calc(3.5rem+env(safe-area-inset-top)+1.5rem)] pb-6 md:px-8 md:pb-8"
+      aria-busy="true"
+      aria-label="Cargando"
+    >
       {/* Mismo ritmo que PageHeader: título, subtítulo y margen inferior. */}
       <div className="mb-6 flex flex-col gap-2 md:mb-8">
         <Skeleton className="h-8 w-48" />

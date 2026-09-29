@@ -20,6 +20,23 @@ export function formatearPesos(valor: string | number | null | undefined): strin
   return Number.isInteger(n) ? pesosEnteros.format(n) : pesosDecimales.format(n);
 }
 
+/** "US$ 12" / "US$ 12,50" (mismo criterio de centavos que formatearPesos). */
+export function formatearDolares(valor: string | number | null | undefined): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const n = typeof valor === "number" ? valor : Number(valor);
+  if (!Number.isFinite(n)) return "—";
+  const t = n.toLocaleString("es-AR", {
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+  return `US$ ${t}`;
+}
+
+/** Monto en la moneda indicada: "USD" → formatearDolares, cualquier otra → pesos. */
+export function formatearMonto(valor: string | number | null | undefined, moneda?: string): string {
+  return moneda === "USD" ? formatearDolares(valor) : formatearPesos(valor);
+}
+
 export function formatearNumero(n: number): string {
   return numero.format(n);
 }

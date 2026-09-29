@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ChipRow } from "@/components/ui/chip";
+import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { controlClass } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
@@ -31,11 +31,6 @@ const segmento =
   "inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-inner px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9 md:flex-none [&_svg]:size-4";
 const segmentoActivo = "bg-foreground text-background";
 const segmentoInactivo = "text-muted hover:bg-surface-2 hover:text-foreground";
-
-const chip =
-  "inline-flex h-11 shrink-0 items-center rounded-control border px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9";
-const chipActivo = "border-foreground bg-foreground text-background";
-const chipInactivo = "border-border bg-surface text-muted hover:border-input hover:text-foreground";
 
 /**
  * Selector de período del dashboard y los reportes. El estado vive en la URL
@@ -129,18 +124,14 @@ export function SelectorPeriodo({
         <div className="bg-card rounded-card flex w-full flex-col gap-4 p-4 md:w-auto">
           <ChipRow ariaLabel="Rangos rápidos" className="-mx-4 px-4 py-0 md:mx-0 md:px-0">
             {PRESETS.map((p) => (
-              <Link
+              <ChipLink
                 key={p.valor}
                 href={href({ modo: "periodo", preset: p.valor })}
-                scroll={false}
-                aria-current={modo === "PERSONALIZADO" && preset === p.valor ? "true" : undefined}
-                className={cn(
-                  chip,
-                  modo === "PERSONALIZADO" && preset === p.valor ? chipActivo : chipInactivo,
-                )}
+                activo={modo === "PERSONALIZADO" && preset === p.valor}
+                className="h-11 md:h-9"
               >
                 {p.label}
-              </Link>
+              </ChipLink>
             ))}
           </ChipRow>
           <form onSubmit={aplicar} className="grid grid-cols-2 items-end gap-3 md:flex">

@@ -214,13 +214,13 @@ export function AltaRapidaSheet({
               className={cn(controlClass, "h-11 pl-9")}
             />
             {sugeridos.length > 0 && (
-              <ul className="border-border bg-surface absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-control border p-1 shadow-pop">
+              <ul className="border-border bg-surface rounded-control shadow-pop absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto border p-1">
                 {sugeridos.map((p) => (
                   <li key={p.id}>
                     <button
                       type="button"
                       onClick={() => elegir(p)}
-                      className="hover:bg-surface-2 flex min-h-12 w-full items-center justify-between gap-3 rounded-control px-3 py-2 text-left"
+                      className="hover:bg-surface-2 rounded-control flex min-h-12 w-full items-center justify-between gap-3 px-3 py-2 text-left"
                     >
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium">
@@ -276,7 +276,7 @@ export function AltaRapidaSheet({
           </div>
 
           {existente && (
-            <div className="bg-primary-soft text-primary-soft-foreground flex gap-2.5 rounded-control px-3 py-2.5 text-sm">
+            <div className="bg-surface rounded-control flex gap-2.5 px-3 py-2.5 text-sm">
               <CircleCheck className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
               <div>
                 <p className="font-medium">

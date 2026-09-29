@@ -31,6 +31,7 @@ import { CantidadInput } from "@/components/ui/cantidad-input";
 import { Card } from "@/components/ui/card";
 import { controlClass } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { BotonCamara } from "@/features/scanner/BotonCamara";
@@ -360,52 +361,62 @@ export function EditorCotizacion({
   return (
     <div className="flex flex-col gap-4">
       {/* Cabecera --------------------------------------------------------------- */}
-      <header className="flex flex-col gap-3">
-        <Breadcrumb
-          items={[
-            { label: "Cotizador", href: ruta("/cotizador") },
-            { label: mayorista ? "Por mayor" : "Por unidad" },
-          ]}
-        />
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 className="text-h1 font-semibold">
-            {mayorista ? "Cotización por mayor" : "Cotización por unidad"}
-          </h1>
-          {guardada && (
-            <Badge
-              variant="neutral"
-              className="text-foreground font-mono text-sm font-semibold"
-              data-testid="codigo-cotizacion"
-            >
-              {guardada.codigo}
-            </Badge>
-          )}
-        </div>
-        {mayorista && (
-          <p
-            className="text-muted text-small flex flex-wrap items-center gap-x-2 gap-y-1"
-            data-testid="modo-escalon"
-          >
-            <Layers className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-            <span>
-              Escalón{" "}
-              <strong className="text-foreground font-medium">
-                {modoEscalon === "POR_PRODUCTO"
-                  ? "por producto (suman todos los sabores del producto)"
-                  : "por total de unidades de la cotización"}
-              </strong>
+      <PageHeader
+        className="mb-0 md:mb-2"
+        title={mayorista ? "Cotización por mayor" : "Cotización por unidad"}
+        breadcrumb={
+          <Breadcrumb
+            items={[
+              { label: "Cotizador", href: ruta("/cotizador") },
+              ...(guardada
+                ? [
+                    { label: guardada.codigo, href: ruta(`/cotizador/${guardada.id}`) },
+                    { label: "Editar" },
+                  ]
+                : [{ label: mayorista ? "Nueva por mayor" : "Nueva por unidad" }]),
+            ]}
+          />
+        }
+        subtitle={
+          (guardada || mayorista) && (
+            <span className="text-small flex flex-col gap-2">
+              {guardada && (
+                <Badge
+                  variant="neutral"
+                  className="text-foreground self-start font-mono text-sm font-semibold"
+                  data-testid="codigo-cotizacion"
+                >
+                  {guardada.codigo}
+                </Badge>
+              )}
+              {mayorista && (
+                <span
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1"
+                  data-testid="modo-escalon"
+                >
+                  <Layers className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                  <span>
+                    Escalón{" "}
+                    <strong className="text-foreground font-medium">
+                      {modoEscalon === "POR_PRODUCTO"
+                        ? "por producto (suman todos los sabores del producto)"
+                        : "por total de unidades de la cotización"}
+                    </strong>
+                  </span>
+                  {esOwner && (
+                    <Link
+                      href={ruta("/cotizador/configuracion")}
+                      className="text-foreground inline-flex min-h-8 items-center gap-1 font-medium underline-offset-4 hover:underline"
+                    >
+                      <Settings2 className="size-3.5" strokeWidth={1.75} aria-hidden /> Configurar
+                    </Link>
+                  )}
+                </span>
+              )}
             </span>
-            {esOwner && (
-              <Link
-                href={ruta("/cotizador/configuracion")}
-                className="text-foreground inline-flex min-h-8 items-center gap-1 font-medium underline-offset-4 hover:underline"
-              >
-                <Settings2 className="size-3.5" strokeWidth={1.75} aria-hidden /> Configurar
-              </Link>
-            )}
-          </p>
-        )}
-      </header>
+          )
+        }
+      />
 
       {/* Cliente y validez ------------------------------------------------------ */}
       <Card className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_11rem] md:p-6">
@@ -502,7 +513,7 @@ export function EditorCotizacion({
             )}
 
             {items.length === 0 ? (
-              <div className="border-input bg-surface text-muted rounded-card flex flex-col items-center gap-3 border border-dashed px-4 py-10 text-center text-sm">
+              <div className="border-border bg-surface text-muted rounded-card flex flex-col items-center gap-3 border px-4 py-10 text-center text-sm">
                 <PackageSearch className="text-subtle size-10" strokeWidth={1.25} aria-hidden />
                 <p className="max-w-xs">
                   Escaneá con la pistola o la cámara, buscá arriba o tocá uno de los más vendidos.

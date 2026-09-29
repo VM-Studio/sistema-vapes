@@ -1,5 +1,6 @@
 "use client";
 
+import { Ban, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -59,14 +60,16 @@ export function AccionesTransferencia({
   }
 
   return (
-    <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">
+    <div className="flex w-full flex-col-reverse gap-2 md:w-auto md:flex-row md:justify-end">
       {puedeAnular && (
-        <Button variant="secondary" className="text-danger" onClick={() => setAnulando(true)}>
-          Anular
+        <Button variant="secondary" onClick={() => setAnulando(true)}>
+          <Ban strokeWidth={1.75} /> Anular
         </Button>
       )}
       {puedeCompletar && (
-        <Button onClick={() => setCompletando(true)}>Completar transferencia</Button>
+        <Button onClick={() => setCompletando(true)}>
+          <Check strokeWidth={1.75} /> Completar transferencia
+        </Button>
       )}
 
       <ConfirmDialog

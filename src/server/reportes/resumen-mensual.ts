@@ -2,7 +2,7 @@ import "server-only";
 
 import { formatearCompacto, formatearDelta, formatearNumero, formatearPesos } from "@/lib/format";
 import type { CtxPanel } from "@/server/auth/permissions";
-import { COLOR_PDF, rectRedondeado } from "@/server/pdf";
+import { aWinAnsi, COLOR_PDF, recortar, rectRedondeado } from "@/server/pdf";
 import {
   cerrarLienzo,
   GRIS,
@@ -115,16 +115,21 @@ export async function pdfResumenMensual(
     l.texto(t.label, x + 10, y + h - 15, { size: 8, color: GRIS });
     l.texto(t.valor, x + 10, y + h - 34, { size: 15, font: l.negrita, max: w - 20 });
     const pct = t.c?.deltaPct ?? null;
-    const delta =
-      pct === null ? "sin datos del mes anterior" : formatearDelta(pct).replace(/−/g, "-");
+    const fuenteDelta = pct === null ? l.normal : l.negrita;
+    // Saneado y recortado ANTES de medirlo: widthOfTextAtSize falla con caracteres fuera de WinAnsi.
+    const delta = recortar(
+      aWinAnsi(pct === null ? "sin datos del mes anterior" : formatearDelta(pct), fuenteDelta),
+      fuenteDelta,
+      7.5,
+      w - 20,
+    );
     l.texto(delta, x + 10, y + 9, {
       size: 7.5,
-      font: pct === null ? l.normal : l.negrita,
-      color: pct === null ? GRIS : pct >= 0 ? SUBE : BAJA,
-      max: w - 20,
+      font: fuenteDelta,
+      color: pct === null || pct === 0 ? GRIS : pct > 0 ? SUBE : BAJA,
     });
     if (pct !== null) {
-      const dx = l.negrita.widthOfTextAtSize(delta, 7.5) + 4;
+      const dx = fuenteDelta.widthOfTextAtSize(delta, 7.5) + 4;
       l.texto(`vs. mes anterior${t.extra ? ` · ${t.extra}` : ""}`, x + 10 + dx, y + 9, {
         size: 7.5,
         color: GRIS,
@@ -137,8 +142,8 @@ export async function pdfResumenMensual(
   // --- Gráfico: facturación por día ------------------------------------------
   l.texto("Facturación por día", M, l.y, { size: 11, font: l.negrita });
   // Leyenda a la derecha: cuadrado de color pegado a su etiqueta.
-  const anchoAnt = l.normal.widthOfTextAtSize("Mes anterior", 7.5);
-  const anchoAct = l.normal.widthOfTextAtSize("Este mes", 7.5);
+  const anchoAnt = l.normal.widthOfTextAtSize(aWinAnsi("Mes anterior", l.normal), 7.5);
+  const anchoAct = l.normal.widthOfTextAtSize(aWinAnsi("Este mes", l.normal), 7.5);
   const xAnt = ancho - M - anchoAnt - 11;
   const xAct = xAnt - 16 - anchoAct - 11;
   rectRedondeado(page, xAct, l.y, 7, 7, 1.5, BARRA);
@@ -226,23 +231,19 @@ export async function pdfResumenMensual(
     yTop -= 15;
   });
   const cv = d.compras;
-  const filasCv: [string, string, string][] = [
-    ["Ventas (facturado)", formatearPesos(cv.ventas.actual), formatearDelta(cv.ventas.deltaPct)],
-    ["Compras recibidas", formatearPesos(cv.compras.actual), formatearDelta(cv.compras.deltaPct)],
-    [
-      "Costo de lo vendido",
-      formatearPesos(cv.costoVendido.actual),
-      formatearDelta(cv.costoVendido.deltaPct),
-    ],
+  const filasCv: [string, string, number | null | undefined][] = [
+    ["Ventas (facturado)", formatearPesos(cv.ventas.actual), cv.ventas.deltaPct],
+    ["Compras recibidas", formatearPesos(cv.compras.actual), cv.compras.deltaPct],
+    ["Costo de lo vendido", formatearPesos(cv.costoVendido.actual), cv.costoVendido.deltaPct],
     [
       "Cantidad de compras",
       formatearNumero(cv.cantidadCompras.actual),
-      formatearDelta(cv.cantidadCompras.deltaPct),
+      cv.cantidadCompras.deltaPct,
     ],
     [
       "Ventas - compras",
       formatearPesos((Number(cv.ventas.actual) - Number(cv.compras.actual)).toFixed(2)),
-      "",
+      undefined,
     ],
   ];
   l.texto("Concepto", x2 + 5, yTabla - 18, { size: 7.5, color: GRIS, font: l.negrita });
@@ -271,7 +272,12 @@ export async function pdfResumenMensual(
     }
     l.texto(a, x2 + 5, yCv, { max: col - 150, font: total ? l.negrita : l.normal });
     l.texto(b, x2 + col - 60, yCv, { derecha: true, font: total ? l.negrita : l.normal });
-    l.texto(c, x2 + col - 5, yCv, { derecha: true, color: GRIS });
+    if (c !== undefined) {
+      l.texto(formatearDelta(c), x2 + col - 5, yCv, {
+        derecha: true,
+        color: !c ? GRIS : c > 0 ? SUBE : BAJA,
+      });
+    }
     if (!total) {
       page.drawLine({
         start: { x: x2, y: yCv - 5 },

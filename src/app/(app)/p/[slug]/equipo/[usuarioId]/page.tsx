@@ -223,7 +223,7 @@ export default async function EquipoVendedorPage({
               </p>
             </Link>
           )}
-          empty={<EmptyState icon={Receipt} title="Sin ventas en el período." />}
+          empty={<EmptyState icon={Receipt} title="Todavía no hay ventas en este período" />}
         />
         <Pagination
           page={d.ventas.page}

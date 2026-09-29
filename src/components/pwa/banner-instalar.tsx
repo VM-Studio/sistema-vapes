@@ -95,10 +95,10 @@ export function BannerInstalar() {
       <aside
         aria-label="Instalar la app"
         data-testid="banner-instalar"
-        className="border-border bg-surface fixed inset-x-3 top-[calc(4rem+env(safe-area-inset-top))] z-40 flex items-center gap-3 rounded-control border p-3 shadow-pop md:inset-x-auto md:top-auto md:right-6 md:bottom-6 md:max-w-md"
+        className="border-border bg-surface rounded-card shadow-pop fixed inset-x-3 top-[calc(4rem+env(safe-area-inset-top))] z-40 flex items-center gap-3 border p-3 md:inset-x-auto md:top-auto md:right-6 md:bottom-6 md:max-w-md"
       >
-        <span className="bg-primary text-primary-foreground flex size-10 shrink-0 items-center justify-center rounded-control">
-          <Download className="size-5" aria-hidden />
+        <span className="bg-card text-foreground rounded-control flex size-10 shrink-0 items-center justify-center">
+          <Download className="size-5" strokeWidth={1.75} aria-hidden />
         </span>
         <p className="min-w-0 flex-1 text-sm">
           <strong className="block">Instalá la app</strong>
@@ -110,7 +110,7 @@ export function BannerInstalar() {
           Instalar
         </Button>
         <Button size="sm" variant="ghost" onClick={ahoraNo} aria-label="Ahora no">
-          <X />
+          <X strokeWidth={1.75} />
         </Button>
       </aside>
       <Dialog
@@ -121,16 +121,16 @@ export function BannerInstalar() {
       >
         <ol className="flex flex-col gap-4 text-sm">
           <li className="flex items-center gap-3">
-            <span className="bg-surface-2 flex size-10 shrink-0 items-center justify-center rounded-control">
-              <Share className="text-primary size-5" aria-hidden />
+            <span className="bg-surface rounded-control flex size-10 shrink-0 items-center justify-center">
+              <Share className="text-foreground size-5" strokeWidth={1.75} aria-hidden />
             </span>
             <span>
               1. Tocá <strong>Compartir</strong> (el cuadrado con la flecha, abajo en Safari).
             </span>
           </li>
           <li className="flex items-center gap-3">
-            <span className="bg-surface-2 flex size-10 shrink-0 items-center justify-center rounded-control">
-              <SquarePlus className="text-primary size-5" aria-hidden />
+            <span className="bg-surface rounded-control flex size-10 shrink-0 items-center justify-center">
+              <SquarePlus className="text-foreground size-5" strokeWidth={1.75} aria-hidden />
             </span>
             <span>
               2. Elegí <strong>Agregar a inicio</strong> y tocá <strong>Agregar</strong>.
@@ -141,7 +141,7 @@ export function BannerInstalar() {
         <img
           src="/brand/ios-agregar-a-inicio.svg"
           alt="Compartir → Agregar a inicio en Safari"
-          className="border-border mt-2 w-full rounded-control border"
+          className="border-border bg-surface rounded-card mt-2 w-full border"
         />
       </Dialog>
     </>

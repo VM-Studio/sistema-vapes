@@ -1,10 +1,11 @@
+import { History, Truck } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionCard } from "@/components/ui/section-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearDolares, formatearNumero, formatearPesos } from "@/lib/format";
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import { filtrosComprasSchema, rangoReporte } from "@/server/reportes/filtros";
@@ -27,7 +28,7 @@ import { paramsPlanos } from "../_componentes/params";
 export const metadata: Metadata = { title: "Compras y precios de proveedores" };
 
 const precio = (p: string, m: "ARS" | "USD") =>
-  m === "USD" ? `US$ ${Number(p).toLocaleString("es-AR")}` : formatearPesos(p);
+  m === "USD" ? formatearDolares(p) : formatearPesos(p);
 
 /** Reporte 7 (SOLO dueños): compras recibidas por proveedor y evolución de precios de proveedor. */
 export default async function ReporteComprasPage({
@@ -109,7 +110,7 @@ export default async function ReporteComprasPage({
             caption="Compras por proveedor"
             rows={porProv}
             getRowKey={(x) => x.proveedorId ?? "sin"}
-            empty={<EmptyState title="No hay compras recibidas en el período" />}
+            empty={<EmptyState icon={Truck} title="No hay compras recibidas en el período" />}
             columns={[
               {
                 key: "p",
@@ -175,7 +176,7 @@ export default async function ReporteComprasPage({
           caption="Historial de precios"
           rows={historial}
           getRowKey={(h) => h.id}
-          empty={<EmptyState title="No hubo cambios de precio en el período" />}
+          empty={<EmptyState icon={History} title="No hubo cambios de precio en el período" />}
           columns={[
             {
               key: "fecha",
@@ -213,7 +214,9 @@ export default async function ReporteComprasPage({
                 ) : (
                   <span
                     className={cn(
-                      h.variacionPct > 0 ? "text-danger" : h.variacionPct < 0 ? "text-success" : "",
+                      "font-medium",
+                      h.variacionPct > 0 && "text-marca-azul",
+                      h.variacionPct < 0 && "text-marca-naranja-oscuro",
                     )}
                   >
                     {h.variacionPct > 0 ? "+" : ""}

@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { UsersRound } from "lucide-react";
 import Link from "next/link";
 
 import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SectionCard } from "@/components/ui/section-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
@@ -59,6 +61,9 @@ export default async function VendedoresPage({ searchParams }: { searchParams: P
             caption="Rendimiento por vendedor"
             rows={filas}
             getRowKey={(r) => r.usuarioId}
+            empty={
+              <EmptyState icon={UsersRound} title="No hay vendedores con acceso a este panel" />
+            }
             columns={[
               {
                 key: "nombre",

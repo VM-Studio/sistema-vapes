@@ -265,7 +265,7 @@ export function CameraScanner({
       aria-label={titulo}
       data-estado={estado}
       data-motor={motor ?? undefined}
-      className="anim-dialog m-0 h-dvh max-h-none w-screen max-w-none bg-black p-0 text-white md:m-auto md:h-[80dvh] md:w-[min(720px,92vw)] md:rounded-card"
+      className="anim-dialog md:rounded-card m-0 h-dvh max-h-none w-screen max-w-none bg-black p-0 text-white md:m-auto md:h-[80dvh] md:w-[min(720px,92vw)]"
     >
       {open && (
         <div className="relative flex h-full flex-col">
@@ -278,12 +278,12 @@ export function CameraScanner({
                   onClick={() => setRafaga((r) => !r)}
                   aria-pressed={rafaga}
                   className={cn(
-                    "flex h-11 items-center gap-1.5 rounded-circle px-3 text-sm",
+                    "rounded-control flex h-11 items-center gap-1.5 px-3 text-sm font-medium",
                     rafaga ? "bg-white text-black" : "bg-white/15",
                   )}
                   title="Modo ráfaga: acepta el mismo código repetido (para contar unidades iguales)"
                 >
-                  <Repeat className="size-4" /> Ráfaga
+                  <Repeat className="size-5" strokeWidth={1.75} aria-hidden /> Ráfaga
                 </button>
               )}
               {torch.disponible && (
@@ -292,12 +292,12 @@ export function CameraScanner({
                   onClick={alternarLinterna}
                   aria-pressed={torch.encendida}
                   aria-label={torch.encendida ? "Apagar linterna" : "Encender linterna"}
-                  className="flex size-11 items-center justify-center rounded-circle bg-white/15"
+                  className="rounded-control flex size-11 items-center justify-center bg-white/15"
                 >
                   {torch.encendida ? (
-                    <FlashlightOff className="size-5" />
+                    <FlashlightOff className="size-5" strokeWidth={1.75} />
                   ) : (
-                    <Flashlight className="size-5" />
+                    <Flashlight className="size-5" strokeWidth={1.75} />
                   )}
                 </button>
               )}
@@ -305,9 +305,9 @@ export function CameraScanner({
                 type="button"
                 onClick={() => onOpenChange(false)}
                 aria-label="Cerrar cámara"
-                className="flex size-11 items-center justify-center rounded-circle bg-white/15"
+                className="rounded-control flex size-11 items-center justify-center bg-white/15"
               >
-                <X className="size-5" />
+                <X className="size-5" strokeWidth={1.75} />
               </button>
             </div>
           </header>
@@ -326,8 +326,8 @@ export function CameraScanner({
                 className="pointer-events-none absolute inset-0 flex items-center justify-center"
                 aria-hidden
               >
-                <div className="relative h-40 w-[78%] max-w-md rounded-card border-2 border-white/90 shadow-scrim">
-                  <div className="absolute inset-x-4 top-1/2 h-0.5 animate-pulse bg-red-500/80" />
+                <div className="rounded-card shadow-scrim relative h-40 w-[78%] max-w-md border-2 border-white/90">
+                  <div className="bg-danger/80 absolute inset-x-4 top-1/2 h-0.5 animate-pulse" />
                 </div>
               </div>
             )}
@@ -337,8 +337,8 @@ export function CameraScanner({
                 key={mensaje.clave}
                 role="status"
                 className={cn(
-                  "absolute inset-x-4 top-20 z-10 mx-auto max-w-md rounded-control px-4 py-3 text-center shadow-pop",
-                  mensaje.tipo === "ok" ? "bg-emerald-600" : "bg-red-600",
+                  "rounded-control shadow-pop absolute inset-x-4 top-20 z-10 mx-auto max-w-md px-4 py-3 text-center",
+                  mensaje.tipo === "ok" ? "bg-success" : "bg-danger",
                 )}
               >
                 <p className="font-semibold">{mensaje.texto}</p>
@@ -350,16 +350,16 @@ export function CameraScanner({
               <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
                 {estado === "intro" && (
                   <>
-                    <Camera className="size-12 opacity-80" aria-hidden />
+                    <Camera className="size-14 opacity-80" strokeWidth={1.25} aria-hidden />
                     <div className="max-w-sm">
-                      <p className="text-lg font-semibold">Usar la cámara para escanear</p>
+                      <p className="text-h3 font-semibold">Usar la cámara para escanear</p>
                       <p className="mt-1 text-sm opacity-80">
                         Se usa solo mientras esta pantalla está abierta, para leer códigos de
                         barras. No se graba ni se envía ninguna imagen.
                       </p>
                     </div>
-                    <Button size="lg" onClick={() => void iniciar()}>
-                      <Camera /> Activar cámara
+                    <Button size="lg" variant="secondary" onClick={() => void iniciar()}>
+                      <Camera strokeWidth={1.75} /> Activar cámara
                     </Button>
                   </>
                 )}
@@ -368,9 +368,9 @@ export function CameraScanner({
                 )}
                 {estado === "denegado" && (
                   <>
-                    <CameraOff className="size-12 opacity-80" aria-hidden />
+                    <CameraOff className="size-14 opacity-80" strokeWidth={1.25} aria-hidden />
                     <div className="max-w-sm text-sm">
-                      <p className="text-lg font-semibold">No hay permiso para usar la cámara</p>
+                      <p className="text-h3 font-semibold">No hay permiso para usar la cámara</p>
                       <p className="mt-2 opacity-80">
                         <strong>Chrome / Android:</strong> tocá el candado junto a la dirección →
                         Permisos → Cámara → Permitir.
@@ -389,7 +389,7 @@ export function CameraScanner({
                 )}
                 {(estado === "sin-camara" || estado === "error") && (
                   <>
-                    <CameraOff className="size-12 opacity-80" aria-hidden />
+                    <CameraOff className="size-14 opacity-80" strokeWidth={1.25} aria-hidden />
                     <p className="max-w-sm text-sm opacity-80">
                       {estado === "sin-camara"
                         ? "No se encontró una cámara en este dispositivo."

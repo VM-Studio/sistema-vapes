@@ -20,7 +20,7 @@ export interface SegmentoDonut {
 export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
   const total = datos.reduce((a, d) => a + d.total, 0);
   if (!(total > 0)) {
-    return <ChartPlaceholder mensaje="Sin ventas en el período" className="h-56" />;
+    return <ChartPlaceholder mensaje="Todavía no hay ventas en este período" className="h-56" />;
   }
   return (
     <div className="flex flex-col items-center gap-5">
