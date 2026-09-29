@@ -18,13 +18,13 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { obtenerEnv } from "@/env";
 
 /**
- * Almacenamiento de archivos: PDFs de comprobantes, cierres y reportes,
- * etiquetas, fotos de tickets de gastos, íconos de la app y backups.
+ * Almacenamiento de archivos: PDFs de cotizaciones y etiquetas, imágenes de
+ * productos, logos e íconos de la app, y backups.
  *
  * `STORAGE_PROVIDER=local` (desarrollo): carpeta `.storage/`.
  * `STORAGE_PROVIDER=s3` (producción): Cloudflare R2 (o cualquier S3).
  *
- * Referencias que se guardan en la DB (`pdfUrl`, `comprobanteUrl`):
+ * Referencias que se guardan en la DB (`pdfUrl`, `imagenUrl`, `logoUrl`):
  *   - privados → `/api/publico/archivos/<clave>`. Esa ruta (sin sesión, pero
  *     con 24 bytes aleatorios en la clave) sirve el archivo (local) o
  *     redirige a una URL firmada de 5 minutos (S3). La referencia nunca vence.
@@ -262,7 +262,7 @@ function clienteS3(): S3Client {
 let archivos: StorageProvider | null = null;
 let backups: StorageProvider | null = null;
 
-/** Archivos de la app (comprobantes, fotos, íconos). */
+/** Archivos de la app (PDFs, imágenes, íconos). */
 export function obtenerStorage(): StorageProvider {
   if (archivos) return archivos;
   const e = obtenerEnv();

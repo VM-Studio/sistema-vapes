@@ -685,34 +685,3 @@ export async function obtenerCompra(ctx: Ctx, id: string): Promise<CompraDetalle
     })),
   };
 }
-
-// =============================================================================
-// Para el dashboard (R5)
-// =============================================================================
-
-/** Σ total de las compras RECIBIDAS con fecha en [desde, hasta]. Solo para quien ve costos. */
-export async function totalComprado(
-  ctx: Ctx,
-  rango: { desde: Date; hasta: Date },
-): Promise<string> {
-  const r = await dbPara(ctx.panelId).compra.aggregate({
-    where: { estado: EstadoCompra.RECIBIDA, fecha: { gte: rango.desde, lte: rango.hasta } },
-    _sum: { total: true },
-  });
-  return dec(r._sum.total ?? 0);
-}
-
-/**
- * Costo promedio ponderado de un sabor en las compras RECIBIDAS:
- * Σ(cantidad × costo) / Σ cantidad. null si nunca se compró.
- */
-export async function costoPromedioPonderado(ctx: Ctx, varianteId: string): Promise<string | null> {
-  const items = await dbPara(ctx.panelId).compraItem.findMany({
-    where: { varianteId, compra: { estado: EstadoCompra.RECIBIDA } },
-    select: { cantidad: true, subtotal: true },
-  });
-  const unidades = items.reduce((a, i) => a + i.cantidad, 0);
-  if (unidades === 0) return null;
-  const total = items.reduce((a, i) => a.plus(i.subtotal), new Prisma.Decimal(0));
-  return dec(total.div(unidades));
-}

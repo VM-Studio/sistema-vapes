@@ -2,7 +2,12 @@ import { AccionAuditoria, Prisma, RolUsuario, type Modulo } from "@prisma/client
 
 import { prisma, withTransaction, type Tx } from "@/lib/db";
 import { MODULOS_DE_PANEL, type PermisoModulo } from "@/lib/permisos";
-import type { ActualizarAcceso, ActualizarUsuario, CrearUsuario } from "@/lib/validations/usuario";
+import type {
+  ActualizarAcceso,
+  ActualizarComision,
+  ActualizarUsuario,
+  CrearUsuario,
+} from "@/lib/validations/usuario";
 import {
   assertPasswordNoComun,
   generarPasswordTemporal,
@@ -32,6 +37,9 @@ export interface UsuarioListado {
   debeCambiarPassword: boolean;
   ultimoLogin: Date | null;
   createdAt: Date;
+  /** Comisión orientativa en % ("5.00"); null = sin comisión. */
+  comisionUnitariaPct: string | null;
+  comisionMayoristaPct: string | null;
   /** Paneles habilitados (EMPLEADO). Un OWNER accede a todos: lista vacía. */
   paneles: PanelDeUsuario[];
 }
@@ -45,6 +53,8 @@ const selectListado = {
   debeCambiarPassword: true,
   ultimoLogin: true,
   createdAt: true,
+  comisionUnitariaPct: true,
+  comisionMayoristaPct: true,
   paneles: {
     select: {
       panel: {
@@ -64,9 +74,11 @@ const selectListado = {
 type FilaListado = Prisma.UsuarioGetPayload<{ select: typeof selectListado }>;
 
 function aListado(u: FilaListado): UsuarioListado {
-  const { paneles, ...resto } = u;
+  const { paneles, comisionUnitariaPct, comisionMayoristaPct, ...resto } = u;
   return {
     ...resto,
+    comisionUnitariaPct: comisionUnitariaPct?.toFixed(2) ?? null,
+    comisionMayoristaPct: comisionMayoristaPct?.toFixed(2) ?? null,
     paneles: paneles
       .map((p) => p.panel)
       .sort((a, b) => a.orden - b.orden)
@@ -211,6 +223,38 @@ export async function actualizarUsuario(
     conflictoEmail(error);
     throw error;
   }
+}
+
+/** Comisión orientativa de un EMPLEADO (a un dueño no se le carga). */
+export async function actualizarComision(actor: Actor, input: ActualizarComision): Promise<void> {
+  await withTransaction(async (tx) => {
+    const antes = await tx.usuario.findFirst({ where: { id: input.id, deletedAt: null } });
+    if (!antes) throw new NotFoundError("El usuario no existe o fue dado de baja");
+    if (antes.rol !== RolUsuario.EMPLEADO)
+      throw new DomainError("La comisión solo se carga a empleados.");
+    const despues = await tx.usuario.update({
+      where: { id: input.id },
+      data: {
+        comisionUnitariaPct: input.comisionUnitariaPct,
+        comisionMayoristaPct: input.comisionMayoristaPct,
+      },
+    });
+    await registrarAuditoria(tx, {
+      usuarioId: actor.id,
+      accion: AccionAuditoria.UPDATE,
+      entidad: "Usuario",
+      entidadId: input.id,
+      datosAntes: {
+        comisionUnitariaPct: antes.comisionUnitariaPct?.toFixed(2) ?? null,
+        comisionMayoristaPct: antes.comisionMayoristaPct?.toFixed(2) ?? null,
+      },
+      datosDespues: {
+        comisionUnitariaPct: despues.comisionUnitariaPct?.toFixed(2) ?? null,
+        comisionMayoristaPct: despues.comisionMayoristaPct?.toFixed(2) ?? null,
+      },
+      meta: actor.meta,
+    });
+  });
 }
 
 /**

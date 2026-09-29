@@ -140,3 +140,38 @@ export async function guardarConfigCotizacion(
   await guardar(ctx, "cotizacion", { cotizacion: { ...config } });
   return config;
 }
+
+// =============================================================================
+// Cotización del dólar (clave "cotizacionUsd"): pesos por dólar, para comparar
+// precios de proveedores en USD contra los de ARS (solo dueños la editan).
+// =============================================================================
+
+export async function obtenerCotizacionUsd(ctx: Pick<Ctx, "panelId">): Promise<number | null> {
+  const valor = await leer(dbPara(ctx.panelId), "cotizacionUsd");
+  const n = typeof valor === "number" ? valor : typeof valor === "string" ? Number(valor) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** `null` la borra (los precios en USD vuelven a compararse aparte). */
+export async function guardarCotizacionUsd(ctx: Ctx, valor: number | null): Promise<number | null> {
+  const limpio =
+    valor !== null && Number.isFinite(valor) && valor > 0 ? Math.round(valor * 100) / 100 : null;
+  if (limpio === null) {
+    await transaccion(ctx, async (tx) => {
+      const antes = await tx.configuracion.findFirst({ where: { clave: "cotizacionUsd" } });
+      if (!antes) return;
+      await tx.configuracion.delete({ where: { id: antes.id } });
+      await registrarAuditoria(tx, {
+        usuarioId: ctx.usuarioId,
+        accion: AccionAuditoria.DELETE,
+        entidad: "Configuracion",
+        entidadId: "cotizacionUsd",
+        datosAntes: { cotizacionUsd: antes.valor as Prisma.InputJsonValue },
+        meta: ctx.meta,
+      });
+    });
+    return null;
+  }
+  await guardar(ctx, "cotizacionUsd", { cotizacionUsd: limpio });
+  return limpio;
+}

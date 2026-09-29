@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import {
   actualizarAccesoSchema,
+  actualizarComisionSchema,
   actualizarUsuarioSchema,
   crearUsuarioSchema,
   usuarioIdSchema,
@@ -14,6 +15,7 @@ import { getRequestMeta } from "@/server/auth/request-meta";
 import { revocarSesionesDeUsuario } from "@/server/auth/sesiones";
 import {
   actualizarAcceso,
+  actualizarComision,
   actualizarUsuario,
   crearUsuario,
   darDeBajaUsuario,
@@ -79,4 +81,13 @@ export const revocarSesionesAction = actionHandler(async (input: unknown) => {
   revalidatePath("/usuarios");
   revalidatePath(`/usuarios/${id}`);
   return { revocadas: n };
+});
+
+/** Comisión orientativa de un empleado (% unitaria / mayorista; vacío = sin comisión). */
+export const actualizarComisionAction = actionHandler(async (input: unknown) => {
+  const actor = await actorOwner();
+  const datos = actualizarComisionSchema.parse(input);
+  await actualizarComision(actor, datos);
+  revalidatePath(`/usuarios/${datos.id}`);
+  return null;
 });

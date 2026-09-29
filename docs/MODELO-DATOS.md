@@ -1,6 +1,15 @@
 # Modelo de datos
 
-Base PostgreSQL 16 manejada con Prisma 6. La fuente de verdad es `prisma/schema.prisma`; las reglas que Prisma no sabe expresar (CHECKs, índices únicos parciales, triggers, vistas) viven en las migraciones SQL de `prisma/migrations/` (la reforma multipanel R1 es `20260928160000_reforma_multipanel`; la reforma R2 de catálogo, proveedores y compras es `20260929090000_catalogo_proveedores_compras`).
+Base PostgreSQL 16 manejada con Prisma 6. La fuente de verdad es `prisma/schema.prisma`; las reglas que Prisma no sabe expresar (CHECKs, índices únicos parciales, triggers, vistas) viven en las migraciones SQL de `prisma/migrations/`. La versión 2 (reforma multipanel) son estas migraciones, en orden:
+
+| Migración                                     | Etapa | Qué cambia                                                                                                                                   |
+| --------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20260928160000_reforma_multipanel`           | R1    | `Panel`, `panelId` en todo, `Secuencia` por panel, permisos por panel; baja de caja, gastos, cuenta corriente, comprobantes y notificaciones |
+| `20260929090000_catalogo_proveedores_compras` | R2    | Producto = marca + modelo + especificación, precios de proveedor por producto, compras por sabor                                             |
+| `20260930090000_ventas_clientes_devoluciones` | R3    | Venta con cliente, galpón y medio de pago obligatorios; clientes por teléfono; devoluciones por garantía                                     |
+| `20261001090000_cotizador`                    | R4    | Escalones mayoristas y cotizaciones                                                                                                          |
+| `20261002090000_analitica_reportes`           | R5    | Historial de precios de proveedor, comisiones orientativas, `etiquetaUnidades`, índices de analítica                                         |
+| `20261003090000_limpieza_configuracion`       | R5    | Solo datos: borra claves de configuración que ya no se usan                                                                                  |
 
 Convenciones generales:
 
@@ -10,6 +19,77 @@ Convenciones generales:
 - **Fechas**: `timestamp` en UTC sin zona. Los rangos de días se calculan en la zona horaria del negocio (`ConfiguracionGlobal.timezone`, por defecto `America/Argentina/Buenos_Aires`).
 - **Nada se borra físicamente** en las tablas de negocio: los maestros usan soft delete (`deletedAt`) o `activo = false` (también los paneles), y los documentos confirmados se **anulan**.
 - **Caché verificado**: `Stock` es derivado del ledger `MovimientoStock`; la base verifica que solo cambie junto con su movimiento.
+
+## Mapa general
+
+Todo gira alrededor de **Panel**: cada sistema (Vapes, Cosmetic, Especiales…) tiene su propio catálogo, stock, ventas, compras, clientes, proveedores, cotizaciones y configuración. Lo único que se comparte son los usuarios (con acceso y permisos por panel), la configuración global, la auditoría y los backups.
+
+```mermaid
+flowchart LR
+  subgraph Global["Global (fuera de los paneles)"]
+    Usuario
+    Sesion
+    ConfiguracionGlobal
+    AuditLog
+    Backup
+  end
+
+  Panel(("Panel"))
+
+  subgraph Catalogo["Catálogo"]
+    Marca
+    Categoria
+    Producto
+    Variante["Variante (sabor)"]
+    CodigoBarrasAlternativo
+  end
+
+  subgraph Inventario
+    Deposito["Deposito (galpón)"]
+    Stock
+    MovimientoStock["MovimientoStock (ledger)"]
+    Transferencia
+  end
+
+  subgraph Compras
+    Proveedor
+    ProveedorProducto["ProveedorProducto (precio)"]
+    ProveedorProductoHistorial
+    Compra
+  end
+
+  subgraph Ventas
+    Cliente
+    Venta
+    Devolucion["Devolucion (garantía)"]
+    Cotizacion
+    EscalonPrecio
+  end
+
+  subgraph Ajustes
+    Configuracion
+    Secuencia
+  end
+
+  Usuario -- "UsuarioPanel + PermisoUsuario" --> Panel
+  Panel --> Catalogo
+  Panel --> Inventario
+  Panel --> Compras
+  Panel --> Ventas
+  Panel --> Ajustes
+  Marca --> Producto --> Variante
+  Variante --> Stock
+  Deposito --> Stock
+  Stock -. "caché de" .-> MovimientoStock
+  Proveedor --> ProveedorProducto --> ProveedorProductoHistorial
+  ProveedorProducto --> Producto
+  Compra -- "INGRESO_COMPRA" --> MovimientoStock
+  Cliente --> Venta
+  Venta -- "VENTA" --> MovimientoStock
+  Devolucion -- "GARANTIA" --> MovimientoStock
+  Cotizacion -- "se convierte en" --> Venta
+  EscalonPrecio --> Producto
+```
 
 ## Diagrama (DBML)
 
@@ -63,6 +143,20 @@ Enum TipoVenta {
   MAYORISTA
 }
 
+Enum TipoCotizacion {
+  UNITARIA
+  MAYORISTA
+}
+
+Enum EstadoCotizacion {
+  BORRADOR
+  ENVIADA
+  ACEPTADA
+  RECHAZADA
+  VENCIDA
+  CONVERTIDA
+}
+
 Enum EstadoDevolucion {
   REGISTRADA
   ANULADA
@@ -111,6 +205,8 @@ Table Usuario {
   activo boolean [not null, default: true]
   debeCambiarPassword boolean [not null, default: false, note: 'true => al iniciar sesión se lo obliga a ir a /cuenta a cambiarla.']
   ultimoLogin timestamp
+  comisionUnitariaPct decimal(5,2) [note: 'Comisión orientativa (solo referencia en el dashboard; null = no se muestra).']
+  comisionMayoristaPct decimal(5,2)
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
   deletedAt timestamp
@@ -222,6 +318,7 @@ Table Panel {
   logoUrl text
   colorAcento text [note: 'Hex (#RRGGBB): tiñe botón primario e ítems activos dentro del panel.']
   etiquetaEspecificacion text [not null, note: 'Cómo llama el panel al atributo principal de sus productos ("Pitadas", "Contenido"...).']
+  etiquetaUnidades text [not null, default: 'Unidades vendidas', note: 'Cómo se llaman las unidades vendidas en el dashboard ("Vapes vendidos" en Vapes).']
   orden int [not null, default: 0]
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -517,6 +614,7 @@ Table Venta {
   costoTotal decimal(12,2) [not null, note: 'Σ cantidad × costoUnitario (snapshot del último costo al vender).']
   gananciaBruta decimal(12,2) [not null, note: 'total − costoTotal (CHECK en DB).']
   notas text
+  cotizacionId text [unique, note: 'La cotización de la que salió (trazabilidad).']
   anuladaPorId text
   motivoAnulacion text
   anuladaAt timestamp
@@ -555,6 +653,7 @@ Table VentaItem {
     (panelId, ventaId, varianteId) [unique]
     (panelId, varianteId)
     (panelId, productoId)
+    ventaId [name: 'venta_item_venta']
   }
 }
 
@@ -687,6 +786,108 @@ Table AuditLog {
   Note: 'INMUTABLE (trigger bloquea UPDATE/DELETE). panelId null = acción global (login, usuarios, configuración).'
 }
 
+Table EscalonPrecio {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  productoId text [not null]
+  cantidadMinima int [not null]
+  precioUnitario decimal(12,2) [not null]
+  activo boolean [not null, default: true]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, productoId, cantidadMinima) [unique]
+  }
+
+  Note: 'Precio mayorista de un producto desde cierta cantidad: aplica a TODOS sus sabores (30 unidades mezclando sabores entran en el escalón de 30).'
+}
+
+Table EscalonPrecioDefault {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  cantidadMinima int [not null]
+  porcentajeDescuento decimal(5,2) [not null]
+  activo boolean [not null, default: true]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, cantidadMinima) [unique]
+  }
+
+  Note: 'Escalones por defecto del panel (descuento % sobre el precio de lista) para productos sin escalones propios activos.'
+}
+
+Table Cotizacion {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  numero int [not null, note: 'Correlativo por panel (Secuencia COTIZACION).']
+  codigo text [not null, note: 'ID visible: "VAP-Q-000001".']
+  tipo TipoCotizacion [not null]
+  fecha timestamp [not null, default: `now()`]
+  validaHasta timestamp [not null]
+  clienteId text [note: 'Opcional: puede ser para alguien que todavía no es cliente.']
+  clienteNombre text
+  clienteTelefono text
+  vendedorId text [not null]
+  estado EstadoCotizacion [not null, default: 'BORRADOR']
+  subtotal decimal(12,2) [not null]
+  descuento decimal(12,2) [not null, default: 0]
+  total decimal(12,2) [not null]
+  notas text
+  motivoRechazo text
+  ventaId text [unique, note: 'La venta generada al convertir.']
+  pdfUrl text
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+  deletedAt timestamp
+
+  indexes {
+    (panelId, numero) [unique]
+    (panelId, codigo) [unique]
+    (panelId, fecha)
+    (panelId, vendedorId)
+    (panelId, estado)
+  }
+}
+
+Table CotizacionItem {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  cotizacionId text [not null]
+  varianteId text [not null]
+  productoId text [not null, note: 'Desnormalizado (= variante.productoId, lo verifica un trigger).']
+  cantidad int [not null]
+  precioLista decimal(12,2) [not null]
+  precioUnitario decimal(12,2) [not null, note: 'El cotizado: lista, escalón o manual.']
+  escalonAplicado int [note: 'cantidadMinima del escalón usado (null = lista o manual).']
+  esPrecioManual boolean [not null, default: false]
+  subtotal decimal(12,2) [not null]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, cotizacionId, varianteId) [unique]
+    (panelId, varianteId)
+  }
+}
+
+Table ProveedorProductoHistorial {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  proveedorProductoId text [not null]
+  precio decimal(12,2) [not null]
+  moneda Moneda [not null]
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (panelId, proveedorProductoId, createdAt)
+  }
+
+  Note: 'Historial de precios de un proveedor para un producto: una fila por cada cambio (lo inserta un trigger al crear o cambiar ProveedorProducto). Inmutable.'
+}
+
 Ref: Sesion.usuarioId > Usuario.id [delete: cascade]
 Ref: Sesion.revocadaPorId > Usuario.id [delete: set null]
 Ref: PermisoUsuario.usuarioId > Usuario.id [delete: cascade]
@@ -726,6 +927,7 @@ Ref: CompraItem.compraId > Compra.id [delete: cascade]
 Ref: CompraItem.varianteId > Variante.id [delete: restrict]
 Ref: CompraItem.productoId > Producto.id [delete: restrict]
 Ref: Venta.panelId > Panel.id [delete: restrict]
+Ref: Venta.cotizacionId > Cotizacion.id [delete: restrict]
 Ref: Venta.clienteId > Cliente.id [delete: restrict]
 Ref: Venta.depositoId > Deposito.id [delete: restrict]
 Ref: Venta.vendedorId > Usuario.id [delete: restrict]
@@ -754,6 +956,19 @@ Ref: TransferenciaItem.varianteId > Variante.id [delete: restrict]
 Ref: Configuracion.panelId > Panel.id [delete: restrict]
 Ref: AuditLog.panelId > Panel.id [delete: restrict]
 Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
+Ref: EscalonPrecio.panelId > Panel.id [delete: restrict]
+Ref: EscalonPrecio.productoId > Producto.id [delete: restrict]
+Ref: EscalonPrecioDefault.panelId > Panel.id [delete: restrict]
+Ref: Cotizacion.panelId > Panel.id [delete: restrict]
+Ref: Cotizacion.clienteId > Cliente.id [delete: restrict]
+Ref: Cotizacion.vendedorId > Usuario.id [delete: restrict]
+Ref: Cotizacion.ventaId > Venta.id [delete: restrict]
+Ref: CotizacionItem.panelId > Panel.id [delete: restrict]
+Ref: CotizacionItem.cotizacionId > Cotizacion.id [delete: cascade]
+Ref: CotizacionItem.varianteId > Variante.id [delete: restrict]
+Ref: CotizacionItem.productoId > Producto.id [delete: restrict]
+Ref: ProveedorProductoHistorial.panelId > Panel.id [delete: restrict]
+Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [delete: restrict]
 ```
 
 ## Tablas por dominio
@@ -762,12 +977,13 @@ Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
 
 - **Panel**: cada sistema independiente de la app. `slug` (kebab-case) arma las rutas `/p/{slug}` y el prefijo de los IDs visibles (tres primeras letras: `vapes` → `VAP`); la app no deja crear un panel cuyo prefijo choque con otro. `colorAcento` tiñe la interfaz dentro del panel y `etiquetaEspecificacion` es cómo el panel llama al atributo principal de sus productos («Pitadas», «Contenido», «Detalle»). No se borra: se desactiva (`activo = false`) desde `/configuracion/sistemas` y sus datos se conservan. La migración crea **Vapes** (`pnl_vapes`), **Cosmetic** (`pnl_cosmetic`) y **Especiales** (`pnl_especiales`); los dueños agregan otros desde `/paneles`, y cada uno nace con un depósito «Principal» y sus secuencias en cero.
 - **Secuencia**: último número usado por (panel, entidad) para `VENTA`, `COMPRA`, `TRANSFERENCIA`, `DEVOLUCION` y `COTIZACION`. `siguienteNumero()` (`src/server/db/secuencia.ts`) la toma con `SELECT … FOR UPDATE` dentro de la transacción que inserta el documento: dos transacciones del mismo panel se serializan y nunca repiten número, y si la transacción falla el número no se consume.
-- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas`, `cotizacion`, `alertaStockMinimo` y `prefijoSku`.
-- **ConfiguracionGlobal**: pares clave-valor JSON que valen para toda la app: `nombreNegocio`, `iconoApp`, `timezone` y `moneda`.
+- **Panel.etiquetaUnidades**: cómo se llaman las unidades vendidas en el dashboard («Vapes vendidos» en Vapes, «Unidades vendidas» en el resto).
+- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas` (`redondeoVentas`), `cotizacion` (validez, modo de escalón, leyenda, mostrar stock), `cotizacionUsd` (pesos por dólar, para comparar precios de proveedores en USD), `alertaStockMinimo` y `prefijoSku`.
+- **ConfiguracionGlobal**: pares clave-valor JSON que valen para toda la app: `nombreNegocio`, `iconoApp` y `timezone`.
 
 ### Usuarios, sesiones y seguridad
 
-- **Usuario**: personas que entran al sistema. `rol` es `OWNER` (dueño: acceso total a todos los paneles y a lo global) o `EMPLEADO` (acceso según `UsuarioPanel` y `PermisoUsuario`). El email se guarda siempre en minúsculas. `debeCambiarPassword` obliga a pasar por `/cuenta` antes de usar el resto de la app (usuarios nuevos, contraseñas reseteadas y el seed). No se borra: se da de baja (`deletedAt`, `activo = false`).
+- **Usuario**: personas que entran al sistema. `rol` es `OWNER` (dueño: acceso total a todos los paneles y a lo global) o `EMPLEADO` (acceso según `UsuarioPanel` y `PermisoUsuario`). `comisionUnitariaPct` y `comisionMayoristaPct` (0–100, opcionales) son una comisión **orientativa** que el dueño ve en el rendimiento del equipo; no generan movimientos. El email se guarda siempre en minúsculas. `debeCambiarPassword` obliga a pasar por `/cuenta` antes de usar el resto de la app (usuarios nuevos, contraseñas reseteadas y el seed). No se borra: se da de baja (`deletedAt`, `activo = false`).
 - **UsuarioPanel**: paneles a los que accede un empleado. Sin fila, el empleado no entra a ese panel (el middleware lo manda a `/paneles`).
 - **PermisoUsuario**: una fila por (usuario, panel, módulo) con cuatro banderas: ver, crear, editar, eliminar. Solo módulos de panel (`DASHBOARD` … `REPORTES`); `USUARIOS` y `CONFIGURACION` son exclusivos de los dueños y no tienen filas. Los dueños no necesitan filas. Los permisos no viajan en el token: se leen de la base, así que un cambio aplica al instante.
 - **Sesion**: cada inicio de sesión. El JWT de la cookie lleva `sid` (id de esta fila) y `tok` (secreto aleatorio del que acá se guarda solo el sha256). Revocarla (`revocadaAt`, `revocadaPorId`) corta el acceso en el próximo request; el middleware cachea la validación 60 s por instancia.
@@ -781,7 +997,8 @@ Ref: AuditLog.usuarioId > Usuario.id [delete: restrict]
 - **Deposito**: locales o galpones de un panel. Uno solo por panel puede ser el principal. En Vapes: **Ayres Plaza** (principal) y **Mercedes**. No se borra: se desactiva, y solo si no tiene stock y no es el principal.
 - **Categoria** y **Marca**: clasificación de productos, con nombre único por panel. No se pueden desactivar si tienen productos activos. La marca es obligatoria en todo producto (la categoría no); el alta de productos crea la marca si no existe. Renombrar una marca recalcula el `nombreCompleto` de sus productos (trigger `trg_marca_renombrada`). La marca «Sin marca» (creada por la migración R2 para los productos que no tenían) no aparece en el nombre completo.
 - **Proveedor**: `nombre` es la persona de contacto y `nombreTienda` (obligatorio) el comercio. Teléfono opcional, normalizado igual que el de los clientes (`+54` + dígitos) y único por panel entre los no borrados. `notas` libres (la migración R2 pasó ahí el CUIT, el email y la dirección, que dejaron de ser columnas, y los teléfonos repetidos). Un proveedor inactivo no aparece para compras nuevas; no se desactiva si tiene compras en borrador.
-- **ProveedorProducto**: qué productos vende cada proveedor y a cuánto: un `precio` por (proveedor, producto), sin importar el sabor, con su `moneda` (`ARS` o `USD`), cuándo se actualizó y quién lo fijó. Se pisa al editarlo desde la ficha del proveedor o al recibir una compra con «actualizar precio del proveedor» (no guarda historial: el cambio queda en la auditoría). La ficha del producto lista los proveedores de menor a mayor precio (índice `(panelId, productoId, precio)`). Precios y montos comprados solo los ven los dueños o quien tiene `ver` en `COMPRAS` (`veCostosCompras()` en `proveedor.service.ts`).
+- **ProveedorProducto**: qué productos vende cada proveedor y a cuánto: un `precio` por (proveedor, producto), sin importar el sabor, con su `moneda` (`ARS` o `USD`), cuándo se actualizó y quién lo fijó. Se pisa al editarlo desde la ficha del proveedor o al recibir una compra con «actualizar precio del proveedor» (cada alta o cambio de precio o moneda queda en `ProveedorProductoHistorial`). La ficha del producto lista los proveedores de menor a mayor precio (índice `(panelId, productoId, precio)`). Precios y montos comprados solo los ven los dueños o quien tiene `ver` en `COMPRAS` (`veCostosCompras()` en `proveedor.service.ts`).
+- **ProveedorProductoHistorial**: una fila por cada precio que tuvo un proveedor para un producto (`precio`, `moneda`, `createdAt` = `actualizadoAt` del cambio). La inserta el trigger `trg_pp_historial` al crear o cambiar `ProveedorProducto`; la app nunca la escribe. Inmutable. Alimenta el historial de precios de Reportes.
 - **Cliente**: `nombre`, `telefono` **obligatorio** (único por panel entre los no borrados) y `notas`. El teléfono se guarda normalizado: `+54` seguido solo de dígitos (la app y la función SQL `fn_normalizar_telefono` aplican la misma regla: se quitan los no-dígitos y los ceros iniciales; si ya empieza con `54` y tiene al menos 12 dígitos se respeta el código de país). Desde R3 no hay apellido, documento, email ni dirección (la migración los pasó al nombre y a las notas; los clientes sin teléfono recibieron uno provisorio `+54000…` anotado en las notas, y las ventas sin cliente quedaron en «Cliente sin datos»).
 
 ### Catálogo
@@ -839,11 +1056,11 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Paneles y numeración
 
 - `Panel`: nombre no vacío; `slug` en kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`) de 2 a 40 caracteres; `colorAcento` nulo o `#RRGGBB`; `etiquetaEspecificacion` no vacía. Un panel no se borra (solo se desactiva).
-- `Secuencia`: `entidad` en `VENTA`, `COMPRA`, `TRANSFERENCIA`, `DEVOLUCION`; `ultimoNumero ≥ 0`; **solo avanza** (no retrocede ni cambia de panel o entidad) y no se borra, porque reiniciarla duplicaría IDs de venta.
+- `Secuencia`: `entidad` en `VENTA`, `COMPRA`, `TRANSFERENCIA`, `DEVOLUCION`, `COTIZACION`; `ultimoNumero ≥ 0`; **solo avanza** (no retrocede ni cambia de panel o entidad) y no se borra, porque reiniciarla duplicaría IDs de venta.
 
 ### Inmutabilidad y borrado
 
-- `MovimientoStock` y `AuditLog` son inmutables: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`.
+- `MovimientoStock`, `AuditLog` y `ProveedorProductoHistorial` son inmutables: triggers rechazan `UPDATE`, `DELETE` y `TRUNCATE`.
 - `IntentoLogin` no se edita; `Backup` no se edita ni se borra; `Devolucion` no se borra y solo cambia para anularse; `DevolucionItem` es inmutable.
 - Sin `DELETE` físico en `Usuario`, `Producto`, `Variante`, `Cliente` y `Proveedor` (soft delete), `Deposito` y `Panel` (se desactivan) y `Secuencia`.
 - `Venta`, `Compra` y `Transferencia` solo se borran en borrador (o transferencia pendiente): confirmadas, se anulan. Sus transiciones de estado están restringidas (por ejemplo, una venta confirmada solo puede pasar a anulada) y una vez confirmadas no se modifican sus datos ni sus ítems (los ítems de una venta confirmada son inmutables).
@@ -881,10 +1098,16 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 - Devolución: `observacion` ≥ 10 caracteres (`Devolucion_observacion_chk`); anulada ⇔ `anuladaAt` y `anuladaPorId`; cliente, venta y galpón del mismo panel.
 - Transferencias: origen distinto de destino; `completadaAt` coherente con el estado; al menos un ítem.
 
+### Analítica
+
+- El dashboard, el rendimiento del equipo y los reportes agregan en PostgreSQL (`groupBy` / SQL con `"panelId"` explícito), nunca trayendo las ventas a memoria. Índices: `venta_confirmada_fecha` (parcial, `(panelId, fecha) WHERE estado = 'CONFIRMADA'`, con total, ganancia, vendedor, tipo, medio de pago y galpón incluidos) y `venta_item_venta` (`ventaId`).
+- Los días y semanas (lunes a domingo) se cortan en la hora de Buenos Aires (`src/lib/zona-horaria.ts`).
+
 ### Usuarios y sesiones
 
 - Siempre queda al menos un dueño activo (diferido, con advisory lock para que dos dueños no se degraden mutuamente a la vez).
 - Emails de `Usuario` e `IntentoLogin` en minúsculas y sin espacios.
 - Un permiso de crear, editar o eliminar exige el de ver.
+- Comisiones orientativas nulas o entre 0 y 100 (`Usuario_comision_chk`).
 - Una sesión no cambia de usuario ni de token, y una revocada no se «des-revoca».
 - `RateLimit.contador ≥ 0`.

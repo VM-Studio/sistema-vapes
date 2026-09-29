@@ -140,19 +140,22 @@ enum AccionAuditoria {
 // -----------------------------------------------------------------------------
 
 model Usuario {
-  id                  String     @id @default(cuid())
-  nombre              String
+  id                   String     @id @default(cuid())
+  nombre               String
   /// Siempre en minúsculas (CHECK en DB + toLowerCase() en Zod).
-  email               String     @unique
-  passwordHash        String
-  rol                 RolUsuario
-  activo              Boolean    @default(true)
+  email                String     @unique
+  passwordHash         String
+  rol                  RolUsuario
+  activo               Boolean    @default(true)
   /// true => al iniciar sesión se lo obliga a ir a /cuenta a cambiarla.
-  debeCambiarPassword Boolean    @default(false)
-  ultimoLogin         DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  deletedAt           DateTime?
+  debeCambiarPassword  Boolean    @default(false)
+  ultimoLogin          DateTime?
+  /// Comisión orientativa (solo referencia en el dashboard; null = no se muestra).
+  comisionUnitariaPct  Decimal?   @db.Decimal(5, 2)
+  comisionMayoristaPct Decimal?   @db.Decimal(5, 2)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  deletedAt            DateTime?
 
   permisos             PermisoUsuario[]
   paneles              UsuarioPanel[]
@@ -289,39 +292,42 @@ model Panel {
   colorAcento            String?
   /// Cómo llama el panel al atributo principal de sus productos ("Pitadas", "Contenido"...).
   etiquetaEspecificacion String
+  /// Cómo se llaman las unidades vendidas en el dashboard ("Vapes vendidos" en Vapes).
+  etiquetaUnidades       String   @default("Unidades vendidas")
   orden                  Int      @default(0)
   activo                 Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  usuarios            UsuarioPanel[]
-  permisos            PermisoUsuario[]
-  depositos           Deposito[]
-  categorias          Categoria[]
-  marcas              Marca[]
-  proveedores         Proveedor[]
-  proveedorProductos  ProveedorProducto[]
-  clientes            Cliente[]
-  productos           Producto[]
-  variantes           Variante[]
-  codigosAlternativos CodigoBarrasAlternativo[]
-  stocks              Stock[]
-  movimientos         MovimientoStock[]
-  compras             Compra[]
-  compraItems         CompraItem[]
-  ventas              Venta[]
-  ventaItems          VentaItem[]
-  devoluciones        Devolucion[]
-  devolucionItems     DevolucionItem[]
-  escalones           EscalonPrecio[]
-  escalonesDefault    EscalonPrecioDefault[]
-  cotizaciones        Cotizacion[]
-  cotizacionItems     CotizacionItem[]
-  transferencias      Transferencia[]
-  transferenciaItems  TransferenciaItem[]
-  configuraciones     Configuracion[]
-  secuencias          Secuencia[]
-  auditLogs           AuditLog[]
+  usuarios                  UsuarioPanel[]
+  permisos                  PermisoUsuario[]
+  depositos                 Deposito[]
+  categorias                Categoria[]
+  marcas                    Marca[]
+  proveedores               Proveedor[]
+  proveedorProductos        ProveedorProducto[]
+  clientes                  Cliente[]
+  productos                 Producto[]
+  variantes                 Variante[]
+  codigosAlternativos       CodigoBarrasAlternativo[]
+  stocks                    Stock[]
+  movimientos               MovimientoStock[]
+  compras                   Compra[]
+  compraItems               CompraItem[]
+  ventas                    Venta[]
+  ventaItems                VentaItem[]
+  devoluciones              Devolucion[]
+  devolucionItems           DevolucionItem[]
+  escalones                 EscalonPrecio[]
+  escalonesDefault          EscalonPrecioDefault[]
+  historialPreciosProveedor ProveedorProductoHistorial[]
+  cotizaciones              Cotizacion[]
+  cotizacionItems           CotizacionItem[]
+  transferencias            Transferencia[]
+  transferenciaItems        TransferenciaItem[]
+  configuraciones           Configuracion[]
+  secuencias                Secuencia[]
+  auditLogs                 AuditLog[]
 
   @@index([activo, orden])
 }
@@ -410,9 +416,10 @@ model Proveedor {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  panel     Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  compras   Compra[]
-  productos ProveedorProducto[]
+  panel            Panel                        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  compras          Compra[]
+  productos        ProveedorProducto[]
+  historialPrecios ProveedorProductoHistorial[]
 
   @@index([panelId, nombre])
   @@index([panelId, nombreTienda])
@@ -433,10 +440,11 @@ model ProveedorProducto {
   usuarioId     String
   createdAt     DateTime @default(now())
 
-  panel     Panel     @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  proveedor Proveedor @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
-  producto  Producto  @relation(fields: [productoId], references: [id], onDelete: Restrict)
-  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  panel     Panel                        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  proveedor Proveedor                    @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
+  producto  Producto                     @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  usuario   Usuario                      @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  historial ProveedorProductoHistorial[]
 
   @@unique([panelId, proveedorId, productoId])
   /// Comparador de precios: proveedores de un producto, de menor a mayor.
@@ -494,16 +502,17 @@ model Producto {
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
-  panel           Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  categoria       Categoria?          @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
-  marca           Marca               @relation(fields: [marcaId], references: [id], onDelete: Restrict)
-  variantes       Variante[]
-  proveedores     ProveedorProducto[]
-  compraItems     CompraItem[]
-  ventaItems      VentaItem[]
-  devolucionItems DevolucionItem[]
-  escalones       EscalonPrecio[]
-  cotizacionItems CotizacionItem[]
+  panel                     Panel                        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  categoria                 Categoria?                   @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  marca                     Marca                        @relation(fields: [marcaId], references: [id], onDelete: Restrict)
+  variantes                 Variante[]
+  proveedores               ProveedorProducto[]
+  compraItems               CompraItem[]
+  ventaItems                VentaItem[]
+  devolucionItems           DevolucionItem[]
+  escalones                 EscalonPrecio[]
+  cotizacionItems           CotizacionItem[]
+  historialPreciosProveedor ProveedorProductoHistorial[]
 
   @@unique([panelId, marcaId, nombre, especificacionNorm])
   @@index([panelId, categoriaId])
@@ -766,6 +775,7 @@ model VentaItem {
   @@unique([panelId, ventaId, varianteId])
   @@index([panelId, varianteId])
   @@index([panelId, productoId])
+  @@index([ventaId], map: "venta_item_venta")
 }
 
 /// Devolución por GARANTÍA: al cliente se le entrega una unidad nueva, que
@@ -1033,4 +1043,27 @@ model CotizacionItem {
 
   @@unique([panelId, cotizacionId, varianteId])
   @@index([panelId, varianteId])
+}
+
+/// Historial de precios de un proveedor para un producto: una fila por cada
+/// cambio (lo inserta un trigger al crear o cambiar ProveedorProducto).
+/// Guarda proveedor y producto propios: sobrevive aunque se quite la
+/// asignación (proveedorProductoId pasa a null; es lo único que puede cambiar).
+model ProveedorProductoHistorial {
+  id                  String   @id @default(cuid())
+  panelId             String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  proveedorProductoId String?
+  proveedorId         String
+  productoId          String
+  precio              Decimal  @db.Decimal(12, 2)
+  moneda              Moneda
+  createdAt           DateTime @default(now())
+
+  panel             Panel              @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  proveedorProducto ProveedorProducto? @relation(fields: [proveedorProductoId], references: [id], onDelete: SetNull)
+  proveedor         Proveedor          @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
+  producto          Producto           @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@index([panelId, proveedorProductoId, createdAt])
+  @@index([panelId, proveedorId, productoId, createdAt])
 }

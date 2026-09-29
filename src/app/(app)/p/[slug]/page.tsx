@@ -1,285 +1,167 @@
 import { Modulo } from "@prisma/client";
-import { AlertTriangle, ChevronRight, Package, Receipt } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense } from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatCard } from "@/components/ui/stat-card";
+import {
+  SeccionAlertas,
+  SeccionComprasVentas,
+  SeccionEquipo,
+  SeccionGalpones,
+  SeccionGrafico,
+  SeccionKpis,
+  SeccionMedios,
+  SeccionMiRendimiento,
+  SeccionPendientes,
+  SeccionTipo,
+  SeccionTop,
+  SkeletonKpis,
+  SkeletonTarjeta,
+} from "@/components/analitica/secciones";
+import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
 import { navegacionPermitida, type ItemNavegacion } from "@/config/navigation";
-import { formatearNumero, formatearPesos } from "@/lib/format";
-import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
-import { formatearFechaHora } from "@/lib/utils";
-import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { requirePaginaPanelUsuario } from "@/server/auth/permissions";
-import { obtenerDashboard, type KpiVentas } from "@/server/services/dashboard.service";
+import {
+  describirPeriodo,
+  diaDe,
+  periodoDesdeParams,
+  queryPeriodo,
+} from "@/server/services/analitica.service";
 
 export const metadata: Metadata = { title: "Inicio" };
 
-/** "lunes 28 de septiembre" a partir del día ISO (ya en la zona del negocio). */
-function fechaLarga(dia: string): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    timeZone: "UTC",
-  }).format(new Date(`${dia}T12:00:00Z`));
-}
-
-const ventas = (n: number) => `${formatearNumero(n)} ${n === 1 ? "venta" : "ventas"}`;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 /**
- * Inicio del panel. Con DASHBOARD: ventas de hoy / 7 días / mes, top 5 del
- * mes, stock bajo y últimas ventas (costo y ganancia bruta solo para
- * dueños). Siempre: accesos rápidos a los módulos que el usuario puede ver.
+ * Inicio del panel. Con DASHBOARD: selector de período (estado en la URL),
+ * KPIs contra el período anterior, gráfico comparativo, medios de pago,
+ * unitaria vs. mayorista, galpones, rankings, alertas y pendientes. Los
+ * dueños ven además ganancia, compras vs. ventas y el rendimiento del equipo;
+ * un empleado ve "Mi rendimiento". Cada tarjeta carga por su cuenta
+ * (Suspense). Siempre: accesos rápidos a los módulos que puede ver.
  */
-export default async function InicioPanelPage() {
+export default async function InicioPanelPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requirePaginaPanelUsuario();
   const { usuario, panel, panelId } = ctx;
-  const ruta = (r: string) => rutaPanel(panel.slug, r);
   const owner = esOwner(usuario);
   const verDashboard = puede(usuario, panelId, Modulo.DASHBOARD, "ver");
   const accesos = navegacionPermitida(usuario, panel).filter((i) => i.modulo !== null);
-  const d = verDashboard ? await obtenerDashboard(ctx, { conCostos: owner }) : null;
 
-  const verVentas = puede(usuario, panelId, Modulo.VENTAS, "ver");
-  const verStock = puede(usuario, panelId, Modulo.STOCK, "ver");
-  const verProductos = puede(usuario, panelId, Modulo.PRODUCTOS, "ver");
+  if (!verDashboard) {
+    return (
+      <div className="flex flex-col gap-8 md:gap-10">
+        <header className="flex flex-col gap-1.5">
+          <h1 className="text-2xl leading-tight font-semibold tracking-tight md:text-3xl">
+            {panel.nombre}
+          </h1>
+          <p className="text-muted text-sm md:text-base">Elegí por dónde empezar.</p>
+        </header>
+        {accesos.length > 0 && <AccesosRapidos items={accesos} />}
+      </div>
+    );
+  }
+
+  const sp = await searchParams;
+  const periodo = periodoDesdeParams(sp);
+  const desc = describirPeriodo(periodo);
+  const clave = `${periodo.modo}-${diaDe(periodo.desde)}-${diaDe(periodo.hasta)}`;
+  const preset = typeof sp.preset === "string" ? sp.preset : null;
+  const props = { ctx, periodo };
 
   return (
-    <div className="flex flex-col gap-8 md:gap-10">
-      <header className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-6 md:gap-8">
+      <header className="flex flex-col gap-4">
         <h1 className="text-2xl leading-tight font-semibold tracking-tight md:text-3xl">
           {panel.nombre}
         </h1>
-        <p className="text-muted text-sm first-letter:uppercase md:text-base">
-          {d ? `Resumen del ${fechaLarga(d.hoy)}` : "Elegí por dónde empezar."}
-        </p>
+        <SelectorPeriodo
+          modo={periodo.modo}
+          desde={diaDe(periodo.desde)}
+          hasta={diaDe(periodo.hasta)}
+          preset={preset}
+          etiqueta={desc.etiqueta}
+          comparacion={desc.comparacion}
+        />
       </header>
 
-      {d && (
-        <>
-          <section aria-label="Ventas" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Kpi label="Hoy" k={d.kpis.hoy} />
-            <Kpi label="Últimos 7 días" k={d.kpis.semana} />
-            <Kpi label="Este mes" k={d.kpis.mes} />
-          </section>
+      <Suspense key={`k${clave}`} fallback={<SkeletonKpis n={owner ? 6 : 5} />}>
+        <SeccionKpis {...props} />
+      </Suspense>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <Seccion
-              titulo="Más vendidos del mes"
-              className="lg:col-span-1"
-              vacio={d.topProductos.length === 0 ? "Todavía no hay ventas este mes." : null}
-            >
-              <ol className="divide-border flex flex-col divide-y">
-                {d.topProductos.map((p, i) => {
-                  const contenido = (
-                    <>
-                      <span className="bg-primary-soft text-primary-soft-foreground flex size-8 shrink-0 items-center justify-center rounded-xl text-sm font-semibold tabular-nums">
-                        {i + 1}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{p.nombre}</span>
-                        <span className="text-muted text-sm tabular-nums">
-                          {formatearNumero(p.unidades)} u.
-                        </span>
-                      </span>
-                      <span className="text-sm font-semibold tabular-nums">
-                        {formatearPesos(p.total)}
-                      </span>
-                    </>
-                  );
-                  return (
-                    <li key={p.productoId}>
-                      {verProductos ? (
-                        <Link
-                          href={ruta(`/productos/${p.productoId}`)}
-                          className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-xl px-2 py-2.5 transition-colors"
-                        >
-                          {contenido}
-                        </Link>
-                      ) : (
-                        <div className="flex min-h-14 items-center gap-3 py-2.5">{contenido}</div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-            </Seccion>
+      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-12">
+        <Suspense
+          key={`g${clave}`}
+          fallback={<SkeletonTarjeta className="lg:col-span-8" alto="h-72" />}
+        >
+          <SeccionGrafico {...props} className="lg:col-span-8" />
+        </Suspense>
+        <Suspense key={`m${clave}`} fallback={<SkeletonTarjeta className="lg:col-span-4" />}>
+          <SeccionMedios {...props} className="lg:col-span-4" />
+        </Suspense>
 
-            <Seccion
-              titulo="Últimas ventas"
-              className="lg:col-span-1"
-              accion={verVentas ? { href: ruta("/ventas"), label: "Ver ventas" } : undefined}
-              vacio={d.ultimasVentas.length === 0 ? "Todavía no hay ventas." : null}
-            >
-              <ul className="divide-border flex flex-col divide-y">
-                {d.ultimasVentas.map((v) => {
-                  const contenido = (
-                    <>
-                      <span className="bg-surface-2 text-muted flex size-8 shrink-0 items-center justify-center rounded-xl">
-                        <Receipt className="size-4" strokeWidth={1.75} aria-hidden />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-medium tabular-nums">{v.codigo}</span>
-                        <span className="text-muted block truncate text-sm">
-                          {formatearFechaHora(v.fecha)} · {v.cliente} ·{" "}
-                          {ETIQUETA_MEDIO_PAGO[v.medioPago]}
-                        </span>
-                        <span className="text-muted block truncate text-xs">
-                          Vendió {v.vendedor}
-                        </span>
-                      </span>
-                      <span className="text-sm font-semibold tabular-nums">
-                        {formatearPesos(v.total)}
-                      </span>
-                    </>
-                  );
-                  return (
-                    <li key={v.id}>
-                      {verVentas ? (
-                        <Link
-                          href={ruta(`/ventas/${v.id}`)}
-                          className="hover:bg-surface-2 -mx-2 flex min-h-14 items-center gap-3 rounded-xl px-2 py-2.5 transition-colors"
-                        >
-                          {contenido}
-                        </Link>
-                      ) : (
-                        <div className="flex min-h-14 items-center gap-3 py-2.5">{contenido}</div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </Seccion>
+        <Suspense
+          key={`t${clave}`}
+          fallback={<SkeletonTarjeta className="lg:col-span-4" alto="h-40" />}
+        >
+          <SeccionTipo {...props} className={owner ? "lg:col-span-4" : "lg:col-span-6"} />
+        </Suspense>
+        <Suspense
+          key={`d${clave}`}
+          fallback={<SkeletonTarjeta className="lg:col-span-4" alto="h-40" />}
+        >
+          <SeccionGalpones {...props} className={owner ? "lg:col-span-4" : "lg:col-span-6"} />
+        </Suspense>
+        {owner && (
+          <Suspense
+            key={`c${clave}`}
+            fallback={<SkeletonTarjeta className="lg:col-span-4" alto="h-40" />}
+          >
+            <SeccionComprasVentas {...props} className="lg:col-span-4" />
+          </Suspense>
+        )}
 
-            <Seccion
-              titulo="Stock bajo"
-              className="lg:col-span-1"
-              extra={
-                d.alertasTotal > 0 ? <Badge variant="warning">{d.alertasTotal}</Badge> : undefined
-              }
-              accion={
-                verStock && d.alertasTotal > 0
-                  ? { href: ruta("/stock?tab=global&soloBajoMinimo=1"), label: "Ver stock" }
-                  : undefined
-              }
-              vacio={d.alertas.length === 0 ? "Todo el stock está por encima del mínimo." : null}
-            >
-              <ul className="divide-border flex flex-col divide-y">
-                {d.alertas.map((a) => (
-                  <li key={a.varianteId} className="flex min-h-14 items-center gap-3 py-2.5">
-                    <span
-                      className={
-                        a.stockTotal <= 0
-                          ? "bg-danger-soft text-danger-soft-foreground flex size-8 shrink-0 items-center justify-center rounded-xl"
-                          : "bg-warning-soft text-warning-soft-foreground flex size-8 shrink-0 items-center justify-center rounded-xl"
-                      }
-                    >
-                      <AlertTriangle className="size-4" strokeWidth={1.75} aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{a.nombre}</span>
-                      <span className="text-muted text-sm">{a.sku}</span>
-                    </span>
-                    <span className="text-right text-sm tabular-nums">
-                      <span className="block font-semibold">
-                        {a.stockTotal <= 0 ? "Sin stock" : `${formatearNumero(a.stockTotal)} u.`}
-                      </span>
-                      <span className="text-muted">mín. {formatearNumero(a.stockMinimo)}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Seccion>
-          </div>
-        </>
-      )}
+        <Suspense key={`p${clave}`} fallback={<SkeletonTarjeta className="lg:col-span-6" />}>
+          <SeccionTop
+            {...props}
+            que="productos"
+            verProductos={puede(usuario, panelId, Modulo.PRODUCTOS, "ver")}
+            className="lg:col-span-6"
+          />
+        </Suspense>
+        <Suspense key={`s${clave}`} fallback={<SkeletonTarjeta className="lg:col-span-6" />}>
+          <SeccionTop {...props} que="sabores" verProductos={false} className="lg:col-span-6" />
+        </Suspense>
+
+        <Suspense key={`e${clave}`} fallback={<SkeletonTarjeta className="lg:col-span-12" />}>
+          {owner ? (
+            <SeccionEquipo {...props} query={queryPeriodo(sp)} className="lg:col-span-12" />
+          ) : (
+            <SeccionMiRendimiento {...props} className="lg:col-span-12" />
+          )}
+        </Suspense>
+
+        <Suspense fallback={<SkeletonTarjeta className="lg:col-span-6" alto="h-40" />}>
+          <SeccionAlertas
+            ctx={ctx}
+            verStock={puede(usuario, panelId, Modulo.STOCK, "ver")}
+            className="lg:col-span-6"
+          />
+        </Suspense>
+        <Suspense fallback={<SkeletonTarjeta className="lg:col-span-6" alto="h-40" />}>
+          <SeccionPendientes
+            ctx={ctx}
+            verCompras={owner || puede(usuario, panelId, Modulo.COMPRAS, "ver")}
+            verCotizaciones={puede(usuario, panelId, Modulo.COTIZADOR, "ver")}
+            soloPropias={!owner}
+            className="lg:col-span-6"
+          />
+        </Suspense>
+      </div>
 
       {accesos.length > 0 && <AccesosRapidos items={accesos} />}
     </div>
-  );
-}
-
-function Kpi({ label, k }: { label: string; k: KpiVentas }) {
-  return (
-    <StatCard label={label} value={formatearPesos(k.total)} hint={ventas(k.cantidad)}>
-      {k.cantidad > 0 && (
-        <ul className="mt-2 flex flex-wrap gap-1.5" aria-label={`${label}: por medio de pago`}>
-          {k.porMedio
-            .filter((m) => m.cantidad > 0)
-            .map((m) => (
-              <li key={m.medio} className="bg-surface-2 rounded-full px-2.5 py-1 text-xs">
-                {ETIQUETA_MEDIO_PAGO[m.medio]}{" "}
-                <strong className="tabular-nums">{formatearPesos(m.total)}</strong>
-              </li>
-            ))}
-        </ul>
-      )}
-      {k.costo !== null && k.ganancia !== null && (
-        <dl className="border-border mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm">
-          <div>
-            <dt className="text-muted">Costo</dt>
-            <dd className="font-medium tabular-nums">{formatearPesos(k.costo)}</dd>
-          </div>
-          <div>
-            <dt className="text-muted">Ganancia bruta</dt>
-            <dd className="text-success font-semibold tabular-nums">
-              {formatearPesos(k.ganancia)}
-            </dd>
-          </div>
-        </dl>
-      )}
-    </StatCard>
-  );
-}
-
-function Seccion({
-  titulo,
-  extra,
-  accion,
-  vacio,
-  className,
-  children,
-}: {
-  titulo: string;
-  extra?: ReactNode;
-  accion?: { href: string; label: string };
-  /** Texto a mostrar en lugar del contenido si no hay datos. */
-  vacio: string | null;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Card className={className}>
-      <CardHeader className="flex-row items-center justify-between gap-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          {titulo}
-          {extra}
-        </CardTitle>
-        {accion && (
-          <Link
-            href={accion.href}
-            className="text-primary -my-2 inline-flex min-h-11 items-center gap-1 text-sm font-medium hover:underline"
-          >
-            {accion.label}
-            <ChevronRight className="size-4" strokeWidth={1.75} aria-hidden />
-          </Link>
-        )}
-      </CardHeader>
-      <CardContent className="pt-3 md:pt-4">
-        {vacio ? (
-          <p className="text-muted flex min-h-24 items-center justify-center gap-2 text-center text-sm">
-            <Package className="size-4" strokeWidth={1.75} aria-hidden />
-            {vacio}
-          </p>
-        ) : (
-          children
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

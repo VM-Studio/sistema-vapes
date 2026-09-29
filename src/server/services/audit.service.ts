@@ -1,5 +1,6 @@
 import { AccionAuditoria, Prisma, type Usuario } from "@prisma/client";
 
+import { ahora } from "@/lib/reloj";
 import type { Tx } from "@/server/db/panel-scoped";
 import type { RequestMeta } from "@/server/auth/request-meta";
 
@@ -25,6 +26,8 @@ export async function registrarAuditoria(tx: Tx, datos: DatosAuditoria): Promise
       datosDespues: datos.datosDespues ?? Prisma.JsonNull,
       ip: datos.meta?.ip ?? null,
       userAgent: datos.meta?.userAgent ?? null,
+      // Hora de negocio (en la app, ahora; el seed demo la simula).
+      createdAt: ahora(),
     },
   });
 }

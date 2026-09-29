@@ -151,6 +151,7 @@ export async function crearPanel(
     logoUrl: panel.logoUrl,
     colorAcento: panel.colorAcento,
     etiquetaEspecificacion: panel.etiquetaEspecificacion,
+    etiquetaUnidades: panel.etiquetaUnidades,
     orden: panel.orden,
   };
 }

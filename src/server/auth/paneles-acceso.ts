@@ -28,6 +28,7 @@ export async function panelesActivos(): Promise<PanelBasico[]> {
       logoUrl: true,
       colorAcento: true,
       etiquetaEspecificacion: true,
+      etiquetaUnidades: true,
       orden: true,
     },
   });

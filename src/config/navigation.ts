@@ -15,6 +15,7 @@ import {
   Undo2,
   UserCog,
   Users,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -195,6 +196,16 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     enBottomBar: false,
     ordenMobile: 17,
     descripcion: "Ventas, stock y rendimiento",
+  },
+  {
+    modulo: "OWNER",
+    label: "Equipo",
+    href: "/equipo",
+    icon: UsersRound,
+    grupo: "Análisis",
+    enBottomBar: false,
+    ordenMobile: 18,
+    descripcion: "Rendimiento de cada vendedor",
   },
   {
     modulo: "OWNER",

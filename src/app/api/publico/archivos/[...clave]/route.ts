@@ -5,8 +5,8 @@ import { esClaveValida, obtenerStorage } from "@/server/storage";
 export const runtime = "nodejs";
 
 /**
- * GET /api/publico/archivos/<clave> — archivos privados por link (PDF del
- * comprobante por WhatsApp, foto del ticket) sin sesión: la clave tiene 24
+ * GET /api/publico/archivos/<clave> — archivos privados por link (PDF de una
+ * cotización compartida por WhatsApp, etiquetas) sin sesión: la clave tiene 24
  * bytes aleatorios, no se puede adivinar ni recorrer.
  * Local: sirve el archivo. S3/R2: redirige a una URL firmada de 5 minutos.
  */

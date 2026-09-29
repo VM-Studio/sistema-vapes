@@ -27,9 +27,10 @@ export default async function ExportarTodoPage() {
       <Card>
         <CardContent className="flex flex-col gap-4 text-sm">
           <p>
-            Incluye productos y sabores (con costos y códigos), stock por depósito, todos los
-            movimientos de stock, ventas con sus ítems y pagos, compras con sus ítems, clientes,
-            proveedores, gastos y cajas. Con muchos datos puede tardar unos segundos.
+            Incluye, de todos los sistemas: productos y sabores (con costos y códigos), stock por
+            galpón, todos los movimientos de stock, ventas, devoluciones por garantía, compras y
+            cotizaciones con sus ítems, clientes, proveedores y sus precios. Con muchos datos puede
+            tardar unos segundos.
           </p>
           <a
             href="/api/exportar-todo"

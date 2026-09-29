@@ -70,16 +70,6 @@ export const PERIODOS = [
 ] as const;
 export type Periodo = (typeof PERIODOS)[number];
 
-/** Los del selector del dashboard (los reportes suman "30 días"). */
-export const PERIODOS_DASHBOARD: readonly Periodo[] = [
-  "hoy",
-  "ayer",
-  "7d",
-  "mes",
-  "mes-anterior",
-  "personalizado",
-];
-
 export const PERIODO_LABEL: Record<Periodo, string> = {
   hoy: "Hoy",
   ayer: "Ayer",

@@ -22,14 +22,6 @@ export const textoOpcional = (max = 500) =>
 
 export const email = z.string().trim().toLowerCase().pipe(z.email("Email inválido"));
 
-export const emailOpcional = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .optional()
-  .transform((v) => (v === "" ? undefined : v))
-  .pipe(z.email("Email inválido").optional());
-
 /** Un campo de formulario vacío ("" o espacios) es "sin valor", nunca 0. */
 export const vacioAUndefined = (v: unknown) =>
   typeof v === "string" && v.trim() === "" ? undefined : v;
@@ -105,23 +97,6 @@ export const codigoBarrasOpcional = z
   .optional()
   .transform((v) => (v ? normalizarCodigoBarras(v) : undefined))
   .pipe(codigoBarras.optional());
-
-/** Valida CUIT/CUIL argentino (11 dígitos + dígito verificador módulo 11). Acepta guiones. */
-export function esCuitValido(cuit: string): boolean {
-  if (!/^\d{11}$/.test(cuit)) return false;
-  const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-  const suma = pesos.reduce((acc, p, i) => acc + p * Number(cuit[i]), 0);
-  const resto = 11 - (suma % 11);
-  const verificador = resto === 11 ? 0 : resto === 10 ? 9 : resto;
-  return verificador === Number(cuit[10]);
-}
-
-export const cuitOpcional = z
-  .string()
-  .trim()
-  .optional()
-  .transform((v) => (v ? v.replace(/[-\s]/g, "") : undefined))
-  .refine((v) => v === undefined || esCuitValido(v), "CUIT inválido");
 
 /** Ids únicos dentro de una lista de ítems (ej: misma variante dos veces en una venta). */
 export function sinDuplicados<T>(items: T[], clave: (item: T) => string): boolean {

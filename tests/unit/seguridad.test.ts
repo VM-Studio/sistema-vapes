@@ -57,7 +57,7 @@ describe("archivos subidos: tipo real por magic bytes", () => {
     expect(detectarTipo(exe)).toBeNull();
   });
   it("un .exe renombrado a .jpg se rechaza", async () => {
-    await expect(procesarImagenSubida(exe, { campo: "comprobante" })).rejects.toThrow(
+    await expect(procesarImagenSubida(exe, { campo: "imagen" })).rejects.toThrow(
       /no es una imagen/,
     );
   });

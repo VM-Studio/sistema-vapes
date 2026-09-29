@@ -260,7 +260,7 @@ export async function transaccion<T>(
 ): Promise<T> {
   const {
     isolationLevel = Prisma.TransactionIsolationLevel.Serializable,
-    // Serializable + numeración por panel (fila de Secuencia): con varias cajas a la vez
+    // Serializable + numeración por panel (fila de Secuencia): con varios vendedores a la vez
     // los conflictos son normales y se resuelven reintentando.
     maxRetries = 10,
     maxWait = 5_000,

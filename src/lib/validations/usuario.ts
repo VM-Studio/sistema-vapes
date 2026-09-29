@@ -39,6 +39,24 @@ export const actualizarUsuarioSchema = z.object({
 
 export const usuarioIdSchema = z.object({ id });
 
+/** Porcentaje de comisión opcional (0–100, hasta 2 decimales); vacío = sin comisión. */
+const porcentajeComision = z.preprocess(
+  (v) => (v === "" || v === undefined ? null : v),
+  z.coerce
+    .number({ error: "Porcentaje inválido" })
+    .min(0, "Mínimo 0 %")
+    .max(100, "Máximo 100 %")
+    .refine((n) => Math.round(n * 100) === n * 100, "Hasta 2 decimales")
+    .nullable(),
+);
+
+/** Comisión orientativa de un EMPLEADO (solo referencia en el dashboard). */
+export const actualizarComisionSchema = z.object({
+  id,
+  comisionUnitariaPct: porcentajeComision,
+  comisionMayoristaPct: porcentajeComision,
+});
+
 export const cambiarPasswordSchema = z
   .object({
     passwordActual: z.string().min(1, "Ingresá tu contraseña actual"),
@@ -79,6 +97,7 @@ export const loginSchema = z.object({
 export type CrearUsuarioInput = z.input<typeof crearUsuarioSchema>;
 export type CrearUsuario = z.output<typeof crearUsuarioSchema>;
 export type ActualizarUsuario = z.output<typeof actualizarUsuarioSchema>;
+export type ActualizarComision = z.output<typeof actualizarComisionSchema>;
 export type ActualizarAcceso = z.output<typeof actualizarAccesoSchema>;
 export type CambiarPassword = z.output<typeof cambiarPasswordSchema>;
 export type LoginInput = z.output<typeof loginSchema>;

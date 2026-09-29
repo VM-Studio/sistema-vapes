@@ -6,8 +6,9 @@ Sistema de gestión para un negocio con varias líneas de productos que funciona
 independientes** (paneles): **Vapes**, **Cosmetic**, **Especiales** y los que los dueños agreguen desde la
 app. Cada panel tiene su propio catálogo (producto = marca + modelo + especificación, con sus sabores),
 stock por galpón y global, carga de stock escaneando con pistola lectora o cámara, proveedores con su lista
-de precios, compras, ventas con cliente obligatorio, clientes y devoluciones por garantía. Los usuarios, la configuración general, los
-backups y la auditoría son globales.
+de precios, compras, ventas con cliente obligatorio, clientes, devoluciones por garantía, cotizador por unidad
+y por mayor, dashboard con períodos y rendimiento del equipo, y reportes exportables (con el comparador de
+proveedores). Los usuarios, la configuración general, los backups y la auditoría son globales.
 
 Es una PWA: se instala en el celular o la PC, abre directamente el último panel usado y, sin conexión, el
 escáner sigue consultando productos, precios y stock con el catálogo guardado en el dispositivo.
@@ -173,9 +174,25 @@ Autorización en tres capas:
   transacción, un movimiento cuyo `stockAnterior` no coincide con el stock real y cualquier stock negativo.
   La pantalla **Stock** tiene una pestaña por galpón (su stock, transferir a otro galpón en el acto, ajustar
   y sus movimientos) y **Global** (una columna por galpón + total y los movimientos de todos).
+- **Cotizador con escalones.** El precio mayorista sale de escalones por producto (aplican a todos sus
+  sabores) o de los escalones por defecto del panel (% sobre la lista, redondeado a 10 pesos), calculado por
+  una función pura (`resolverPrecios()` en `precio.service.ts`) que usa el servidor. Una cotización se
+  convierte en venta en una sola transacción (`convertirEnVenta()`): si falta stock no cambia nada.
+- **Analítica en la base.** El dashboard (`/p/{slug}`), el rendimiento del equipo (`/p/{slug}/equipo`) y los
+  reportes (`/p/{slug}/reportes`) no traen ventas a memoria: PostgreSQL agrega (`groupBy` o `$queryRaw` con
+  `"panelId"` explícito y resultado validado con Zod) sobre el índice parcial de ventas confirmadas, y Node
+  solo presenta. Los períodos (diario, semanal lunes–domingo, mensual o personalizado) se cortan en la hora
+  de Buenos Aires y se comparan con el período anterior equivalente (`analitica.service.ts`).
+- **Precios de proveedor con historia.** Cada alta o cambio de `ProveedorProducto` deja una fila en
+  `ProveedorProductoHistorial` (la escribe un trigger, no la app). El comparador de proveedores convierte los
+  precios en dólares con la cotización del panel (`cotizacionUsd`).
+- **Comisión orientativa.** Cada usuario puede tener un % de comisión para ventas unitarias y otro para
+  mayoristas: el dueño ve la comisión estimada en el rendimiento del equipo; no genera movimientos.
 - **Quién ve costos.** Último costo de los sabores, costo de la venta y ganancia bruta los ven únicamente los
-  dueños, en cualquier pantalla y en el dashboard. Costos y totales de compras y precios de proveedores los
-  ven los dueños y quien tiene `ver` en Compras (`veCostosCompras()`); el filtro se aplica en el servidor.
+  dueños, en cualquier pantalla, en el dashboard, en los reportes y en las exportaciones. El rendimiento de
+  otros vendedores y el comparador de proveedores son solo para dueños (un empleado con Dashboard ve «Mi
+  rendimiento»). Costos y totales de compras y precios de proveedores los ven los dueños y quien tiene `ver`
+  en Compras (`veCostosCompras()`); el filtro se aplica en el servidor.
 - **Offline solo consulta.** El catálogo del panel (productos, códigos, precios y stock) se guarda en
   IndexedDB al entrar y cada 15 minutos con red (304 si no cambió). Sin conexión, el escáner solo consulta;
   ingresar, contar, transferir y vender necesitan señal. No hay cola offline.
@@ -224,8 +241,12 @@ pnpm dev                    # http://localhost:3000 (salud: /api/health)
   **Mercedes**), la configuración de cada panel y un catálogo de ejemplo en Vapes (marcas, modelos, pitadas y
   sabores, uno con precio propio) con stock inicial, más dos proveedores con su lista de precios (uno en
   dólares).
-- `pnpm db:seed-demo` carga 90 días de operación simulada en Vapes (ventas, compras, transferencias, ajustes y
-  clientes) para ver el dashboard y los listados con datos.
+- `pnpm db:seed-demo` carga 90 días de operación simulada en los tres paneles pasando por los servicios
+  reales: en Vapes, 5 marcas y 15 productos con sabores, 3 proveedores con precios distintos para los mismos
+  productos (uno en dólares) y cambios de precio, 20 compras recibidas, 300 ventas de Juan Cruz, Agustina y
+  Trinidad (unitarias y mayoristas, algunas convertidas desde cotizaciones), 80 clientes, 12 garantías, 20
+  cotizaciones en todos los estados y la cotización del dólar; Cosmetic y Especiales, lo mismo en chico. Para
+  una base aparte: `bash scripts/db-descartable.sh gestion_demo --demo` (menos de un minuto).
 - En producción el seed está bloqueado salvo `ALLOW_SEED=true` (y exige las variables `SEED_*`); el primer
   dueño también se puede crear con `pnpm crear-owner`.
 - Para probar el escáner sin pistola: pegar `scripts/simular-pistola.js` en la consola del navegador y llamar
@@ -285,7 +306,7 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 | `pnpm db:seed`                                                | Seed idempotente: usuarios, configuración, catálogo y proveedores de ejemplo en Vapes                      |
 | `pnpm db:reset`                                               | Borra la base, re-aplica migraciones y corre el seed (solo desarrollo)                                     |
 | `pnpm db:studio`                                              | Prisma Studio                                                                                              |
-| `pnpm db:seed-demo`                                           | 90 días de operación simulada en Vapes                                                                     |
+| `pnpm db:seed-demo`                                           | 90 días de operación simulada en los tres paneles                                                          |
 | `pnpm crear-owner`                                            | Crea el primer dueño en una base nueva (pide datos por consola; no hace nada si ya hay un dueño activo)    |
 | `pnpm iconos`                                                 | Genera los íconos de la PWA                                                                                |
 | `pnpm backup`                                                 | Backup manual: `pg_dump -Fc`, verificación, subida al bucket y rotación                                    |
@@ -301,6 +322,7 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 | `pnpm test:auth`                                              | Login, sesiones y permisos contra la DB                                                                    |
 | `pnpm test:ventas:concurrencia`                               | Ventas simultáneas sobre poco stock: confirman solo las que alcanzan, numeración por panel sin repetidos   |
 | `pnpm test:catalogo`, `pnpm test:compras`, `pnpm test:ventas` | Servicios contra una DB recién sembrada: catálogo y carga de stock; proveedores y compras; ventas y costos |
+| `pnpm test:cotizador`                                         | Escalones, cotizaciones, conversión en venta, permisos y aislamiento contra la DB                          |
 | `scripts/db-descartable.sh X`                                 | Recrea una base descartable X (migraciones + seed [+ `--demo`])                                            |
 
 ## Estructura de carpetas
@@ -308,9 +330,9 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 ```text
 prisma/
   schema.prisma           Modelo de datos (paneles + tablas de negocio con panelId)
-  migrations/             Migraciones SQL (CHECKs, triggers y vistas incluidos; reformas: 20260928160000_reforma_multipanel,
-                          20260929090000_catalogo_proveedores_compras y 20260930090000_ventas_clientes_devoluciones)
-  seed.ts, seed-demo.ts   Seed base y 90 días simulados en Vapes
+  migrations/             Migraciones SQL (CHECKs, triggers y vistas incluidos; la reforma 2.0.0 va de
+                          20260928160000_reforma_multipanel a 20261003090000_limpieza_configuracion)
+  seed.ts, seed-demo.ts   Seed base y 90 días simulados en los tres paneles
 src/
   app/
     (auth)/login/         Inicio de sesión
@@ -318,17 +340,18 @@ src/
       page.tsx            Redirige a /paneles
       (global)/           Fuera de los paneles: paneles (selector y «Agregar panel»), usuarios y usuarios/[id],
                           configuracion (negocio, sistemas, backups, auditoria, exportar-todo), cuenta, ayuda, sin-acceso
-      p/[slug]/           Dentro de un panel: inicio (dashboard), ventas, stock (pestañas por galpón y Global +
+      p/[slug]/           Dentro de un panel: inicio (dashboard con períodos), equipo (rendimiento por vendedor), ventas, stock (pestañas por galpón y Global +
                           movimientos, transferencias), clientes, compras, productos (+ cargar, etiquetas), proveedores,
-                          devoluciones, cotizador (unitaria, mayorista, detalle, configuracion), reportes,
+                          devoluciones, cotizador (unitaria, mayorista, detalle, configuracion), reportes (+ comparador),
                           configuracion (depositos, categorias, marcas, escaner, ventas), sin-acceso
     api/                  Route handlers: auth, p/[slug]/catalogo/offline, p/[slug]/etiquetas, p/[slug]/stock/exportar,
+                          p/[slug]/reportes y p/[slug]/equipo (exportaciones),
                           cron/backup, backups/[id]/descargar, exportar-todo, publico/archivos, health
     offline/              Pantalla sin conexión (precacheada) con el escáner en modo consulta
     sw.ts, serwist/       Service worker (Serwist) y su ruta de servido
     manifest.ts, icons/   Manifest e íconos de la PWA
   components/             UI (ui/), layout (shells, sidebar, navegación mobile, contexto de panel), pwa, catálogo
-                          (selector de galpón, alta rápida), compras, clientes
+                          (selector de galpón, alta rápida), compras, clientes, analitica (selector de período, KPIs, gráficos)
   config/navigation.ts    Única fuente de la navegación dentro de un panel
   features/
     scanner/              Pistola, cámara, resolución de códigos
@@ -340,7 +363,7 @@ src/
     services/             Lógica de negocio (con dbPara) y servicios globales
     auth/                 Sesiones, permisos, acceso a paneles, contraseñas, cron
     seguridad/            CSP, rate limit, validación de archivos
-    reportes/             Exportar todo a Excel
+    reportes/             Catálogo de reportes, armado, comparador, exportación (Excel/CSV/PDF) y Exportar todo
     storage.ts, log.ts    Storage local/S3 y logger pino
   env.ts                  Variables de entorno validadas
   middleware.ts           CSP, origin check, rate limit, sesión, resolución del panel
@@ -356,9 +379,9 @@ docs/                     Manual, modelo de datos, deploy
 - **Vitest** (`pnpm test`), dos proyectos:
   - `unit` (jsdom, sin DB): detector de la pistola, seguridad (CSP, rate limit, magic bytes, contraseñas
     comunes), normalización de teléfonos, precios (precio efectivo, snapshot de costo, IDs de venta y compra),
-    rotación de backups y fechas.
+    escalones del cotizador, períodos de la analítica, comparador de proveedores, rotación de backups y fechas.
   - `integracion`: aislamiento entre paneles (`dbPara`, triggers y `DEFAULT` de `panelId`), motor de stock,
-    integridad de la DB y concurrencia de ventas contra una base aislada (`DATABASE_URL_TEST_VITEST`, default
+    integridad de la DB, concurrencia de ventas y cotizador contra una base aislada (`DATABASE_URL_TEST_VITEST`, default
     `gestion_test_vitest` en el Postgres local; se recrea al empezar).
 - **Playwright** (`pnpm test:e2e`): corre contra el **build** de producción (`pnpm build` antes) en el puerto
   3100 y una base aislada `DATABASE_URL_TEST` (default `gestion_e2e`), que el setup global recrea con
@@ -367,8 +390,13 @@ docs/                     Manual, modelo de datos, deploy
   escaneando (sin galpón no se carga nada, alta rápida de códigos desconocidos, stock por galpón), proveedores
   con precios, compra con costo sugerido y «recibir actualizando el precio», catálogo de la empleada (sin
   costos, sin cargar stock ni entrar a Compras), ventas, transferencia desde la fila del stock, stock por galpón
-  y global (18), modo sin conexión (`/offline`, solo consulta), seguridad y paneles (empleada con un solo panel entra directo; dueño crea y
-  desactiva un panel).
+  y global (18), cotizador (19), dashboard y rendimiento del equipo (20), reportes, modo sin conexión
+  (`/offline`, solo consulta), seguridad y paneles (empleada con un solo panel entra directo; dueño crea y
+  desactiva un panel). `22-flujo-completo` recorre la v2 de punta a punta: cada usuario entra a sus
+  sistemas; en Vapes carga stock eligiendo galpón, vende con cliente nuevo, registra una garantía, convierte
+  una cotización mayorista y verifica el dashboard; repite lo esencial en Cosmetic, verifica el aislamiento
+  entre paneles y que Trinidad no ve costos ni otros sistemas. Para no chocar con otra corrida:
+  `E2E_PORT=31xx DATABASE_URL_TEST=postgresql://app:app@localhost:5433/gestion_e2e_x pnpm test:e2e`.
 - **Restauración** (`pnpm test:restore`): hace un backup de la base de `DATABASE_URL`, lo restaura en una base
   vacía (`RESTORE_DB`, default `gestion_restore`) y compara `COUNT(*)` de todas las tablas, la suma de stock y
   la cantidad de triggers y vistas. Corre en CI después del seed.

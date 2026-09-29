@@ -107,7 +107,7 @@ export interface VentaGenerada {
 }
 
 const OPCIONES_GENERAR = {
-  // Varias cajas vendiendo a la vez compiten por la fila de Secuencia y de Stock:
+  // Varios vendedores a la vez compiten por la fila de Secuencia y de Stock:
   // cada conflicto de serialización se reintenta (el número no se consume si falla).
   maxRetries: 30,
   timeout: 30_000,
@@ -290,7 +290,7 @@ async function generarEnTx(
     select: { id: true, fecha: true },
   });
 
-  // 6. Stock: un VENTA por ítem, en orden de varianteId (sin deadlocks entre cajas).
+  // 6. Stock: un VENTA por ítem, en orden de varianteId (sin deadlocks entre vendedores).
   for (const i of items) {
     await registrarMovimiento(tx, {
       tipo: TipoMovimiento.VENTA,

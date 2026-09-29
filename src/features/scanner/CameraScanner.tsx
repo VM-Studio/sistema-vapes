@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * - Motor: BarcodeDetector nativo si el navegador lo trae (Chrome Android,
  *   Safari iOS 17+); si no, @zxing/browser. Se detecta en runtime.
  * - Cooldown de 1200 ms entre lecturas (no lee el mismo código 15 veces);
- *   modo ráfaga (contar cajas): acepta repetidos cada 600 ms.
+ *   modo ráfaga (contar unidades iguales): acepta repetidos cada 600 ms.
  * - La cámara se libera (track.stop) al cerrar, al ocultar la pestaña y al desmontar.
  */
 
@@ -281,7 +281,7 @@ export function CameraScanner({
                     "flex h-11 items-center gap-1.5 rounded-full px-3 text-sm",
                     rafaga ? "bg-white text-black" : "bg-white/15",
                   )}
-                  title="Modo ráfaga: acepta el mismo código repetido (para contar cajas)"
+                  title="Modo ráfaga: acepta el mismo código repetido (para contar unidades iguales)"
                 >
                   <Repeat className="size-4" /> Ráfaga
                 </button>

@@ -5,12 +5,97 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
-## [2.3.0] - 2026-10-01
+## [2.0.0] - 2026-10-02 — Reforma multipanel
+
+La app pasa de un sistema único a **varios sistemas independientes** (paneles: Vapes, Cosmetic, Especiales y
+los que se agreguen), más simple de usar y con foco en lo que el negocio hace todos los días: cargar stock con
+la pistola, vender, cambiar por garantía, cotizar y mirar cómo va. Se publicó en cinco etapas (R1 a R5), que
+se despliegan juntas como 2.0.0 (pasos en `docs/DEPLOY.md`, «Deploy de la v2»).
+
+Resumen:
+
+- **R1 — Multipanel, limpieza y rediseño**: cada panel tiene su catálogo, stock, galpones, ventas, compras,
+  clientes, proveedores, configuración y numeración (`VAP-000001`); rutas `/p/{slug}/…`, permisos por panel y
+  aislamiento en la aplicación, la base y el lint. Se eliminan caja, gastos, cuenta corriente, pagos
+  partidos, comprobantes, notificaciones, cola offline y los reportes anteriores. Rediseño visual con el
+  color de acento de cada panel.
+- **R2 — Catálogo, proveedores y compras**: producto = marca + modelo + especificación con un precio para
+  todos sus sabores; carga de stock escaneando con galpón obligatorio y alta rápida de códigos
+  desconocidos; proveedores con lista de precios (ARS o USD); compras por sabor con costo sugerido.
+- **R3 — Ventas, clientes y garantías**: venta en un modal guiado (galpón → productos → cliente → pago) con
+  cliente, galpón y un medio de pago obligatorios; clientes por teléfono único; devoluciones por garantía
+  que entregan una unidad nueva; stock por galpón y global.
+- **R4 — Cotizador**: cotizaciones por unidad y por mayor con escalones por producto o por defecto, PDF,
+  WhatsApp y conversión en venta.
+- **R5 — Dashboard, equipo, reportes y cierre**: dashboard con períodos y comparación, rendimiento del
+  equipo con comisión orientativa, reportes exportables, comparador de proveedores con historial de precios,
+  seed demo de los tres paneles, flujo E2E completo, limpieza final y documentación.
+
+### BREAKING
+
+- Las migraciones de la reforma (`20260928160000_reforma_multipanel` a
+  `20261003090000_limpieza_configuracion`) **borran tablas, columnas y datos** y no son compatibles hacia
+  atrás: hacer y descargar un backup antes de migrar. Todo lo existente pasa al panel Vapes.
+- Rutas nuevas (`/p/{slug}/…`), IDs visibles por panel, permisos por panel y venta con un único medio de pago
+  (ver el detalle de R1 y R3).
+
+### R5 — Dashboard, equipo, reportes y cierre (2026-10-02)
+
+Migraciones `20261002090000_analitica_reportes` (historial de precios de proveedor, comisiones orientativas,
+`Panel.etiquetaUnidades`, índices de analítica) y `20261003090000_limpieza_configuracion` (solo datos).
+
+#### Added
+
+- **Dashboard** (`/p/{slug}`): selector de período Diario / Semanal (lunes a domingo) / Mensual /
+  Período (con atajos), guardado en la URL y comparado con el período anterior equivalente; KPIs de
+  facturado, ganancia (dueños), unidades con la etiqueta del panel («Vapes vendidos»), clientes nuevos,
+  ventas y ticket promedio; gráfico comparativo, medios de pago, unitaria vs. mayorista, galpones, compras
+  vs. ventas (dueños), top de productos y sabores, alertas de stock y pendientes. Cada tarjeta carga por su
+  cuenta. Todo se agrega en PostgreSQL (`analitica.service.ts`).
+- **Rendimiento del equipo** (dueños): por vendedor, ventas unitarias y mayoristas, unidades, cotizaciones
+  convertidas, clientes nuevos, ticket y **comisión estimada**; detalle por vendedor en
+  `/p/{slug}/equipo/{usuarioId}` con exportación. Un empleado con Dashboard ve «Mi rendimiento».
+- **Comisión orientativa** por usuario (`Usuario.comisionUnitariaPct` / `comisionMayoristaPct`), editable en
+  `/usuarios/{id}`.
+- **Reportes** (`/p/{slug}/reportes`): rendimiento de la empresa y por vendedor, ventas, stock por galpón y
+  sabor, movimientos, compras y precios de proveedores, clientes y devoluciones, con filtros, gráfico y
+  exportación a PDF y Excel (los de dueños no se muestran ni se exportan para empleados).
+- **Comparador de proveedores** (`/p/{slug}/reportes/comparador`, dueños): del más barato al más caro con
+  ahorro por unidad y última compra, productos con varios proveedores, vista matriz por marca y
+  **cotización del dólar** por panel (`cotizacionUsd`) para comparar precios en USD.
+- **Historial de precios de proveedor** (`ProveedorProductoHistorial`, lo escribe un trigger).
+- **Seed demo de los tres paneles** (`pnpm db:seed-demo`, o `scripts/db-descartable.sh <base> --demo`): 90
+  días simulados con los servicios reales; en Vapes 15 productos de 5 marcas, 3 proveedores con precios
+  distintos (uno en USD) y cambios de precio, 20 compras recibidas, 300 ventas de Juan Cruz, Agustina y
+  Trinidad (unitarias y mayoristas, algunas desde cotizaciones), 80 clientes, 12 garantías y 20
+  cotizaciones en todos los estados; Cosmetic y Especiales en chico. Corre en menos de un minuto.
+- E2E `20-dashboard` y `22-flujo-completo` (login de cada usuario, carga de stock con galpón, venta con
+  cliente nuevo, garantía, cotización mayorista convertida, dashboard, Cosmetic, aislamiento entre paneles y
+  Trinidad sin costos ni otros sistemas). Script `pnpm test:cotizador`.
+- Documentación reescrita para la arquitectura multipanel: README, `docs/MODELO-DATOS.md` (mapa Mermaid con
+  el panel al centro y DBML de R5), `docs/MANUAL-USUARIO.md` (flujos reales paso a paso) y
+  `docs/DEPLOY.md` («Deploy de la v2» paso a paso).
+
+#### Changed
+
+- El dashboard anterior (`dashboard.service.ts`) se reemplaza por `analitica.service.ts`.
+- Versión del paquete: 2.0.0.
+
+#### Removed
+
+- Código muerto de versiones anteriores: `sort-header`, `modulo-proximamente` (ya no queda ningún módulo «Próximamente»), `totalComprado`, `PERIODOS_DASHBOARD`, resumen y alertas de stock duplicados en
+  `inventario.service`, planilla de recuento, costo promedio ponderado, validaciones de CUIT y email
+  opcional, textos y comentarios de caja, gastos y comprobantes.
+- Dependencias sin uso: `fake-indexeddb` y `@types/bcryptjs` (bcryptjs 3 trae sus tipos).
+- Claves de configuración viejas: `ConfiguracionGlobal.moneda` y los campos de `ventas` que no son
+  `redondeoVentas` (migración `20261003090000_limpieza_configuracion`).
+
+### R4 — Cotizador unitario y mayorista (2026-10-01)
 
 **Reforma R4: cotizador unitario y mayorista.** Migración `20261001090000_cotizador` (escalones de precio,
 cotizaciones y `Venta.cotizacionId`).
 
-### Added
+#### Added
 
 - **Cotizador** (`/p/{slug}/cotizador`): accesos «Cotizar por unidad» / «Cotizar por mayor» y listado con
   pestañas Todas | Unitarias | Mayoristas, filtros por estado, vendedor, fechas y búsqueda por código
@@ -28,12 +113,12 @@ cotizaciones y `Venta.cotizacionId`).
   y stock visible. Ficha de producto: sección «Precios mayoristas» (dueños o «editar» en Productos).
 - E2E `19-cotizador.spec.ts`.
 
-### Changed
+#### Changed
 
 - Navegación: «Cotizar por unidad», «Cotizar por mayor» y «Cotizaciones» reemplazan a las páginas
   «Próximamente» `cotizador-unitario` / `cotizador-mayorista`.
 
-## [2.2.0] - 2026-09-30
+### R3 — Ventas, clientes, devoluciones por garantía y stock por galpón (2026-09-30)
 
 **Reforma R3: ventas con cliente obligatorio, clientes por teléfono, devoluciones por garantía y stock por
 galpón.** La migración `20260930090000_ventas_clientes_devoluciones` borra los borradores de venta, pasa los
@@ -41,7 +126,7 @@ medios de pago viejos a transferencia, suma el redondeo al descuento, junta apel
 de los clientes en nombre y notas (teléfono provisorio a quien no tenía) y asigna «Cliente sin datos» a las
 ventas sin cliente: hacer y descargar un backup antes de migrar.
 
-### Added
+#### Added
 
 - **Stock por galpón y global** (`/p/{slug}/stock`): pestañas por galpón + «Global» con el estado en la URL.
   Por galpón: unidades y bajo mínimo, tabla/cards por sabor, **Transferir a {otro galpón}** (se crea y se
@@ -60,21 +145,21 @@ ventas sin cliente: hacer y descargar un backup antes de migrar.
 - Tests: signos de los tipos nuevos, `VentaItem_subtotal_chk`, código de venta único, observación ≥ 10,
   cliente con teléfono obligatorio, lecturas de stock y transferencia en el acto; E2E `18-stock`.
 
-### Changed
+#### Changed
 
 - Navegación: bottom bar Inicio · Ventas · Productos · Stock · Más; sidebar Operación (Ventas, Stock,
   Productos, Devoluciones, Clientes) / Compras (Proveedores, Compras) / Análisis (cotizadores, Reportes) /
   Administración.
 - E2E de transferencia y de modo sin conexión adaptados (fila del stock y `/offline`).
 
-### Removed
+#### Removed
 
 - Hub `/p/{slug}/escanear`: el escáner vive dentro de cada flujo (venta, carga de stock, compras,
   devoluciones, etiquetas). `/offline` sigue para consultar sin señal.
 - Pantallas viejas de Stock: ingreso manual, ajuste/recuento y «Nueva transferencia» (se transfiere desde la
   fila).
 
-## [2.1.0] - 2026-09-29
+### R2 — Catálogo, proveedores con precios y compras por sabor (2026-09-29)
 
 **Reforma R2: catálogo simplificado, proveedores con precios y compras por sabor.** Un producto pasa a ser
 marca + modelo + especificación con un precio para todos sus sabores; el stock se carga escaneando en un
@@ -84,7 +169,7 @@ La migración `20260929090000_catalogo_proveedores_compras` convierte los datos 
 (`Producto.descripcion`, `Producto.tieneVariantes`, `Proveedor.cuit`, `Proveedor.email`,
 `Proveedor.direccion`): hacer y descargar un backup antes de migrar.
 
-### Added
+#### Added
 
 - **Carga de stock escaneando** en `/p/{slug}/productos/cargar` (desde Productos, Escanear o la ficha del
   producto; permiso crear en Productos o en Stock): paso 1, el galpón (obligatorio, con el último usado
@@ -118,7 +203,7 @@ La migración `20260929090000_catalogo_proveedores_compras` convierte los datos 
 - E2E de carga de stock, proveedores, compras y catálogo de la empleada (sin costos, sin carga de stock ni
   Compras); `test:catalogo`, `test:compras` y `test:ventas` reescritos para el modelo actual.
 
-### Changed
+#### Changed
 
 - **Producto = marca (obligatoria) + modelo + especificación** (la etiqueta del panel: «Pitadas» en Vapes).
   `nombreCompleto` («Elf Bar BC 5000») y `especificacionNorm` los mantiene la base; la marca «Sin marca» no
@@ -144,7 +229,7 @@ La migración `20260929090000_catalogo_proveedores_compras` convierte los datos 
   normalizan (los repetidos también van a las notas); precios de proveedor iniciales = último costo pagado en
   compras recibidas.
 
-### Removed
+#### Removed
 
 - `Producto.descripcion` y `Producto.tieneVariantes` (la regla «sin variantes = exactamente una Único»:
   ahora todo producto tiene al menos un sabor).
@@ -153,17 +238,17 @@ La migración `20260929090000_catalogo_proveedores_compras` convierte los datos 
   `/productos/cargar` y las compras por Compras.
 - La matriz de stock y el listado de variantes de la ficha del producto, reemplazados por la tabla de sabores.
 
-## [2.0.0] - 2026-09-28
+### R1 — Multipanel, limpieza y rediseño (2026-09-28)
 
 **Reforma R1: multipanel, limpieza y rediseño.** La app pasa a ser un conjunto de sistemas independientes
 (paneles) y se simplifica: se eliminan los módulos de dinero (caja, gastos, cuenta corriente, pagos
 partidos, comprobantes) y los reportes anteriores.
 
-### BREAKING
+#### BREAKING
 
 - La migración `20260928160000_reforma_multipanel` **borra tablas y columnas** y no es compatible hacia
   atrás: el código 1.x no funciona contra una base migrada y lo eliminado solo se recupera desde un backup.
-  Hacer y descargar un backup antes de migrar (ver `docs/DEPLOY.md`, «Migración de la reforma R1»).
+  Hacer y descargar un backup antes de migrar (ver `docs/DEPLOY.md`, «Migraciones de la reforma»).
 - Todos los datos existentes pasan al panel **Vapes**; sus depósitos «Galpón 1» y «Galpón 2» se renombran
   **Ayres Plaza** y **Mercedes**.
 - Las rutas de negocio pasan de `/{modulo}` a `/p/{slug}/{modulo}` (por ejemplo, `/p/vapes/ventas/nueva`);
@@ -178,7 +263,7 @@ partidos, comprobantes) y los reportes anteriores.
 - Variables de entorno: se quitan `SENTRY_DSN` y `NEXT_PUBLIC_SENTRY_DSN`; se agregan `SEED_OWNER1_*`,
   `SEED_OWNER2_*` y `SEED_EMPLEADO1_*` (obligatorias para correr el seed en producción).
 
-### Added
+#### Added
 
 - **Paneles** (`Panel`): Vapes, Cosmetic y Especiales, cada uno con sus propios productos, variantes, códigos,
   stock, depósitos, ventas, clientes, compras, proveedores, configuración y numeración. Logo, color de acento
@@ -213,7 +298,7 @@ partidos, comprobantes) y los reportes anteriores.
   contraseña obligatorio. En desarrollo, por defecto `juancruz@`, `agustina@` y `trinidad@negocio.com`.
 - Tests de integración de aislamiento entre paneles y E2E de paneles.
 
-### Changed
+#### Changed
 
 - Rediseño: fondo blanco, tipografía Inter, estilo SaaS, sin modo oscuro, color de acento por panel.
 - Navegación dentro del panel agrupada en Operación, Catálogo, Cotizadores y Administración; barra inferior
@@ -232,7 +317,7 @@ partidos, comprobantes) y los reportes anteriores.
   todo; la auditoría registra el panel de cada acción.
 - Backups: un fallo queda registrado en `/configuracion/backups`, en el log de errores y en `/api/health`.
 
-### Removed
+#### Removed
 
 - Caja y arqueos, gastos y sus categorías.
 - Cuenta corriente, ventas fiadas, saldos de clientes y pagos partidos (`PagoVenta`).

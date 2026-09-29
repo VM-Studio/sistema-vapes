@@ -2,6 +2,32 @@
 
 Stack recomendado: **Vercel** (app) + **Neon** o **Supabase** (PostgreSQL 16, con pooler) + **Cloudflare R2** (archivos y backups) + **GitHub Actions** (CI, release y backups diarios). Alternativa: **Railway** para app, base y cron en un solo lugar (ver al final).
 
+## Deploy de la v2 (reforma multipanel) paso a paso
+
+La versión 2.0.0 junta las cinco etapas de la reforma (R1 a R5) y se publica **de una vez**. Pasa una base 1.x al modelo multipanel y **borra datos** de módulos que ya no existen (ver [Migraciones de la reforma](#migraciones-de-la-reforma-200)); una instalación nueva hace lo mismo sobre una base vacía.
+
+1. **Backup de producción** (si ya había una 1.x corriendo). Avisá a los usuarios, elegí un horario sin ventas y:
+   ```bash
+   DATABASE_URL=<DIRECT_URL> DIRECT_URL=<DIRECT_URL> pnpm backup --origen=manual
+   ```
+   Confirmá en `/configuracion/backups` (o en el bucket) que quedó **Verificado** y bajá una copia fuera del bucket. Si querés conservar datos de caja, gastos, cuentas corrientes o comprobantes, descargá antes **Exportar todo** desde la 1.x.
+2. **Probar sobre una copia** (recomendado): restaurá ese backup en una base vacía (`RESTORE_DATABASE_URL=<copia> pnpm restore <archivo>`) y corré `DATABASE_URL=<copia> DIRECT_URL=<copia> pnpm db:deploy`. Tiene que terminar sin errores.
+3. **Migraciones**: push a `main` → CI en verde → `pnpm release` (backup verificado previo + `prisma migrate deploy`) → deploy. A mano, contra la conexión directa:
+   ```bash
+   DATABASE_URL=<DIRECT_URL> DIRECT_URL=<DIRECT_URL> pnpm release
+   # equivale a: backup verificado + npx prisma migrate deploy
+   DATABASE_URL=<DIRECT_URL> DIRECT_URL=<DIRECT_URL> npx prisma migrate status   # "Database schema is up to date"
+   ```
+4. **Salud**: `curl -s https://tu-dominio/api/health` → `ok: true` con `db.ok`, `storage.ok` (`proveedor: "s3"`) y `backup.ok`. Si `db.ok` es `false`, no sigas: revisá `prisma migrate status`.
+5. **Seed base, solo si es una instalación nueva** (base vacía, sin usuarios): una única corrida intencional con `ALLOW_SEED=true` y las variables `SEED_*` (comando en el [checklist](#checklist-del-primer-deploy)). Crea a Juan Cruz y Agustina (dueños), a Trinidad (empleada, solo Vapes), la configuración de cada panel, los galpones de Vapes y un catálogo de ejemplo. En una base que viene de la 1.x **no** corras el seed: los usuarios ya existen; los nuevos se crean desde `/usuarios`. El seed demo (`pnpm db:seed-demo`) **nunca** va a producción.
+6. **Prueba funcional**: entrá con un dueño (selector con **Vapes**, **Cosmetic** y **Especiales**), abrí Vapes y revisá el dashboard, el stock de un par de productos y la última venta (su ID es `VAP-…`). Cargá la cotización del dólar en **Reportes → Comparador de proveedores** si hay precios de proveedores en USD, y revisá el acceso y los permisos de cada empleado en `/usuarios/[id]` (y su comisión orientativa, si corresponde).
+7. **Prueba de la PWA**:
+   - En Chrome del celular aparece **Instalar app**; en iPhone, Safari → Compartir → **Agregar a inicio**. La app instalada abre el último sistema usado.
+   - Desde una PC con Chrome: `CHROME_PATH=<ruta a Chrome> node scripts/verificar-instalable.mjs https://tu-dominio` tiene que informar que la app es instalable (manifest, íconos y service worker controlando).
+   - Con la app abierta, cortá la conexión: el escáner sigue consultando productos y precios en **Sin conexión**, y al volver la señal ofrece reabrir la app.
+   - Si había celulares con la 1.x instalada, al abrirla aparece **Hay una versión nueva**: actualizar.
+8. **Backups**: confirmá que el job diario (`.github/workflows/backup.yml`) corre y que `/configuracion/backups` muestra el del release. Dentro de la primera semana, **probá una restauración** (`pnpm test:restore`).
+
 ## Entornos
 
 | Entorno       | Base                                                         | Storage                                     | Quién despliega                                 |
@@ -118,11 +144,24 @@ Aunque `app_runtime` tenga `UPDATE`/`DELETE` en general, el ledger de movimiento
 - `pnpm release` hace backup verificado **antes** de migrar, y solo si hay migraciones pendientes. Si el backup falla, no migra.
 - Las migraciones tienen que ser **compatibles hacia atrás** con la versión anterior del código (expand → deploy → contract): agregar columnas nullable o con default, completar datos, y recién en un release posterior borrar lo viejo. Así un rollback de código no necesita tocar la base. **La migración de la reforma es la excepción** (ver la sección siguiente).
 
-## Migración de la reforma R1 (2.0.0)
+## Migraciones de la reforma (2.0.0)
 
-La migración `20260928160000_reforma_multipanel` convierte una base de la versión 1.x al modelo multipanel. **No es compatible hacia atrás y borra datos**: después de aplicarla, el código 1.x no funciona contra la base y lo eliminado solo se recupera desde un backup.
+La 2.0.0 aplica, en orden, estas migraciones sobre una base 1.x:
+
+| Migración                                     | Etapa | Qué hace con los datos                                                                                                                                                   |
+| --------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `20260928160000_reforma_multipanel`           | R1    | Crea los paneles, pasa todo a Vapes y elimina caja, gastos, cuenta corriente, comprobantes y notificaciones (detalle abajo)                                              |
+| `20260929090000_catalogo_proveedores_compras` | R2    | Producto = marca + modelo + especificación («Sin marca» para los que no tenían), precios por proveedor y CUIT/email/dirección del proveedor a las notas                  |
+| `20260930090000_ventas_clientes_devoluciones` | R3    | Borra borradores de venta, pasa medios de pago viejos a transferencia, junta los datos del cliente en nombre y notas, teléfonos obligatorios y devoluciones por garantía |
+| `20261001090000_cotizador`                    | R4    | Escalones de precio y cotizaciones (tablas nuevas, sin tocar datos)                                                                                                      |
+| `20261002090000_analitica_reportes`           | R5    | Historial de precios de proveedor (sembrado con el precio vigente), comisiones orientativas, «Vapes vendidos» e índices del dashboard                                    |
+| `20261003090000_limpieza_configuracion`       | R5    | Borra la clave global `moneda` y deja en `ventas` solo el redondeo                                                                                                       |
+
+**No es compatible hacia atrás y borra datos**: después de aplicarlas, el código 1.x no funciona contra la base y lo eliminado solo se recupera desde un backup. Lo que sigue detalla R1, la que más cambia.
 
 ### Antes de migrar
+
+Es el paso 1 y 2 de [Deploy de la v2](#deploy-de-la-v2-reforma-multipanel-paso-a-paso):
 
 1. Avisar a los usuarios y elegir un horario sin ventas.
 2. Hacer un backup manual y **descargarlo** (además del que hace `pnpm release`):
@@ -141,7 +180,7 @@ La migración `20260928160000_reforma_multipanel` convierte una base de la versi
 - **Paneles**: crea **Vapes**, **Cosmetic** y **Especiales** y pasa **todo lo existente a Vapes** (depósitos, catálogo, stock, movimientos, compras, ventas, devoluciones, transferencias, clientes, proveedores y configuración). El ledger y los documentos no se reescriben: la columna `panelId` se agrega con valor por defecto.
 - **Depósitos**: en Vapes, **«Galpón 1» pasa a llamarse «Ayres Plaza»** y **«Galpón 2» pasa a «Mercedes»** (solo si tenían exactamente esos nombres). Cosmetic y Especiales reciben un depósito «Principal».
 - **Numeración**: la de Vapes continúa desde el número más alto de cada documento (la próxima venta es la siguiente a la última); Cosmetic y Especiales arrancan en cero.
-- **Configuración**: `nombreNegocio`, `iconoApp`, `timezone` y `moneda` pasan a `ConfiguracionGlobal`; `escaner`, `ventas`, `alertaStockMinimo` y `prefijoSku` quedan como configuración de Vapes; el resto de las claves (caja, reportes, comprobantes) se descarta.
+- **Configuración**: `nombreNegocio`, `iconoApp` y `timezone` pasan a `ConfiguracionGlobal` (`moneda` también, y la borra la limpieza de R5); `escaner`, `ventas`, `alertaStockMinimo` y `prefijoSku` quedan como configuración de Vapes; el resto de las claves (caja, reportes, comprobantes) se descarta.
 - **Clientes**: los teléfonos se normalizan a `+54` + dígitos. Si dos clientes quedan con el mismo teléfono, lo conserva el más antiguo y en los demás pasa a las **notas** («Teléfono (repetido con otro cliente): …»).
 - **Usuarios y permisos**: los empleados existentes quedan con acceso a Vapes. Los permisos de Inventario y Movimientos se fusionan en **Stock**; los de Finanzas, Gastos, Caja, Usuarios y Configuración se eliminan (los globales quedan solo para dueños).
 - **Vistas**: `vw_stock_consolidado` y `vw_alertas_stock` se recrean con `panel_id`.

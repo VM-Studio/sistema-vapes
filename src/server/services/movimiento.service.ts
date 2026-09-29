@@ -348,47 +348,6 @@ export async function registrarAjusteMasivo(
   );
 }
 
-export interface StockParaRecuento {
-  varianteId: string;
-  nombre: string;
-  sku: string;
-  codigoBarras: string | null;
-  stockSistema: number;
-}
-
-/** Variantes con stock en el depósito (o todas las activas) para la planilla de recuento. */
-export async function listarStockParaRecuento(
-  ctx: Ctx,
-  depositoId: string,
-  incluirSinStock = false,
-): Promise<StockParaRecuento[]> {
-  const variantes = await dbPara(ctx.panelId).variante.findMany({
-    where: {
-      deletedAt: null,
-      producto: { deletedAt: null },
-      ...(incluirSinStock
-        ? { activo: true }
-        : { stocks: { some: { depositoId, cantidad: { gt: 0 } } } }),
-    },
-    orderBy: [{ producto: { nombreCompleto: "asc" } }, { nombre: "asc" }],
-    select: {
-      id: true,
-      nombre: true,
-      sku: true,
-      codigoBarras: true,
-      producto: { select: { nombreCompleto: true } },
-      stocks: { where: { depositoId }, select: { cantidad: true } },
-    },
-  });
-  return variantes.map((v) => ({
-    varianteId: v.id,
-    nombre: nombreConSabor(v.producto.nombreCompleto, v.nombre),
-    sku: v.sku,
-    codigoBarras: v.codigoBarras,
-    stockSistema: v.stocks[0]?.cantidad ?? 0,
-  }));
-}
-
 // =============================================================================
 // Transferencias (entre depósitos del mismo panel)
 // =============================================================================

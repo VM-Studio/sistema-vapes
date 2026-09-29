@@ -290,53 +290,8 @@ export async function obtenerStock(ctx: Ctx, filtros: FiltrosStock): Promise<Res
 }
 
 // =============================================================================
-// Resumen, alertas, matriz por producto
+// Matriz por producto
 // =============================================================================
-
-export interface ResumenStock {
-  /** Unidades de la vista (todo el panel o el depósito elegido). */
-  unidades: number;
-  porDeposito: { id: string; nombre: string; esPrincipal: boolean; unidades: number }[];
-  variantesBajoMinimo: number;
-  variantesSinStock: number;
-}
-
-const conteosSchema = z.array(
-  z.object({
-    bajo: z.union([z.bigint(), z.number()]).transform(Number),
-    sin_stock: z.union([z.bigint(), z.number()]).transform(Number),
-  }),
-);
-
-export async function obtenerResumenStock(ctx: Ctx, depositoId?: string): Promise<ResumenStock> {
-  const db = dbPara(ctx.panelId);
-  const depositos = await depositosActivosPanel(ctx);
-  const dep = depositos.some((d) => d.id === depositoId) ? depositoId : undefined;
-  const cantidad = expresionCantidad(dep);
-  const [porDeposito, conteos] = await Promise.all([
-    db.stock.groupBy({
-      by: ["depositoId"],
-      where: { deposito: { activo: true }, variante: { deletedAt: null } },
-      _sum: { cantidad: true },
-    }),
-    db.$queryRaw`
-      SELECT COUNT(*) FILTER (WHERE ${cantidad} < s.stock_minimo) AS bajo,
-             COUNT(*) FILTER (WHERE ${cantidad} <= 0) AS sin_stock
-      FROM vw_stock_consolidado s
-      JOIN "Variante" v ON v."id" = s.variante_id
-      JOIN "Producto" p ON p."id" = s.producto_id
-      WHERE s.panel_id = ${ctx.panelId} AND v."activo" AND p."activo"`,
-  ]);
-  const unidades = new Map(porDeposito.map((p) => [p.depositoId, p._sum.cantidad ?? 0]));
-  const [c] = conteosSchema.parse(conteos);
-  const lista = depositos.map((d) => ({ ...d, unidades: unidades.get(d.id) ?? 0 }));
-  return {
-    unidades: dep ? (unidades.get(dep) ?? 0) : lista.reduce((a, d) => a + d.unidades, 0),
-    porDeposito: lista,
-    variantesBajoMinimo: c?.bajo ?? 0,
-    variantesSinStock: c?.sin_stock ?? 0,
-  };
-}
 
 export interface MatrizStockProducto {
   depositos: DepositoStock[];
@@ -391,52 +346,6 @@ export async function obtenerStockPorProducto(
     };
   });
   return { depositos, filas, totalesPorDeposito, total: filas.reduce((a, f) => a + f.total, 0) };
-}
-
-export interface AlertaStock {
-  varianteId: string;
-  productoId: string;
-  producto: string;
-  variante: string;
-  sku: string;
-  stockMinimo: number;
-  stockTotal: number;
-  faltante: number;
-}
-
-const alertasSchema = z.array(
-  z.object({
-    variante_id: z.string(),
-    producto_id: z.string(),
-    producto: z.string(),
-    variante: z.string(),
-    sku: z.string(),
-    stock_minimo: z.number().int(),
-    stock_total: z.number().int(),
-    faltante: z.number().int(),
-  }),
-);
-
-/** Variantes activas del panel con stock total < mínimo (vw_alertas_stock), las más urgentes primero. */
-export async function obtenerAlertasStock(ctx: Ctx, limite = 200): Promise<AlertaStock[]> {
-  const filas = alertasSchema.parse(
-    await dbPara(ctx.panelId).$queryRaw`
-      SELECT variante_id, producto_id, producto, variante, sku, stock_minimo, stock_total, faltante
-      FROM vw_alertas_stock
-      WHERE panel_id = ${ctx.panelId}
-      ORDER BY stock_total ASC, faltante DESC, producto, variante
-      LIMIT ${limite}`,
-  );
-  return filas.map((f) => ({
-    varianteId: f.variante_id,
-    productoId: f.producto_id,
-    producto: f.producto,
-    variante: f.variante,
-    sku: f.sku,
-    stockMinimo: f.stock_minimo,
-    stockTotal: f.stock_total,
-    faltante: f.faltante,
-  }));
 }
 
 // =============================================================================

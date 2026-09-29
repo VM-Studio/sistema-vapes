@@ -34,7 +34,17 @@ const PRISMA_CRUDO = {
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript", "prettier"),
   {
-    ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts"],
+    ignores: [
+      "node_modules/**",
+      ".next/**",
+      "out/**",
+      "build/**",
+      "next-env.d.ts",
+      "test-results/**",
+      "playwright-report/**",
+      "verificacion/**",
+      ".storage*/**",
+    ],
   },
   {
     files: ["src/**/*.{ts,tsx}"],

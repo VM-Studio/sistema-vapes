@@ -15,6 +15,7 @@ import { obtenerAcceso, obtenerUsuario } from "@/server/services/usuario.service
 
 import { AccesoForm } from "./acceso-form";
 import { CerrarSesiones } from "./cerrar-sesiones";
+import { ComisionForm } from "./comision-form";
 
 export const metadata: Metadata = { title: "Acceso del usuario" };
 
@@ -67,6 +68,24 @@ export default async function UsuarioPage({ params }: { params: Promise<{ id: st
           permisosIniciales={acceso.permisos}
         />
       </section>
+
+      {!owner && (
+        <section className="flex flex-col gap-4" aria-labelledby="titulo-comision">
+          <div>
+            <h2 id="titulo-comision" className="text-xl font-semibold">
+              Comisión
+            </h2>
+            <p className="text-muted text-sm">
+              Opcional. Porcentaje sobre sus ventas unitarias y mayoristas.
+            </p>
+          </div>
+          <ComisionForm
+            usuarioId={usuario.id}
+            unitariaPct={usuario.comisionUnitariaPct}
+            mayoristaPct={usuario.comisionMayoristaPct}
+          />
+        </section>
+      )}
 
       <section className="flex flex-col gap-4" aria-labelledby="titulo-sesiones">
         <div className="flex flex-wrap items-end justify-between gap-3">

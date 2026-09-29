@@ -10,6 +10,8 @@ export interface PanelBasico {
   logoUrl: string | null;
   colorAcento: string | null;
   etiquetaEspecificacion: string;
+  /** Cómo se llaman las unidades vendidas en el dashboard ("Vapes vendidos"). */
+  etiquetaUnidades: string;
   orden: number;
 }
 

@@ -1,4 +1,5 @@
 import { AccionAuditoria, EstadoCompra, Modulo, Prisma, type Moneda } from "@prisma/client";
+import { z } from "zod";
 
 import { puede, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
@@ -9,7 +10,13 @@ import type {
 } from "@/lib/validations/proveedor";
 import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
+import {
+  compararOfertas,
+  type OfertaProveedor,
+  type ResultadoComparacion,
+} from "@/server/reportes/comparador";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { obtenerCotizacionUsd } from "@/server/services/configuracion.service";
 
 /**
  * PROVEEDORES del panel: contacto (persona + tienda + teléfono) y la lista de
@@ -591,4 +598,364 @@ export async function buscarProductosDelPanel(
     take: 20,
     select: { id: true, nombreCompleto: true },
   });
+}
+
+// =============================================================================
+// Comparador de proveedores (reportes, SOLO dueños: quien llama lo verifica)
+// =============================================================================
+
+const num = z.union([z.number(), z.bigint(), z.string(), z.instanceof(Prisma.Decimal)]);
+const monto = num.transform((v) => new Prisma.Decimal(v.toString()).toFixed(2));
+const entero = num.transform((v) => Number(v));
+const moneda = z.enum(["ARS", "USD"]);
+
+const filaComparadorSchema = z.array(
+  z.object({
+    proveedor_id: z.string(),
+    proveedor: z.string(),
+    tienda: z.string(),
+    telefono: z.string().nullable(),
+    precio: monto,
+    moneda,
+    actualizado_at: z.date(),
+    uc_fecha: z.date().nullable(),
+    uc_costo: monto.nullable(),
+  }),
+);
+
+export interface ComparacionProducto extends ResultadoComparacion {
+  producto: { id: string; nombreCompleto: string; marca: string };
+  cotizacionUsd: number | null;
+}
+
+/**
+ * Todos los proveedores del panel que venden ESE producto exacto (misma
+ * marca + mismo modelo + misma especificación normalizada; el sabor no
+ * importa porque el precio es por producto), del más barato al más caro, con
+ * la última compra RECIBIDA a ese proveedor de ese producto. El orden, las
+ * diferencias, el badge y el aviso de precio viejo: `compararOfertas` (pura).
+ * Una sola consulta (LATERAL para la última compra, por índice
+ * CompraItem(panelId, productoId)).
+ */
+export async function compararProveedores(
+  ctx: Pick<Ctx, "panelId">,
+  productoId: string,
+): Promise<ComparacionProducto> {
+  const db = dbPara(ctx.panelId);
+  const producto = await db.producto.findFirst({
+    where: { id: productoId, deletedAt: null },
+    select: { id: true, nombreCompleto: true, marca: { select: { nombre: true } } },
+  });
+  if (!producto) throw new NotFoundError("El producto no existe o fue dado de baja");
+  const [filas, cotizacionUsd] = await Promise.all([
+    db.$queryRaw(sqlComparador(ctx.panelId, productoId)),
+    obtenerCotizacionUsd(ctx),
+  ]);
+  const ofertas: OfertaProveedor[] = filaComparadorSchema.parse(filas).map((f) => ({
+    proveedorId: f.proveedor_id,
+    proveedor: f.proveedor,
+    tienda: f.tienda,
+    telefono: f.telefono,
+    precio: f.precio,
+    moneda: f.moneda,
+    actualizadoAt: f.actualizado_at,
+    ultimaCompra: f.uc_fecha && f.uc_costo ? { fecha: f.uc_fecha, costo: f.uc_costo } : null,
+  }));
+  return {
+    producto: {
+      id: producto.id,
+      nombreCompleto: producto.nombreCompleto,
+      marca: producto.marca.nombre,
+    },
+    cotizacionUsd,
+    ...compararOfertas(ofertas, { cotizacionUsd, ahora: ahora() }),
+  };
+}
+
+/** La consulta del comparador (exportada para el EXPLAIN ANALYZE del reporte de performance). */
+export function sqlComparador(panelId: string, productoId: string): Prisma.Sql {
+  return Prisma.sql`
+    WITH base AS (
+      SELECT "marcaId", "especificacionNorm", lower(btrim("nombre")) AS modelo
+      FROM "Producto" WHERE "panelId" = ${panelId} AND "id" = ${productoId}
+    )
+    SELECT DISTINCT ON (pr."id")
+           pr."id" AS proveedor_id, pr."nombre" AS proveedor, pr."nombreTienda" AS tienda,
+           pr."telefono", pp."precio", pp."moneda"::text AS moneda, pp."actualizadoAt" AS actualizado_at,
+           uc."fecha" AS uc_fecha, uc."costoUnitario" AS uc_costo
+    FROM base b
+    JOIN "Producto" p ON p."panelId" = ${panelId} AND p."marcaId" = b."marcaId"
+     AND p."especificacionNorm" = b."especificacionNorm" AND lower(btrim(p."nombre")) = b.modelo
+     AND p."deletedAt" IS NULL
+    JOIN "ProveedorProducto" pp ON pp."panelId" = ${panelId} AND pp."productoId" = p."id"
+    JOIN "Proveedor" pr ON pr."id" = pp."proveedorId" AND pr."panelId" = ${panelId} AND pr."deletedAt" IS NULL
+    LEFT JOIN LATERAL (
+      SELECT c."fecha", ci."costoUnitario"
+      FROM "CompraItem" ci
+      JOIN "Compra" c ON c."id" = ci."compraId"
+      WHERE ci."panelId" = ${panelId} AND ci."productoId" = p."id"
+        AND c."proveedorId" = pr."id" AND c."estado" = 'RECIBIDA'
+      ORDER BY c."fecha" DESC
+      LIMIT 1
+    ) uc ON TRUE
+    ORDER BY pr."id", pp."precio" ASC, pp."actualizadoAt" DESC`;
+}
+
+export interface ProductoConVariosProveedores {
+  productoId: string;
+  nombreCompleto: string;
+  proveedores: number;
+  /** En pesos (USD convertido con la cotización) o en la única moneda que tenga. */
+  moneda: "ARS" | "USD";
+  minimo: string;
+  maximo: string;
+  ahorro: string;
+}
+
+const filaVariosSchema = z.array(
+  z.object({
+    producto_id: z.string(),
+    nombre_completo: z.string(),
+    proveedores: entero,
+    min_ars: monto.nullable(),
+    max_ars: monto.nullable(),
+    n_ars: entero,
+    min_usd: monto.nullable(),
+    max_usd: monto.nullable(),
+    n_usd: entero,
+  }),
+);
+
+/**
+ * Productos con 2+ proveedores: mínimo, máximo y ahorro potencial por unidad
+ * (mayor ahorro primero). Con cotización, los USD se pasan a pesos para
+ * comparar; sin ella, se compara dentro de cada moneda (la de más proveedores).
+ */
+export async function productosConVariosProveedores(
+  ctx: Pick<Ctx, "panelId">,
+  opciones: { limite?: number } = {},
+): Promise<ProductoConVariosProveedores[]> {
+  const cotizacion = await obtenerCotizacionUsd(ctx);
+  const filas = filaVariosSchema.parse(
+    await dbPara(ctx.panelId).$queryRaw`
+      SELECT p."id" AS producto_id, p."nombreCompleto" AS nombre_completo,
+             COUNT(DISTINCT pp."proveedorId") AS proveedores,
+             MIN(CASE WHEN pp."moneda" = 'ARS' THEN pp."precio" WHEN ${cotizacion}::numeric IS NOT NULL THEN pp."precio" * ${cotizacion}::numeric END) AS min_ars,
+             MAX(CASE WHEN pp."moneda" = 'ARS' THEN pp."precio" WHEN ${cotizacion}::numeric IS NOT NULL THEN pp."precio" * ${cotizacion}::numeric END) AS max_ars,
+             COUNT(*) FILTER (WHERE pp."moneda" = 'ARS' OR ${cotizacion}::numeric IS NOT NULL) AS n_ars,
+             MIN(pp."precio") FILTER (WHERE pp."moneda" = 'USD') AS min_usd,
+             MAX(pp."precio") FILTER (WHERE pp."moneda" = 'USD') AS max_usd,
+             COUNT(*) FILTER (WHERE pp."moneda" = 'USD') AS n_usd
+      FROM "ProveedorProducto" pp
+      JOIN "Producto" p ON p."id" = pp."productoId" AND p."deletedAt" IS NULL
+      JOIN "Proveedor" pr ON pr."id" = pp."proveedorId" AND pr."deletedAt" IS NULL
+      WHERE pp."panelId" = ${ctx.panelId}
+      GROUP BY p."id", p."nombreCompleto"
+      HAVING COUNT(DISTINCT pp."proveedorId") >= 2`,
+  );
+  return filas
+    .flatMap((f) => {
+      const usarUsd = f.n_ars < 2 && f.n_usd >= 2;
+      const min = usarUsd ? f.min_usd : f.min_ars;
+      const max = usarUsd ? f.max_usd : f.max_ars;
+      if (min === null || max === null || (!usarUsd && f.n_ars < 2)) return [];
+      return [
+        {
+          productoId: f.producto_id,
+          nombreCompleto: f.nombre_completo,
+          proveedores: f.proveedores,
+          moneda: usarUsd ? ("USD" as const) : ("ARS" as const),
+          minimo: min,
+          maximo: max,
+          ahorro: new Prisma.Decimal(max).minus(min).toFixed(2),
+        },
+      ];
+    })
+    .sort(
+      (a, b) =>
+        Number(b.ahorro) - Number(a.ahorro) || a.nombreCompleto.localeCompare(b.nombreCompleto),
+    )
+    .slice(0, opciones.limite ?? 50);
+}
+
+export interface MatrizProveedores {
+  proveedores: { id: string; nombre: string; tienda: string }[];
+  filas: {
+    productoId: string;
+    nombreCompleto: string;
+    marca: string;
+    precios: Record<
+      string,
+      { precio: string; moneda: "ARS" | "USD"; masBarato: boolean; desactualizado: boolean }
+    >;
+  }[];
+  cotizacionUsd: number | null;
+}
+
+const filaMatrizSchema = z.array(
+  z.object({
+    producto_id: z.string(),
+    nombre_completo: z.string(),
+    marca: z.string(),
+    proveedor_id: z.string(),
+    proveedor: z.string(),
+    tienda: z.string(),
+    precio: monto,
+    moneda,
+    actualizado_at: z.date(),
+  }),
+);
+
+/** Productos × proveedores con el precio de cada uno (vista Matriz), opcionalmente de una marca. */
+export async function matrizProveedores(
+  ctx: Pick<Ctx, "panelId">,
+  opciones: { marcaId?: string } = {},
+): Promise<MatrizProveedores> {
+  const [crudas, cotizacionUsd] = await Promise.all([
+    dbPara(ctx.panelId).$queryRaw`
+      SELECT p."id" AS producto_id, p."nombreCompleto" AS nombre_completo, m."nombre" AS marca,
+             pr."id" AS proveedor_id, pr."nombre" AS proveedor, pr."nombreTienda" AS tienda,
+             pp."precio", pp."moneda"::text AS moneda, pp."actualizadoAt" AS actualizado_at
+      FROM "ProveedorProducto" pp
+      JOIN "Producto" p ON p."id" = pp."productoId" AND p."deletedAt" IS NULL
+      JOIN "Marca" m ON m."id" = p."marcaId"
+      JOIN "Proveedor" pr ON pr."id" = pp."proveedorId" AND pr."deletedAt" IS NULL
+      WHERE pp."panelId" = ${ctx.panelId}
+        ${opciones.marcaId ? Prisma.sql`AND p."marcaId" = ${opciones.marcaId}` : Prisma.empty}
+      ORDER BY m."nombre", p."nombreCompleto", pr."nombre"
+      LIMIT 5000`,
+    obtenerCotizacionUsd(ctx),
+  ]);
+  const filas = filaMatrizSchema.parse(crudas);
+  const proveedores = new Map<string, { id: string; nombre: string; tienda: string }>();
+  const porProducto = new Map<string, typeof filas>();
+  for (const f of filas) {
+    proveedores.set(f.proveedor_id, { id: f.proveedor_id, nombre: f.proveedor, tienda: f.tienda });
+    porProducto.set(f.producto_id, [...(porProducto.get(f.producto_id) ?? []), f]);
+  }
+  const momento = ahora();
+  return {
+    cotizacionUsd,
+    proveedores: [...proveedores.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
+    filas: [...porProducto.values()].map((grupo) => {
+      const r = compararOfertas(
+        grupo.map((f) => ({
+          proveedorId: f.proveedor_id,
+          proveedor: f.proveedor,
+          tienda: f.tienda,
+          telefono: null,
+          precio: f.precio,
+          moneda: f.moneda,
+          actualizadoAt: f.actualizado_at,
+          ultimaCompra: null,
+        })),
+        { cotizacionUsd, ahora: momento },
+      );
+      return {
+        productoId: grupo[0]!.producto_id,
+        nombreCompleto: grupo[0]!.nombre_completo,
+        marca: grupo[0]!.marca,
+        precios: Object.fromEntries(
+          r.ofertas.map((o) => [
+            o.proveedorId,
+            {
+              precio: o.precio,
+              moneda: o.moneda,
+              masBarato: o.masBarato && r.ofertas.length > 1,
+              desactualizado: o.desactualizado,
+            },
+          ]),
+        ),
+      };
+    }),
+  };
+}
+
+export interface CambioPrecioHistorial {
+  id: string;
+  fecha: Date;
+  proveedorId: string;
+  proveedor: string;
+  tienda: string;
+  productoId: string;
+  nombreCompleto: string;
+  precio: string;
+  moneda: "ARS" | "USD";
+  /** Precio anterior de ese proveedor para ese producto (null = alta). */
+  anterior: string | null;
+  monedaAnterior: "ARS" | "USD" | null;
+  /** Variación % contra el anterior (solo misma moneda). */
+  variacionPct: number | null;
+}
+
+const filaHistorialSchema = z.array(
+  z.object({
+    id: z.string(),
+    fecha: z.date(),
+    proveedor_id: z.string(),
+    proveedor: z.string(),
+    tienda: z.string(),
+    producto_id: z.string(),
+    nombre_completo: z.string(),
+    precio: monto,
+    moneda,
+    anterior: monto.nullable(),
+    moneda_anterior: moneda.nullable(),
+  }),
+);
+
+/**
+ * Evolución de los precios de proveedor (ProveedorProductoHistorial, lo
+ * escribe un trigger en cada alta o cambio), más reciente primero, con el
+ * precio anterior y la variación.
+ */
+export async function historialPrecios(
+  ctx: Pick<Ctx, "panelId">,
+  filtros: {
+    proveedorId?: string;
+    productoId?: string;
+    desde?: Date;
+    hasta?: Date;
+    limite?: number;
+  } = {},
+): Promise<CambioPrecioHistorial[]> {
+  const filas = filaHistorialSchema.parse(
+    await dbPara(ctx.panelId).$queryRaw`
+      SELECT * FROM (
+        SELECT h."id", h."createdAt" AS fecha, pr."id" AS proveedor_id, pr."nombre" AS proveedor,
+               pr."nombreTienda" AS tienda, p."id" AS producto_id, p."nombreCompleto" AS nombre_completo,
+               h."precio", h."moneda"::text AS moneda,
+               LAG(h."precio") OVER w AS anterior,
+               LAG(h."moneda"::text) OVER w AS moneda_anterior
+        FROM "ProveedorProductoHistorial" h
+        JOIN "Proveedor" pr ON pr."id" = h."proveedorId"
+        JOIN "Producto" p ON p."id" = h."productoId"
+        WHERE h."panelId" = ${ctx.panelId}
+          ${filtros.proveedorId ? Prisma.sql`AND h."proveedorId" = ${filtros.proveedorId}` : Prisma.empty}
+          ${filtros.productoId ? Prisma.sql`AND h."productoId" = ${filtros.productoId}` : Prisma.empty}
+        WINDOW w AS (PARTITION BY h."proveedorId", h."productoId" ORDER BY h."createdAt", h."id")
+      ) t
+      WHERE TRUE
+        ${filtros.desde ? Prisma.sql`AND t.fecha >= (${filtros.desde}::timestamptz AT TIME ZONE 'UTC')` : Prisma.empty}
+        ${filtros.hasta ? Prisma.sql`AND t.fecha < (${filtros.hasta}::timestamptz AT TIME ZONE 'UTC')` : Prisma.empty}
+      ORDER BY t.fecha DESC, t.id DESC
+      LIMIT ${filtros.limite ?? 500}`,
+  );
+  return filas.map((f) => ({
+    id: f.id,
+    fecha: f.fecha,
+    proveedorId: f.proveedor_id,
+    proveedor: f.proveedor,
+    tienda: f.tienda,
+    productoId: f.producto_id,
+    nombreCompleto: f.nombre_completo,
+    precio: f.precio,
+    moneda: f.moneda,
+    anterior: f.anterior,
+    monedaAnterior: f.moneda_anterior,
+    variacionPct:
+      f.anterior !== null && f.moneda_anterior === f.moneda && Number(f.anterior) > 0
+        ? Math.round(((Number(f.precio) - Number(f.anterior)) / Number(f.anterior)) * 1000) / 10
+        : null,
+  }));
 }
