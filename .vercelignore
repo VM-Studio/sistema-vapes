@@ -1,0 +1,11 @@
+# Nunca subir secretos locales ni artefactos al deploy (Vercel usa sus propias variables).
+.env
+.env.*
+!.env.example
+.storage
+.storage-e2e
+.next
+node_modules
+test-results
+playwright-report
+verificacion
