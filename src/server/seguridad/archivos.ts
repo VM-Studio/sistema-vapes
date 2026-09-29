@@ -1,7 +1,5 @@
 import "server-only";
 
-import sharp from "sharp";
-
 import { ValidationError } from "@/server/errors";
 
 /**
@@ -56,6 +54,8 @@ export async function procesarImagenSubida(
   }
   try {
     const lado = opciones.maxLado ?? 2000;
+    // Carga diferida: sharp (binario nativo) solo se levanta al procesar una imagen.
+    const { default: sharp } = await import("sharp");
     let img = sharp(datos, { limitInputPixels: 50_000_000, failOn: "error" })
       .rotate() // aplica la orientación EXIF antes de descartarla
       .resize({ width: lado, height: lado, fit: "inside", withoutEnlargement: true });

@@ -1,4 +1,5 @@
-import sharp from "sharp";
+/** sharp se carga recién al generar un ícono (binario nativo, pesado). */
+const cargarSharp = async () => (await import("sharp")).default;
 
 /**
  * Íconos de la app a partir de UNA imagen cuadrada (el SVG base o la que suba
@@ -22,6 +23,7 @@ export async function generarIcono(
   base: Uint8Array | Buffer,
   variante: VarianteIcono,
 ): Promise<Buffer> {
+  const sharp = await cargarSharp();
   const lado = TAMANO[variante];
   if (variante === "maskable") {
     // Zona segura de Android: el dibujo ocupa el 80 % central sobre el color de marca.
@@ -48,6 +50,7 @@ export async function generarSplash(
   ancho: number,
   alto: number,
 ): Promise<Buffer> {
+  const sharp = await cargarSharp();
   const lado = Math.round(Math.min(ancho, alto) * 0.28);
   const icono = await generarIcono(base, "512").then((b) =>
     sharp(b).resize(lado, lado).png().toBuffer(),

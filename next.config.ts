@@ -46,7 +46,15 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pino", "pino-pretty", "sharp", "exceljs", "@aws-sdk/client-s3"],
   // Archivos que se leen con fs en runtime: que entren al bundle del deploy.
   outputFileTracingIncludes: {
-    "/**": ["./src/server/auth/passwords-comunes.txt", "./docs/MANUAL-USUARIO.md"],
+    // sharp es externo y su binario depende de la plataforma: en el deploy (Linux)
+    // el trazado no siempre lo encuentra solo, así que se incluye explícito.
+    "/**": [
+      "./src/server/auth/passwords-comunes.txt",
+      "./docs/MANUAL-USUARIO.md",
+      "./node_modules/.pnpm/sharp@*/node_modules/**",
+      "./node_modules/.pnpm/@img+sharp-linux-x64@*/node_modules/**",
+      "./node_modules/.pnpm/@img+sharp-libvips-linux-x64@*/node_modules/**",
+    ],
   },
   async headers() {
     return [
