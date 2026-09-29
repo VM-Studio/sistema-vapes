@@ -51,9 +51,6 @@ const nextConfig: NextConfig = {
     "/**": [
       "./src/server/auth/passwords-comunes.txt",
       "./docs/MANUAL-USUARIO.md",
-      "./node_modules/.pnpm/sharp@*/node_modules/**",
-      "./node_modules/.pnpm/@img+sharp-linux-x64@*/node_modules/**",
-      "./node_modules/.pnpm/@img+sharp-libvips-linux-x64@*/node_modules/**",
     ],
   },
   async headers() {
