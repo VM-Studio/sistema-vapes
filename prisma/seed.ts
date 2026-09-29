@@ -1,30 +1,29 @@
 /**
  * Seed idempotente: correrlo N veces deja la DB en el mismo estado.
- * - Paneles (Vapes, Cosmetic, Especiales), sus depósitos y secuencias ya los
- *   crea la migración de la reforma; acá se completan los de Vapes si faltan.
+ * Solo la estructura para arrancar, SIN datos de negocio (ni productos, ni
+ * marcas, ni categorías, ni proveedores, ni clientes, ni ventas):
+ * - Paneles Vapes, Cosmetic y Especiales (con su logo), sus depósitos
+ *   (Vapes: Ayres Plaza y Mercedes; Cosmetic y Especiales: Principal) y las
+ *   secuencias de numeración (VENTA, COMPRA, TRANSFERENCIA, DEVOLUCION,
+ *   COTIZACION). La migración de la reforma ya crea casi todo; acá se completa
+ *   lo que falte.
+ * - Configuración global y por panel con los valores por defecto.
  * - Usuarios definitivos: dueños Juan Cruz y Agustina, empleada Trinidad
  *   (solo Vapes). Emails y contraseñas iniciales vienen del entorno
  *   (SEED_OWNER1_EMAIL / SEED_OWNER1_PASSWORD, SEED_OWNER2_*, SEED_EMPLEADO1_*),
  *   con cambio obligatorio al primer ingreso.
- * - Catálogo de ejemplo en Vapes (marca + modelo + pitadas, sabores, un sabor
- *   con precio propio, proveedores con su lista de precios); el stock inicial entra SOLO por
- *   registrarMovimiento (INGRESO_MANUAL), una vez por (variante, depósito).
- * - Todo lo de negocio pasa por dbPara(panelId): el panel se inyecta solo.
+ *
+ * Los datos de ejemplo para tests viven en e2e/fixtures/ (no en el seed).
  */
-import { randomBytes } from "node:crypto";
-
-import { Modulo, Moneda, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
+import { Modulo, Prisma, RolUsuario } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 import { CONFIG_ESCANER_DEFAULT } from "../src/features/scanner/config";
-import { generarEan13 } from "../src/lib/barcode";
 import { prisma } from "../src/lib/db";
 import { normalizarPermiso, type PermisoModulo } from "../src/lib/permisos";
-import { normalizarTelefono } from "../src/lib/validations/cliente";
 import { configCotizacionSchema } from "../src/lib/validations/cotizacion";
 import { configVentasSchema } from "../src/lib/validations/venta";
-import { dbPara, transaccion } from "../src/server/db/panel-scoped";
-import { registrarMovimiento } from "../src/server/services/stock.service";
+import { dbPara } from "../src/server/db/panel-scoped";
 
 /**
  * En producción el seed NO corre salvo ALLOW_SEED=true (crea usuarios con
@@ -40,7 +39,6 @@ if (PRODUCCION && process.env.ALLOW_SEED !== "true") {
 }
 
 const PANEL_VAPES = "pnl_vapes";
-const MOTIVO_STOCK_INICIAL = "Stock inicial (seed)";
 
 // -----------------------------------------------------------------------------
 // Usuarios
@@ -200,472 +198,112 @@ async function seedConfiguracion() {
 }
 
 // -----------------------------------------------------------------------------
-// Vapes: depósitos, catálogo de ejemplo, proveedor y cliente
+// Paneles, depósitos y secuencias
 // -----------------------------------------------------------------------------
 
-async function seedDepositosVapes() {
-  const db = dbPara(PANEL_VAPES);
-  const ayres = await db.deposito.upsert({
-    where: { panelId_nombre: { panelId: PANEL_VAPES, nombre: "Ayres Plaza" } },
-    update: {},
-    create: { nombre: "Ayres Plaza", esPrincipal: true },
-  });
-  const mercedes = await db.deposito.upsert({
-    where: { panelId_nombre: { panelId: PANEL_VAPES, nombre: "Mercedes" } },
-    update: {},
-    create: { nombre: "Mercedes", esPrincipal: false },
-  });
-  return [ayres, mercedes] as const;
-}
-
-// Catálogo de ejemplo (en Vapes). Producto = marca + modelo + especificación
-// ("Pitadas" en Vapes) con UN precio para todos sus sabores; un sabor puede
-// tener precio propio. nombreCompleto lo arma la DB (trigger): nunca se escribe.
-
-interface SaborSeed {
-  /** El sabor; "Único" para un producto sin sabor. */
+interface PanelSeed {
+  id: string;
   nombre: string;
-  /** 12 dígitos base: el verificador EAN-13 se calcula. */
-  ean12?: string;
-  /** Solo si el sabor tiene un precio distinto al del producto. */
-  precioPropio?: string;
-  /** Último costo (el de la compra con la que entró el stock inicial). */
-  costo: string;
-  stockMinimo: number;
-  /** Stock inicial por depósito de Vapes: [Ayres Plaza, Mercedes]. */
-  stock: [number, number];
+  slug: string;
+  logoUrl: string;
+  etiquetaEspecificacion: string;
+  etiquetaUnidades?: string;
+  orden: number;
+  depositos: { nombre: string; esPrincipal: boolean; id?: string }[];
 }
 
-interface ProductoSeed {
-  marca: string;
-  modelo: string;
-  especificacion: string;
-  categoria: string | null;
-  precioVenta: string;
-  sabores: SaborSeed[];
-}
-
-// 779 = prefijo GS1 Argentina; el resto es ficticio.
-const PRODUCTOS: ProductoSeed[] = [
+const PANELES: PanelSeed[] = [
   {
-    marca: "Ignite",
-    modelo: "V80",
-    especificacion: "8000",
-    categoria: "Vapes",
-    precioVenta: "16000.00",
-    sabores: [
-      {
-        nombre: "Mango Ice",
-        ean12: "779000100001",
-        costo: "9500.00",
-        stockMinimo: 10,
-        stock: [24, 12],
-      },
-      {
-        nombre: "Strawberry Watermelon",
-        ean12: "779000100002",
-        costo: "9500.00",
-        stockMinimo: 10,
-        stock: [18, 6],
-      },
-      {
-        nombre: "Blue Razz Ice",
-        ean12: "779000100003",
-        precioPropio: "16500.00",
-        costo: "9800.00",
-        stockMinimo: 10,
-        stock: [30, 10],
-      },
-      {
-        nombre: "Grape Ice",
-        ean12: "779000100004",
-        costo: "9500.00",
-        stockMinimo: 10,
-        stock: [4, 2],
-      },
+    id: PANEL_VAPES,
+    nombre: "Vapes",
+    slug: "vapes",
+    logoUrl: "/logoVape.png",
+    etiquetaEspecificacion: "Pitadas",
+    etiquetaUnidades: "Vapes vendidos",
+    orden: 1,
+    depositos: [
+      { nombre: "Ayres Plaza", esPrincipal: true },
+      { nombre: "Mercedes", esPrincipal: false },
     ],
   },
   {
-    marca: "Elf Bar",
-    modelo: "BC",
-    especificacion: "5000",
-    categoria: "Vapes",
-    precioVenta: "14500.00",
-    sabores: [
-      {
-        nombre: "Watermelon Ice",
-        ean12: "779000200001",
-        costo: "8200.00",
-        stockMinimo: 8,
-        stock: [20, 10],
-      },
-      {
-        nombre: "Peach Mango",
-        ean12: "779000200002",
-        costo: "8200.00",
-        stockMinimo: 8,
-        stock: [15, 5],
-      },
-      {
-        nombre: "Cool Mint",
-        ean12: "779000200003",
-        costo: "8200.00",
-        stockMinimo: 8,
-        stock: [12, 12],
-      },
-      {
-        nombre: "Lemon Mint",
-        ean12: "779000200004",
-        costo: "8200.00",
-        stockMinimo: 8,
-        stock: [0, 3],
-      },
-    ],
+    id: "pnl_cosmetic",
+    nombre: "Cosmetic",
+    slug: "cosmetic",
+    logoUrl: "/logoCosmetics.png",
+    etiquetaEspecificacion: "Contenido",
+    orden: 2,
+    depositos: [{ nombre: "Principal", esPrincipal: true, id: "dep_cosmetic_principal" }],
   },
   {
-    marca: "Elf Bar",
-    modelo: "BC",
-    especificacion: "10000",
-    categoria: "Vapes",
-    precioVenta: "19000.00",
-    sabores: [
-      {
-        nombre: "Watermelon Ice",
-        ean12: "779000200011",
-        costo: "11000.00",
-        stockMinimo: 5,
-        stock: [10, 4],
-      },
-      {
-        nombre: "Blue Razz Ice",
-        ean12: "779000200012",
-        costo: "11000.00",
-        stockMinimo: 5,
-        stock: [8, 0],
-      },
-    ],
-  },
-  {
-    marca: "TechPro",
-    modelo: "Cargador USB-C 20W",
-    especificacion: "",
-    categoria: "Accesorios",
-    precioVenta: "8900.00",
-    sabores: [
-      { nombre: "Único", ean12: "779000300001", costo: "4500.00", stockMinimo: 5, stock: [15, 5] },
-    ],
-  },
-  {
-    marca: "TechPro",
-    modelo: "Parlante Bluetooth Mini",
-    especificacion: "",
-    categoria: "Artefactos",
-    precioVenta: "21990.00",
-    sabores: [
-      { nombre: "Único", ean12: "779000300002", costo: "12000.00", stockMinimo: 2, stock: [6, 0] },
-    ],
+    id: "pnl_especiales",
+    nombre: "Especiales",
+    slug: "especiales",
+    logoUrl: "/logoEspecial.png",
+    etiquetaEspecificacion: "Detalle",
+    orden: 3,
+    depositos: [{ nombre: "Principal", esPrincipal: true, id: "dep_especiales_principal" }],
   },
 ];
 
-const clave = (p: { marca: string; modelo: string; especificacion: string }) =>
-  `${p.marca}|${p.modelo}|${p.especificacion}`;
+/** Numeración correlativa por panel: arranca en 0 (el primer documento es el 1). */
+const ENTIDADES_SECUENCIA = ["VENTA", "COMPRA", "TRANSFERENCIA", "DEVOLUCION", "COTIZACION"];
 
-/** Un mismo vape que llega de otro importador con otro código. */
-const CODIGOS_ALTERNATIVOS = [
-  {
-    producto: { marca: "Ignite", modelo: "V80", especificacion: "8000" },
-    sabor: "Mango Ice",
-    ean12: "779999900001",
-    descripcion: "Lote importador B",
-  },
-];
+/** Logos estáticos de /public: un logo subido desde la app (storage) no se pisa. */
+const esLogoEstatico = (url: string | null) => url == null || /^\/logo[\w-]*\.png$/.test(url);
 
-async function seedCatalogoBase() {
-  const db = dbPara(PANEL_VAPES);
-  const categorias = new Map<string, string>();
-  for (const [nombre, descripcion] of [
-    ["Vapes", "Vapes descartables y recargables"],
-    ["Pods", "Pods y cartuchos de repuesto"],
-    ["Líquidos", "Líquidos y sales de nicotina"],
-    ["Accesorios", "Cargadores, cables, fundas"],
-    ["Artefactos", "Artefactos electrónicos"],
-  ] as const) {
-    const c = await db.categoria.upsert({
-      where: { panelId_nombre: { panelId: PANEL_VAPES, nombre } },
-      update: {},
-      create: { nombre, descripcion },
+async function seedPaneles() {
+  for (const p of PANELES) {
+    const actual = await prisma.panel.findUnique({
+      where: { id: p.id },
+      select: { logoUrl: true },
     });
-    categorias.set(nombre, c.id);
-  }
-  const marcas = new Map<string, string>();
-  for (const nombre of ["Ignite", "Elf Bar", "TechPro"]) {
-    const m = await db.marca.upsert({
-      where: { panelId_nombre: { panelId: PANEL_VAPES, nombre } },
-      update: {},
-      create: { nombre },
-    });
-    marcas.set(nombre, m.id);
-  }
-  return { categorias, marcas };
-}
-
-/** SKU del seed: PRD-XXXXXX (el mismo formato que genera la app). */
-const skuNuevo = () => `PRD-${randomBytes(4).toString("hex").slice(0, 6).toUpperCase()}`;
-
-/** Devuelve el id de cada producto sembrado, por marca|modelo|especificación. */
-async function seedProductos(
-  refs: Awaited<ReturnType<typeof seedCatalogoBase>>,
-  depositos: readonly [{ id: string }, { id: string }],
-  usuarioId: string,
-): Promise<Map<string, string>> {
-  const ctx = { panelId: PANEL_VAPES, usuarioId };
-  const ids = new Map<string, string>();
-  for (const p of PRODUCTOS) {
-    const marcaId = refs.marcas.get(p.marca);
-    const categoriaId = p.categoria ? refs.categorias.get(p.categoria) : null;
-    if (!marcaId || categoriaId === undefined)
-      throw new Error(`Referencias faltantes para ${clave(p)}`);
-
-    // Producto + sabores + stock inicial en UNA transacción: la DB verifica
-    // al COMMIT que todo producto tenga sus variantes (constraint diferida).
-    const productoId = await transaccion(
-      ctx,
-      async (tx) => {
-        const producto =
-          (await tx.producto.findFirst({
-            where: { marcaId, nombre: p.modelo, especificacion: p.especificacion },
-            select: { id: true },
-          })) ??
-          (await tx.producto.create({
-            data: {
-              marcaId,
-              nombre: p.modelo,
-              especificacion: p.especificacion,
-              categoriaId,
-              precioVenta: p.precioVenta,
-            },
-            select: { id: true },
-          }));
-        for (const s of p.sabores) {
-          const variante =
-            (await tx.variante.findUnique({
-              where: {
-                panelId_productoId_nombre: {
-                  panelId: PANEL_VAPES,
-                  productoId: producto.id,
-                  nombre: s.nombre,
-                },
-              },
-            })) ??
-            (await tx.variante.create({
-              data: {
-                productoId: producto.id,
-                nombre: s.nombre,
-                sku: skuNuevo(),
-                codigoBarras: s.ean12 ? generarEan13(s.ean12) : null,
-                precioVenta: s.precioPropio ?? null,
-                ultimoCosto: s.costo,
-                stockMinimo: s.stockMinimo,
-              },
-            }));
-          for (const [i, deposito] of depositos.entries()) {
-            const cantidad = s.stock[i] ?? 0;
-            if (cantidad <= 0) continue;
-            const yaCargado = await tx.movimientoStock.findFirst({
-              where: {
-                varianteId: variante.id,
-                depositoId: deposito.id,
-                tipo: TipoMovimiento.INGRESO_MANUAL,
-                motivo: MOTIVO_STOCK_INICIAL,
-              },
-              select: { id: true },
-            });
-            if (yaCargado) continue;
-            await registrarMovimiento(tx, {
-              tipo: TipoMovimiento.INGRESO_MANUAL,
-              varianteId: variante.id,
-              depositoId: deposito.id,
-              cantidad,
-              costoUnitario: s.costo,
-              motivo: MOTIVO_STOCK_INICIAL,
-              usuarioId,
-            });
-          }
-        }
-        return producto.id;
-      },
-      { timeout: 60_000 },
-    );
-    ids.set(clave(p), productoId);
-  }
-
-  const db = dbPara(PANEL_VAPES);
-  for (const alt of CODIGOS_ALTERNATIVOS) {
-    const productoId = ids.get(clave(alt.producto));
-    const variante = productoId
-      ? await db.variante.findFirst({
-          where: { productoId, nombre: alt.sabor },
-          select: { id: true },
-        })
-      : null;
-    if (!variante) throw new Error(`No existe ${clave(alt.producto)} - ${alt.sabor}`);
-    const codigo = generarEan13(alt.ean12);
-    await db.codigoBarrasAlternativo.upsert({
-      where: { panelId_codigo: { panelId: PANEL_VAPES, codigo } },
-      update: {},
-      create: { varianteId: variante.id, codigo, descripcion: alt.descripcion },
-    });
-  }
-  return ids;
-}
-
-// Proveedores: contacto, tienda y teléfono (normalizado +54), con la lista de
-// precios de cada uno por producto (ignora el sabor).
-
-interface ProveedorSeed {
-  nombre: string;
-  nombreTienda: string;
-  telefono: string;
-  notas?: string;
-  precios: { producto: string; precio: string; moneda: Moneda }[];
-}
-
-const PROVEEDORES: ProveedorSeed[] = [
-  {
-    nombre: "Lucas Fernández",
-    nombreTienda: "Distribuidora Ejemplo",
-    telefono: "11 5555-0000",
-    notas: "Entrega martes y viernes",
-    precios: [
-      { producto: "Ignite|V80|8000", precio: "9500.00", moneda: Moneda.ARS },
-      { producto: "Elf Bar|BC|5000", precio: "8200.00", moneda: Moneda.ARS },
-      { producto: "TechPro|Cargador USB-C 20W|", precio: "4500.00", moneda: Moneda.ARS },
-    ],
-  },
-  {
-    nombre: "Sofía Ríos",
-    nombreTienda: "Vape Import Once",
-    telefono: "11 5555-0001",
-    precios: [
-      { producto: "Ignite|V80|8000", precio: "9300.00", moneda: Moneda.ARS },
-      { producto: "Elf Bar|BC|10000", precio: "9.50", moneda: Moneda.USD },
-    ],
-  },
-];
-
-async function seedProveedores(productos: Map<string, string>, usuarioId: string) {
-  const db = dbPara(PANEL_VAPES);
-  for (const p of PROVEEDORES) {
-    const telefono = normalizarTelefono(p.telefono);
-    const proveedor =
-      (await db.proveedor.findFirst({ where: { telefono, deletedAt: null } })) ??
-      (await db.proveedor.create({
-        data: { nombre: p.nombre, nombreTienda: p.nombreTienda, telefono, notas: p.notas ?? null },
-      }));
-    for (const pr of p.precios) {
-      const productoId = productos.get(pr.producto);
-      if (!productoId) throw new Error(`No existe el producto ${pr.producto}`);
-      await db.proveedorProducto.upsert({
-        where: {
-          panelId_proveedorId_productoId: {
-            panelId: PANEL_VAPES,
-            proveedorId: proveedor.id,
-            productoId,
-          },
-        },
-        update: {},
-        create: {
-          proveedorId: proveedor.id,
-          productoId,
-          precio: pr.precio,
-          moneda: pr.moneda,
-          usuarioId,
+    if (actual) {
+      if (esLogoEstatico(actual.logoUrl) && actual.logoUrl !== p.logoUrl) {
+        await prisma.panel.update({ where: { id: p.id }, data: { logoUrl: p.logoUrl } });
+      }
+    } else {
+      await prisma.panel.create({
+        data: {
+          id: p.id,
+          nombre: p.nombre,
+          slug: p.slug,
+          logoUrl: p.logoUrl,
+          etiquetaEspecificacion: p.etiquetaEspecificacion,
+          etiquetaUnidades: p.etiquetaUnidades,
+          orden: p.orden,
         },
       });
     }
-  }
-}
-
-/** Clientes de ejemplo de Vapes: nombre + teléfono (obligatorio y único por panel). */
-async function seedClientes() {
-  const db = dbPara(PANEL_VAPES);
-  const clientes = [
-    { nombre: "Martín Gómez", telefono: "11 5555-0101", notas: "Compra por mayor los viernes." },
-    { nombre: "Lucía Fernández", telefono: "11 5555-0102", notas: null },
-    { nombre: "Nicolás Pereyra", telefono: "221 555-0103", notas: null },
-  ];
-  for (const c of clientes) {
-    const telefono = normalizarTelefono(c.telefono)!;
-    if (!(await db.cliente.findFirst({ where: { telefono, deletedAt: null } }))) {
-      await db.cliente.create({ data: { nombre: c.nombre, telefono, notas: c.notas } });
-    }
-  }
-}
-
-/**
- * Cotizador de ejemplo en Vapes: escalones propios de "Elf Bar BC 5000"
- * (10 → $9.000, 50 → $8.200, 100 → $7.500) y defaults del panel para el resto
- * (10 u. → 5 %, 50 u. → 12 %). Solo se crean si no existen.
- */
-async function seedCotizador() {
-  const db = dbPara(PANEL_VAPES);
-  const elf = await db.producto.findFirst({
-    where: { nombreCompleto: "Elf Bar BC 5000", deletedAt: null },
-    select: { id: true },
-  });
-  if (elf) {
-    for (const [cantidadMinima, precioUnitario] of [
-      [10, "9000.00"],
-      [50, "8200.00"],
-      [100, "7500.00"],
-    ] as const) {
-      await db.escalonPrecio.upsert({
-        where: {
-          panelId_productoId_cantidadMinima: {
-            panelId: PANEL_VAPES,
-            productoId: elf.id,
-            cantidadMinima,
-          },
-        },
+    for (const d of p.depositos) {
+      await prisma.deposito.upsert({
+        where: { panelId_nombre: { panelId: p.id, nombre: d.nombre } },
         update: {},
-        create: { productoId: elf.id, cantidadMinima, precioUnitario },
+        create: { id: d.id, panelId: p.id, nombre: d.nombre, esPrincipal: d.esPrincipal },
       });
     }
-  }
-  for (const [cantidadMinima, porcentajeDescuento] of [
-    [10, "5.00"],
-    [50, "12.00"],
-  ] as const) {
-    await db.escalonPrecioDefault.upsert({
-      where: { panelId_cantidadMinima: { panelId: PANEL_VAPES, cantidadMinima } },
-      update: {},
-      create: { cantidadMinima, porcentajeDescuento },
-    });
+    for (const entidad of ENTIDADES_SECUENCIA) {
+      await prisma.secuencia.upsert({
+        where: { panelId_entidad: { panelId: p.id, entidad } },
+        update: {},
+        create: { id: `sec_${p.id}_${entidad.toLowerCase()}`, panelId: p.id, entidad },
+      });
+    }
   }
 }
 
 async function main() {
-  // La configuración va primero: el prefijo de SKU y el escáner se leen de ahí.
+  // Paneles primero: la configuración por panel y los accesos de Trinidad los necesitan.
+  await seedPaneles();
   await seedConfiguracion();
-  const { ownerId } = await seedUsuarios();
-  const depositos = await seedDepositosVapes();
-  const refs = await seedCatalogoBase();
-  const productos = await seedProductos(refs, depositos, ownerId);
-  await seedProveedores(productos, ownerId);
-  await seedClientes();
-  await seedCotizador();
+  await seedUsuarios();
 
-  const [usuarios, paneles, variantes, movimientos, stockTotal] = await Promise.all([
-    prisma.usuario.count(),
+  const [paneles, depositos, usuarios] = await Promise.all([
     prisma.panel.count({ where: { activo: true } }),
-    prisma.variante.count(),
-    prisma.movimientoStock.count(),
-    prisma.stock.aggregate({ _sum: { cantidad: true } }),
+    prisma.deposito.count(),
+    prisma.usuario.count(),
   ]);
-  console.log(
-    `Seed OK → paneles: ${paneles}, usuarios: ${usuarios}, variantes: ${variantes}, ` +
-      `movimientos: ${movimientos}, unidades en stock: ${stockTotal._sum.cantidad ?? 0}`,
-  );
+  console.log(`Seed OK → paneles: ${paneles}, depósitos: ${depositos}, usuarios: ${usuarios}`);
 }
 
 main()

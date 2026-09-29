@@ -41,6 +41,7 @@ import {
   listarProductos,
   obtenerProducto,
 } from "../src/server/services/producto.service";
+import { sembrarCatalogoEjemplo } from "../e2e/fixtures/catalogo-ejemplo";
 
 const VAPES = "pnl_vapes";
 const COSMETIC = "pnl_cosmetic";
@@ -67,6 +68,8 @@ async function error(fn: () => Promise<unknown>): Promise<unknown> {
 }
 
 async function main() {
+  // El seed base no trae catálogo: el de ejemplo de los tests (idempotente).
+  await sembrarCatalogoEjemplo();
   const owner = await prisma.usuario.findFirstOrThrow({
     where: { rol: RolUsuario.OWNER, deletedAt: null },
     orderBy: { createdAt: "asc" },

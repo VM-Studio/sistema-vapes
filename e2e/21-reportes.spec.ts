@@ -6,6 +6,9 @@ import { PDFDocument } from "pdf-lib";
 import { expect, test } from "./base";
 import { PASSWORD_TRINIDAD } from "./global-setup";
 import { db, login, loginDueno, PANEL_COSMETIC, PANEL_VAPES } from "./helpers";
+import { limpiarAlTerminar } from "./fixtures";
+
+limpiarAlTerminar();
 
 /**
  * Reportes: comparador de proveedores (orden, diferencias, badge, USD con

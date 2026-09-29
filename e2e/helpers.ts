@@ -92,7 +92,7 @@ export async function pistola(page: Page, codigo: string) {
   await page.waitForTimeout(400);
 }
 
-/** Productos del seed base (nombre completo = marca + modelo + pitadas, lo arma la DB). */
+/** Productos del catálogo de ejemplo (e2e/fixtures; nombre completo = marca + modelo + pitadas, lo arma la DB). */
 export const IGNITE_V80 = "Ignite V80 8000";
 export const ELF_BAR_BC5000 = "Elf Bar BC 5000";
 export const ELF_BAR_BC10000 = "Elf Bar BC 10000";

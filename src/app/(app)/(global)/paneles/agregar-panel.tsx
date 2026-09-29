@@ -2,19 +2,20 @@
 
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Field, controlClass } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
-import { formatearIdVenta, inicialesPanel, slugDesdeNombre } from "@/lib/paneles";
+import { formatearIdVenta, slugDesdeNombre } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
 
 import { crearPanelAction } from "./actions";
+import { LogoTarjeta } from "./logo-tarjeta";
 
-/** Card punteada "+ Agregar panel" y el formulario de alta (solo dueños). */
+/** Tarjeta punteada "Agregar sistema" y el formulario de alta (solo dueños). */
 export function AgregarPanel() {
   const router = useRouter();
   const toast = useToast();
@@ -22,11 +23,17 @@ export function AgregarPanel() {
   const [nombre, setNombre] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTocado, setSlugTocado] = useState(false);
-  const [color, setColor] = useState("#111113");
+  const [preview, setPreview] = useState<string | null>(null);
   const [errores, setErrores] = useState<Record<string, string[]>>({});
   const [enviando, setEnviando] = useState(false);
 
   const slugFinal = slugTocado ? slug : slugDesdeNombre(nombre);
+
+  // La URL local del logo elegido se libera al cambiarlo o al desmontar.
+  useEffect(() => {
+    if (!preview) return;
+    return () => URL.revokeObjectURL(preview);
+  }, [preview]);
 
   async function enviar(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -49,19 +56,17 @@ export function AgregarPanel() {
       <button
         type="button"
         onClick={() => setAbierto(true)}
-        className="border-border text-muted hover:border-foreground/30 hover:text-foreground flex min-h-56 w-full flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-6 transition-colors"
+        className="border-input text-muted hover:border-subtle hover:text-foreground flex h-full min-h-64 w-full flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] border border-dashed p-6 transition-colors"
       >
-        <span className="bg-surface-2 flex size-14 items-center justify-center rounded-2xl">
-          <Plus className="size-7" strokeWidth={1.75} aria-hidden />
-        </span>
-        <span className="text-base font-semibold">Agregar panel</span>
+        <Plus className="size-10" strokeWidth={1.25} aria-hidden />
+        <span className="text-h3 text-foreground font-semibold">Agregar sistema</span>
         <span className="text-sm">Un sistema nuevo, completo y vacío</span>
       </button>
 
       <Sheet
         open={abierto}
         onOpenChange={setAbierto}
-        title="Nuevo panel"
+        title="Nuevo sistema"
         description="Tiene sus propios productos, stock, ventas, clientes y proveedores."
       >
         <form id="form-panel" onSubmit={enviar} className="flex flex-col gap-4" noValidate>
@@ -106,47 +111,36 @@ export function AgregarPanel() {
           >
             <Input id="panel-etiqueta" name="etiquetaEspecificacion" maxLength={30} required />
           </Field>
-          <Field id="panel-color" label="Color de acento" error={errores.colorAcento?.[0]}>
-            <div className="flex items-center gap-3">
-              <input
-                id="panel-color"
-                name="colorAcento"
-                type="color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                className="border-border h-12 w-16 cursor-pointer rounded-xl border bg-transparent p-1"
-              />
-              <span className="text-muted font-mono text-sm">{color}</span>
-            </div>
-          </Field>
           <Field
             id="panel-logo"
             label="Logo"
-            hint="Opcional. PNG, JPG o WebP hasta 5 MB. Sin logo se usan las iniciales."
+            hint="Opcional. PNG, JPG o WebP hasta 5 MB. Sin logo se muestra el nombre."
             error={errores.logo?.[0]}
           >
-            <div className="flex items-center gap-3">
-              <span
-                aria-hidden
-                style={{ background: color }}
-                className="flex size-12 shrink-0 items-center justify-center rounded-xl text-sm font-semibold text-white"
-              >
-                {inicialesPanel(nombre || "?")}
-              </span>
-              <input
-                id="panel-logo"
-                name="logo"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className={cn(
-                  controlClass,
-                  "file:bg-surface-2 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:px-3 file:py-1.5",
-                )}
-              />
-            </div>
+            <input
+              id="panel-logo"
+              name="logo"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                const archivo = e.target.files?.[0];
+                setPreview(archivo ? URL.createObjectURL(archivo) : null);
+              }}
+              className={cn(
+                controlClass,
+                "file:bg-surface-2 py-2 text-sm file:mr-3 file:rounded-[4px] file:border-0 file:px-3 file:py-1.5",
+              )}
+            />
           </Field>
+          <div className="flex flex-col gap-2">
+            <p className="text-small text-muted font-medium">Así se va a ver</p>
+            <div className="bg-surface-3/60 flex flex-col gap-4 rounded-[var(--radius-card)] p-4">
+              <LogoTarjeta nombre={nombre} logoUrl={preview} />
+              <p className="text-h2 truncate px-1 font-semibold">{nombre || "Nuevo sistema"}</p>
+            </div>
+          </div>
           <Button type="submit" size="lg" loading={enviando} className="mt-2">
-            Crear panel
+            Crear sistema
           </Button>
         </form>
       </Sheet>

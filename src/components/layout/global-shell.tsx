@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- marca chica fija de /public */
 import { CircleHelp, LayoutGrid, Settings, UserCog } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -15,7 +16,8 @@ import { useUsuario } from "./usuario-context";
 
 /**
  * Esqueleto de las pantallas GLOBALES (fuera de los paneles): selector de
- * sistemas, usuarios, configuración, cuenta y ayuda. Una sola barra superior.
+ * sistemas, usuarios, configuración, cuenta y ayuda. Barra superior blanca:
+ * marca + secciones a la izquierda, usuario y salir a la derecha.
  */
 export function GlobalShell({
   children,
@@ -41,12 +43,20 @@ export function GlobalShell({
       ];
 
   return (
-    <div className="bg-background min-h-dvh">
-      <header className="pt-safe border-border bg-background/95 sticky top-0 z-30 border-b backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-4 md:px-8">
+    <div className="min-h-dvh bg-white">
+      <header className="pt-safe pl-safe pr-safe border-border sticky top-0 z-30 border-b bg-white">
+        <div className="mx-auto flex h-14 max-w-[1280px] items-center gap-2 px-4 md:gap-4 md:px-8">
+          <Link
+            href="/paneles"
+            className="flex shrink-0 items-center gap-2 pr-1"
+            aria-label="Sistemas"
+          >
+            <img src="/brand/marca.png" alt="" width={28} height={28} className="size-7" />
+            <span className="hidden text-sm font-semibold lg:inline">Gestión</span>
+          </Link>
           <nav
             aria-label="Navegación principal"
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
           >
             {links.map(({ href, label, icon: Icono }) => {
               const activo = esRutaActiva(href, pathname);
@@ -55,15 +65,16 @@ export function GlobalShell({
                   key={href}
                   href={href}
                   aria-current={activo ? "page" : undefined}
+                  aria-label={label}
                   className={cn(
-                    "flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors",
+                    "flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius-control)] px-2.5 text-sm font-medium transition-colors",
                     activo
-                      ? "bg-surface-2 text-foreground"
+                      ? "bg-card text-foreground"
                       : "text-muted hover:bg-surface-2 hover:text-foreground",
                   )}
                 >
-                  <Icono className="size-4" strokeWidth={1.75} aria-hidden />
-                  <span className={cn(href !== "/paneles" && "hidden sm:inline")}>{label}</span>
+                  <Icono className="size-[1.125rem]" strokeWidth={1.75} aria-hidden />
+                  <span className="hidden sm:inline">{label}</span>
                 </Link>
               );
             })}
@@ -72,18 +83,20 @@ export function GlobalShell({
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"
-              className="hover:bg-surface-2 flex min-h-10 items-center gap-2 rounded-xl px-2"
+              className="hover:bg-surface-2 flex h-10 items-center gap-2 rounded-[var(--radius-control)] px-1.5"
             >
-              <Avatar nombre={usuario.nombre} />
-              <span className="hidden text-sm font-medium md:inline">{usuario.nombre}</span>
+              <Avatar nombre={usuario.nombre} className="size-8" />
+              <span className="hidden max-w-40 truncate text-sm font-medium md:inline">
+                {usuario.nombre}
+              </span>
             </Link>
           )}
           <div className="w-auto">
-            <LogoutButton compacto />
+            <LogoutButton className="h-10 min-h-10 w-auto px-2.5 max-md:[&_span]:sr-only" />
           </div>
         </div>
       </header>
-      <main className="pb-safe mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-10">
+      <main className="mx-auto w-full max-w-[1280px] px-4 py-8 pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-8 md:py-12">
         {children}
       </main>
     </div>

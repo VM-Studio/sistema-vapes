@@ -167,12 +167,15 @@ export function SaboresProducto({
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {depositos.map((d) => (
-                <span key={d.id} className="bg-surface-2 rounded-full px-2.5 py-1 text-xs">
+                <span
+                  key={d.id}
+                  className="bg-surface-2 rounded-[var(--radius-control)] px-2.5 py-1 text-xs"
+                >
                   {d.nombre}{" "}
                   <strong className="tabular-nums">{s.stockPorDeposito[d.id] ?? 0}</strong>
                 </span>
               ))}
-              <span className="bg-surface-2 text-muted rounded-full px-2.5 py-1 text-xs">
+              <span className="bg-surface-2 text-muted rounded-[var(--radius-control)] px-2.5 py-1 text-xs">
                 mín. {s.stockMinimo}
               </span>
             </div>

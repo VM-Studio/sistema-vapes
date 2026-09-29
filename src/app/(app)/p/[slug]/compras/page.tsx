@@ -39,6 +39,8 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
   ]);
 
   const verCostos = veCostosCompras(ctx);
+  const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "crear");
+  const conFiltros = Object.entries(plano).some(([k, v]) => k !== "page" && v !== "");
   const idDe = (c: CompraListada) => formatearIdCompra(ctx.panel.slug, c.numero);
   const estadoBadge = (c: CompraListada) => (
     <Badge variant={ESTADO_COMPRA_UI[c.estado].variante}>{ESTADO_COMPRA_UI[c.estado].label}</Badge>
@@ -50,7 +52,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         title="Compras"
         subtitle="Mercadería recibida de proveedores. El stock entra al recibir la compra."
         actions={
-          puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "crear") && (
+          puedeCrear && (
             <Link href={`${PATH}/nueva`} className={buttonVariants()}>
               <Plus strokeWidth={1.75} /> Nueva compra
             </Link>
@@ -82,11 +84,30 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         rows={r.compras}
         getRowKey={(c) => c.id}
         empty={
-          <EmptyState
-            icon={Truck}
-            title="No hay compras"
-            description="Registrá la mercadería que llega escaneándola en «Nueva compra»."
-          />
+          conFiltros ? (
+            <EmptyState
+              icon={Truck}
+              title="No hay compras con esos filtros"
+              action={
+                <Link href={PATH} className={buttonVariants({ variant: "secondary" })}>
+                  Limpiar filtros
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Truck}
+              title="Todavía no hay compras"
+              description="Registrá la mercadería que llega de tus proveedores escaneándola."
+              action={
+                puedeCrear ? (
+                  <Link href={`${PATH}/nueva`} className={buttonVariants()}>
+                    <Plus strokeWidth={1.75} /> Registrar la primera compra
+                  </Link>
+                ) : null
+              }
+            />
+          )
         }
         columns={[
           {

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Download,
   History,
+  ScanBarcode,
   SlidersVertical,
   Warehouse,
 } from "lucide-react";
@@ -78,6 +79,9 @@ export function StockView({
   const deposito = depositos.find((d) => d.id === depositoId) ?? null;
   const otros = depositos.filter((d) => d.id !== depositoId);
   const { filas } = datos;
+  const conFiltros = Boolean(
+    params.q || params.marcaId || params.categoriaId || params.soloBajoMinimo === "1",
+  );
 
   const link = (cambios: Record<string, string | number | null>) =>
     hrefCon(PATH, params, { page: null, ...cambios });
@@ -321,11 +325,34 @@ export function StockView({
       />
 
       {filas.length === 0 ? (
-        <EmptyState
-          icon={Boxes}
-          title="No hay sabores con esos filtros"
-          description="Probá quitando algún filtro."
-        />
+        conFiltros ? (
+          <EmptyState
+            icon={Boxes}
+            title="No hay sabores con esos filtros"
+            description="Probá quitando algún filtro."
+            action={
+              <Link
+                href={link({ q: null, marcaId: null, categoriaId: null, soloBajoMinimo: null })}
+                className={buttonVariants({ variant: "secondary" })}
+              >
+                Limpiar filtros
+              </Link>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={Boxes}
+            title={deposito ? `Todavía no hay stock en ${deposito.nombre}` : "Todavía no hay stock"}
+            description="El stock aparece acá cuando cargás productos escaneándolos o recibís una compra."
+            action={
+              puedeTransferir ? (
+                <Link href={ruta("/productos/cargar")} className={buttonVariants()}>
+                  <ScanBarcode {...ICONO} /> Cargar stock escaneando
+                </Link>
+              ) : null
+            }
+          />
+        )
       ) : (
         <>
           <div className="border-border bg-surface hidden overflow-x-auto rounded-2xl border md:block">
@@ -432,7 +459,7 @@ export function StockView({
                         depositos.map((d) => (
                           <span
                             key={d.id}
-                            className="bg-surface-2 rounded-full px-2.5 py-1 text-xs"
+                            className="bg-surface-2 rounded-[var(--radius-control)] px-2.5 py-1 text-xs"
                           >
                             {d.nombre}{" "}
                             <strong className="tabular-nums">{f.porDeposito[d.id] ?? 0}</strong>

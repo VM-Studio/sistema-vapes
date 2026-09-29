@@ -1,6 +1,9 @@
 import { expect, test } from "./base";
 
 import { db, loginDueno, PANEL_VAPES } from "./helpers";
+import { limpiarAlTerminar } from "./fixtures";
+
+limpiarAlTerminar();
 
 /** 3 productos propios del test (sin sabores: una variante "Único" cada uno). */
 async function crearProductos(sufijo: string) {

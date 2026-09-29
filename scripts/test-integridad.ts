@@ -1,7 +1,7 @@
 /**
  * Pruebas de integridad de la DB (constraints, triggers, vistas, aislamiento
  * entre paneles) + schemas Zod.
- * Uso: pnpm test:integridad   (requiere migraciones + seed)
+ * Uso: pnpm test:integridad   (requiere migraciones + seed base; siembra el catálogo de ejemplo)
  *
  * Casi todo corre en transacciones que terminan en rollback: no deja rastro.
  * Excepción: la prueba de numeración concurrente consume 10 números de la
@@ -23,6 +23,7 @@ import { dbPara, PanelAislamientoError, transaccion } from "../src/server/db/pan
 import { siguienteNumero } from "../src/server/db/secuencia";
 import { TIPO_MOVIMIENTO_UI } from "../src/lib/movimientos-ui";
 import { registrarMovimiento, signoMovimiento } from "../src/server/services/stock.service";
+import { sembrarCatalogoEjemplo } from "../e2e/fixtures/catalogo-ejemplo";
 
 const VAPES = "pnl_vapes";
 const COSMETIC = "pnl_cosmetic";
@@ -98,6 +99,8 @@ async function permite(desc: string, fn: () => Promise<unknown>) {
 }
 
 async function main() {
+  // El seed base no trae catálogo: el de ejemplo de los tests (idempotente).
+  await sembrarCatalogoEjemplo();
   const db = dbPara(VAPES);
   const owner = await prisma.usuario.findFirstOrThrow({ where: { rol: RolUsuario.OWNER } });
   const g1 = await db.deposito.findUniqueOrThrow({

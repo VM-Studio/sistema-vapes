@@ -32,7 +32,7 @@ export function CantidadInput({
       inputMode="numeric"
       pattern="[0-9]*"
       aria-label={etiqueta}
-      className={cn(controlClass, "h-12 text-center tabular-nums md:h-11", className)}
+      className={cn(controlClass, "h-11 text-center tabular-nums md:h-10", className)}
       value={borrador ?? String(valor)}
       onChange={(e) => {
         const t = e.target.value.replace(/\D/g, "").slice(0, String(max).length);

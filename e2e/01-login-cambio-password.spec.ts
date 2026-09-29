@@ -29,7 +29,7 @@ test("login → cambio de contraseña obligatorio → selector de sistemas", asy
   await page.getByRole("button", { name: "Cambiar contraseña" }).click();
   await page.waitForURL((url) => url.pathname === "/paneles");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("¿Qué sistema querés abrir?");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Elegí un sistema");
   expect((await db.usuario.findUniqueOrThrow({ where: { id: u.id } })).debeCambiarPassword).toBe(
     false,
   );

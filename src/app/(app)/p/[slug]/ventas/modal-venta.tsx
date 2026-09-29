@@ -390,7 +390,7 @@ export function ModalVenta({
                   <button
                     type="button"
                     onClick={() => irA("galpon")}
-                    className="bg-primary-soft text-primary-soft-foreground inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium"
+                    className="bg-primary-soft text-primary-soft-foreground inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-control)] px-3 text-sm font-medium"
                     aria-label={`Galpón: ${deposito.nombre}. Cambiar`}
                     data-testid="galpon-venta"
                   >

@@ -18,6 +18,7 @@ import { dbPara, type Ctx } from "../src/server/db/panel-scoped";
 import { crearCliente } from "../src/server/services/cliente.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
 import { generarVenta } from "../src/server/services/venta.service";
+import { sembrarCatalogoEjemplo } from "../e2e/fixtures/catalogo-ejemplo";
 
 const PANEL = "pnl_vapes";
 const db = dbPara(PANEL);
@@ -42,6 +43,8 @@ const consecutivos = (ns: number[]) => {
 };
 
 async function main() {
+  // El seed base no trae catálogo: el de ejemplo de los tests (idempotente).
+  await sembrarCatalogoEjemplo();
   const owner = await prisma.usuario.findFirstOrThrow({
     where: { rol: RolUsuario.OWNER, deletedAt: null },
     orderBy: { createdAt: "asc" },

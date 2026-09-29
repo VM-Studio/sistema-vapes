@@ -11,6 +11,9 @@ import {
   soltarFoco,
 } from "./helpers";
 import { PASSWORD_TRINIDAD } from "./global-setup";
+import { limpiarAlTerminar } from "./fixtures";
+
+limpiarAlTerminar();
 
 function ean13(base12: string) {
   const s = [...base12].reduce((a, d, i) => a + Number(d) * (i % 2 ? 3 : 1), 0);

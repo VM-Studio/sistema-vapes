@@ -1,10 +1,13 @@
 import { expect, test } from "./base";
 
 import { db, EMAIL_DUENO, llamarAccion, loginDueno, PANEL_COSMETIC, PANEL_VAPES } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 const sufijo = () => String(Date.now()).slice(-7);
 
-/** Un sabor del seed con stock en Mercedes (para entregar la unidad nueva). */
+/** Un sabor del catálogo de ejemplo con stock en Mercedes (para entregar la unidad nueva). */
 async function saborConStockEnMercedes() {
   const s = await db.stock.findFirstOrThrow({
     where: { panelId: PANEL_VAPES, deposito: { nombre: "Mercedes" }, cantidad: { gte: 3 } },

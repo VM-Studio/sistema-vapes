@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Recrea una base DESCARTABLE (nunca la de desarrollo) con migraciones + seed.
-# Uso: scripts/db-descartable.sh gestion_test [--demo]
+# Uso: scripts/db-descartable.sh gestion_test [--catalogo]
+#   --catalogo: además, el catálogo de ejemplo de los tests (e2e/fixtures/catalogo-ejemplo.ts).
 set -euo pipefail
 DB="${1:?nombre de la base descartable}"
 case "$DB" in gestion) echo "Esta es la base de desarrollo: no se recrea." >&2; exit 1 ;; esac
@@ -9,4 +10,4 @@ export DATABASE_URL="postgresql://app:app@localhost:${DB_PORT:-5433}/$DB?schema=
 export DIRECT_URL="$DATABASE_URL"
 npx prisma migrate deploy >/dev/null
 PRISMA_LOG=silent npx tsx prisma/seed.ts
-if [ "${2:-}" = "--demo" ]; then PRISMA_LOG=silent LOG_LEVEL="${LOG_LEVEL:-warn}" npx tsx --conditions=react-server prisma/seed-demo.ts; fi
+if [ "${2:-}" = "--catalogo" ]; then PRISMA_LOG=silent LOG_LEVEL="${LOG_LEVEL:-warn}" npx tsx --conditions=react-server e2e/fixtures/catalogo-ejemplo.ts; fi

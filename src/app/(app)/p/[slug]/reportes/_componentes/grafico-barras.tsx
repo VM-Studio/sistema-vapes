@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { ChartPlaceholder } from "@/components/ui/chart-theme";
 import { formatearCompacto, formatearNumero, formatearPesos } from "@/lib/format";
 
 export interface PuntoBarra {
@@ -37,8 +38,8 @@ export function GraficoBarras({
   alto?: number;
 }) {
   const fmt = (n: number) => (moneda ? formatearPesos(n) : formatearNumero(n));
-  if (datos.length === 0) {
-    return <p className="text-muted py-10 text-center text-sm">Sin datos para graficar.</p>;
+  if (!datos.some((d) => d.valor || d.comparacion)) {
+    return <ChartPlaceholder mensaje="Sin datos para graficar" />;
   }
   return (
     <div
@@ -95,11 +96,11 @@ export function GraficoBarras({
             <Bar
               dataKey="comparacion"
               name={nombreComparacion}
-              fill="var(--color-border)"
+              fill="var(--color-dato-anterior)"
               radius={4}
             />
           )}
-          <Bar dataKey="valor" name={nombre} fill="var(--color-primary)" radius={4} />
+          <Bar dataKey="valor" name={nombre} fill="var(--color-dato-actual)" radius={4} />
         </BarChart>
       </ResponsiveContainer>
     </div>

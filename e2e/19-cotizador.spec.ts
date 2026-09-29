@@ -14,6 +14,9 @@ import {
   pistola,
   soltarFoco,
 } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 /**
  * Cotizador: mayorista con escalones por producto, unitaria con PDF y

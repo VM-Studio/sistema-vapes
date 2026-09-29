@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 const base =
-  "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
 
 /** Filtro rápido (link): activo = relleno con el primario. */
 export function ChipLink({
@@ -26,8 +26,8 @@ export function ChipLink({
       className={cn(
         base,
         activo
-          ? "border-accent bg-accent text-accent-foreground"
-          : "border-border bg-surface text-foreground hover:border-input hover:bg-surface-2",
+          ? "border-foreground bg-foreground text-background"
+          : "border-border bg-surface text-muted hover:border-input hover:text-foreground",
         className,
       )}
     >
@@ -57,5 +57,35 @@ export function ChipRow({
     >
       {children}
     </div>
+  );
+}
+
+/** Filtro rápido (botón, estado local): mismo aspecto que ChipLink. */
+export function FilterChip({
+  activo,
+  onClick,
+  children,
+  className,
+}: {
+  activo: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      className={cn(
+        base,
+        activo
+          ? "border-foreground bg-foreground text-background"
+          : "border-border bg-surface text-muted hover:border-input hover:text-foreground",
+        className,
+      )}
+    >
+      {children}
+    </button>
   );
 }

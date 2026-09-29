@@ -62,10 +62,14 @@ export function LoginForm({ next }: { next?: string }) {
         <button
           type="button"
           onClick={() => setVerPassword((v) => !v)}
-          className="text-muted absolute top-[1.625rem] right-0 flex size-11 items-center justify-center"
+          className="text-muted hover:text-foreground absolute top-[1.625rem] right-0 flex size-11 items-center justify-center md:size-10"
           aria-label={verPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
         >
-          {verPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+          {verPassword ? (
+            <EyeOff className="size-5" strokeWidth={1.75} />
+          ) : (
+            <Eye className="size-5" strokeWidth={1.75} />
+          )}
         </button>
       </div>
       <Button type="submit" size="lg" fullWidth loading={form.formState.isSubmitting}>

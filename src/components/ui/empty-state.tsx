@@ -11,21 +11,21 @@ export interface EmptyStateProps {
   className?: string;
 }
 
+/**
+ * Estado vacío: ícono grande en gris (sin ilustraciones genéricas), título
+ * claro y la acción principal. Sobre la tarjeta gris del sistema.
+ */
 export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
   return (
     <div
       className={cn(
-        "border-border bg-surface-2/60 flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed px-6 py-14 text-center",
+        "bg-card flex flex-col items-center justify-center gap-5 rounded-[var(--radius-card)] px-6 py-14 text-center md:py-20",
         className,
       )}
     >
-      {Icon && (
-        <div className="bg-surface border-border text-muted flex size-12 items-center justify-center rounded-2xl border">
-          <Icon className="size-6" strokeWidth={1.75} aria-hidden />
-        </div>
-      )}
-      <div className="flex max-w-sm flex-col gap-1">
-        <p className="text-base font-semibold tracking-tight">{title}</p>
+      {Icon && <Icon className="text-subtle/70 size-14" strokeWidth={1.25} aria-hidden />}
+      <div className="flex max-w-sm flex-col gap-1.5">
+        <p className="text-h3 font-semibold">{title}</p>
         {description && <p className="text-muted text-sm">{description}</p>}
       </div>
       {action}

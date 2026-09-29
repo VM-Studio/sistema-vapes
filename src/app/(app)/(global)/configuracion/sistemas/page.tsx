@@ -22,7 +22,7 @@ export default async function SistemasPage() {
     <>
       <PageHeader
         title="Configuración"
-        subtitle="Sistemas (paneles). Para crear uno nuevo usá «Agregar panel» en la pantalla de sistemas."
+        subtitle="Sistemas (paneles). Para crear uno nuevo usá «Agregar sistema» en la pantalla de sistemas."
       />
       <TabsNav items={tabsConfiguracion("/configuracion/sistemas")} className="mb-6" />
       <ul className="border-border bg-surface divide-border divide-y rounded-2xl border">

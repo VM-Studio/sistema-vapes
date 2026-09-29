@@ -1,33 +1,48 @@
+import { cva, type VariantProps } from "class-variance-authority";
 import type { HTMLAttributes } from "react";
 
 import { cn } from "@/lib/utils";
 
-export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn("border-border bg-surface shadow-card rounded-2xl border", className)}
-      {...props}
-    />
-  );
+/**
+ * Tarjeta: gris clarito, sin borde ni sombra en reposo, radio 10px.
+ * - `default` / `flat`: superficie gris (flat sin padding interno propio: es igual, alias explícito).
+ * - `kpi`: métrica (padding y gap propios).
+ * - `clickable`: hover con sombra sutil (usar sobre <a>/<button> o con onClick).
+ * - `outline`: fondo blanco con borde fino (contenido que va DENTRO de otra tarjeta).
+ */
+export const cardVariants = cva("rounded-[var(--radius-card)] text-foreground", {
+  variants: {
+    variant: {
+      default: "bg-card",
+      flat: "bg-card",
+      kpi: "bg-card flex flex-col gap-1.5 p-5",
+      clickable:
+        "bg-card transition-[background-color,box-shadow] duration-150 hover:bg-card-hover hover:shadow-card-hover",
+      outline: "border border-border bg-surface",
+    },
+  },
+  defaultVariants: { variant: "default" },
+});
+
+export interface CardProps
+  extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof cardVariants> {}
+
+export function Card({ className, variant, ...props }: CardProps) {
+  return <div className={cn(cardVariants({ variant }), className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("flex flex-col gap-1.5 p-5 pb-0 md:p-6 md:pb-0", className)} {...props} />
+    <div className={cn("flex flex-col gap-1 p-5 pb-0 md:p-6 md:pb-0", className)} {...props} />
   );
 }
 
 export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return (
-    <h3
-      className={cn("text-lg leading-tight font-semibold tracking-tight", className)}
-      {...props}
-    />
-  );
+  return <h3 className={cn("text-h3 font-semibold", className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("text-muted text-sm", className)} {...props} />;
+  return <p className={cn("text-muted text-small", className)} {...props} />;
 }
 
 export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
@@ -38,7 +53,7 @@ export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElemen
   return (
     <div
       className={cn(
-        "border-border flex items-center justify-end gap-3 border-t px-5 py-4 md:px-6",
+        "flex items-center justify-end gap-3 border-t border-black/[0.06] px-5 py-4 md:px-6",
         className,
       )}
       {...props}

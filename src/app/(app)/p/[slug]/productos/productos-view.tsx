@@ -58,6 +58,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
   const base = ruta("/productos");
   const bajoMinimo = params.soloBajoMinimo === "1";
   const inactivos = params.inactivos === "1";
+  const conFiltros = Object.entries(params).some(([k, v]) => k !== "page" && v !== "");
 
   const toggle = (id: string) =>
     setExpandidos((s) => {
@@ -136,17 +137,30 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
       </div>
 
       {productos.length === 0 ? (
-        <EmptyState
-          icon={Package}
-          title="No hay productos con esos filtros"
-          action={
-            puedeCrear && (
-              <Link href={ruta("/productos/nuevo")} className={buttonVariants()}>
-                <Plus strokeWidth={1.75} /> Nuevo producto
+        conFiltros ? (
+          <EmptyState
+            icon={Package}
+            title="No hay productos con esos filtros"
+            action={
+              <Link href={base} className={buttonVariants({ variant: "secondary" })}>
+                Limpiar filtros
               </Link>
-            )
-          }
-        />
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={Package}
+            title="Todavía no hay productos"
+            description="Escaneá el código de barras de cada producto para darlo de alta y cargar su stock."
+            action={
+              puedeCrear ? (
+                <Link href={ruta("/productos/cargar")} className={buttonVariants()}>
+                  <ScanBarcode strokeWidth={1.75} /> Cargar tu primer producto escaneando
+                </Link>
+              ) : null
+            }
+          />
+        )
       ) : (
         <>
           {/* Desktop: tabla, cada producto se expande en sus sabores */}
@@ -335,7 +349,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
                               {depositos.map((d) => (
                                 <span
                                   key={d.id}
-                                  className="bg-surface-2 rounded-full px-2.5 py-1 text-xs"
+                                  className="bg-surface-2 rounded-[var(--radius-control)] px-2.5 py-1 text-xs"
                                 >
                                   {d.nombre}{" "}
                                   <strong className="tabular-nums">
@@ -343,7 +357,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
                                   </strong>
                                 </span>
                               ))}
-                              <span className="bg-primary-soft text-primary-soft-foreground rounded-full px-2.5 py-1 text-xs">
+                              <span className="bg-primary-soft text-primary-soft-foreground rounded-[var(--radius-control)] px-2.5 py-1 text-xs">
                                 Total <strong className="tabular-nums">{s.stockTotal}</strong>
                               </span>
                             </div>

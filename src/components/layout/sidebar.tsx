@@ -1,20 +1,11 @@
 "use client";
 
-import { CircleHelp, LayoutGrid, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Avatar } from "@/components/ui/avatar";
 import { esRutaActiva, GRUPOS, type ItemNavegacion } from "@/config/navigation";
-import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
-
-import { IndicadorRed } from "@/components/pwa/sincronizacion-offline";
-
-import { LogoPanel } from "./logo-panel";
-import { LogoutButton } from "./logout-button";
-import { usePanel, useRutaPanel } from "./panel-context";
-import { useUsuario } from "./usuario-context";
 
 interface SidebarProps {
   items: ItemNavegacion[];
@@ -22,12 +13,14 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-/** Navegación lateral (≥768px): agrupada, colapsable a solo íconos. */
+/**
+ * Navegación lateral (≥768px), debajo de la barra superior: 240px, fondo
+ * blanco, ítems ícono + texto, activo sobre gris clarito con una línea azul
+ * fina a la izquierda (única excepción del azul fuera de los gráficos).
+ * Colapsable a solo íconos.
+ */
 export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
   const pathname = usePathname();
-  const usuario = useUsuario();
-  const panel = usePanel();
-  const ruta = useRutaPanel();
   const sueltos = items.filter((i) => i.grupo === null);
 
   const renderItem = (item: ItemNavegacion) => {
@@ -40,15 +33,15 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
           aria-current={activo ? "page" : undefined}
           title={colapsado ? item.label : undefined}
           className={cn(
-            "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
+            "relative flex h-10 items-center gap-3 rounded-[var(--radius-control)] px-3 text-sm font-medium transition-colors",
             activo
-              ? "bg-primary-soft text-primary-soft-foreground"
-              : "text-muted hover:bg-surface-2 hover:text-foreground",
+              ? "bg-card text-foreground before:bg-marca-azul before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full"
+              : "text-muted hover:bg-surface-2/70 hover:text-foreground",
             colapsado && "justify-center px-0",
           )}
         >
           <Icono className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
-          <span className={cn(colapsado && "sr-only")}>{item.label}</span>
+          <span className={cn("truncate", colapsado && "sr-only")}>{item.label}</span>
         </Link>
       </li>
     );
@@ -57,61 +50,22 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "border-border bg-surface fixed inset-y-0 left-0 z-30 hidden flex-col border-r transition-[width] duration-200 md:flex",
-        colapsado ? "w-[4.5rem]" : "w-64",
+        "border-border bg-surface fixed bottom-0 left-0 z-20 hidden flex-col border-r transition-[width] duration-200 md:flex",
+        "top-[calc(3.5rem+env(safe-area-inset-top))]",
+        colapsado ? "w-16" : "w-60",
       )}
     >
-      <div
-        className={cn(
-          "flex h-16 shrink-0 items-center gap-2 px-4",
-          colapsado && "justify-center px-0",
-        )}
-      >
-        {!colapsado && (
-          <Link href={ruta()} className="flex min-w-0 flex-1 items-center gap-2.5 font-semibold">
-            <LogoPanel panel={panel} size={32} />
-            <span className="truncate">{panel.nombre}</span>
-          </Link>
-        )}
-        {!colapsado && <IndicadorRed className="px-1" />}
-        <button
-          type="button"
-          onClick={onToggle}
-          className="text-muted hover:bg-surface-2 hover:text-foreground flex size-10 items-center justify-center rounded-lg"
-          aria-label={colapsado ? "Expandir menú" : "Colapsar menú"}
-          aria-expanded={!colapsado}
-        >
-          {colapsado ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
-        </button>
-      </div>
-
-      <div className="px-3 pb-2">
-        <Link
-          href="/paneles"
-          title={colapsado ? "Cambiar de sistema" : undefined}
-          className={cn(
-            "border-border text-muted hover:bg-surface-2 hover:text-foreground flex min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-medium",
-            colapsado && "justify-center px-0",
-          )}
-        >
-          <LayoutGrid className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-          <span className={cn(colapsado && "sr-only")}>Cambiar de sistema</span>
-        </Link>
-      </div>
-
-      <nav aria-label="Menú lateral" className="flex-1 overflow-y-auto px-3 pb-3">
+      <nav aria-label="Menú lateral" className="flex-1 overflow-y-auto px-3 pt-4 pb-3">
         <ul className="flex flex-col gap-0.5">{sueltos.map(renderItem)}</ul>
         {GRUPOS.map((grupo) => {
           const delGrupo = items.filter((i) => i.grupo === grupo);
           if (delGrupo.length === 0) return null;
           return (
-            <div key={grupo} className="mt-5">
+            <div key={grupo} className="mt-6">
               {colapsado ? (
-                <div className="border-border mx-3 mb-2 border-t" aria-hidden />
+                <div className="border-border mx-2 mb-2 border-t" aria-hidden />
               ) : (
-                <p className="text-muted/80 mb-1.5 px-3 text-xs font-semibold tracking-wide uppercase">
-                  {grupo}
-                </p>
+                <p className="text-subtle mb-1 px-3 text-xs font-medium">{grupo}</p>
               )}
               <ul className="flex flex-col gap-0.5" aria-label={grupo}>
                 {delGrupo.map(renderItem)}
@@ -121,37 +75,24 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
         })}
       </nav>
 
-      <div className="border-border flex shrink-0 flex-col gap-1 border-t p-3">
-        <Link
-          href="/cuenta"
-          title={colapsado ? "Mi cuenta" : undefined}
+      <div className="border-border shrink-0 border-t p-3">
+        <button
+          type="button"
+          onClick={onToggle}
           className={cn(
-            "hover:bg-surface-2 flex min-h-11 items-center gap-3 rounded-lg px-2 py-1.5",
+            "text-subtle hover:bg-surface-2 hover:text-foreground flex h-9 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 text-xs font-medium",
             colapsado && "justify-center px-0",
           )}
+          aria-label={colapsado ? "Expandir menú" : "Colapsar menú"}
+          aria-expanded={!colapsado}
         >
-          <Avatar nombre={usuario.nombre} />
-          {!colapsado && (
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium">{usuario.nombre}</span>
-              <span className="text-muted truncate text-xs">
-                {esOwner(usuario) ? "Dueño" : "Empleado"}
-              </span>
-            </span>
+          {colapsado ? (
+            <PanelLeftOpen className="size-5" strokeWidth={1.75} />
+          ) : (
+            <PanelLeftClose className="size-5" strokeWidth={1.75} />
           )}
-        </Link>
-        <Link
-          href="/ayuda"
-          title={colapsado ? "Ayuda" : undefined}
-          className={cn(
-            "hover:bg-surface-2 text-muted flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm font-medium",
-            colapsado && "justify-center px-0",
-          )}
-        >
-          <CircleHelp className="size-5 shrink-0" aria-hidden />
-          <span className={cn(colapsado && "sr-only")}>Ayuda</span>
-        </Link>
-        <LogoutButton compacto={colapsado} />
+          {!colapsado && "Colapsar menú"}
+        </button>
       </div>
     </aside>
   );

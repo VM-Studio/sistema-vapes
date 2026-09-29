@@ -104,7 +104,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                 <p className="text-muted">Medio de pago</p>
                 <span
                   className={cn(
-                    "mt-0.5 inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
+                    "mt-0.5 inline-flex rounded-[var(--radius-control)] px-2.5 py-1 text-xs font-medium",
                     CLASE_MEDIO_PAGO[v.medioPago],
                   )}
                 >

@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -84,7 +85,33 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
         caption="Transferencias"
         rows={r.transferencias}
         getRowKey={(t) => t.id}
-        empty={<EmptyState icon={ArrowLeftRight} title="No hay transferencias" />}
+        empty={
+          estado || depositoId ? (
+            <EmptyState
+              icon={ArrowLeftRight}
+              title="No hay transferencias con esos filtros"
+              action={
+                <Link href={PATH} className={buttonVariants({ variant: "secondary" })}>
+                  Limpiar filtros
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={ArrowLeftRight}
+              title="Todavía no hay transferencias"
+              description="Para mover mercadería entre galpones, usá “Transferir” en la fila del sabor, en Stock."
+              action={
+                <Link
+                  href={rutaPanel(ctx.panel.slug, "/stock")}
+                  className={buttonVariants({ variant: "secondary" })}
+                >
+                  Ir a Stock
+                </Link>
+              }
+            />
+          )
+        }
         columns={[
           {
             key: "numero",

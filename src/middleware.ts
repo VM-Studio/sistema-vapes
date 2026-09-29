@@ -189,8 +189,8 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   runtime: "nodejs",
-  // Todo salvo assets estáticos, íconos, manifest y el service worker.
+  // Todo salvo assets estáticos, íconos, imagen Open Graph, manifest y el service worker.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|icons/|splash/|screenshots/|manifest.webmanifest|robots.txt|ayuda-img/).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|icons/|splash/|screenshots/|opengraph-image|manifest.webmanifest|robots.txt|ayuda-img/|brand/|portadaApp.png|logoVape.png|logoCosmetics.png|logoEspecial.png).*)",
   ],
 };

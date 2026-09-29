@@ -8,6 +8,9 @@ import { diaEn, inicioDia, sumarDias, ZONA_DEFAULT } from "../src/lib/zona-horar
 import { expect, test } from "./base";
 import { PASSWORD_TRINIDAD } from "./global-setup";
 import { db, login, loginDueno, PANEL_COSMETIC, PANEL_VAPES } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 /**
  * Otros specs también venden en Vapes hoy: los KPIs del panel se comparan con

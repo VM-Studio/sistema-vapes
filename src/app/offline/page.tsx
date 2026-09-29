@@ -11,9 +11,9 @@ export const metadata: Metadata = { title: "Sin conexión" };
  */
 export default function OfflinePage() {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-4 px-4 py-6 pt-[calc(1.5rem+env(safe-area-inset-top))]">
+    <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-6 bg-white px-4 py-6 pt-[calc(1.5rem+env(safe-area-inset-top))]">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Sin conexión</h1>
+        <h1 className="text-h1 font-semibold">Sin conexión</h1>
         <p className="text-muted text-sm">
           No hay señal para abrir esa pantalla. Mientras tanto podés escanear para consultar
           producto, precio y stock del último catálogo guardado. Ventas, ingresos, recuentos y

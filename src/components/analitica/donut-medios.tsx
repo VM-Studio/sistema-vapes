@@ -2,10 +2,11 @@
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import { ChartPlaceholder, ChartTheme, colorSerie } from "@/components/ui/chart-theme";
 import { formatearPesos } from "@/lib/format";
 
 /** Orden fijo: Efectivo, Transferencia, Binance (el color sigue al medio, no al ranking). */
-const COLORES = ["#2a78d6", "#eb6834", "#1baf7a"];
+const COLORES = [colorSerie(0), colorSerie(2), colorSerie(1)];
 
 export interface SegmentoDonut {
   etiqueta: string;
@@ -15,6 +16,9 @@ export interface SegmentoDonut {
 
 export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
   const total = datos.reduce((a, d) => a + d.total, 0);
+  if (!(total > 0)) {
+    return <ChartPlaceholder mensaje="Sin ventas en el período" className="h-44 md:h-52" />;
+  }
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="relative size-44 shrink-0">
@@ -37,7 +41,7 @@ export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
             </Pie>
             <Tooltip
               formatter={(v) => formatearPesos(Number(v))}
-              contentStyle={{ borderRadius: 12, fontSize: 13 }}
+              contentStyle={ChartTheme.tooltip}
             />
           </PieChart>
         </ResponsiveContainer>

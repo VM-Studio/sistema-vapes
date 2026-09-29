@@ -1,6 +1,9 @@
 import { expect, test } from "./base";
 
 import { depositoId, loginDueno, stock, IGNITE_V80 } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 const SABOR = "Blue Razz Ice";
 

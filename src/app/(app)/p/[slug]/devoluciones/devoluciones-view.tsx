@@ -9,7 +9,7 @@ import { ESTADO_DEVOLUCION_UI } from "@/components/clientes/etiquetas";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { controlClass } from "@/components/ui/field";
@@ -41,6 +41,7 @@ export function DevolucionesView({
   const { actualizar } = useUrlParams();
   const puedeCrear = usePuede(Modulo.DEVOLUCIONES, "crear");
   const [abierto, setAbierto] = useState(abrirNueva);
+  const conFiltros = Boolean(params.desde || params.hasta || params.cliente);
   const [inicialModal, setInicialModal] = useState(inicial);
   const [clave, setClave] = useState(0);
 
@@ -124,11 +125,33 @@ export function DevolucionesView({
         rows={resultado.devoluciones}
         getRowKey={(d) => d.id}
         empty={
-          <EmptyState
-            icon={Undo2}
-            title="No hay devoluciones"
-            description="Cuando un cliente traiga un producto fallado, registralo acá."
-          />
+          conFiltros ? (
+            <EmptyState
+              icon={Undo2}
+              title="No hay devoluciones con esos filtros"
+              action={
+                <Link
+                  href={ruta("/devoluciones")}
+                  className={buttonVariants({ variant: "secondary" })}
+                >
+                  Limpiar filtros
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Undo2}
+              title="Todavía no hay devoluciones"
+              description="Cuando un cliente traiga un producto fallado, registralo acá."
+              action={
+                puedeCrear ? (
+                  <Button onClick={abrir}>
+                    <Plus strokeWidth={1.75} /> Registrar una devolución
+                  </Button>
+                ) : null
+              }
+            />
+          )
         }
         columns={[
           { key: "codigo", header: "ID", cell: codigo },

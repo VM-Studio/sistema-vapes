@@ -313,7 +313,7 @@ function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; p
             )}
           </span>
           {o.desactualizado && (
-            <span className="text-warning-soft-foreground bg-warning-soft inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium">
+            <span className="text-warning-soft-foreground bg-warning-soft inline-flex w-fit items-center gap-1 rounded-[var(--radius-control)] px-2.5 py-1 text-xs font-medium">
               <AlertTriangle className="size-3.5" strokeWidth={1.75} aria-hidden /> Precio
               posiblemente desactualizado
             </span>

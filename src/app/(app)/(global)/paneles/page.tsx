@@ -1,11 +1,10 @@
 import { Modulo } from "@prisma/client";
-import { AlertTriangle, ArrowRight, ShoppingBag } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { LogoPanel } from "@/components/layout/logo-panel";
 import { formatearPesos } from "@/lib/format";
 import { esOwner, puede } from "@/lib/permisos";
 import { rutaPanel } from "@/lib/paneles";
@@ -14,6 +13,7 @@ import { panelesDeUsuario, resumenesPaneles } from "@/server/services/panel.serv
 
 import { AgregarPanel } from "./agregar-panel";
 import { AvisosPaneles } from "./avisos";
+import { LogoTarjeta } from "./logo-tarjeta";
 
 export const metadata: Metadata = { title: "Sistemas" };
 
@@ -44,75 +44,56 @@ export default async function PanelesPage({
       .map((p) => p.id),
   );
 
+  /** "Hoy: 12 ventas · $ 340.000" (el monto solo para dueños) o "Sin ventas hoy". */
+  function lineaHoy(panelId: string): string | null {
+    const r = resumenes.get(panelId);
+    if (!r) return null;
+    if (r.ventasHoy === 0) return "Sin ventas hoy";
+    const ventas = `Hoy: ${r.ventasHoy} ${r.ventasHoy === 1 ? "venta" : "ventas"}`;
+    return owner ? `${ventas} · ${formatearPesos(r.totalHoy)}` : ventas;
+  }
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 md:gap-10">
       <Suspense>
         <AvisosPaneles slugs={paneles.map((p) => p.slug)} />
       </Suspense>
       <header className="flex flex-col gap-2">
-        <p className="text-muted text-sm font-medium">Hola, {usuario.nombre.split(" ")[0]}</p>
-        <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-          ¿Qué sistema querés abrir?
-        </h1>
+        <h1 className="text-h1 md:text-display font-semibold">Elegí un sistema</h1>
+        <p className="text-muted text-body">
+          Cada sistema tiene sus propios productos, ventas y stock
+        </p>
       </header>
 
       {paneles.length === 0 && !owner ? (
-        <div className="border-border bg-surface-2 rounded-2xl border p-8 text-center">
-          <p className="font-medium">Todavía no tenés ningún sistema habilitado.</p>
+        <div className="bg-card rounded-[var(--radius-card)] p-10 text-center">
+          <p className="text-h3 font-semibold">Todavía no tenés ningún sistema habilitado</p>
           <p className="text-muted mt-1 text-sm">Pedile acceso a un dueño.</p>
         </div>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid auto-rows-fr gap-4 md:grid-cols-2 lg:grid-cols-3">
           {paneles.map((panel) => {
-            const r = resumenes.get(panel.id);
+            const linea = lineaHoy(panel.id);
             return (
               <li key={panel.id}>
                 <Link
                   href={rutaPanel(panel.slug)}
-                  className="group border-border bg-surface shadow-card hover:shadow-card-hover focus-visible:outline-primary flex min-h-56 flex-col gap-6 rounded-2xl border p-6 transition-shadow"
-                  style={
-                    panel.colorAcento
-                      ? ({ "--panel-accent": panel.colorAcento } as React.CSSProperties)
-                      : undefined
-                  }
+                  className="group bg-card hover:bg-card-hover hover:shadow-card-hover flex h-full flex-col gap-5 rounded-[var(--radius-card)] p-4 transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 md:p-5"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <LogoPanel panel={panel} size={56} />
-                    <ArrowRight
-                      className="text-muted size-5 transition-transform group-hover:translate-x-1"
-                      strokeWidth={1.75}
-                      aria-hidden
-                    />
-                  </div>
-                  <div className="mt-auto flex flex-col gap-3">
-                    <h2 className="text-xl font-semibold">{panel.nombre}</h2>
-                    {r && (
-                      <dl className="text-muted flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                        <div className="flex items-center gap-1.5">
-                          <ShoppingBag className="size-4" strokeWidth={1.75} aria-hidden />
-                          <dt className="sr-only">Ventas de hoy</dt>
-                          <dd>
-                            {r.ventasHoy} {r.ventasHoy === 1 ? "venta" : "ventas"} hoy
-                            {r.ventasHoy > 0 && ` · ${formatearPesos(r.totalHoy)}`}
-                          </dd>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <AlertTriangle
-                            className={
-                              r.alertasStock > 0 ? "text-warning-soft-foreground size-4" : "size-4"
-                            }
-                            strokeWidth={1.75}
-                            aria-hidden
-                          />
-                          <dt className="sr-only">Alertas de stock</dt>
-                          <dd>
-                            {r.alertasStock === 0
-                              ? "Stock al día"
-                              : `${r.alertasStock} ${r.alertasStock === 1 ? "alerta" : "alertas"} de stock`}
-                          </dd>
-                        </div>
-                      </dl>
-                    )}
+                  <LogoTarjeta nombre={panel.nombre} logoUrl={panel.logoUrl} />
+                  <div className="flex flex-1 items-end justify-between gap-3 px-1">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <h2 className="text-h2 truncate font-semibold">{panel.nombre}</h2>
+                      {linea && <p className="text-muted text-sm tabular-nums">{linea}</p>}
+                    </div>
+                    <span className="text-muted group-hover:text-foreground flex shrink-0 items-center gap-0.5 text-sm font-medium transition-colors">
+                      Entrar
+                      <ChevronRight
+                        className="size-4 transition-transform group-hover:translate-x-0.5"
+                        strokeWidth={1.75}
+                        aria-hidden
+                      />
+                    </span>
                   </div>
                 </Link>
               </li>

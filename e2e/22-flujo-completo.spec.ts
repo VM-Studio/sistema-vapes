@@ -14,6 +14,9 @@ import {
   pistola,
   soltarFoco,
 } from "./helpers";
+import { usarCatalogoEjemplo, ventaConfirmadaVapes } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 /**
  * Flujo completo de la v2 (cierre de la reforma): cada usuario entra a sus
@@ -155,7 +158,7 @@ test("cada usuario entra a sus sistemas: los dueños al selector, Trinidad direc
   for (const email of [EMAIL_DUENO, agustina.email]) {
     await login(page, email, PASSWORD_DUENO);
     await expect(page).toHaveURL(/\/paneles$/);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("¿Qué sistema querés abrir?");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Elegí un sistema");
     for (const nombre of ["Vapes", "Cosmetic", "Especiales"]) {
       await expect(page.getByRole("heading", { name: nombre, level: 2 })).toBeVisible();
     }
@@ -359,10 +362,7 @@ test("Trinidad: sin acceso a Cosmetic ni Especiales y sin costos en Vapes", asyn
   await expect(page.getByText(/último costo/i)).toHaveCount(0);
   await expect(page.getByText("Proveedores que lo venden")).toHaveCount(0);
 
-  const venta = await db.venta.findFirstOrThrow({
-    where: { panelId: PANEL_VAPES, estado: "CONFIRMADA" },
-    orderBy: { fecha: "desc" },
-  });
+  const venta = await ventaConfirmadaVapes();
   await page.goto(`/p/vapes/ventas/${venta.id}`);
   await expect(page.getByText(venta.codigo).first()).toBeVisible();
   await expect(page.getByText(/ganancia/i)).toHaveCount(0);

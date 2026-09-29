@@ -17,6 +17,9 @@ import {
   soltarFoco,
   stock,
 } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 /**
  * Ventas desde el modal "Generar venta" (galpón → productos → cliente → pago → éxito)

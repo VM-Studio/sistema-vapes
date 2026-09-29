@@ -16,6 +16,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:seed": "prisma db seed",
+    "db:limpiar-negocio": "tsx --env-file-if-exists=.env --conditions=react-server scripts/limpiar-negocio.ts",
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
     "test:stock": "PRISMA_LOG=silent tsx --conditions=react-server scripts/test-stock.ts",
@@ -29,7 +30,6 @@
     "test:compras": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-compras.ts",
     "test:ventas": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas.ts",
     "test:ventas:concurrencia": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas-concurrentes.ts",
-    "db:seed-demo": "PRISMA_LOG=silent tsx --conditions=react-server prisma/seed-demo.ts",
     "iconos": "tsx scripts/generar-iconos.ts",
     "backup": "tsx --env-file-if-exists=.env --conditions=react-server scripts/backup.ts",
     "restore": "tsx --env-file-if-exists=.env --conditions=react-server scripts/restore.ts",
@@ -38,7 +38,8 @@
     "test:scripts": "pnpm test:stock && pnpm test:integridad && pnpm test:auth",
     "storage:migrate": "tsx --env-file-if-exists=.env --conditions=react-server scripts/storage-migrate.ts",
     "release": "tsx --env-file-if-exists=.env --conditions=react-server scripts/release.ts",
-    "test:cotizador": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-cotizador.ts"
+    "test:cotizador": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-cotizador.ts",
+    "paneles:logos": "tsx --env-file-if-exists=.env --conditions=react-server scripts/paneles-logos.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",

@@ -27,10 +27,9 @@ const PRESETS = [
 ] as const;
 
 const chip =
-  "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
-const chipActivo = "border-accent bg-accent text-accent-foreground";
-const chipInactivo =
-  "border-border bg-surface text-foreground hover:border-input hover:bg-surface-2";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
+const chipActivo = "border-foreground bg-foreground text-background";
+const chipInactivo = "border-border bg-surface text-muted hover:border-input hover:text-foreground";
 
 /**
  * Selector de período del dashboard y los reportes. El estado vive en la URL

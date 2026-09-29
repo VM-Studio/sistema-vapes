@@ -1,5 +1,12 @@
 import { EstadoCotizacion, Modulo, TipoCotizacion } from "@prisma/client";
-import { Calculator, ChevronRight, PackageOpen, Settings2, type LucideIcon } from "lucide-react";
+import {
+  Calculator,
+  ChevronRight,
+  PackageOpen,
+  Plus,
+  Settings2,
+  type LucideIcon,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -87,6 +94,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
   ]);
 
   const base = rutaPanel(slug, "/cotizador");
+  const conFiltros = Object.entries(plano).some(([k, v]) => k !== "page" && v !== "");
   const tab = (t: TipoCotizacion | null) => {
     const p = new URLSearchParams(plano);
     p.delete("page");
@@ -158,7 +166,35 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
         caption="Cotizaciones"
         rows={r.cotizaciones}
         getRowKey={(c) => c.id}
-        empty={<EmptyState icon={Calculator} title="No hay cotizaciones con esos filtros" />}
+        empty={
+          conFiltros ? (
+            <EmptyState
+              icon={Calculator}
+              title="No hay cotizaciones con esos filtros"
+              action={
+                <Link href={base} className={buttonVariants({ variant: "secondary" })}>
+                  Limpiar filtros
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Calculator}
+              title="Todavía no hay cotizaciones"
+              description="Armá un presupuesto por unidad o por mayor y compartilo por WhatsApp o PDF."
+              action={
+                puedeCrear ? (
+                  <Link
+                    href={rutaPanel(slug, "/cotizador/unitaria/nueva")}
+                    className={buttonVariants()}
+                  >
+                    <Plus strokeWidth={1.75} /> Crear la primera cotización
+                  </Link>
+                ) : null
+              }
+            />
+          )
+        }
         columns={[
           {
             key: "codigo",

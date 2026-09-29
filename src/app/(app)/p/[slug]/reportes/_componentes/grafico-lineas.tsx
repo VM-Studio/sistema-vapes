@@ -11,9 +11,10 @@ import {
   YAxis,
 } from "recharts";
 
+import { ChartPlaceholder, ChartTheme } from "@/components/ui/chart-theme";
 import { formatearCompacto, formatearPesos } from "@/lib/format";
 
-const COLORES = ["var(--color-primary)", "#16a34a", "#d97706", "#7c3aed", "#db2777", "#0891b2"];
+const COLORES = ChartTheme.escala;
 
 /** Una línea por serie (ej. un proveedor), puntos con fecha "dd/mm/aa". */
 export function GraficoLineas({
@@ -23,8 +24,11 @@ export function GraficoLineas({
   datos: Record<string, string | number | null>[];
   series: { clave: string; nombre: string }[];
 }) {
-  if (datos.length === 0)
-    return <p className="text-muted py-10 text-center text-sm">Sin datos para graficar.</p>;
+  const hayDatos = datos.some((d) =>
+    series.some((s) => d[s.clave] !== null && d[s.clave] !== undefined && d[s.clave] !== 0),
+  );
+  if (!hayDatos)
+    return <ChartPlaceholder mensaje="Sin datos para graficar" className="h-72 md:h-72" />;
   return (
     <div className="h-72 w-full">
       <ResponsiveContainer width="100%" height="100%">

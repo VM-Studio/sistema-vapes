@@ -2,12 +2,13 @@
 const cargarSharp = async () => (await import("sharp")).default;
 
 /**
- * Íconos de la app a partir de UNA imagen cuadrada (el SVG base o la que suba
+ * Íconos de la app a partir de UNA imagen cuadrada (la portada de la marca o la que suba
  * el dueño). Lo usan `pnpm iconos` (archivos en /public) y la ruta /icons/[size]
  * (ícono propio del negocio, guardado en el storage).
  */
-export const COLOR_MARCA = "#4338ca";
-export const FONDO_SPLASH = "#f5f5f7";
+/** Fondo de íconos y splash: blanco, como la portada de la marca. */
+export const COLOR_MARCA = "#ffffff";
+export const FONDO_SPLASH = "#ffffff";
 
 export type VarianteIcono = "192" | "512" | "maskable" | "apple" | "favicon";
 
@@ -26,7 +27,7 @@ export async function generarIcono(
   const sharp = await cargarSharp();
   const lado = TAMANO[variante];
   if (variante === "maskable") {
-    // Zona segura de Android: el dibujo ocupa el 80 % central sobre el color de marca.
+    // Zona segura de Android: el dibujo ocupa el 80 % central sobre fondo blanco.
     const interior = Math.round(lado * 0.8);
     const dibujo = await sharp(base)
       .resize(interior, interior, { fit: "contain", background: COLOR_MARCA })
@@ -51,10 +52,13 @@ export async function generarSplash(
   alto: number,
 ): Promise<Buffer> {
   const sharp = await cargarSharp();
-  const lado = Math.round(Math.min(ancho, alto) * 0.28);
-  const icono = await generarIcono(base, "512").then((b) =>
-    sharp(b).resize(lado, lado).png().toBuffer(),
-  );
+  // Portada centrada: ~70 % del lado menor, sobre blanco.
+  const lado = Math.round(Math.min(ancho, alto) * 0.7);
+  const icono = await sharp(base)
+    .resize(lado, lado, { fit: "contain", background: FONDO_SPLASH })
+    .flatten({ background: FONDO_SPLASH })
+    .png()
+    .toBuffer();
   return sharp({ create: { width: ancho, height: alto, channels: 4, background: FONDO_SPLASH } })
     .composite([{ input: icono, gravity: "center" }])
     .png()

@@ -6,9 +6,7 @@ import { navegacionPermitida } from "@/config/navigation";
 import { COOKIE_SIDEBAR } from "@/config/ui";
 import { cn } from "@/lib/utils";
 
-import { LogoutButton } from "./logout-button";
 import { BottomNav, TopBar } from "./mobile-nav";
-import { LogoPanel } from "./logo-panel";
 import { usePanel } from "./panel-context";
 import { Sidebar } from "./sidebar";
 import { useUsuario } from "./usuario-context";
@@ -22,9 +20,10 @@ interface AppShellProps {
 }
 
 /**
- * Esqueleto de las pantallas DENTRO de un panel.
- * - Mobile (<768px): barra superior + bottom navigation + sheet "Más".
- * - Desktop (≥768px): sidebar lateral colapsable.
+ * Esqueleto de las pantallas DENTRO de un panel: barra superior blanca fija
+ * (logo + nombre, red, cambiar de sistema, avatar).
+ * - Mobile (<768px): + bottom navigation + sheet "Más".
+ * - Desktop (≥768px): + sidebar de 240px colapsable. Contenido máx. 1280px.
  */
 export function AppShell({ children, sidebarColapsadoInicial, restringido }: AppShellProps) {
   const usuario = useUsuario();
@@ -40,36 +39,30 @@ export function AppShell({ children, sidebarColapsadoInicial, restringido }: App
 
   if (restringido) {
     return (
-      <div className="min-h-dvh">
-        <header className="pt-safe border-border bg-surface/95 sticky top-0 z-30 border-b backdrop-blur">
-          <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
-            <span className="flex items-center gap-2 font-semibold">
-              <LogoPanel panel={panel} size={28} />
-              {panel.nombre}
-            </span>
-            <div className="w-auto">
-              <LogoutButton />
-            </div>
-          </div>
-        </header>
-        <main className="pb-safe mx-auto max-w-3xl px-4 py-6">{children}</main>
+      <div className="min-h-dvh bg-white">
+        <TopBar restringido />
+        <main className="mx-auto max-w-3xl px-4 pt-[calc(3.5rem+env(safe-area-inset-top)+1.5rem)] pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-8">
+          {children}
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="min-h-dvh">
-      <Sidebar items={items} colapsado={colapsado} onToggle={toggleSidebar} />
+    <div className="min-h-dvh bg-white">
       <TopBar />
+      <Sidebar items={items} colapsado={colapsado} onToggle={toggleSidebar} />
       <main
         className={cn(
-          // mobile: espacio para la barra superior y la bottom bar (+ safe areas)
+          // barra superior fija (+ safe area); en mobile, además la bottom bar
           "pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(4.5rem+env(safe-area-inset-bottom))]",
-          "md:pt-0 md:pb-0 md:transition-[padding] md:duration-200",
-          colapsado ? "md:pl-[4.5rem]" : "md:pl-64",
+          "md:pb-0 md:transition-[padding] md:duration-200",
+          colapsado ? "md:pl-16" : "md:pl-60",
         )}
       >
-        <div className="mx-auto w-full max-w-6xl min-w-0 px-4 py-4 md:px-8 md:py-8">{children}</div>
+        <div className="mx-auto w-full max-w-[1280px] min-w-0 px-4 py-6 md:px-8 md:py-8">
+          {children}
+        </div>
       </main>
       <BottomNav items={items} />
     </div>

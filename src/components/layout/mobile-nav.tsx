@@ -5,90 +5,62 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
-import { esRutaActiva, tituloDeRuta, type ItemNavegacion } from "@/config/navigation";
-import { esOwner } from "@/lib/permisos";
+import { esRutaActiva, type ItemNavegacion } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 
 import { IndicadorRed } from "@/components/pwa/sincronizacion-offline";
 
 import { LogoPanel } from "./logo-panel";
 import { LogoutButton } from "./logout-button";
-import { usePanelOpcional } from "./panel-context";
-import { useUsuario } from "./usuario-context";
+import { MenuUsuario } from "./menu-usuario";
+import { usePanelOpcional, useRutaPanel } from "./panel-context";
 
-function LinkCambiarSistema({ onClick }: { onClick: () => void }) {
+function LinkInicioPanel() {
+  const panel = usePanelOpcional();
+  const ruta = useRutaPanel();
+  if (!panel) return null;
   return (
     <Link
-      href="/paneles"
-      onClick={onClick}
-      className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
+      href={ruta()}
+      className="flex min-w-0 items-center gap-2.5"
+      aria-label={`Inicio de ${panel.nombre}`}
     >
-      <LayoutGrid className="text-muted size-5" strokeWidth={1.75} aria-hidden />
-      Cambiar de sistema
+      <LogoPanel panel={panel} size={28} />
+      <span className="hidden truncate text-sm font-semibold sm:inline">{panel.nombre}</span>
     </Link>
   );
 }
 
-/** Barra superior fija (mobile): título de la sección + avatar que abre el menú de cuenta. */
+/**
+ * Barra superior del panel (mobile y desktop): logo + nombre a la izquierda;
+ * a la derecha estado de red, "Cambiar de sistema" y el avatar con su menú.
+ */
 export function TopBar({ restringido = false }: { restringido?: boolean }) {
-  const pathname = usePathname();
-  const usuario = useUsuario();
   const panel = usePanelOpcional();
-  const [menuAbierto, setMenuAbierto] = useState(false);
 
   return (
-    <header className="pt-safe pl-safe pr-safe border-border bg-surface/95 fixed inset-x-0 top-0 z-30 border-b backdrop-blur md:hidden">
-      <div className="flex h-14 items-center justify-between gap-3 px-4">
-        {panel && <LogoPanel panel={panel} size={32} />}
-        {/* No es <h1>: el encabezado de la página lo pone cada pantalla. */}
-        <p className="min-w-0 flex-1 truncate text-lg font-semibold">{tituloDeRuta(pathname)}</p>
-        {!restringido && panel && <IndicadorRed />}
-        <button
-          type="button"
-          onClick={() => setMenuAbierto(true)}
-          className="-mr-1.5 flex size-11 items-center justify-center rounded-full"
-          aria-label="Menú de cuenta"
-        >
-          <Avatar nombre={usuario.nombre} />
-        </button>
-      </div>
-      <Sheet
-        open={menuAbierto}
-        onOpenChange={setMenuAbierto}
-        title={usuario.nombre}
-        description={usuario.email}
-      >
-        <div className="flex flex-col gap-1">
-          <div className="mb-2">
-            <Badge variant={esOwner(usuario) ? "primary" : "neutral"}>
-              {esOwner(usuario) ? "Dueño" : "Empleado"}
-            </Badge>
-          </div>
-          {!restringido && <LinkCambiarSistema onClick={() => setMenuAbierto(false)} />}
+    <header className="pt-safe pl-safe pr-safe border-border bg-surface fixed inset-x-0 top-0 z-30 border-b">
+      <div className="flex h-14 items-center justify-between gap-3 px-4 md:px-5">
+        {panel ? <LinkInicioPanel /> : <span />}
+        <div className="flex items-center gap-1 md:gap-2">
+          {!restringido && panel && <IndicadorRed />}
           {!restringido && (
             <Link
-              href="/cuenta"
-              onClick={() => setMenuAbierto(false)}
-              className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
+              href="/paneles"
+              className={cn(
+                buttonVariants({ variant: "secondary", size: "sm" }),
+                "hidden md:inline-flex",
+              )}
             >
-              <UserRound className="text-muted size-5" aria-hidden />
-              Mi cuenta
+              <LayoutGrid strokeWidth={1.75} aria-hidden />
+              Cambiar de sistema
             </Link>
           )}
-          <Link
-            href="/ayuda"
-            onClick={() => setMenuAbierto(false)}
-            className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
-          >
-            <CircleHelp className="text-muted size-5" aria-hidden />
-            Ayuda
-          </Link>
-          <LogoutButton className="min-h-12" />
+          <MenuUsuario restringido={restringido} conCambiarSistema mostrarNombre />
         </div>
-      </Sheet>
+      </div>
     </header>
   );
 }
@@ -110,15 +82,17 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
 
   const claseItem = (activo: boolean) =>
     cn(
-      "flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors",
-      activo ? "text-primary" : "text-muted",
+      "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
+      activo ? "text-foreground" : "text-subtle",
     );
+  const claseLink =
+    "hover:bg-surface-3/60 flex min-h-12 items-center gap-3 rounded-[var(--radius-control)] px-3 text-sm font-medium";
 
   return (
     <>
       <nav
         aria-label="Navegación inferior"
-        className="pb-safe pl-safe pr-safe border-border bg-surface/95 fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur md:hidden"
+        className="pb-safe pl-safe pr-safe border-border bg-surface fixed inset-x-0 bottom-0 z-30 border-t md:hidden"
       >
         <ul className="flex">
           {principales.map((item) => {
@@ -131,7 +105,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
                   aria-current={activo ? "page" : undefined}
                   className={claseItem(activo)}
                 >
-                  <Icono className="size-6" aria-hidden strokeWidth={activo ? 2.25 : 1.75} />
+                  <Icono className="size-6" aria-hidden strokeWidth={activo ? 2 : 1.75} />
                   {item.label}
                 </Link>
               </li>
@@ -145,7 +119,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
               aria-haspopup="dialog"
               aria-expanded={masAbierto}
             >
-              <Ellipsis className="size-6" aria-hidden />
+              <Ellipsis className="size-6" strokeWidth={1.75} aria-hidden />
               Más
             </button>
           </li>
@@ -165,13 +139,13 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
                     onClick={() => setMasAbierto(false)}
                     aria-current={activo ? "page" : undefined}
                     className={cn(
-                      "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-xl border px-1 text-center text-xs font-medium",
+                      "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-[var(--radius-control)] px-1 text-center text-xs font-medium transition-colors",
                       activo
-                        ? "border-primary bg-primary-soft text-primary-soft-foreground"
-                        : "border-border hover:bg-surface-2",
+                        ? "bg-foreground text-background"
+                        : "bg-surface text-foreground hover:bg-surface-3/60",
                     )}
                   >
-                    <Icono className="size-6" aria-hidden />
+                    <Icono className="size-6" strokeWidth={1.75} aria-hidden />
                     {item.label}
                   </Link>
                 </li>
@@ -179,22 +153,17 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
             })}
           </ul>
         )}
-        <div className="border-border mt-4 flex flex-col gap-1 border-t pt-3">
-          <LinkCambiarSistema onClick={() => setMasAbierto(false)} />
-          <Link
-            href="/cuenta"
-            onClick={() => setMasAbierto(false)}
-            className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
-          >
-            <UserRound className="text-muted size-5" aria-hidden />
+        <div className="mt-4 flex flex-col gap-1 border-t border-black/[0.06] pt-3">
+          <Link href="/paneles" onClick={() => setMasAbierto(false)} className={claseLink}>
+            <LayoutGrid className="text-muted size-5" strokeWidth={1.75} aria-hidden />
+            Cambiar de sistema
+          </Link>
+          <Link href="/cuenta" onClick={() => setMasAbierto(false)} className={claseLink}>
+            <UserRound className="text-muted size-5" strokeWidth={1.75} aria-hidden />
             Mi cuenta
           </Link>
-          <Link
-            href="/ayuda"
-            onClick={() => setMasAbierto(false)}
-            className="hover:bg-surface-2 flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium"
-          >
-            <CircleHelp className="text-muted size-5" aria-hidden />
+          <Link href="/ayuda" onClick={() => setMasAbierto(false)} className={claseLink}>
+            <CircleHelp className="text-muted size-5" strokeWidth={1.75} aria-hidden />
             Ayuda
           </Link>
           <LogoutButton className="min-h-12" />

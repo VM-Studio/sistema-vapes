@@ -1,6 +1,9 @@
 import { expect, test } from "./base";
 
 import { codigoDe, esperarCatalogoOffline, loginDueno, ELF_BAR_BC5000 } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 /**
  * Sin señal, la app es SOLO de consulta: /offline (la página de respaldo del

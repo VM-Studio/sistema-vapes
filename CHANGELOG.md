@@ -5,6 +5,24 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Cambiado
+
+- **Sin datos de ejemplo.** `prisma/seed.ts` crea solo la estructura: paneles (con su logo), depósitos,
+  secuencias, configuración por defecto y los usuarios Juan Cruz, Agustina y Trinidad. Ya no siembra
+  catálogo, proveedores, clientes ni escalones; los tests que los necesitan los crean en `e2e/fixtures/`.
+
+### Eliminado
+
+- El seed demo (`prisma/seed-demo.ts`, `pnpm db:seed-demo` y `scripts/db-descartable.sh … --demo`).
+
+### Agregado
+
+- `pnpm db:limpiar-negocio`: vacía los datos de negocio de todos los paneles y reinicia la numeración,
+  preservando paneles, depósitos, usuarios, accesos, sesiones y configuración (confirmación escribiendo
+  `LIMPIAR`; fuera de localhost o con `NODE_ENV=production`, solo con `--force`).
+
 ## [2.0.0] - 2026-10-02 — Reforma multipanel
 
 La app pasa de un sistema único a **varios sistemas independientes** (paneles: Vapes, Cosmetic, Especiales y

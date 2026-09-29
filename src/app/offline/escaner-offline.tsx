@@ -82,7 +82,7 @@ export function EscanerOffline() {
   if (catalogos === undefined) return null;
   if (!meta)
     return (
-      <p className="border-border text-muted rounded-2xl border border-dashed p-6 text-center text-sm">
+      <p className="bg-card text-muted rounded-2xl p-6 text-center text-sm">
         Este celular todavía no tiene ningún catálogo guardado. Entrá una vez al panel con conexión
         y queda listo para consultar sin señal.
       </p>
@@ -144,7 +144,7 @@ export function EscanerOffline() {
         </p>
       )}
       {ultima && (
-        <section aria-label="Producto" className="border-border bg-surface rounded-2xl border p-4">
+        <section aria-label="Producto" className="bg-card rounded-2xl p-4">
           <p className="text-lg font-semibold">{ultima.titulo}</p>
           <p className="text-muted text-sm">
             {formatearPesos(ultima.precioVenta)} · En {dep(depositoId)}:{" "}

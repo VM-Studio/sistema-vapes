@@ -39,7 +39,7 @@ export function Textarea({
       <textarea
         id={textareaId}
         rows={rows}
-        className={cn(controlClass, "min-h-28 py-3", className)}
+        className={cn(controlClass, "min-h-28 py-2.5", className)}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(textareaId, error, hint)}
         required={required}

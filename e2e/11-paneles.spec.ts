@@ -26,22 +26,22 @@ test("Trinidad (solo Vapes): entra directo a Vapes; otro panel → selector con 
   expect(r).toBe(403);
 });
 
-test("Juan Cruz: selector con los 3 sistemas y «Agregar panel»; crea «Prueba» y lo desactiva", async ({
+test("Juan Cruz: selector con los 3 sistemas y «Agregar sistema»; crea «Prueba» y lo desactiva", async ({
   page,
 }, info) => {
   // Crea un panel real (único por nombre y prefijo): corre una sola vez, en escritorio.
   test.skip(info.project.name !== "chromium-desktop", "crea datos únicos");
   await loginDueno(page);
   await expect(page).toHaveURL(/\/paneles$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("¿Qué sistema querés abrir?");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Elegí un sistema");
   for (const nombre of ["Vapes", "Cosmetic", "Especiales"]) {
     await expect(page.getByRole("heading", { name: nombre, level: 2 })).toBeVisible();
   }
-  await page.getByRole("button", { name: /Agregar panel/ }).click();
+  await page.getByRole("button", { name: /Agregar sistema/ }).click();
   await page.getByLabel("Nombre").fill("Prueba");
   await expect(page.getByText("IDs de venta: PRU-000001")).toBeVisible();
   await page.getByLabel("Atributo principal de los productos").fill("Detalle");
-  await page.getByRole("button", { name: "Crear panel" }).click();
+  await page.getByRole("button", { name: "Crear sistema" }).click();
   await page.waitForURL(/\/p\/prueba$/);
 
   const panel = await db.panel.findUniqueOrThrow({

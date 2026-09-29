@@ -111,7 +111,7 @@ export function FiltrosCatalogo({
         >
           <SlidersHorizontal />
           {activos > 0 && (
-            <span className="bg-primary text-primary-foreground rounded-full px-1.5 text-xs tabular-nums">
+            <span className="bg-primary text-primary-foreground rounded-[var(--radius-control)] px-1.5 text-xs tabular-nums">
               {activos}
             </span>
           )}

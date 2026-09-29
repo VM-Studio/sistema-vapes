@@ -1,5 +1,5 @@
 /**
- * Prueba de humo del motor de stock contra la DB real (requiere seed).
+ * Prueba de humo del motor de stock contra la DB real (requiere el seed base; siembra el catálogo de ejemplo).
  * Uso: pnpm test:stock
  *
  * Trabaja en el panel Vapes (depósitos "Ayres Plaza" y "Mercedes").
@@ -21,6 +21,7 @@ import {
   stockTotalVariante,
   transferirStock,
 } from "../src/server/services/stock.service";
+import { sembrarCatalogoEjemplo } from "../e2e/fixtures/catalogo-ejemplo";
 
 const PANEL = "pnl_vapes";
 const MOTIVO = "test-stock";
@@ -65,6 +66,8 @@ async function stockEn(varianteId: string, depositoId: string): Promise<number> 
 }
 
 async function main() {
+  // El seed base no trae catálogo: el de ejemplo de los tests (idempotente).
+  await sembrarCatalogoEjemplo();
   const usuario = await prisma.usuario.findFirstOrThrow({ where: { rol: RolUsuario.OWNER } });
   const ctx: Ctx = { panelId: PANEL, usuarioId: usuario.id };
   const g1 = await db.deposito.findUnique({

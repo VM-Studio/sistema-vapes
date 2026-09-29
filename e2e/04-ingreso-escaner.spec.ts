@@ -1,6 +1,9 @@
 import { expect, test } from "./base";
 
 import { codigoDe, db, ELF_BAR_BC5000, loginDueno, pistola, stock, soltarFoco } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 test("carga de stock por escáner simulado (teclas cada 10 ms) → stock y ledger", async ({
   page,

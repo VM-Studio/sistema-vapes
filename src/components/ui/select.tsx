@@ -50,7 +50,7 @@ export function Select({
       <div className="relative">
         <select
           id={selectId}
-          className={cn(controlClass, "h-12 appearance-none pr-10 md:h-11", className)}
+          className={cn(controlClass, "h-11 appearance-none pr-10 md:h-10", className)}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy(selectId, error, hint)}
           required={required}

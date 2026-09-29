@@ -42,23 +42,23 @@ export function Sheet({
       onClick={onBackdropClick}
       aria-labelledby={idTitulo}
       className={cn(
-        "anim-sheet bg-surface text-foreground shadow-sheet m-0 max-h-none max-w-none p-0",
+        "anim-sheet bg-card text-foreground shadow-sheet m-0 max-h-none max-w-none p-0",
         // mobile: bottom sheet
-        "top-auto right-0 bottom-0 left-0 max-h-[90dvh] w-full rounded-t-3xl",
+        "top-auto right-0 bottom-0 left-0 max-h-[90dvh] w-full rounded-t-[var(--radius-card)]",
         // desktop: panel lateral
-        "md:top-0 md:right-0 md:bottom-0 md:left-auto md:h-dvh md:max-h-dvh md:w-[30rem] md:rounded-t-none md:rounded-l-2xl",
+        "md:top-0 md:right-0 md:bottom-0 md:left-auto md:h-dvh md:max-h-dvh md:w-[30rem] md:rounded-none",
         className,
       )}
     >
       {open && (
         <div className="flex max-h-[90dvh] flex-col md:h-dvh md:max-h-dvh">
           <div
-            className="bg-input mx-auto mt-2.5 h-1.5 w-10 shrink-0 rounded-full md:hidden"
+            className="bg-input mx-auto mt-2 h-1 w-9 shrink-0 rounded-full md:hidden"
             aria-hidden
           />
-          <header className="border-border flex items-start justify-between gap-3 border-b px-5 py-4 md:px-6 md:py-5">
+          <header className="flex items-start justify-between gap-3 border-b border-black/[0.06] px-4 py-3 md:px-6 md:py-5">
             <div className="flex min-w-0 flex-col gap-1 pt-1.5">
-              <h2 id={idTitulo} className="text-xl leading-tight font-semibold tracking-tight">
+              <h2 id={idTitulo} className="text-h2 font-semibold">
                 {title}
               </h2>
               {description && <p className="text-muted text-sm">{description}</p>}
@@ -73,11 +73,11 @@ export function Sheet({
               <X strokeWidth={1.75} />
             </Button>
           </header>
-          <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 md:px-6">
+          <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-5 md:px-6">
             {children}
           </div>
           {footer && (
-            <footer className="pb-safe border-border bg-surface flex shrink-0 gap-3 border-t px-5 pt-4 md:justify-end md:px-6 md:pb-5 [&>*]:flex-1 md:[&>*]:flex-none">
+            <footer className="pb-safe bg-card flex shrink-0 gap-3 border-t border-black/[0.06] px-4 pt-4 md:justify-end md:px-6 md:pb-5 [&>*]:flex-1 md:[&>*]:flex-none">
               {footer}
             </footer>
           )}

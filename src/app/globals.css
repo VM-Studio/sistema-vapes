@@ -1,84 +1,138 @@
 @import "tailwindcss";
 
 /*
- * Tokens de diseño. Estética SaaS clara: fondo blanco, superficies gris muy
- * suave, bordes sutiles y texto casi negro. Sin dark mode.
- *
- * Acento por panel: el "primario" (botón principal, tab activo, chip
- * seleccionado, switch encendido, checkbox marcado, foco) sale de
- * --panel-accent / --panel-accent-foreground. Un layout puede teñirlo con
- *   style={{ "--panel-accent": "#E11D48", "--panel-accent-foreground": "#fff" }}
- * y todo lo que use bg-primary / bg-accent / text-primary / ring-ring, etc.
- * dentro de ese subárbol se tiñe. Las utilidades referencian la variable
- * directamente (en @theme inline), así el override funciona en cualquier nivel.
+ * Sistema de diseño (docs/DISENO.md). Reglas:
+ * - Blanco y negro. Fondo de página blanco puro; texto casi negro, gris
+ *   oscuro (secundario) y gris medio (terciario).
+ * - Tarjetas, Sheets y Dialogs: gris clarito (--card) sin borde ni sombra en
+ *   reposo; lo que va adentro (inputs, tablas) sobre blanco.
+ * - Azul y naranja del logo: SOLO en gráficos y comparación de datos
+ *   (--dato-*). Única excepción: la línea del ítem activo del sidebar.
+ * - Semánticos (éxito / error / alerta) apagados: badges, toasts, validaciones.
+ * - Controles con radio 6px, tarjetas 10px. Nada de píldoras.
+ * Sin dark mode, sin gradientes, sin acento por panel.
  */
 :root {
   color-scheme: light;
 
-  --panel-accent: #111113;
-  --panel-accent-foreground: #ffffff;
-
+  /* Neutros */
   --background: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f7f7f8;
-  --foreground: #111113;
-  --muted: #5f5f6b;
-  --border: #ebebee;
-  --input: #d6d6dc;
+  --card: #f4f5f7;
+  --card-hover: #eef0f3;
+  --surface-2: #f4f5f7;
+  --surface-3: #e9ebee;
+  --foreground: #0a0a0a;
+  --muted: #525252;
+  --subtle: #8a8a8a;
+  --border: #e6e8eb;
+  --input: #d4d7dc;
 
-  /* Alias históricos del primario (valores en :root; para teñir usar las utilidades). */
-  --primary: var(--panel-accent);
-  --primary-hover: color-mix(in oklab, var(--panel-accent) 86%, black);
-  --primary-foreground: var(--panel-accent-foreground);
-  --primary-soft: color-mix(in oklab, var(--panel-accent) 8%, white);
-  --primary-soft-foreground: color-mix(in oklab, var(--panel-accent) 88%, black);
+  /* Acción = negro (los alias primary/accent se conservan para no romper pantallas). */
+  --primary: #0a0a0a;
+  --primary-hover: #262626;
+  --primary-foreground: #ffffff;
+  --primary-soft: #f4f5f7;
+  --primary-soft-foreground: #0a0a0a;
 
-  --danger: #d92d20;
-  --danger-hover: #b42318;
+  /* Semánticos apagados */
+  --danger: #b04a45;
+  --danger-hover: #963d39;
   --danger-foreground: #ffffff;
-  --danger-soft: #fef3f2;
-  --danger-soft-foreground: #b42318;
+  --danger-soft: #f8eeed;
+  --danger-soft-foreground: #8f3b37;
 
-  --success: #067647;
-  --success-soft: #ecfdf3;
-  --success-soft-foreground: #067647;
-  --warning-soft: #fffaeb;
-  --warning-soft-foreground: #93370d;
+  --success: #3e7a56;
+  --success-soft: #edf4ef;
+  --success-soft-foreground: #336648;
+  --warning: #a0721f;
+  --warning-soft: #f8f2e6;
+  --warning-soft-foreground: #7d5816;
 
-  --ring: var(--panel-accent);
-  --backdrop: rgb(17 17 19 / 0.4);
+  --ring: #0a0a0a;
+  --backdrop: rgb(10 10 10 / 0.32);
 
-  /* Gráficos: paleta categórica validada (orden fijo, nunca cíclico) + grilla. */
-  --serie-1: #2a78d6;
-  --serie-2: #eb6834;
-  --serie-3: #1baf7a;
-  --serie-4: #eda100;
-  --serie-5: #e87ba4;
-  --serie-6: #008300;
-  --grilla: #ededf0;
+  /* Marca (extraídos de los logos): solo datos. */
+  --marca-azul: #0047b0;
+  --marca-azul-claro: #7fa6e0;
+  --marca-azul-oscuro: #00337f;
+  --marca-naranja: #fe7b38;
+  --marca-naranja-claro: #ffb892;
+  --marca-naranja-oscuro: #d95e1e;
+
+  /* Gráficos: actual = azul, anterior = naranja; escala categórica fija. */
+  --dato-actual: var(--marca-azul);
+  --dato-anterior: var(--marca-naranja);
+  --serie-1: var(--marca-azul);
+  --serie-2: var(--marca-azul-claro);
+  --serie-3: var(--marca-naranja);
+  --serie-4: var(--marca-naranja-claro);
+  --serie-5: #a3a3a3;
+  --serie-6: #d4d4d4;
+  --grilla: #eceef1;
+
+  /* Radios */
+  --radius-control: 6px;
+  --radius-card: 10px;
+}
+
+@theme {
+  /*
+   * Escala de radios de Tailwind remapeada: rounded-md/lg/xl = control (6px),
+   * rounded-2xl/3xl = tarjeta (10px). Así las pantallas existentes quedan
+   * dentro del sistema sin tocarlas una por una.
+   */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 10px;
+  --radius-3xl: 10px;
+  --radius-control: 6px;
+  --radius-card: 10px;
+
+  /* Tipografía: display 32/36 · h1 24 · h2 20 · h3 16 · body 15 · small 13 */
+  --text-display: 2rem;
+  --text-display--line-height: 2.25rem;
+  --text-display--letter-spacing: -0.025em;
+  --text-h1: 1.5rem;
+  --text-h1--line-height: 2rem;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h2: 1.25rem;
+  --text-h2--line-height: 1.75rem;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h3: 1rem;
+  --text-h3--line-height: 1.5rem;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.5rem;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.25rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
   --color-border: var(--border);
   --color-input: var(--input);
 
-  /* Primario = acento del panel (se resuelve donde se usa la clase). */
-  --color-primary: var(--panel-accent);
-  --color-primary-hover: color-mix(in oklab, var(--panel-accent) 86%, black);
-  --color-primary-foreground: var(--panel-accent-foreground);
-  --color-primary-soft: color-mix(in oklab, var(--panel-accent) 8%, white);
-  --color-primary-soft-foreground: color-mix(in oklab, var(--panel-accent) 88%, black);
-  --color-accent: var(--panel-accent);
-  --color-accent-hover: color-mix(in oklab, var(--panel-accent) 86%, black);
-  --color-accent-foreground: var(--panel-accent-foreground);
-  --color-accent-soft: color-mix(in oklab, var(--panel-accent) 8%, white);
-  --color-accent-soft-foreground: color-mix(in oklab, var(--panel-accent) 88%, black);
-  --color-ring: var(--panel-accent);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-accent: var(--primary);
+  --color-accent-hover: var(--primary-hover);
+  --color-accent-foreground: var(--primary-foreground);
+  --color-accent-soft: var(--primary-soft);
+  --color-accent-soft-foreground: var(--primary-soft-foreground);
+  --color-ring: var(--ring);
 
   --color-danger: var(--danger);
   --color-danger-hover: var(--danger-hover);
@@ -88,23 +142,34 @@
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-success-soft-foreground: var(--success-soft-foreground);
+  --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
   --color-warning-soft-foreground: var(--warning-soft-foreground);
+
+  --color-marca-azul: var(--marca-azul);
+  --color-marca-azul-claro: var(--marca-azul-claro);
+  --color-marca-azul-oscuro: var(--marca-azul-oscuro);
+  --color-marca-naranja: var(--marca-naranja);
+  --color-marca-naranja-claro: var(--marca-naranja-claro);
+  --color-marca-naranja-oscuro: var(--marca-naranja-oscuro);
+  --color-dato-actual: var(--dato-actual);
+  --color-dato-anterior: var(--dato-anterior);
   --color-serie-1: var(--serie-1);
   --color-serie-2: var(--serie-2);
   --color-serie-3: var(--serie-3);
   --color-serie-4: var(--serie-4);
   --color-serie-5: var(--serie-5);
   --color-serie-6: var(--serie-6);
+  --color-grilla: var(--grilla);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Sombras suaves: solo cards (card) y paneles flotantes (sheet/pop). */
-  --shadow-card: 0 1px 2px 0 rgb(17 17 19 / 0.04), 0 1px 3px 0 rgb(17 17 19 / 0.04);
-  --shadow-card-hover: 0 2px 4px 0 rgb(17 17 19 / 0.04), 0 6px 16px -4px rgb(17 17 19 / 0.08);
-  --shadow-pop: 0 4px 8px -2px rgb(17 17 19 / 0.06), 0 12px 24px -6px rgb(17 17 19 / 0.1);
-  --shadow-sheet: 0 -8px 32px -8px rgb(17 17 19 / 0.14), 0 24px 48px -12px rgb(17 17 19 / 0.18);
+  /* Sin sombra en reposo. Solo hover de tarjetas clickeables y flotantes. */
+  --shadow-card: 0 0 #0000;
+  --shadow-card-hover: 0 1px 2px 0 rgb(10 10 10 / 0.04), 0 4px 12px -4px rgb(10 10 10 / 0.08);
+  --shadow-pop: 0 2px 4px -1px rgb(10 10 10 / 0.05), 0 8px 20px -6px rgb(10 10 10 / 0.1);
+  --shadow-sheet: 0 12px 32px -12px rgb(10 10 10 / 0.18);
 }
 
 @layer base {
@@ -113,10 +178,14 @@
     text-rendering: optimizeLegibility;
   }
   body {
-    background: var(--background);
+    background: #ffffff;
     color: var(--foreground);
     font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
     font-feature-settings: "cv11", "ss01";
+    /* Toda cifra en ancho fijo (montos, cantidades, tablas). */
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
@@ -128,7 +197,7 @@
     letter-spacing: -0.02em;
   }
   ::selection {
-    background: color-mix(in oklab, var(--panel-accent) 16%, white);
+    background: #e2e4e8;
   }
   /* Con un <dialog> modal abierto, la página de fondo no scrollea. */
   html:has(dialog[open]) {
@@ -136,10 +205,9 @@
   }
   dialog::backdrop {
     background: var(--backdrop);
-    backdrop-filter: blur(2px);
   }
   :focus-visible {
-    outline: 2px solid var(--panel-accent);
+    outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
 }
@@ -156,6 +224,10 @@
   }
   .pr-safe {
     padding-right: env(safe-area-inset-right);
+  }
+  /* Cifras siempre alineadas. */
+  .cifra {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -196,7 +268,7 @@
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: scale(0.97);
+    transform: scale(0.98);
   }
   to {
     opacity: 1;

@@ -72,7 +72,7 @@ export function SearchInput({
         }}
         className={cn(
           controlClass,
-          "h-12 pr-11 pl-10.5 md:h-11 [&::-webkit-search-cancel-button]:hidden",
+          "h-11 pr-11 pl-10.5 md:h-10 [&::-webkit-search-cancel-button]:hidden",
         )}
       />
       {pendiente ? (

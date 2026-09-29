@@ -1,9 +1,10 @@
 import { Modulo } from "@prisma/client";
-import { ShoppingCart } from "lucide-react";
+import { Plus, ShoppingCart } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -45,7 +46,7 @@ function MedioPagoBadge({ medio }: { medio: VentaListada["medioPago"] }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs leading-none font-medium whitespace-nowrap",
+        "inline-flex items-center rounded-[var(--radius-control)] px-2.5 py-1 text-xs leading-none font-medium whitespace-nowrap",
         CLASE_MEDIO_PAGO[medio],
       )}
     >
@@ -99,6 +100,8 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
       ? await conversionDeCotizacion(ctx, plano.cotizacion, plano.recalcular === "1")
       : null;
 
+  // Sin búsqueda ni filtros (la vista por defecto: las ventas de hoy).
+  const conFiltros = Object.entries(plano).some(([k, v]) => k !== "page" && v !== "");
   const href = (v: VentaListada) => rutaPanel(slug, `/ventas/${v.id}`);
   const estado = (v: VentaListada) => (
     <Badge variant={ESTADO_VENTA_UI[v.estado].variante}>{ESTADO_VENTA_UI[v.estado].label}</Badge>
@@ -147,7 +150,35 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         caption="Ventas"
         rows={r.ventas}
         getRowKey={(v) => v.id}
-        empty={<EmptyState icon={ShoppingCart} title="No hay ventas con esos filtros" />}
+        empty={
+          conFiltros ? (
+            <EmptyState
+              icon={ShoppingCart}
+              title="No hay ventas con esos filtros"
+              action={
+                <Link
+                  href={rutaPanel(slug, "/ventas")}
+                  className={buttonVariants({ variant: "secondary" })}
+                >
+                  Limpiar filtros
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={ShoppingCart}
+              title="Todavía no hay ventas"
+              description="Las ventas de hoy van a aparecer acá, con su total y medio de pago."
+              action={
+                puedeCrear ? (
+                  <Link href={rutaPanel(slug, "/ventas?nueva=1")} className={buttonVariants()}>
+                    <Plus strokeWidth={1.75} /> Generar la primera venta
+                  </Link>
+                ) : null
+              }
+            />
+          )
+        }
         columns={[
           {
             key: "codigo",

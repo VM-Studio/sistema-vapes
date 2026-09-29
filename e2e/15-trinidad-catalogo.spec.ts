@@ -2,6 +2,9 @@ import { expect, test } from "./base";
 
 import { PASSWORD_TRINIDAD } from "./global-setup";
 import { db, ELF_BAR_BC5000, llamarAccion, login } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 /**
  * Trinidad (Vapes: ver en PRODUCTOS y STOCK): ve productos y stock, pero no

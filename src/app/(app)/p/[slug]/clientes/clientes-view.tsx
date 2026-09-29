@@ -11,7 +11,7 @@ import { TelefonoWhatsApp } from "@/components/clientes/telefono-whatsapp";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -37,6 +37,7 @@ export function ClientesView({
   const ruta = useRutaPanel();
   const puedeCrear = usePuede(Modulo.CLIENTES, "crear");
   const [nuevo, setNuevo] = useState(false);
+  const conFiltros = Object.entries(params).some(([k, v]) => k !== "page" && v !== "");
   const [enviando, setEnviando] = useState(false);
 
   const nombre = (c: ClienteListado) => (
@@ -73,10 +74,32 @@ export function ClientesView({
         rows={resultado.clientes}
         getRowKey={(c) => c.id}
         empty={
-          <EmptyState
-            icon={Users}
-            title={params.q ? `No hay clientes con “${params.q}”` : "Todavía no hay clientes"}
-          />
+          conFiltros ? (
+            <EmptyState
+              icon={Users}
+              title={
+                params.q ? `No hay clientes con “${params.q}”` : "No hay clientes con esos filtros"
+              }
+              action={
+                <Link href={ruta("/clientes")} className={buttonVariants({ variant: "secondary" })}>
+                  Limpiar búsqueda
+                </Link>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Users}
+              title="Todavía no hay clientes"
+              description="Se agregan solos al registrar una venta, o podés cargarlos a mano."
+              action={
+                puedeCrear ? (
+                  <Button onClick={() => setNuevo(true)}>
+                    <Plus strokeWidth={1.75} /> Agregar un cliente
+                  </Button>
+                ) : null
+              }
+            />
+          )
         }
         columns={[
           {

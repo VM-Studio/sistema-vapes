@@ -1,6 +1,9 @@
 import { expect, test } from "./base";
 
 import { depositoId, IGNITE_V80, loginDueno, stock } from "./helpers";
+import { usarCatalogoEjemplo } from "./fixtures";
+
+usarCatalogoEjemplo();
 
 const SABOR = "Strawberry Watermelon";
 

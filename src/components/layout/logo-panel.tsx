@@ -3,13 +3,13 @@
 /* eslint-disable @next/next/no-img-element -- logos subidos por el dueño (storage) o de /public: tamaño fijo y chico, sin optimización de next/image */
 import { useEffect, useRef, useState } from "react";
 
-import { inicialesPanel, type PanelBasico } from "@/lib/paneles";
+import type { PanelBasico } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
 
 /**
- * Logo de un panel; sin logo (o si la imagen no carga), un placeholder con
- * sus iniciales sobre el color de acento. `size` en px (alto; el logo
- * conserva su proporción).
+ * Logo de un panel; sin logo (o si la imagen no carga), el nombre del panel
+ * tipografiado (nunca iniciales ni colores por panel). `size` en px (alto;
+ * el logo conserva su proporción).
  */
 export function LogoPanel({
   panel,
@@ -35,7 +35,7 @@ export function LogoPanel({
         alt={`Logo de ${panel.nombre}`}
         height={size}
         onError={() => setFallo(true)}
-        style={{ height: size, width: "auto", maxWidth: size * 3 }}
+        style={{ height: size, width: "auto", maxWidth: size * 4 }}
         className={cn("shrink-0 object-contain", className)}
       />
     );
@@ -43,18 +43,13 @@ export function LogoPanel({
   return (
     <span
       aria-hidden
-      style={{
-        width: size,
-        height: size,
-        fontSize: Math.round(size * 0.38),
-        background: panel.colorAcento ?? "var(--panel-accent)",
-      }}
+      style={{ height: size, fontSize: Math.max(12, Math.round(size * 0.5)) }}
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-xl font-semibold text-white",
+        "text-foreground flex shrink-0 items-center leading-none font-semibold tracking-tight",
         className,
       )}
     >
-      {inicialesPanel(panel.nombre)}
+      {panel.nombre}
     </span>
   );
 }

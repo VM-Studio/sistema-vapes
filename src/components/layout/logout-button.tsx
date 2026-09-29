@@ -31,12 +31,12 @@ export function LogoutButton({
         title="Cerrar sesión"
         aria-label="Cerrar sesión"
         className={cn(
-          "text-muted hover:bg-surface-2 hover:text-foreground flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
+          "text-muted hover:bg-surface-2 hover:text-foreground flex min-h-10 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 text-sm font-medium transition-colors",
           compacto && "justify-center px-0",
           className,
         )}
       >
-        <LogOut className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+        <LogOut className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
         {!compacto && <span>Cerrar sesión</span>}
       </button>
     </form>

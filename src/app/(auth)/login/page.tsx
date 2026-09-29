@@ -1,43 +1,54 @@
+/* eslint-disable @next/next/no-img-element -- marca chica fija de /public */
 import type { Metadata } from "next";
+import Image from "next/image";
 
-import { LogoPanel } from "@/components/layout/logo-panel";
-import { panelesActivos } from "@/server/auth/paneles-acceso";
 import { nombreNegocio } from "@/server/services/identidad.service";
 
+import portada from "../../../../public/portadaApp.png";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Ingresar" };
 
+/**
+ * Desktop: portada a pantalla completa a la izquierda, formulario centrado a
+ * la derecha. Mobile: portada arriba (40vh) y el formulario debajo.
+ */
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
-  const [{ next }, paneles, negocio] = await Promise.all([
-    searchParams,
-    panelesActivos().catch(() => []),
-    nombreNegocio(),
-  ]);
+  const [{ next }, negocio] = await Promise.all([searchParams, nombreNegocio()]);
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-2 text-center">
-        <p className="text-muted text-sm font-medium">{negocio}</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Ingresar</h1>
-        <p className="text-muted text-sm">Usá tu email y contraseña</p>
+    <div className="grid min-h-dvh md:grid-cols-2">
+      {/* La portada es cuadrada y su fondo es blanco: "contain" la muestra entera (con
+          "cover" se recortaba la marca) y se funde con el panel a pantalla completa. */}
+      <div className="border-border relative h-[40vh] overflow-hidden border-b bg-white md:sticky md:top-0 md:h-dvh md:border-r md:border-b-0">
+        <Image
+          src={portada}
+          alt={negocio}
+          fill
+          priority
+          placeholder="empty"
+          sizes="(min-width: 768px) 50vw, 100vw"
+          className="object-contain p-6 md:p-16"
+        />
       </div>
-      <div className="border-border bg-surface shadow-card rounded-2xl border p-6">
-        <LoginForm next={next} />
+      <div className="pb-safe flex items-start justify-center px-4 py-10 md:items-center md:px-8">
+        <div className="flex w-full max-w-sm flex-col gap-8">
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center gap-2.5">
+              <img src="/brand/marca.png" alt="" width={32} height={32} className="size-8" />
+              <span className="text-muted text-sm font-medium">{negocio}</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-display font-semibold">Ingresar</h1>
+              <p className="text-muted text-body">Usá tu email y contraseña</p>
+            </div>
+          </div>
+          <LoginForm next={next} />
+        </div>
       </div>
-      {paneles.length > 0 && (
-        <ul className="flex items-center justify-center gap-5" aria-label="Sistemas">
-          {paneles.map((p) => (
-            <li key={p.id} className="flex flex-col items-center gap-1.5">
-              <LogoPanel panel={p} size={32} />
-              <span className="text-muted text-xs">{p.nombre}</span>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

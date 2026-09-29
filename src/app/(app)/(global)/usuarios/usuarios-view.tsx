@@ -46,9 +46,9 @@ function ChipsPaneles({ u }: { u: UsuarioListado }) {
       {u.paneles.map((p) => (
         <li
           key={p.id}
-          className="border-border bg-surface-2 flex min-h-8 items-center gap-1.5 rounded-full border py-0.5 pr-3 pl-1 text-sm font-medium"
+          className="border-border bg-surface-2 flex min-h-8 items-center gap-1.5 rounded-[var(--radius-control)] border py-0.5 pr-3 pl-1 text-sm font-medium"
         >
-          <LogoPanel panel={p} size={22} className="rounded-full" />
+          <LogoPanel panel={p} size={18} />
           {p.nombre}
         </li>
       ))}

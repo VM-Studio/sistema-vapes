@@ -203,8 +203,8 @@ Autorización en tres capas:
 - **CSP con nonce.** `script-src 'self' 'nonce-…' 'strict-dynamic'`, sin `unsafe-inline` para scripts.
   Headers de seguridad en `next.config.ts` (HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`,
   `Permissions-Policy` con cámara solo propia, COOP).
-- **Reloj de negocio y zona horaria.** Los servicios fechan con `ahora()` (`src/lib/reloj.ts`); el seed demo lo
-  fija para simular 90 días pasando por los servicios reales, y en producción no se puede fijar. Las columnas
+- **Reloj de negocio y zona horaria.** Los servicios fechan con `ahora()` (`src/lib/reloj.ts`); un script de
+  prueba lo puede fijar para simular días pasando por los servicios reales, y en producción no se puede fijar. Las columnas
   guardan UTC; todo rango de días se calcula en la zona horaria del negocio (`ConfiguracionGlobal.timezone`,
   por defecto Buenos Aires, `src/lib/zona-horaria.ts`).
 - **Diseño.** Fondo blanco, tipografía Inter, estilo SaaS, sin modo oscuro. Cada panel tiene su color de
@@ -229,7 +229,7 @@ pnpm install
 cp .env.example .env        # revisar DATABASE_URL, DIRECT_URL y AUTH_SECRET
 pnpm db:up                  # PostgreSQL 16 en Docker (usuario app/app, base gestion, puerto host 5433)
 pnpm db:deploy              # o `pnpm db:migrate` si estás cambiando el schema
-pnpm db:seed                # usuarios, configuración y catálogo de ejemplo en Vapes
+pnpm db:seed                # paneles, depósitos, secuencias, configuración y usuarios (sin datos de negocio)
 pnpm dev                    # http://localhost:3000 (salud: /api/health)
 ```
 
@@ -237,16 +237,18 @@ pnpm dev                    # http://localhost:3000 (salud: /api/health)
   (`postgresql://app:app@localhost:5433/gestion?schema=public`).
 - Si el puerto 5433 está ocupado, cambiá `DB_PORT` en `.env` (lo usa `docker-compose.yml`).
 - Los paneles **Vapes**, **Cosmetic** y **Especiales**, sus depósitos y sus secuencias los crea la migración
-  `20260928160000_reforma_multipanel`. El seed completa los depósitos de Vapes (**Ayres Plaza**, principal, y
-  **Mercedes**), la configuración de cada panel y un catálogo de ejemplo en Vapes (marcas, modelos, pitadas y
-  sabores, uno con precio propio) con stock inicial, más dos proveedores con su lista de precios (uno en
-  dólares).
-- `pnpm db:seed-demo` carga 90 días de operación simulada en los tres paneles pasando por los servicios
-  reales: en Vapes, 5 marcas y 15 productos con sabores, 3 proveedores con precios distintos para los mismos
-  productos (uno en dólares) y cambios de precio, 20 compras recibidas, 300 ventas de Juan Cruz, Agustina y
-  Trinidad (unitarias y mayoristas, algunas convertidas desde cotizaciones), 80 clientes, 12 garantías, 20
-  cotizaciones en todos los estados y la cotización del dólar; Cosmetic y Especiales, lo mismo en chico. Para
-  una base aparte: `bash scripts/db-descartable.sh gestion_demo --demo` (menos de un minuto).
+  `20260928160000_reforma_multipanel`; el seed los completa si faltan (con su logo: `/logoVape.png`,
+  `/logoCosmetics.png`, `/logoEspecial.png`), junto con los depósitos (Vapes: **Ayres Plaza**, principal, y
+  **Mercedes**; Cosmetic y Especiales: **Principal**), las secuencias de numeración, la configuración por
+  defecto de cada panel y los usuarios. **No crea datos de negocio**: productos, marcas, categorías,
+  proveedores y clientes se cargan desde la app.
+- `pnpm db:limpiar-negocio` vacía los datos de negocio de todos los paneles (productos, sabores, precios y
+  escalones, proveedores, clientes, ventas, compras, devoluciones, cotizaciones, transferencias, movimientos y
+  stock, auditoría de los paneles) y reinicia la numeración; deja paneles, depósitos, usuarios con sus accesos,
+  sesiones y configuración. Pide escribir `LIMPIAR`; con `NODE_ENV=production` o una base que no sea local se
+  niega salvo `--force`.
+- Los tests que necesitan un catálogo lo crean ellos mismos: `e2e/fixtures/catalogo-ejemplo.ts` (idempotente,
+  con los servicios reales) y `e2e/fixtures/index.ts` (lo siembra antes de cada spec y lo limpia después).
 - En producción el seed está bloqueado salvo `ALLOW_SEED=true` (y exige las variables `SEED_*`); el primer
   dueño también se puede crear con `pnpm crear-owner`.
 - Para probar el escáner sin pistola: pegar `scripts/simular-pistola.js` en la consola del navegador y llamar
@@ -303,10 +305,10 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 | `pnpm db:migrate`                                             | `prisma migrate dev` (crear y aplicar migraciones en desarrollo)                                           |
 | `pnpm db:deploy`                                              | `prisma migrate deploy` (aplicar migraciones pendientes)                                                   |
 | `pnpm db:generate`                                            | `prisma generate` (también corre en `postinstall`)                                                         |
-| `pnpm db:seed`                                                | Seed idempotente: usuarios, configuración, catálogo y proveedores de ejemplo en Vapes                      |
+| `pnpm db:seed`                                                | Seed idempotente: paneles, depósitos, secuencias, configuración y usuarios (sin datos de negocio)          |
 | `pnpm db:reset`                                               | Borra la base, re-aplica migraciones y corre el seed (solo desarrollo)                                     |
 | `pnpm db:studio`                                              | Prisma Studio                                                                                              |
-| `pnpm db:seed-demo`                                           | 90 días de operación simulada en los tres paneles                                                          |
+| `pnpm db:limpiar-negocio [--force]`                           | Vacía los datos de negocio de todos los paneles (pide escribir LIMPIAR; `--force` fuera de local)          |
 | `pnpm crear-owner`                                            | Crea el primer dueño en una base nueva (pide datos por consola; no hace nada si ya hay un dueño activo)    |
 | `pnpm iconos`                                                 | Genera los íconos de la PWA                                                                                |
 | `pnpm backup`                                                 | Backup manual: `pg_dump -Fc`, verificación, subida al bucket y rotación                                    |
@@ -323,7 +325,7 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 | `pnpm test:ventas:concurrencia`                               | Ventas simultáneas sobre poco stock: confirman solo las que alcanzan, numeración por panel sin repetidos   |
 | `pnpm test:catalogo`, `pnpm test:compras`, `pnpm test:ventas` | Servicios contra una DB recién sembrada: catálogo y carga de stock; proveedores y compras; ventas y costos |
 | `pnpm test:cotizador`                                         | Escalones, cotizaciones, conversión en venta, permisos y aislamiento contra la DB                          |
-| `scripts/db-descartable.sh X`                                 | Recrea una base descartable X (migraciones + seed [+ `--demo`])                                            |
+| `scripts/db-descartable.sh X [--catalogo]`                    | Recrea una base descartable X (migraciones + seed [+ catálogo de ejemplo de los tests])                    |
 
 ## Estructura de carpetas
 
@@ -332,7 +334,7 @@ prisma/
   schema.prisma           Modelo de datos (paneles + tablas de negocio con panelId)
   migrations/             Migraciones SQL (CHECKs, triggers y vistas incluidos; la reforma 2.0.0 va de
                           20260928160000_reforma_multipanel a 20261003090000_limpieza_configuracion)
-  seed.ts, seed-demo.ts   Seed base y 90 días simulados en los tres paneles
+  seed.ts                 Seed base (paneles, depósitos, secuencias, configuración, usuarios)
 src/
   app/
     (auth)/login/         Inicio de sesión
@@ -385,7 +387,8 @@ docs/                     Manual, modelo de datos, deploy
     `gestion_test_vitest` en el Postgres local; se recrea al empezar).
 - **Playwright** (`pnpm test:e2e`): corre contra el **build** de producción (`pnpm build` antes) en el puerto
   3100 y una base aislada `DATABASE_URL_TEST` (default `gestion_e2e`), que el setup global recrea con
-  migraciones y seed. Dos proyectos: escritorio 1440×900 y celular (Pixel 7). Flujos: login y cambio de
+  migraciones y seed; cada spec que usa catálogo lo siembra en `beforeAll` y vacía los datos de negocio en
+  `afterAll` (`e2e/fixtures`). Dos proyectos: escritorio 1440×900 y celular (Pixel 7). Flujos: login y cambio de
   contraseña, permisos, alta de producto (precio del producto y precio propio de un sabor), carga de stock
   escaneando (sin galpón no se carga nada, alta rápida de códigos desconocidos, stock por galpón), proveedores
   con precios, compra con costo sugerido y «recibir actualizando el precio», catálogo de la empleada (sin

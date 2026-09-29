@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartPlaceholder } from "@/components/ui/chart-theme";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
@@ -134,31 +135,41 @@ export function SkeletonTarjeta({
 export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Periodo }) {
   const k = await kpis(ctx, periodo);
   const ant = ETIQUETA_ANTERIOR[periodo.modo];
+  const sinVentas = k.cantidadVentas.actual === 0;
   return (
-    <section
-      aria-label="Indicadores"
-      className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6"
-    >
-      <KpiCard label="Facturado" etiquetaAnterior={ant} {...pesos(k.facturado)} />
-      {k.ganancia && (
+    <>
+      <section
+        aria-label="Indicadores"
+        className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6"
+      >
+        <KpiCard label="Facturado" etiquetaAnterior={ant} {...pesos(k.facturado)} />
+        {k.ganancia && (
+          <KpiCard
+            label="Ganancia"
+            etiquetaAnterior={ant}
+            {...pesos(k.ganancia)}
+            extra={
+              k.margenPct !== null
+                ? `margen ${k.margenPct.toLocaleString("es-AR")} %`
+                : "sin ventas"
+            }
+          />
+        )}
         <KpiCard
-          label="Ganancia"
+          label={ctx.panel.etiquetaUnidades}
           etiquetaAnterior={ant}
-          {...pesos(k.ganancia)}
-          extra={
-            k.margenPct !== null ? `margen ${k.margenPct.toLocaleString("es-AR")} %` : "sin ventas"
-          }
+          {...numero(k.unidadesVendidas)}
         />
+        <KpiCard label="Clientes nuevos" etiquetaAnterior={ant} {...numero(k.clientesNuevos)} />
+        <KpiCard label="Ventas" etiquetaAnterior={ant} {...numero(k.cantidadVentas)} />
+        <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...pesos(k.ticketPromedio)} />
+      </section>
+      {sinVentas && (
+        <p className="text-muted -mt-2 text-sm md:-mt-4" data-testid="sin-ventas-periodo">
+          Todavía no hay ventas en este período.
+        </p>
       )}
-      <KpiCard
-        label={ctx.panel.etiquetaUnidades}
-        etiquetaAnterior={ant}
-        {...numero(k.unidadesVendidas)}
-      />
-      <KpiCard label="Clientes nuevos" etiquetaAnterior={ant} {...numero(k.clientesNuevos)} />
-      <KpiCard label="Ventas" etiquetaAnterior={ant} {...numero(k.cantidadVentas)} />
-      <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...pesos(k.ticketPromedio)} />
-    </section>
+    </>
   );
 }
 
@@ -209,7 +220,7 @@ export async function SeccionMedios({
           }))}
         />
       ) : (
-        <Vacio>Sin ventas en el período.</Vacio>
+        <ChartPlaceholder mensaje="Sin ventas en el período" className="h-40 md:h-44" />
       )}
     </Tarjeta>
   );
@@ -248,7 +259,7 @@ export async function SeccionTipo({
           </dl>
         </>
       ) : (
-        <Vacio>Sin ventas en el período.</Vacio>
+        <ChartPlaceholder mensaje="Sin ventas en el período" className="h-40 md:h-44" />
       )}
     </Tarjeta>
   );
@@ -275,7 +286,7 @@ export async function SeccionGalpones({
           }))}
         />
       ) : (
-        <Vacio>Sin ventas en el período.</Vacio>
+        <ChartPlaceholder mensaje="Sin ventas en el período" className="h-40 md:h-44" />
       )}
     </Tarjeta>
   );

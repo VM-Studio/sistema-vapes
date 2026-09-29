@@ -32,6 +32,7 @@ export function ProveedoresView({
   buscado: string;
 }) {
   const router = useRouter();
+  const ruta = useRutaPanel();
   const puedeCrear = usePuede(Modulo.PROVEEDORES, "crear");
   const [nuevo, setNuevo] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -57,6 +58,20 @@ export function ProveedoresView({
             buscado ? `Ningún proveedor coincide con “${buscado}”` : "Todavía no hay proveedores"
           }
           description={buscado ? undefined : "Cargá a quién le comprás y qué productos te vende."}
+          action={
+            buscado ? (
+              <Link
+                href={ruta("/proveedores")}
+                className={buttonVariants({ variant: "secondary" })}
+              >
+                Limpiar búsqueda
+              </Link>
+            ) : puedeCrear ? (
+              <Button onClick={() => setNuevo(true)}>
+                <Plus strokeWidth={1.75} /> Agregar un proveedor
+              </Button>
+            ) : null
+          }
         />
       ) : (
         <ul
