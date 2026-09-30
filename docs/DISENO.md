@@ -162,7 +162,7 @@ ventas en este período" y los gráficos con placeholder.
   `public/logoEspecial.png` (recortados y con fondo blanco puro; los originales
   en `public/brand/originales/`). `pnpm paneles:logos` actualiza `Panel.logoUrl`.
 - Marca chica (barras y login): `public/brand/marca.png`.
-- Favicon e íconos: `src/app/favicon.ico`, `icon1-3.png`, `apple-icon.png`.
+- Favicon e íconos: `src/app/favicon.ico`, `icon1-3.png` (osito en el aro, fondo transparente y sin margen), `apple-icon.png` (sobre blanco). Fuente: `public/brand/favicon-fuente.png`.
 - PWA desde `public/portadaApp.png`: `pnpm iconos` regenera íconos 192/512,
   maskable (zona segura 80%, fondo blanco), apple 180, splash de iPhone/iPad,
   screenshots del manifest y la imagen Open Graph.

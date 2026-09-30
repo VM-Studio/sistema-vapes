@@ -8,8 +8,9 @@
  *   - public/screenshots/portada-{ancha,angosta}.png (screenshots del manifest)
  *   - src/app/opengraph-image.png (1200x630)
  *
- * Desde public/brand/favicon-fuente.png (solo el osito en el círculo), con la
- * convención de metadata de Next (reemplaza a metadata.icons):
+ * Desde public/brand/favicon-fuente.png (el osito en el círculo, fondo
+ * transparente y recortado al borde del aro: así ocupa toda la pestaña), con
+ * la convención de metadata de Next (reemplaza a metadata.icons):
  *   - src/app/favicon.ico (ICO real: 16/32/48 con entradas PNG)
  *   - src/app/icon1.png (32) · icon2.png (192) · icon3.png (512)
  *   - src/app/apple-icon.png (180, fondo blanco sólido)
@@ -107,6 +108,14 @@ const cuadrado = (base: Buffer, lado: number) =>
     .png({ compressionLevel: 9 })
     .toBuffer();
 
+/** Cuadrado con fondo transparente (favicon e íconos de pestaña). */
+const transparente = (base: Buffer, lado: number) =>
+  sharp(base)
+    .resize(lado, lado, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .ensureAlpha()
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+
 async function main() {
   const portada = await limpiarFondo("public/portadaApp.png");
   for (const dir of ["public/icons", "public/splash", "public/screenshots"])
@@ -131,22 +140,21 @@ async function main() {
   );
   await writeFile("src/app/opengraph-image.png", await liviano(generarSplash(portada, 1200, 630)));
 
-  const fav = await osito(await limpiarFondo("public/brand/favicon-fuente.png"));
+  // Pestaña del navegador: transparente y sin margen (el aro toca el borde).
+  const fav = await sharp("public/brand/favicon-fuente.png").ensureAlpha().png().toBuffer();
   const ico = await Promise.all(
     // Los decodificadores de ICO (el de Next incluido) exigen PNG RGBA de 32 bits.
-    [16, 32, 48].map(async (lado) => ({
-      lado,
-      datos: await sharp(await cuadrado(fav, lado))
-        .ensureAlpha()
-        .png()
-        .toBuffer(),
-    })),
+    [16, 32, 48].map(async (lado) => ({ lado, datos: await transparente(fav, lado) })),
   );
   await writeFile("src/app/favicon.ico", armarIco(ico));
-  await writeFile("src/app/icon1.png", await cuadrado(fav, 32));
-  await writeFile("src/app/icon2.png", await cuadrado(fav, 192));
-  await writeFile("src/app/icon3.png", await cuadrado(fav, 512));
-  await writeFile("src/app/apple-icon.png", await cuadrado(fav, 180));
+  await writeFile("src/app/icon1.png", await transparente(fav, 32));
+  await writeFile("src/app/icon2.png", await transparente(fav, 192));
+  await writeFile("src/app/icon3.png", await transparente(fav, 512));
+  // iOS pinta de negro lo transparente: el ícono de Apple va sobre blanco, con aire.
+  await writeFile(
+    "src/app/apple-icon.png",
+    await cuadrado(await osito(await limpiarFondo("public/brand/favicon-fuente.png")), 180),
+  );
 
   console.log(
     `Generados: public/icons (5), public/splash (${SPLASH.length}), public/screenshots (2), ` +
