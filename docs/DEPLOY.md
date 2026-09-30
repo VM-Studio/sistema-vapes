@@ -2,6 +2,12 @@
 
 Stack recomendado: **Vercel** (app) + **Neon** o **Supabase** (PostgreSQL 16, con pooler) + **Cloudflare R2** (archivos y backups) + **GitHub Actions** (CI, release y backups diarios). Alternativa: **Railway** para app, base y cron en un solo lugar (ver al final).
 
+> **Solo producción.** `vercel.json` tiene un `ignoreCommand` que cancela los
+> builds que no son de producción: los Previews de ramas compartirían la base de
+> producción y no tienen las variables de entorno (`AUTH_SECRET`, etc.). Antes de
+> pushear a `main` un cambio con migraciones, aplicarlas en la base de producción
+> (`pnpm release` o `prisma migrate deploy` con `DIRECT_URL`).
+
 ## Deploy de la v2 (reforma multipanel) paso a paso
 
 La versión 2.0.0 junta las cinco etapas de la reforma (R1 a R5) y se publica **de una vez**. Pasa una base 1.x al modelo multipanel y **borra datos** de módulos que ya no existen (ver [Migraciones de la reforma](#migraciones-de-la-reforma-200)); una instalación nueva hace lo mismo sobre una base vacía.
