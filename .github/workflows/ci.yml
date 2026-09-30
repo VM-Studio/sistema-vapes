@@ -118,10 +118,13 @@ jobs:
 
   # Producción: primero el paso de release (backup + migrate deploy) contra la
   # base real y recién después el deploy. Si el release falla, no se publica.
+  # Opcional: corre solo con la variable de repo DEPLOY_DESDE_CI = "true" y los
+  # secretos cargados. Sin eso, producción la despliega la integración git de
+  # Vercel y las migraciones se aplican a mano antes del push (docs/DEPLOY.md).
   deploy:
     name: Release y deploy a producción
     needs: calidad
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DEPLOY_DESDE_CI == 'true'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 20
