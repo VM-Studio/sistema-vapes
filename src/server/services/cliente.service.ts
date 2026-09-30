@@ -1,4 +1,4 @@
-import { AccionAuditoria, EstadoVenta, Prisma, type MedioPago } from "@prisma/client";
+import { AccionAuditoria, EstadoVenta, Prisma } from "@prisma/client";
 
 import { finDelDia, fechasDeRango, inicioDelDia } from "@/lib/fechas";
 import { nombreConSabor } from "@/lib/ventas-ui";
@@ -369,6 +369,8 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
         estado: true,
         total: true,
         medioPago: true,
+        estadoPago: true,
+        saldoPendiente: true,
         _count: { select: { items: true } },
       },
     }),
@@ -403,6 +405,8 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
       notas: c.notas,
       activo: c.activo,
       createdAt: c.createdAt,
+      /** Deuda de cuenta corriente (ventas fiadas sin cobrar). */
+      saldoDeudor: dec(c.saldoDeudor),
     },
     compras: {
       cantidad: r?.cantidad ?? 0,
@@ -415,7 +419,9 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
       fecha: v.fecha,
       estado: v.estado,
       total: dec(v.total),
-      medioPago: v.medioPago as MedioPago,
+      medioPago: v.medioPago,
+      estadoPago: v.estadoPago,
+      saldoPendiente: dec(v.saldoPendiente),
       items: v._count.items,
     })),
     devoluciones: devoluciones.map((d) => ({

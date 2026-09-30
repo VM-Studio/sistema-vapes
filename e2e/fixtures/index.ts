@@ -85,6 +85,10 @@ export async function ventaConfirmadaVapes() {
         depositoId: deposito.id,
         vendedorId: dueno.id,
         medioPago: "EFECTIVO",
+        montoPagado: precio,
+        pagos: {
+          create: { panelId: PANEL, medioPago: "EFECTIVO", monto: precio, usuarioId: dueno.id },
+        },
         subtotal: precio,
         total: precio,
         costoTotal: costo,

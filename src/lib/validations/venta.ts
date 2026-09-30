@@ -1,17 +1,42 @@
 import { EstadoVenta, MedioPago, TipoVenta } from "@prisma/client";
 import { z } from "zod";
 
-import { enteroPositivo, id, montoOpcional, texto, textoOpcional, vacioAUndefined } from "./common";
+import {
+  enteroPositivo,
+  id,
+  monto,
+  montoOpcional,
+  sinDuplicados,
+  texto,
+  textoOpcional,
+  vacioAUndefined,
+} from "./common";
 
 /**
- * Ventas: el cliente manda galpón, cliente, sabores, cantidades y el medio de
- * pago. Precios de lista, costos y totales los calcula SIEMPRE el servidor.
- * Precio especial y descuento global solo con permiso "editar" en VENTAS (lo
- * valida el servicio). Galpón, cliente y medio de pago son obligatorios: si
- * faltan, el servicio responde con un mensaje de negocio (no un error de campo).
+ * Ventas: el cliente manda galpón, cliente, sabores, cantidades y los pagos
+ * (hasta 3, un medio por fila). Precios de lista, costos y totales los calcula
+ * SIEMPRE el servidor, que también decide si la venta queda PAGADA o fiada.
+ * Precio especial y descuento global solo con permiso "editar" en VENTAS;
+ * vender fiado ("fiar": true) con "crear" en FIADOS (lo valida el servicio).
+ * Galpón, cliente y pago son obligatorios: si faltan, el servicio responde con
+ * un mensaje de negocio (no un error de campo).
  */
 
 export const medioPagoSchema = z.enum(MedioPago, { error: "Elegí el medio de pago" });
+
+/** Un pago: medio + monto aplicado a la venta (el vuelto no se registra). */
+export const pagoSchema = z.object({
+  medioPago: medioPagoSchema,
+  monto,
+  /** Nro. de operación de la transferencia / Binance. */
+  referencia: textoOpcional(100),
+});
+
+export const pagosSchema = z
+  .array(pagoSchema)
+  .max(3, "Máximo 3 pagos por venta")
+  .refine((p) => sinDuplicados(p, (x) => x.medioPago), "Usá cada medio de pago una sola vez")
+  .default([]);
 
 const idOpcional = z.preprocess(vacioAUndefined, id.optional());
 
@@ -36,7 +61,10 @@ export const generarVentaSchema = z.object({
   depositoId: idOpcional,
   cliente: clienteVentaSchema.optional(),
   items: z.array(itemVentaSchema).max(300, "Máximo 300 productos por venta"),
-  medioPago: z.preprocess(vacioAUndefined, medioPagoSchema.optional()),
+  /** Vacío solo si se fía todo. Σ montos ≤ total (lo valida el servicio). */
+  pagos: pagosSchema,
+  /** Lo que no cubren los pagos queda como saldo pendiente del cliente (FIADOS "crear"). */
+  fiar: z.boolean().default(false),
   /** Descuento global en pesos (requiere "editar" en VENTAS). */
   descuento: montoOpcional,
   notas: textoOpcional(2000),
@@ -84,6 +112,12 @@ export const configVentasSchema = z.object({
     .default(0),
 });
 
+/** Un pago tal como lo arma un servicio (convertir una cotización, scripts). */
+export interface PagoVentaInput {
+  medioPago: MedioPago;
+  monto: number;
+  referencia?: string;
+}
 export type ConfigVentas = z.output<typeof configVentasSchema>;
 export type ClienteVenta = z.output<typeof clienteVentaSchema>;
 export type GenerarVenta = z.output<typeof generarVentaSchema>;

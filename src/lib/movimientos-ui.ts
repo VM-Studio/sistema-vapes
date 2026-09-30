@@ -59,3 +59,8 @@ export const ESTADO_COMPRA_UI = {
   RECIBIDA: { label: "Recibida", variante: "success" },
   ANULADA: { label: "Anulada", variante: "neutral" },
 } as const;
+
+/** Link de WhatsApp sin destinatario (el usuario elige el chat): remito de una transferencia. */
+export function linkWhatsAppTexto(texto: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(texto)}`;
+}

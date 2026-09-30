@@ -198,6 +198,7 @@ test("cliente nuevo con un teléfono que ya existe → detecta a Nico y lo selec
   // Aunque se saltee la UI, el servidor devuelve el cliente existente para seleccionarlo.
   const v = await db.variante.findFirstOrThrow({
     where: { panelId: PANEL_VAPES, codigoBarras: cargador },
+    include: { producto: true },
   });
   const r = await llamarAccion(
     page,
@@ -206,7 +207,7 @@ test("cliente nuevo con un teléfono que ya existe → detecta a Nico y lo selec
       depositoId: await depositoId("Ayres Plaza"),
       cliente: { nuevo: { nombre: "Nicolás", telefono: telefonoNico } },
       items: [{ varianteId: v.id, cantidad: 1 }],
-      medioPago: "EFECTIVO",
+      pagos: [{ medioPago: "EFECTIVO", monto: Number(v.precioVenta ?? v.producto.precioVenta) }],
     },
     "/p/vapes/ventas",
   );
@@ -256,7 +257,7 @@ test("más unidades que el stock del galpón: la UI no deja avanzar y el servido
         { varianteId: vMango!.id, cantidad: 1 },
         { varianteId: vGrape!.id, cantidad: hay + 5 },
       ],
-      medioPago: "EFECTIVO",
+      pagos: [{ medioPago: "EFECTIVO", monto: 1 }],
     },
     "/p/vapes/ventas",
   );
@@ -313,7 +314,7 @@ test("Trinidad vende y da de alta al cliente: sin precio especial ni descuento",
   const base = {
     depositoId: await depositoId("Ayres Plaza"),
     cliente: { id: venta.clienteId },
-    medioPago: "EFECTIVO",
+    pagos: [{ medioPago: "EFECTIVO", monto: 1 }],
   };
   const especial = await llamarAccion(
     page,

@@ -6,7 +6,6 @@ import {
   Prisma,
   TipoCotizacion,
   TipoVenta,
-  type MedioPago,
 } from "@prisma/client";
 import {
   PDFDocument,
@@ -34,6 +33,7 @@ import {
   type ClienteCotizacion,
   type FiltrosCotizaciones,
 } from "@/lib/validations/cotizacion";
+import type { PagoVentaInput } from "@/lib/validations/venta";
 import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
@@ -51,6 +51,7 @@ import { ClienteDuplicadoError, crearCliente } from "@/server/services/cliente.s
 import { obtenerConfigCotizacion } from "@/server/services/configuracion.service";
 import { nombreNegocio } from "@/server/services/identidad.service";
 import { calcularPrecios, type ResultadoPrecios } from "@/server/services/precio.service";
+import type { CtxFiados } from "@/server/services/fiado.service";
 import { generarVenta, type VentaGenerada } from "@/server/services/venta.service";
 import { claveAleatoria, obtenerStorage } from "@/server/storage";
 
@@ -1127,9 +1128,17 @@ export async function prepararConversion(ctx: Ctx, id: string): Promise<Preparac
  * `recalcular`: precios de hoy.
  */
 export async function convertirEnVenta(
-  ctx: Ctx,
+  ctx: CtxFiados,
   id: string,
-  opciones: { depositoId: string; medioPago: MedioPago; clienteId?: string; recalcular?: boolean },
+  opciones: {
+    depositoId: string;
+    /** Pagos de la venta (ver generarVenta); vacío solo si se fía todo. */
+    pagos: PagoVentaInput[];
+    /** Lo que no cubren los pagos queda fiado (FIADOS "crear"). */
+    fiar?: boolean;
+    clienteId?: string;
+    recalcular?: boolean;
+  },
 ): Promise<VentaGenerada> {
   return transaccion(
     ctx,
@@ -1193,7 +1202,12 @@ export async function convertirEnVenta(
         {
           depositoId: opciones.depositoId,
           cliente: { id: clienteId },
-          medioPago: opciones.medioPago,
+          pagos: opciones.pagos.map((p) => ({
+            medioPago: p.medioPago,
+            monto: p.monto,
+            referencia: p.referencia,
+          })),
+          fiar: opciones.fiar ?? false,
           tipo: c.tipo === TipoCotizacion.MAYORISTA ? TipoVenta.MAYORISTA : TipoVenta.UNITARIA,
           descuento: descuento.greaterThan(0) ? descuento.toNumber() : undefined,
           notas: `Cotización ${c.codigo}`,

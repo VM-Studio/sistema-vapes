@@ -5,6 +5,7 @@ import {
   Building2,
   FileSpreadsheet,
   Calculator,
+  HandCoins,
   Home,
   Package,
   PackageOpen,
@@ -57,7 +58,7 @@ export interface ItemNavegacion {
   enBottomBar: boolean;
   /**
    * Orden en mobile (bottom bar y sheet "Más"), que no es el del sidebar:
-   * Inicio · Ventas · Productos · Stock | Clientes, Devoluciones, Proveedores,
+   * Inicio · Ventas · Productos · Stock | Fiados, Clientes, Devoluciones, Proveedores,
    * Compras, Cotizadores, Reportes, ajustes.
    */
   ordenMobile: number;
@@ -135,6 +136,16 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     enBottomBar: false,
     ordenMobile: 10,
     descripcion: "Clientes y sus compras",
+  },
+  {
+    modulo: Modulo.FIADOS,
+    label: "Fiados",
+    href: "/fiados",
+    icon: HandCoins,
+    grupo: "Operación",
+    enBottomBar: false,
+    ordenMobile: 9,
+    descripcion: "Cuenta corriente: quién debe y cobros",
   },
   {
     modulo: Modulo.PROVEEDORES,

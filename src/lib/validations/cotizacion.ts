@@ -1,9 +1,10 @@
-import { EstadoCotizacion, MedioPago, TipoCotizacion } from "@prisma/client";
+import { EstadoCotizacion, TipoCotizacion } from "@prisma/client";
 import { z } from "zod";
 
 import { prefijoPanel } from "@/lib/paneles";
 
 import { enteroPositivo, id, montoOpcional, texto, textoOpcional, vacioAUndefined } from "./common";
+import { pagosSchema } from "./venta";
 
 /**
  * Cotizador (unitario y mayorista). El cliente manda sabores y cantidades:
@@ -135,7 +136,9 @@ export const rechazarCotizacionSchema = z.object({
 export const convertirCotizacionSchema = z.object({
   id,
   depositoId: id,
-  medioPago: z.enum(MedioPago, { error: "Elegí el medio de pago" }),
+  /** Pagos de la venta (mismas reglas que Generar venta). */
+  pagos: pagosSchema,
+  fiar: z.boolean().default(false),
   clienteId: z.preprocess(vacioAUndefined, id.optional()),
   /** Solo para cotizaciones vencidas: usar los precios de hoy en vez de los cotizados. */
   recalcular: z.boolean().optional(),

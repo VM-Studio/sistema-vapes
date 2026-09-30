@@ -15,6 +15,7 @@ import { formatearFechaHora } from "@/lib/utils";
 import {
   ESTADO_VENTA_UI,
   ETIQUETA_MEDIO_PAGO,
+  etiquetaMedioPrincipal,
   ETIQUETA_TIPO_VENTA,
   MEDIOS_PAGO,
 } from "@/lib/ventas-ui";
@@ -151,7 +152,7 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
             { key: "vendedor", header: "Vendedor", cell: (x) => x.vendedor },
             { key: "deposito", header: "Galpón", cell: (x) => x.deposito },
             { key: "tipo", header: "Tipo", cell: (x) => ETIQUETA_TIPO_VENTA[x.tipo] },
-            { key: "medio", header: "Medio", cell: (x) => ETIQUETA_MEDIO_PAGO[x.medioPago] },
+            { key: "medio", header: "Medio", cell: (x) => etiquetaMedioPrincipal(x.medioPago) },
             {
               key: "estado",
               header: "Estado",
@@ -195,7 +196,7 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
               </div>
               <p className="text-muted text-small mt-1">
                 {formatearFechaHora(x.fecha)} · {x.vendedor} · {x.deposito} · {x.unidades} u. ·{" "}
-                {ETIQUETA_MEDIO_PAGO[x.medioPago]}
+                {etiquetaMedioPrincipal(x.medioPago)}
                 {x.estado === "ANULADA" ? " · Anulada" : ""}
               </p>
             </FilaMobile>

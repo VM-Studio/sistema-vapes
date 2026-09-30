@@ -1,5 +1,5 @@
 /**
- * Prueba de restauración (no corre en CI por tiempo; ver docs/DEPLOY.md):
+ * Prueba de restauración (corre en CI sobre la base sembrada; ver docs/DEPLOY.md):
  *  1. `pnpm backup` sobre la base de DATABASE_URL (ej. la demo).
  *  2. Crea una base VACÍA (RESTORE_DB, default gestion_restore) y restaura ahí.
  *  3. Compara COUNT(*) de TODAS las tablas y SUM(Stock.cantidad): tienen que coincidir.
@@ -49,12 +49,16 @@ async function main() {
   console.log(`   ✔ ${b.archivo} · ${(b.tamanio / 1024).toFixed(1)} KiB · ${b.entradas} entradas`);
 
   console.log(`2) Base vacía «${destinoDb}» y restauración`);
-  const psql = (sql: string) =>
-    spawnSync(
-      "docker",
-      ["exec", "sistema_vapes_db", "psql", "-U", "app", "-d", "postgres", "-qc", sql],
-      { encoding: "utf8" },
-    );
+  // psql contra la base de mantenimiento del mismo servidor (local, docker o
+  // el service de Postgres del CI): no depende de un contenedor con nombre.
+  const mantenimiento = new URL(origen.toString());
+  mantenimiento.pathname = "/postgres";
+  mantenimiento.search = "";
+  const psqlBin = process.env.PG_DUMP_PATH?.replace(/pg_dump$/, "psql") ?? "psql";
+  const psql = (sql: string) => {
+    const r = spawnSync(psqlBin, [mantenimiento.toString(), "-qc", sql], { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`psql falló (${sql}):\n${r.stderr || r.error}`);
+  };
   psql(`DROP DATABASE IF EXISTS "${destinoDb}" WITH (FORCE)`);
   psql(`CREATE DATABASE "${destinoDb}"`);
   const destino = new URL(origen.toString());
@@ -83,14 +87,26 @@ async function main() {
   console.log(
     `   ${okStock ? "✔" : "✘"} ${"SUM(Stock.cantidad)".padEnd(26)} ${String(a.stock).padStart(8)} ${String(d.stock).padStart(11)}`,
   );
-  const inmutable = await restaurada.$connect().then(() =>
-    restaurada
-      .$executeRawUnsafe(`UPDATE "MovimientoStock" SET "cantidad" = "cantidad" WHERE true`)
-      .then(
-        () => false,
-        () => true,
-      ),
-  );
+  // Con movimientos, un UPDATE tiene que rebotar; sin movimientos (base recién
+  // sembrada) el UPDATE no toca filas: se verifica que el trigger exista.
+  await restaurada.$connect();
+  const [movs] = await restaurada.$queryRaw<
+    { n: bigint }[]
+  >`SELECT COUNT(*) AS n FROM "MovimientoStock"`;
+  const inmutable =
+    Number(movs!.n) > 0
+      ? await restaurada
+          .$executeRawUnsafe(`UPDATE "MovimientoStock" SET "cantidad" = "cantidad" WHERE true`)
+          .then(
+            () => false,
+            () => true,
+          )
+      : (
+          await restaurada.$queryRaw<{ n: bigint }[]>`
+            SELECT COUNT(*) AS n FROM pg_trigger
+            WHERE tgrelid = '"MovimientoStock"'::regclass AND NOT tgisinternal
+              AND tgtype & 16 = 16 AND tgtype & 2 = 2`
+        )[0]!.n > 0;
   await restaurada.$disconnect();
   if (!inmutable) fallos++;
   console.log(

@@ -21,7 +21,7 @@ export function Radio({ label, hint, id, className, ...props }: RadioProps) {
       <input
         id={radioId}
         type="radio"
-        className="mt-0.5 size-[1.125rem] shrink-0 cursor-pointer accent-foreground"
+        className="accent-foreground mt-0.5 size-[1.125rem] shrink-0 cursor-pointer"
         {...props}
       />
       <span className="flex flex-col gap-0.5">

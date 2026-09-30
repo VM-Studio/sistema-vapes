@@ -113,8 +113,19 @@ async function cargarProductoNuevo(
   const cantidadInput = page.getByLabel(`Cantidad de ${titulo}`);
   await expect(cantidadInput).toHaveValue("1");
   await cantidadInput.fill(String(cantidad));
-  await page.getByRole("button", { name: `Cargar ${cantidad} unidades en ${galpon}` }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Confirmar carga" }).click();
+  // Con más de un galpón hay paso "Distribuir" (por defecto todo al de ingreso);
+  // con uno solo, se confirma directo.
+  const distribuir = page.getByRole("button", { name: `Continuar con ${cantidad} unidades` });
+  const directo = page.getByRole("button", { name: `Cargar ${cantidad} unidades en ${galpon}` });
+  await expect(distribuir.or(directo)).toBeVisible();
+  if (await distribuir.isVisible()) {
+    await distribuir.click();
+    await expect(page.getByRole("heading", { name: "Distribuir entre galpones" })).toBeVisible();
+    await page.getByRole("button", { name: "Confirmar carga" }).click();
+  } else {
+    await directo.click();
+    await page.getByRole("dialog").getByRole("button", { name: "Confirmar carga" }).click();
+  }
   await expect(page.getByText(`Cargaste ${cantidad} unidades en ${galpon}`)).toBeVisible();
 }
 
@@ -327,7 +338,14 @@ test("Cosmetic: lo esencial (stock en Principal, venta con cliente nuevo) y aisl
   await page.goto(`/p/vapes/productos?q=${encodeURIComponent(COSMETIC.modelo)}`);
   await expect(page.getByText("No hay productos con esos filtros")).toBeVisible();
   await page.goto(`/p/vapes/clientes?q=${encodeURIComponent(CLIENTE_COSMETIC.nombre)}`);
-  await expect(page.getByText(`No hay clientes con “${CLIENTE_COSMETIC.nombre}”`)).toBeVisible();
+  // La búsqueda es aproximada (trigramas): puede traer clientes de Vapes
+  // parecidos, pero nunca la clienta de Cosmetic.
+  await expect(page.getByRole("searchbox", { name: "Nombre o teléfono" })).toHaveValue(
+    CLIENTE_COSMETIC.nombre,
+  );
+  await expect(page.getByRole("link", { name: CLIENTE_COSMETIC.nombre, exact: true })).toHaveCount(
+    0,
+  );
   await page.goto(`/p/cosmetic/productos?q=${encodeURIComponent(VAPES.modelo)}`);
   await expect(page.getByText("No hay productos con esos filtros")).toBeVisible();
   // El código de Vapes, escaneado en Cosmetic, es desconocido: abre el alta rápida.

@@ -23,9 +23,6 @@ import {
   obtenerStockPorProducto,
 } from "../src/server/services/inventario.service";
 import {
-  anularTransferencia,
-  completarTransferencia,
-  crearTransferencia,
   listarMovimientos,
   registrarAjuste,
   registrarAjusteMasivo,
@@ -41,6 +38,11 @@ import {
   listarProductos,
   obtenerProducto,
 } from "../src/server/services/producto.service";
+import {
+  anularTransferencia,
+  completarTransferencia,
+  crearTransferencia,
+} from "../src/server/services/transferencia.service";
 import { sembrarCatalogoEjemplo } from "../e2e/fixtures/catalogo-ejemplo";
 
 const VAPES = "pnl_vapes";
@@ -318,7 +320,7 @@ async function main() {
   const t1 = await crearTransferencia(actor, {
     depositoOrigenId: g1.id,
     depositoDestinoId: g2.id,
-    notas: undefined,
+    observacion: undefined,
     items: [{ varianteId: mango.id, cantidad: 10 }],
   });
   check(
@@ -340,7 +342,7 @@ async function main() {
     crearTransferencia(actor, {
       depositoOrigenId: g1.id,
       depositoDestinoId: g2.id,
-      notas: undefined,
+      observacion: undefined,
       items: [{ varianteId: mango.id, cantidad: 100 }],
     }),
   );
@@ -352,7 +354,7 @@ async function main() {
   const t2 = await crearTransferencia(actor, {
     depositoOrigenId: g1.id,
     depositoDestinoId: g2.id,
-    notas: undefined,
+    observacion: undefined,
     items: [{ varianteId: mango.id, cantidad: 15 }],
   });
   await registrarAjuste(actor, {
@@ -381,7 +383,7 @@ async function main() {
     crearTransferencia(actor, {
       depositoOrigenId: g1.id,
       depositoDestinoId: depCosmetic.id,
-      notas: undefined,
+      observacion: undefined,
       items: [{ varianteId: mango.id, cantidad: 1 }],
     }),
   );

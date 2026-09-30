@@ -61,6 +61,7 @@ export const MODULOS_DE_PANEL: readonly Modulo[] = [
   Modulo.PRODUCTOS,
   Modulo.STOCK,
   Modulo.VENTAS,
+  Modulo.FIADOS,
   Modulo.CLIENTES,
   Modulo.DEVOLUCIONES,
   Modulo.COMPRAS,
@@ -79,13 +80,17 @@ export const MODULO_LABEL: Record<Modulo, string> = {
   COMPRAS: "Compras",
   COTIZADOR: "Cotizador",
   REPORTES: "Reportes",
+  FIADOS: "Fiados",
   USUARIOS: "Usuarios",
   CONFIGURACION: "Configuración",
 };
 
 /** Acciones que tienen sentido para el módulo (la grilla muestra solo esas). */
 export function accionesDe(modulo: Modulo): readonly Accion[] {
-  return modulo === Modulo.DASHBOARD || modulo === Modulo.REPORTES ? ["ver"] : ACCIONES;
+  if (modulo === Modulo.DASHBOARD || modulo === Modulo.REPORTES) return ["ver"];
+  // Fiados no tiene "eliminar": anular un cobro es solo de dueños.
+  if (modulo === Modulo.FIADOS) return ["ver", "crear", "editar"];
+  return ACCIONES;
 }
 
 /** Aclaración que se muestra en la grilla de permisos. */
@@ -93,6 +98,8 @@ export const MODULO_AYUDA: Partial<Record<Modulo, string>> = {
   STOCK: "Stock por depósito, movimientos, ingresos, ajustes y transferencias.",
   COTIZADOR: "Cotizador unitario y mayorista.",
   REPORTES: "Solo «Ver». Los costos y ganancias los ven únicamente los dueños.",
+  FIADOS:
+    "Cuenta corriente. Ver: deudas de los clientes · Crear: vender fiado · Editar: registrar cobros.",
 };
 
 export const ACCION_LABEL: Record<Accion, string> = {
@@ -140,11 +147,11 @@ export function puede(
  */
 export function normalizarPermiso(permiso: PermisoModulo, cambio?: Accion): PermisoModulo {
   const p = { ...permiso };
-  if (accionesDe(p.modulo).length === 1) {
-    p.puedeCrear = false;
-    p.puedeEditar = false;
-    p.puedeEliminar = false;
-  }
+  // Las acciones que el módulo no tiene quedan siempre apagadas.
+  const acciones = accionesDe(p.modulo);
+  if (!acciones.includes("crear")) p.puedeCrear = false;
+  if (!acciones.includes("editar")) p.puedeEditar = false;
+  if (!acciones.includes("eliminar")) p.puedeEliminar = false;
   if (cambio === "ver" && !p.puedeVer) {
     return { ...p, puedeCrear: false, puedeEditar: false, puedeEliminar: false };
   }

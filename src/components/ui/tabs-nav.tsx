@@ -42,7 +42,7 @@ export function TabsNav({
               {t.badge !== undefined && (
                 <span
                   className={cn(
-                    "min-w-5 rounded-inner px-1.5 py-0.5 text-center text-xs leading-none tabular-nums",
+                    "rounded-inner min-w-5 px-1.5 py-0.5 text-center text-xs leading-none tabular-nums",
                     t.activo ? "bg-foreground text-background" : "bg-surface-2 text-muted",
                   )}
                 >

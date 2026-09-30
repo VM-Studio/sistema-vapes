@@ -23,7 +23,7 @@ import { EstadoStockBadge } from "@/components/catalogo/estado-stock-badge";
 import { FiltrosCatalogo, type OpcionFiltro } from "@/components/catalogo/filtros-catalogo";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MenuFila, type AccionFila } from "@/components/ui/menu-fila";
 import { PageHeader } from "@/components/ui/page-header";
@@ -36,7 +36,6 @@ import type { ResultadoLedger, ResumenStockPanel } from "@/server/services/stock
 
 import { TabsGalpones } from "./_componentes/tabs-galpones";
 import { FiltrosMovimientosStock, TablaMovimientos } from "./tabla-movimientos";
-import { TransferirSheet, type FilaATransferir } from "./transferir-sheet";
 
 const ICONO = { strokeWidth: 1.75 } as const;
 
@@ -76,12 +75,10 @@ export function StockView({
   const puedeAjustar = usePuede(Modulo.STOCK, "editar");
   const puedeTransferir = usePuede(Modulo.STOCK, "crear");
   const [ajustando, setAjustando] = useState<VarianteParaAjuste | null>(null);
-  const [transfiriendo, setTransfiriendo] = useState<FilaATransferir | null>(null);
 
   const PATH = ruta("/stock");
   const depositos = resumen.porDeposito;
   const deposito = depositos.find((d) => d.id === depositoId) ?? null;
-  const otros = depositos.filter((d) => d.id !== depositoId);
   const { filas } = datos;
   const conFiltros = Boolean(
     params.q || params.marcaId || params.categoriaId || params.soloBajoMinimo === "1",
@@ -106,32 +103,52 @@ export function StockView({
     return [...mapa.values()];
   }, [filas, porProducto]);
 
+  /**
+   * "Transferir" abre el flujo de transferencias con el sabor precargado:
+   * desde un galpón, ese galpón es el origen; desde Global, el galpón con más
+   * stock del sabor. Con dos galpones el destino también queda elegido.
+   */
+  const hrefTransferir = (f: FilaStock) => {
+    const origen =
+      deposito ??
+      [...depositos].sort((a, b) => (f.porDeposito[b.id] ?? 0) - (f.porDeposito[a.id] ?? 0))[0]!;
+    const destinos = depositos.filter((d) => d.id !== origen.id);
+    const q = new URLSearchParams({ variante: f.varianteId, origen: origen.id });
+    if (destinos.length === 1) q.set("destino", destinos[0]!.id);
+    return {
+      href: ruta(`/stock/transferencias/nueva?${q}`),
+      destino: destinos.length === 1 ? destinos[0]! : null,
+    };
+  };
+
   const acciones = (f: FilaStock, compacto: boolean) => {
-    if (!deposito) return null;
-    const destinoUnico = otros.length === 1 ? otros[0]! : null;
-    const puedeMover = puedeTransferir && otros.length > 0 && f.cantidad > 0;
-    const menu: AccionFila[] = [
-      ...(puedeAjustar
-        ? [
-            {
-              label: "Ajustar stock",
-              icon: SlidersVertical,
-              onSelect: () =>
-                setAjustando({
-                  varianteId: f.varianteId,
-                  nombre: f.nombreCompleto,
-                  porDeposito: f.porDeposito,
-                }),
-            },
-          ]
-        : []),
-      {
-        label: "Ver movimientos",
-        icon: History,
-        href: ruta(`/stock/movimientos?varianteId=${f.varianteId}&depositoId=${deposito.id}`),
-      },
-      { label: "Ver producto", icon: Package, href: ruta(`/productos/${f.productoId}`) },
-    ];
+    const puedeMover = puedeTransferir && depositos.length > 1 && f.cantidad > 0;
+    if (!deposito && !puedeMover) return null;
+    const transferir = puedeMover ? hrefTransferir(f) : null;
+    const menu: AccionFila[] = deposito
+      ? [
+          ...(puedeAjustar
+            ? [
+                {
+                  label: "Ajustar stock",
+                  icon: SlidersVertical,
+                  onSelect: () =>
+                    setAjustando({
+                      varianteId: f.varianteId,
+                      nombre: f.nombreCompleto,
+                      porDeposito: f.porDeposito,
+                    }),
+                },
+              ]
+            : []),
+          {
+            label: "Ver movimientos",
+            icon: History,
+            href: ruta(`/stock/movimientos?varianteId=${f.varianteId}&depositoId=${deposito.id}`),
+          },
+          { label: "Ver producto", icon: Package, href: ruta(`/productos/${f.productoId}`) },
+        ]
+      : [];
     return (
       <div
         className={cn(
@@ -139,25 +156,23 @@ export function StockView({
           compacto ? "border-border mt-3 border-t pt-3" : "justify-end",
         )}
       >
-        {puedeMover && (
-          <Button
-            variant={compacto ? "secondary" : "ghost"}
-            size="sm"
-            className={cn(compacto && "h-11 flex-1")}
-            onClick={() =>
-              setTransfiriendo({
-                varianteId: f.varianteId,
-                nombre: f.nombreCompleto,
-                disponible: f.cantidad,
-              })
-            }
-            aria-label={`Transferir ${f.nombreCompleto} a ${destinoUnico?.nombre ?? "otro galpón"}`}
+        {transferir && (
+          <Link
+            href={transferir.href}
+            className={buttonVariants({
+              variant: compacto ? "secondary" : "ghost",
+              size: "sm",
+              className: cn(compacto && "h-11 flex-1"),
+            })}
+            aria-label={`Transferir ${f.nombreCompleto}${transferir.destino ? ` a ${transferir.destino.nombre}` : ""}`}
           >
             <ArrowLeftRight {...ICONO} />
-            {compacto && destinoUnico ? `Transferir a ${destinoUnico.nombre}` : "Transferir"}
-          </Button>
+            {compacto && deposito && transferir.destino
+              ? `Transferir a ${transferir.destino.nombre}`
+              : "Transferir"}
+          </Link>
         )}
-        <MenuFila acciones={menu} label={`Acciones de ${f.nombreCompleto}`} />
+        {menu.length > 0 && <MenuFila acciones={menu} label={`Acciones de ${f.nombreCompleto}`} />}
       </div>
     );
   };
@@ -192,11 +207,13 @@ export function StockView({
       <td className="px-4 py-3">
         <EstadoStockBadge estado={f.estado} />
       </td>
-      {deposito && <td className="py-2 pr-2 pl-4">{acciones(f, false)}</td>}
+      {conAcciones && <td className="py-2 pr-2 pl-4">{acciones(f, false)}</td>}
     </tr>
   );
 
   const titulo = deposito ? deposito.nombre : "Global";
+  /** Columna de acciones: siempre en un galpón; en Global, si se puede transferir. */
+  const conAcciones = deposito !== null || (puedeTransferir && depositos.length > 1);
   const paginasLedger = Math.max(1, Math.ceil(ledger.total / ledger.pageSize));
 
   return (
@@ -211,7 +228,7 @@ export function StockView({
         actions={
           <>
             <Link
-              href={ruta("/stock/movimientos/transferencias")}
+              href={ruta("/stock/transferencias")}
               className={buttonVariants({ variant: "ghost" })}
             >
               <ArrowLeftRight {...ICONO} /> Transferencias
@@ -288,7 +305,7 @@ export function StockView({
           !deposito && (
             <nav
               aria-label="Vista"
-              className="bg-card inline-flex shrink-0 gap-0.5 rounded-control p-0.5"
+              className="bg-card rounded-control inline-flex shrink-0 gap-0.5 p-0.5"
             >
               {[
                 { href: link({ vista: null }), label: "Por sabor", activo: !porProducto },
@@ -300,10 +317,8 @@ export function StockView({
                   scroll={false}
                   aria-current={v.activo ? "page" : undefined}
                   className={cn(
-                    "flex h-10 items-center rounded-inner px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9",
-                    v.activo
-                      ? "bg-foreground text-background"
-                      : "text-muted hover:text-foreground",
+                    "rounded-inner flex h-10 items-center px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9",
+                    v.activo ? "bg-foreground text-background" : "text-muted hover:text-foreground",
                   )}
                 >
                   {v.label}
@@ -345,7 +360,7 @@ export function StockView({
         )
       ) : (
         <>
-          <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
+          <div className="border-border bg-surface rounded-card hidden overflow-x-auto border md:block">
             <table className="w-full text-left text-sm tabular-nums" data-testid="tabla-stock">
               <caption className="sr-only">
                 {deposito ? `Stock en ${deposito.nombre}` : "Stock por galpón y total"}
@@ -369,7 +384,7 @@ export function StockView({
                   <th scope="col" className={TH}>
                     Estado
                   </th>
-                  {deposito && (
+                  {conAcciones && (
                     <th scope="col" className={TH}>
                       <span className="sr-only">Acciones</span>
                     </th>
@@ -402,7 +417,7 @@ export function StockView({
                                 {g.reduce((a, f) => a + valor(f, c.id), 0)}
                               </td>
                             ))}
-                            <td colSpan={deposito ? 3 : 2} />
+                            <td colSpan={conAcciones ? 3 : 2} />
                           </tr>
                           {g.map((f) => filaTabla(f, true))}
                         </Fragment>
@@ -534,22 +549,13 @@ export function StockView({
       </section>
 
       {deposito && (
-        <>
-          <AjusteRapidoDialog
-            key={ajustando?.varianteId ?? "cerrado"}
-            variante={ajustando}
-            depositos={[deposito]}
-            depositoInicial={deposito.id}
-            onOpenChange={(o) => !o && setAjustando(null)}
-          />
-          <TransferirSheet
-            key={transfiriendo?.varianteId ?? "cerrado-t"}
-            fila={transfiriendo}
-            origen={deposito}
-            destinos={otros}
-            onCerrar={() => setTransfiriendo(null)}
-          />
-        </>
+        <AjusteRapidoDialog
+          key={ajustando?.varianteId ?? "cerrado"}
+          variante={ajustando}
+          depositos={[deposito]}
+          depositoInicial={deposito.id}
+          onOpenChange={(o) => !o && setAjustando(null)}
+        />
       )}
     </>
   );

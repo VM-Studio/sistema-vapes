@@ -10,8 +10,9 @@ const SABOR = "Strawberry Watermelon";
 /**
  * Stock por galpón y global: la pestaña de un galpón muestra solo ese galpón
  * (y sus movimientos); Global, una columna por galpón + Total y los
- * movimientos de todos. Transferir desde la fila mueve stock entre galpones
- * sin cambiar el total del panel.
+ * movimientos de todos. "Transferir" en la fila abre el flujo de
+ * transferencias con el sabor precargado; mueve stock entre galpones sin
+ * cambiar el total del panel.
  */
 test("stock: pestañas por galpón y Global; transferir 5 desde la fila no cambia el total", async ({
   page,
@@ -41,22 +42,21 @@ test("stock: pestañas por galpón y Global; transferir 5 desde la fila no cambi
   const movimientos = page.getByRole("table", { name: "Movimientos de stock" });
   await expect(movimientos.getByRole("columnheader", { name: "Galpón" })).toHaveCount(0);
 
-  // Transferir 5 a Mercedes desde la fila del sabor.
+  // Transferir 5 a Mercedes desde la fila del sabor: abre el flujo de transferencias con el sabor.
   await page.goto(`/p/vapes/stock?tab=${ayres}&q=${encodeURIComponent(SABOR)}`);
-  await page
-    .getByRole("button", { name: `Transferir ${IGNITE_V80} — ${SABOR} a Mercedes` })
-    .click();
-  const sheet = page.getByRole("dialog", { name: "Transferir a Mercedes" });
-  const cantidad = sheet.getByLabel("Cantidad a transferir");
+  await page.getByRole("link", { name: `Transferir ${IGNITE_V80} — ${SABOR} a Mercedes` }).click();
+  const cantidad = page.getByLabel(`Cantidad de ${IGNITE_V80} — ${SABOR}`);
   await cantidad.fill("5");
   await cantidad.blur();
-  await sheet.getByRole("button", { name: "Transferir 5 u." }).click();
-  await expect(page.getByText(/Transferencia #\d+ completada/)).toBeVisible();
+  await page.getByRole("button", { name: "Continuar con 5 unidades" }).click();
+  await page.getByRole("button", { name: "Mover ahora" }).click();
+  await expect(page.getByRole("heading", { name: "Moviste 5 unidades" })).toBeVisible();
   await expect.poll(() => stock(IGNITE_V80, SABOR, "Ayres Plaza")).toBe(g1 - 5);
   expect(await stock(IGNITE_V80, SABOR, "Mercedes")).toBe(g2 + 5);
 
-  // En Ayres Plaza, el movimiento de salida con su referencia.
-  await expect(movimientos.getByRole("link", { name: /Transferencia #\d+/ }).first()).toBeVisible();
+  // En Ayres Plaza, el movimiento de salida con su referencia (el código de la transferencia).
+  await page.goto(`/p/vapes/stock?tab=${ayres}&q=${encodeURIComponent(SABOR)}`);
+  await expect(movimientos.getByRole("link", { name: /^VAP-T-\d{6}$/ }).first()).toBeVisible();
   await expect(movimientos.getByText(/^[-−]5$/).first()).toBeVisible();
 
   // Global: Ayres Plaza | Mercedes | Total; el total no cambió.
@@ -68,6 +68,10 @@ test("stock: pestañas por galpón y Global; transferir 5 desde la fila no cambi
   await expect(celdas.nth(2)).toHaveText(String(g1 - 5));
   await expect(celdas.nth(3)).toHaveText(String(g2 + 5));
   await expect(celdas.nth(4)).toHaveText(String(g1 + g2));
+  // Desde Global también se transfiere: el origen es el galpón con más stock del sabor.
+  await expect(
+    fila.getByRole("link", { name: `Transferir ${IGNITE_V80} — ${SABOR} a Mercedes` }),
+  ).toHaveAttribute("href", new RegExp(`origen=${ayres}`));
 
   // Movimientos de todos los galpones, con la columna galpón: salida y entrada.
   await expect(

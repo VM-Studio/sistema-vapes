@@ -78,7 +78,7 @@ export function ChartTooltipCard({
   return (
     <div
       className={cn(
-        "bg-card shadow-pop min-w-44 rounded-card border border-black/[0.06] p-3 text-sm",
+        "bg-card shadow-pop rounded-card min-w-44 border border-black/[0.06] p-3 text-sm",
         className,
       )}
     >
@@ -101,7 +101,7 @@ export function ChartPlaceholder({
   return (
     <div
       className={cn(
-        "relative flex h-64 w-full items-center justify-center overflow-hidden rounded-control md:h-80",
+        "rounded-control relative flex h-64 w-full items-center justify-center overflow-hidden md:h-80",
         className,
       )}
       role="img"

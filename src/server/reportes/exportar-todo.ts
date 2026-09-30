@@ -10,7 +10,9 @@ import { TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { precioVentaEfectivo } from "@/lib/precios";
 import {
   ESTADO_VENTA_UI,
+  ESTADO_PAGO_UI,
   ETIQUETA_MEDIO_PAGO,
+  etiquetaMedioPrincipal,
   ETIQUETA_TIPO_VENTA,
   saborVisible,
 } from "@/lib/ventas-ui";
@@ -80,7 +82,7 @@ export function streamExportarTodo(meta: {
     info.addRow([`${meta.negocio} — exportación completa`]).font = { bold: true, size: 14 };
     info.addRow([`Generada ${formatearFechaHora(new Date())} por ${meta.usuario}`]);
     info.addRow([
-      "Hojas: Productos, Stock, Movimientos, Ventas, Ítems de ventas, Devoluciones, Ítems de devoluciones, Compras, Ítems de compras, Cotizaciones, Ítems de cotizaciones, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
+      "Hojas: Productos, Stock, Movimientos, Ventas, Pagos de ventas, Ítems de ventas, Devoluciones, Ítems de devoluciones, Compras, Ítems de compras, Cotizaciones, Ítems de cotizaciones, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
     ]);
     info.commit();
     const sistemas = new Map(
@@ -217,6 +219,9 @@ export function streamExportarTodo(meta: {
         { header: "Estado", key: "e", width: 12 },
         { header: "Tipo", key: "ti", width: 11 },
         { header: "Medio de pago", key: "mp", width: 14 },
+        { header: "Estado de pago", key: "ep", width: 13 },
+        { header: "Pagado", key: "pa", width: 12, numFmt: MONEDA },
+        { header: "Saldo pendiente", key: "sp", width: 13, numFmt: MONEDA },
         { header: "Cliente", key: "c", width: 22 },
         { header: "Teléfono", key: "tel", width: 16 },
         { header: "Vendedor", key: "u", width: 14 },
@@ -243,7 +248,10 @@ export function streamExportarTodo(meta: {
         f: formatearFechaHora(v.fecha),
         e: ESTADO_VENTA_UI[v.estado].label,
         ti: ETIQUETA_TIPO_VENTA[v.tipo],
-        mp: ETIQUETA_MEDIO_PAGO[v.medioPago],
+        mp: etiquetaMedioPrincipal(v.medioPago),
+        ep: v.estado === "CONFIRMADA" ? ESTADO_PAGO_UI[v.estadoPago].label : "",
+        pa: num(v.montoPagado),
+        sp: num(v.saldoPendiente),
         c: v.cliente.nombre,
         tel: v.cliente.telefono,
         u: v.vendedor.nombre,
@@ -254,6 +262,43 @@ export function streamExportarTodo(meta: {
         co: num(v.costoTotal),
         g: num(v.gananciaBruta),
         an: v.motivoAnulacion ?? "",
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Pagos de ventas",
+      [
+        SISTEMA,
+        { header: "ID de venta", key: "n", width: 12 },
+        { header: "Fecha", key: "f", width: 17 },
+        { header: "Medio de pago", key: "mp", width: 14 },
+        { header: "Monto", key: "m", width: 12, numFmt: MONEDA },
+        { header: "Referencia", key: "r", width: 18 },
+        { header: "Cobro de fiado", key: "cp", width: 10 },
+        { header: "Registró", key: "u", width: 14 },
+        { header: "Anulado", key: "an", width: 17 },
+        { header: "Motivo de anulación", key: "mo", width: 30 },
+      ],
+      (c) =>
+        prisma.pagoVenta.findMany({
+          ...pag(c),
+          include: {
+            venta: { select: { codigo: true } },
+            usuario: { select: { nombre: true } },
+          },
+        }),
+      (p) => ({
+        sis: sistema(p.panelId),
+        n: p.venta.codigo,
+        f: formatearFechaHora(p.fecha),
+        mp: ETIQUETA_MEDIO_PAGO[p.medioPago],
+        m: num(p.monto),
+        r: p.referencia ?? "",
+        cp: p.esCobroPosterior ? "Sí" : "No",
+        u: p.usuario.nombre,
+        an: p.anuladoAt ? formatearFechaHora(p.anuladoAt) : "",
+        mo: p.motivoAnulacion ?? "",
       }),
     );
 
@@ -513,6 +558,7 @@ export function streamExportarTodo(meta: {
         { header: "Nombre", key: "n", width: 24 },
         { header: "Teléfono", key: "t", width: 16 },
         { header: "Notas", key: "no", width: 40 },
+        { header: "Saldo deudor", key: "sd", width: 13, numFmt: MONEDA },
         { header: "Activo", key: "act", width: 8 },
         { header: "Baja", key: "baja", width: 16 },
       ],
@@ -522,6 +568,7 @@ export function streamExportarTodo(meta: {
         n: x.nombre,
         t: x.telefono,
         no: x.notas,
+        sd: num(x.saldoDeudor),
         act: x.activo ? "Sí" : "No",
         baja: x.deletedAt ? formatearFechaHora(x.deletedAt) : "",
       }),

@@ -131,12 +131,22 @@ async function main() {
   });
   const clienteVapes = await db.cliente.findFirstOrThrow({ where: { deletedAt: null } });
 
-  /** Datos fijos de una venta de Vapes (sin número ni código). */
-  const baseVenta = () => ({
+  /**
+   * Datos fijos de una venta de Vapes (sin número ni código), pagada entera en
+   * efectivo: montoPagado = total y un PagoVenta por el total (lo exigen el
+   * CHECK de montos y el trigger diferido de pagos).
+   */
+  const baseVenta = (total = "0") => ({
     depositoId: g1.id,
     clienteId: clienteVapes.id,
     vendedorId: owner.id,
     medioPago: MedioPago.EFECTIVO,
+    montoPagado: total,
+    ...(Number(total) > 0
+      ? {
+          pagos: { create: [{ medioPago: MedioPago.EFECTIVO, monto: total, usuarioId: owner.id }] },
+        }
+      : {}),
   });
 
   /** Crea una venta CONFIRMADA consistente y "olvida" que se creó en esta tx. */
@@ -144,7 +154,7 @@ async function main() {
     const numero = await siguienteNumero(tx, VAPES, "VENTA");
     const venta = await tx.venta.create({
       data: {
-        ...baseVenta(),
+        ...baseVenta("32000.00"),
         numero,
         codigo: `TST-${numero}`,
         estado: EstadoVenta.CONFIRMADA,
@@ -479,13 +489,40 @@ async function main() {
     "crear venta CONFIRMADA con ítems en una tx: OK",
   );
   await rechaza(
-    "venta CONFIRMADA sin medio de pago",
+    "venta CONFIRMADA con montoPagado distinto de la suma de sus pagos",
     () =>
       transaccion(ctxVapes, async (tx) => {
         const venta = await ventaConfirmada(tx);
-        await tx.$executeRaw`UPDATE "Venta" SET "medioPago" = NULL WHERE "id" = ${venta.id}`;
+        await tx.$executeRaw`UPDATE "Venta" SET "montoPagado" = 1000, "saldoPendiente" = 31000,
+          "estadoPago" = 'PARCIAL' WHERE "id" = ${venta.id}`;
       }),
-    /medioPago|no se modifica|null value/,
+    "no coincide con la suma de pagos",
+  );
+  await rechaza(
+    "venta CONFIRMADA con pagado + pendiente ≠ total",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const venta = await ventaConfirmada(tx);
+        await tx.$executeRaw`UPDATE "Venta" SET "saldoPendiente" = 500 WHERE "id" = ${venta.id}`;
+      }),
+    /Venta_pagos_total_chk|Venta_estadoPago_chk/,
+  );
+  await rechaza(
+    "modificar el monto de un pago",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const venta = await ventaConfirmada(tx);
+        await tx.$executeRaw`UPDATE "PagoVenta" SET "monto" = 1 WHERE "ventaId" = ${venta.id}`;
+      }),
+    "Los pagos no se modifican",
+  );
+  await rechaza(
+    "saldo deudor del cliente que no coincide con sus ventas",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        await tx.$executeRaw`UPDATE "Cliente" SET "saldoDeudor" = "saldoDeudor" + 100 WHERE "id" = ${clienteVapes.id}`;
+      }),
+    "no coincide con el saldo pendiente",
   );
   await rechaza(
     "totales que no cierran con los ítems",
@@ -493,7 +530,7 @@ async function main() {
       transaccion(ctxVapes, async (tx) =>
         tx.venta.create({
           data: {
-            ...baseVenta(),
+            ...baseVenta("99999.00"),
             numero: await siguienteNumero(tx, VAPES, "VENTA"),
             codigo: "TST-TOTALES",
             estado: EstadoVenta.CONFIRMADA,
@@ -588,7 +625,7 @@ async function main() {
       transaccion(ctxVapes, async (tx) =>
         tx.venta.create({
           data: {
-            ...baseVenta(),
+            ...baseVenta("30000.00"),
             numero: await siguienteNumero(tx, VAPES, "VENTA"),
             codigo: "TST-SUBTOTAL",
             subtotal: "30000.00",
@@ -617,7 +654,7 @@ async function main() {
   const especial = await enRollback(async (tx) =>
     tx.venta.create({
       data: {
-        ...baseVenta(),
+        ...baseVenta("30000.00"),
         numero: await siguienteNumero(tx, VAPES, "VENTA"),
         codigo: "TST-ESPECIAL",
         subtotal: "30000.00",
@@ -655,7 +692,7 @@ async function main() {
         });
         await tx.venta.create({
           data: {
-            ...baseVenta(),
+            ...baseVenta("16000.00"),
             numero: await siguienteNumero(tx, VAPES, "VENTA"),
             codigo: "TST-PRODUCTO",
             subtotal: "16000.00",
@@ -687,7 +724,7 @@ async function main() {
         const venta = await ventaConfirmada(tx);
         await tx.venta.create({
           data: {
-            ...baseVenta(),
+            ...baseVenta("16000.00"),
             numero: await siguienteNumero(tx, VAPES, "VENTA"),
             codigo: venta.codigo,
             subtotal: "16000.00",
@@ -836,12 +873,13 @@ async function main() {
     const t = await tx.transferencia.create({
       data: {
         numero: await siguienteNumero(tx, VAPES, "TRANSFERENCIA"),
+        codigo: `VAP-T-TEST-${Date.now()}`,
         depositoOrigenId: g1.id,
         depositoDestinoId: g2.id,
         usuarioId: owner.id,
         estado: EstadoTransferencia.COMPLETADA,
         completadaAt: new Date(),
-        items: { create: [{ varianteId: va.id, cantidad: 1 }] },
+        items: { create: [{ varianteId: va.id, productoId: va.productoId, cantidad: 1 }] },
       },
     });
     return tx.transferencia.update({
@@ -1056,6 +1094,7 @@ async function main() {
           data: {
             panelId: VAPES,
             numero: 999_999,
+            codigo: "VAP-T-999999",
             depositoOrigenId: g1.id,
             depositoDestinoId: depCosmetic.id,
             usuarioId: owner.id,
@@ -1473,7 +1512,7 @@ async function main() {
     v.generarVentaSchema.safeParse({
       depositoId: "d",
       cliente: { id: "c" },
-      medioPago: "EFECTIVO",
+      pagos: [{ medioPago: "EFECTIVO", monto: 1 }],
       items: [{ varianteId: "a", cantidad: 1, precioEspecial: "" }],
     }).data?.items[0]?.precioEspecial === undefined,
     'precio especial "" → undefined (se cobra el de lista, no $0)',
@@ -1482,16 +1521,28 @@ async function main() {
     !v.generarVentaSchema.safeParse({
       depositoId: "d",
       cliente: { id: "c" },
-      medioPago: "MERCADOPAGO",
+      pagos: [{ medioPago: "MERCADOPAGO", monto: 1 }],
       items: [{ varianteId: "a", cantidad: 1 }],
     }).success,
     "medio de pago viejo (Mercado Pago) es error: solo efectivo, transferencia o Binance",
   );
   check(
+    !v.generarVentaSchema.safeParse({
+      depositoId: "d",
+      cliente: { id: "c" },
+      pagos: [
+        { medioPago: "EFECTIVO", monto: 1 },
+        { medioPago: "EFECTIVO", monto: 2 },
+      ],
+      items: [{ varianteId: "a", cantidad: 1 }],
+    }).success,
+    "dos pagos con el mismo medio es error (un medio por fila)",
+  );
+  check(
     v.generarVentaSchema.safeParse({
       depositoId: "d",
       cliente: { nuevo: { nombre: "Ana", telefono: "11 5555-0000" } },
-      medioPago: "BINANCE",
+      pagos: [{ medioPago: "BINANCE", monto: 1 }],
       items: [{ varianteId: "a", cantidad: 1 }],
     }).data?.tipo === "UNITARIA",
     "venta con cliente nuevo y Binance; tipo por defecto UNITARIA",
@@ -1506,13 +1557,8 @@ async function main() {
     "devolución con observación de menos de 10 caracteres es error",
   );
   check(
-    !v.transferenciaRapidaSchema.safeParse({
-      varianteId: "x",
-      depositoOrigenId: "a",
-      depositoDestinoId: "a",
-      cantidad: 5,
-    }).success,
-    "transferir desde la fila al mismo galpón es error",
+    v.formatearIdTransferencia("vapes", 1) === "VAP-T-000001",
+    "código visible de transferencia: VAP-T-000001",
   );
   check(
     !v.crearTransferenciaSchema.safeParse({

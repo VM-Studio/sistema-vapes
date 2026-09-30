@@ -376,7 +376,7 @@ export function EtiquetasView({
             checked={mostrarPrecio}
             onCheckedChange={setMostrarPrecio}
           />
-          <div className="border-border bg-surface pl-safe pr-safe fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t px-4 py-3 lg:static lg:border-0 lg:bg-transparent lg:p-0">
+          <div className="border-border bg-surface fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] lg:static lg:border-0 lg:bg-transparent lg:p-0">
             <Button
               onClick={() => void generar()}
               loading={generando}

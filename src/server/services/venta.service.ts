@@ -1,6 +1,7 @@
 import {
   AccionAuditoria,
   EstadoDevolucion,
+  EstadoPago,
   EstadoVenta,
   MedioPago,
   Prisma,
@@ -21,13 +22,22 @@ import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { medir } from "@/server/log";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { crearCliente } from "@/server/services/cliente.service";
+import {
+  bloquearCliente,
+  estadoPagoDe,
+  puedeFiados,
+  type CtxFiados,
+} from "@/server/services/fiado.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
  * VENTAS (por panel)
  * - Una venta se genera CONFIRMADA de una sola vez (no hay borradores): galpón,
- *   cliente (existente o nuevo), sabores, UN medio de pago. Todo o nada, en una
- *   transacción Serializable con reintentos.
+ *   cliente (existente o nuevo), sabores y sus pagos (hasta 3 medios). Todo o
+ *   nada, en una transacción Serializable con reintentos.
+ * - Pagos: Σ pagos ≤ total. Si no cubren el total la venta queda fiada
+ *   (PARCIAL/PENDIENTE, FIADOS "crear") y el saldo se suma a la cuenta
+ *   corriente del cliente en la misma transacción (ver fiado.service).
  * - Precio de lista y costo SIEMPRE del servidor: precioVentaEfectivo del sabor
  *   y snapshot de su último costo (costoParaVenta). El precio especial y el
  *   descuento global exigen "editar" en VENTAS.
@@ -93,7 +103,12 @@ export interface VentaGenerada {
   fecha: Date;
   estado: EstadoVenta;
   tipo: TipoVenta;
-  medioPago: MedioPago;
+  /** Medio principal (el de mayor monto); null si se fió todo. */
+  medioPago: MedioPago | null;
+  pagos: { medioPago: MedioPago; monto: string; referencia: string | null }[];
+  estadoPago: EstadoPago;
+  montoPagado: string;
+  saldoPendiente: string;
   deposito: { id: string; nombre: string };
   cliente: { id: string; nombre: string; telefono: string };
   /** true si el cliente se dio de alta con esta venta. */
@@ -114,16 +129,17 @@ const OPCIONES_GENERAR = {
 };
 
 const MEDIOS = new Set<string>(Object.values(MedioPago));
+const ELEGI_MEDIO = "Elegí el medio de pago: Efectivo, Transferencia o Binance.";
 
 /**
- * Genera una venta CONFIRMADA: valida galpón, cliente y medio de pago; crea el
+ * Genera una venta CONFIRMADA: valida galpón, cliente y pagos; crea el
  * cliente nuevo si hace falta (teléfono repetido → ClienteDuplicadoError con el
  * existente); toma precios y costos del servidor; descuenta stock (VENTA por
  * ítem, en orden de varianteId) y registra la auditoría. Si falta stock de
  * cualquier ítem, no se registra NADA.
  */
 export async function generarVenta(
-  ctx: Ctx,
+  ctx: CtxFiados,
   input: GenerarVenta,
   permisos: PermisosVenta,
   tx?: Tx,
@@ -137,14 +153,16 @@ export async function generarVenta(
 
 async function generarEnTx(
   tx: Tx,
-  ctx: Ctx,
+  ctx: CtxFiados,
   input: GenerarVenta,
   permisos: PermisosVenta,
 ): Promise<VentaGenerada> {
-  // 1. Galpón, medio de pago, cliente e ítems presentes.
+  // 1. Galpón, pagos, cliente e ítems presentes.
   if (!input.depositoId) throw new DomainError("Elegí el galpón de la venta.");
-  if (!input.medioPago || !MEDIOS.has(input.medioPago))
-    throw new DomainError("Elegí el medio de pago: Efectivo, Transferencia o Binance.");
+  if (input.pagos.length === 0 && !input.fiar) throw new DomainError(ELEGI_MEDIO);
+  if (input.pagos.some((p) => !MEDIOS.has(p.medioPago))) throw new DomainError(ELEGI_MEDIO);
+  if (new Set(input.pagos.map((p) => p.medioPago)).size !== input.pagos.length)
+    throw new DomainError("Usá cada medio de pago una sola vez.");
   if (!input.cliente) throw new DomainError("Elegí el cliente de la venta.");
   if (input.items.length === 0) throw new DomainError("Agregá al menos un producto.");
   const ids = input.items.map((i) => i.varianteId);
@@ -237,6 +255,44 @@ async function generarEnTx(
     throw new DomainError(faltan.join(" · "), "STOCK_INSUFICIENTE", 409, { stock: faltan });
   }
 
+  // 3b. Pagos contra el total del servidor: el vuelto lo calcula la UI y no se guarda.
+  const pagos = input.pagos
+    .map((p) => ({
+      medioPago: p.medioPago,
+      monto: r2(D(p.monto)),
+      referencia: p.referencia ?? null,
+    }))
+    .filter((p) => p.monto.greaterThan(0));
+  const montoPagado = pagos.reduce((a, p) => a.plus(p.monto), CERO);
+  if (montoPagado.greaterThan(total)) {
+    throw new DomainError(
+      `Los pagos superan el total (${dec(montoPagado)} de ${dec(total)}).`,
+      "VALIDATION_ERROR",
+      400,
+      { pagos: [`Máximo ${dec(total)}`] },
+    );
+  }
+  const saldoPendiente = total.minus(montoPagado);
+  const fiada = saldoPendiente.greaterThan(0);
+  if (fiada) {
+    if (!(await puedeFiados(ctx, "crear", tx)))
+      throw new ForbiddenError("No tenés permiso para vender fiado.");
+    if (!input.fiar) {
+      throw new DomainError(
+        `El pago no cubre el total (${dec(montoPagado)} de ${dec(total)}): activá «Fiar el resto» o completá el pago.`,
+      );
+    }
+  }
+  const estadoPago = estadoPagoDe(montoPagado, saldoPendiente);
+  // Medio principal: el de mayor monto (a igualdad, el primero que se cargó). Una
+  // venta en $0 conserva el medio elegido aunque no genere pagos.
+  const mayor = pagos.reduce<(typeof pagos)[number] | null>(
+    (max, p) => (max === null || p.monto.greaterThan(max.monto) ? p : max),
+    null,
+  );
+  const medioPrincipal =
+    mayor?.medioPago ?? (total.isZero() ? (input.pagos[0]?.medioPago ?? null) : null);
+
   // 4. Cliente: existente del panel o alta en esta misma transacción.
   let cliente: { id: string; nombre: string; telefono: string };
   let clienteNuevo = false;
@@ -252,21 +308,27 @@ async function generarEnTx(
     if (!c.activo) throw new DomainError(`El cliente "${c.nombre}" está inactivo.`);
     cliente = { id: c.id, nombre: c.nombre, telefono: c.telefono };
   }
+  // Fiada: la fila del cliente se bloquea antes de sumarle la deuda (mismo orden que los cobros).
+  if (fiada) await bloquearCliente(tx, ctx, cliente.id);
 
   // 5. Número y código del panel (en esta transacción: si algo falla, no se consume).
   const numero = await siguienteNumero(tx, ctx.panelId, "VENTA");
   const codigo = formatearIdVenta(await slugDelPanel(tx, ctx), numero);
+  const fecha = ahora();
   const venta = await tx.venta.create({
     data: {
       numero,
       codigo,
-      fecha: ahora(),
+      fecha,
       clienteId: cliente.id,
       depositoId: deposito.id,
       vendedorId: ctx.usuarioId,
       tipo: input.tipo,
       estado: EstadoVenta.CONFIRMADA,
-      medioPago: input.medioPago,
+      medioPago: medioPrincipal,
+      estadoPago,
+      montoPagado,
+      saldoPendiente,
       subtotal,
       descuento,
       total,
@@ -286,9 +348,24 @@ async function generarEnTx(
           subtotal: i.subtotal,
         })),
       },
+      pagos: {
+        create: pagos.map((p) => ({
+          medioPago: p.medioPago,
+          monto: p.monto,
+          referencia: p.referencia,
+          fecha,
+          usuarioId: ctx.usuarioId,
+        })),
+      },
     },
     select: { id: true, fecha: true },
   });
+  if (fiada) {
+    await tx.cliente.update({
+      where: { id: cliente.id },
+      data: { saldoDeudor: { increment: saldoPendiente } },
+    });
+  }
 
   // 6. Stock: un VENTA por ítem, en orden de varianteId (sin deadlocks entre vendedores).
   for (const i of items) {
@@ -316,7 +393,15 @@ async function generarEnTx(
       depositoId: deposito.id,
       clienteId: cliente.id,
       clienteNuevo,
-      medioPago: input.medioPago,
+      medioPago: medioPrincipal,
+      pagos: pagos.map((p) => ({
+        medioPago: p.medioPago,
+        monto: dec(p.monto),
+        ...(p.referencia ? { referencia: p.referencia } : {}),
+      })),
+      estadoPago,
+      montoPagado: dec(montoPagado),
+      saldoPendiente: dec(saldoPendiente),
       tipo: input.tipo,
       ...(desdeCotizacion ? { cotizacionId: permisos.cotizacionId } : {}),
       subtotal: dec(subtotal),
@@ -340,7 +425,15 @@ async function generarEnTx(
     fecha: venta.fecha,
     estado: EstadoVenta.CONFIRMADA,
     tipo: input.tipo,
-    medioPago: input.medioPago,
+    medioPago: medioPrincipal,
+    pagos: pagos.map((p) => ({
+      medioPago: p.medioPago,
+      monto: dec(p.monto),
+      referencia: p.referencia,
+    })),
+    estadoPago,
+    montoPagado: dec(montoPagado),
+    saldoPendiente: dec(saldoPendiente),
     deposito: { id: deposito.id, nombre: deposito.nombre },
     cliente,
     clienteNuevo,
@@ -368,7 +461,9 @@ async function generarEnTx(
 
 /**
  * Anula una venta CONFIRMADA: la mercadería vuelve a su galpón (VENTA_ANULADA
- * por ítem). No se puede si tiene devoluciones registradas.
+ * por ítem), sus pagos quedan anulados y, si estaba fiada, su saldo pendiente
+ * se descuenta de la deuda del cliente. No se puede si tiene devoluciones
+ * registradas.
  */
 export async function anularVenta(
   ctx: Ctx,
@@ -386,6 +481,10 @@ export async function anularVenta(
       });
       if (usuario?.rol !== RolUsuario.OWNER)
         throw new ForbiddenError("Solo un dueño puede anular ventas.");
+      // Cliente antes que la venta: mismo orden de bloqueo que los cobros de fiados.
+      const previa = await tx.venta.findUnique({ where: { id }, select: { clienteId: true } });
+      if (!previa) throw new NotFoundError("La venta no existe");
+      await bloquearCliente(tx, ctx, previa.clienteId);
       await tx.$queryRaw`
         SELECT "id" FROM "Venta" WHERE "id" = ${id} AND "panelId" = ${ctx.panelId} FOR UPDATE
       `;
@@ -417,22 +516,55 @@ export async function anularVenta(
           usuarioId: ctx.usuarioId,
         });
       }
+      // Pagos: todos anulados (los del momento y los cobros posteriores).
+      const cuando = ahora();
+      const pagos = await tx.pagoVenta.updateMany({
+        where: { ventaId: id, anulado: false },
+        data: {
+          anulado: true,
+          anuladoPorId: ctx.usuarioId,
+          anuladoAt: cuando,
+          motivoAnulacion: `Anulación venta ${venta.codigo}: ${m}`,
+        },
+      });
       await tx.venta.update({
         where: { id },
         data: {
           estado: EstadoVenta.ANULADA,
           anuladaPorId: ctx.usuarioId,
-          anuladaAt: ahora(),
+          anuladaAt: cuando,
           motivoAnulacion: m,
+          montoPagado: 0,
+          saldoPendiente: 0,
         },
       });
+      if (venta.saldoPendiente.greaterThan(0)) {
+        await tx.cliente.update({
+          where: { id: venta.clienteId },
+          data: { saldoDeudor: { decrement: venta.saldoPendiente } },
+        });
+      }
       await registrarAuditoria(tx, {
         usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.UPDATE,
         entidad: "Venta",
         entidadId: id,
-        datosAntes: { estado: EstadoVenta.CONFIRMADA, total: dec(venta.total) },
-        datosDespues: { estado: EstadoVenta.ANULADA, codigo: venta.codigo, motivo: m },
+        datosAntes: {
+          estado: EstadoVenta.CONFIRMADA,
+          total: dec(venta.total),
+          estadoPago: venta.estadoPago,
+          montoPagado: dec(venta.montoPagado),
+          saldoPendiente: dec(venta.saldoPendiente),
+        },
+        datosDespues: {
+          estado: EstadoVenta.ANULADA,
+          codigo: venta.codigo,
+          motivo: m,
+          pagosAnulados: pagos.count,
+          ...(venta.saldoPendiente.greaterThan(0)
+            ? { saldoDeudorDescontado: dec(venta.saldoPendiente) }
+            : {}),
+        },
         meta: ctx.meta,
       });
       return { id, codigo: venta.codigo };
@@ -451,7 +583,8 @@ function whereVentas(f: Omit<FiltrosVentas, "page" | "pageSize">): Prisma.VentaW
   if (f.depositoId) where.depositoId = f.depositoId;
   if (f.clienteId) where.clienteId = f.clienteId;
   if (f.vendedorId) where.vendedorId = f.vendedorId;
-  if (f.medioPago) where.medioPago = f.medioPago;
+  // Medio de pago: ventas con algún pago en ese medio (mixtas incluidas).
+  if (f.medioPago) where.pagos = { some: { medioPago: f.medioPago } };
   if (f.tipo) where.tipo = f.tipo;
   if (f.desde || f.hasta) {
     where.fecha = {
@@ -487,7 +620,10 @@ export interface VentaListada {
   items: number;
   unidades: number;
   total: string;
-  medioPago: MedioPago;
+  /** Medio principal; null si se fió todo. */
+  medioPago: MedioPago | null;
+  estadoPago: EstadoPago;
+  saldoPendiente: string;
   /** null si el usuario no es OWNER. */
   gananciaBruta: string | null;
 }
@@ -542,6 +678,8 @@ export async function listarVentas(
       unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
       total: dec(v.total),
       medioPago: v.medioPago,
+      estadoPago: v.estadoPago,
+      saldoPendiente: dec(v.saldoPendiente),
       gananciaBruta: opciones.verCostos ? dec(v.gananciaBruta) : null,
     })),
     total,
@@ -588,6 +726,19 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
         orderBy: { fecha: "desc" },
         select: { id: true, codigo: true, fecha: true, estado: true },
       },
+      pagos: {
+        orderBy: [{ fecha: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          medioPago: true,
+          monto: true,
+          referencia: true,
+          esCobroPosterior: true,
+          fecha: true,
+          anulado: true,
+          usuario: { select: { nombre: true } },
+        },
+      },
     },
   });
   if (!v) throw new NotFoundError("La venta no existe");
@@ -614,6 +765,19 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
     estado: v.estado,
     tipo: v.tipo,
     medioPago: v.medioPago,
+    estadoPago: v.estadoPago,
+    montoPagado: dec(v.montoPagado),
+    saldoPendiente: dec(v.saldoPendiente),
+    pagos: v.pagos.map((p) => ({
+      id: p.id,
+      medioPago: p.medioPago,
+      monto: dec(p.monto),
+      referencia: p.referencia,
+      esCobroPosterior: p.esCobroPosterior,
+      fecha: p.fecha,
+      anulado: p.anulado,
+      usuario: p.usuario.nombre,
+    })),
     cliente: v.cliente,
     vendedor: v.vendedor,
     deposito: v.deposito,

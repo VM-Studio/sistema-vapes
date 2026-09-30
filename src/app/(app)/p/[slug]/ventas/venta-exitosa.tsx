@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { formatearPesos } from "@/lib/format";
 import {
   ETIQUETA_MEDIO_PAGO,
+  etiquetaMedioPrincipal,
   linkWhatsAppVenta,
   telefonoVisible,
   textoResumenVenta,
@@ -26,8 +27,15 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
       items: venta.items,
       descuento: venta.descuento,
       total: venta.total,
+      pagado: venta.montoPagado,
+      pendiente: venta.saldoPendiente,
     }),
   );
+  const debe = Number(venta.saldoPendiente) > 0;
+  const medios =
+    venta.pagos.length > 1
+      ? venta.pagos.map((p) => ETIQUETA_MEDIO_PAGO[p.medioPago]).join(" + ")
+      : etiquetaMedioPrincipal(venta.medioPago);
 
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center gap-6 py-4 text-center md:py-8">
@@ -43,8 +51,17 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
       <div className="flex flex-col gap-0.5">
         <p className="text-h1 font-semibold tabular-nums">{formatearPesos(venta.total)}</p>
         <p className="text-muted text-sm">
-          {ETIQUETA_MEDIO_PAGO[venta.medioPago]} · {venta.deposito.nombre}
+          {medios} · {venta.deposito.nombre}
         </p>
+        {debe && (
+          <p
+            className="text-foreground text-sm font-medium tabular-nums"
+            data-testid="pago-parcial"
+          >
+            Pagado {formatearPesos(venta.montoPagado)} · Pendiente{" "}
+            {formatearPesos(venta.saldoPendiente)}
+          </p>
+        )}
       </div>
       <div className="bg-card rounded-card w-full p-4 text-left md:p-5">
         <p className="font-semibold">

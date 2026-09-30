@@ -4,11 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import {
-  ESTADO_DEVOLUCION_UI,
-  ESTADO_VENTA_CLIENTE,
-  MEDIO_PAGO_LABEL,
-} from "@/components/clientes/etiquetas";
+import { ESTADO_DEVOLUCION_UI, ESTADO_VENTA_CLIENTE } from "@/components/clientes/etiquetas";
 import { TelefonoWhatsApp } from "@/components/clientes/telefono-whatsapp";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -22,12 +18,13 @@ import { StatCard } from "@/components/ui/stat-card";
 import { formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
-import { formatearFecha, formatearFechaHora } from "@/lib/utils";
+import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
+import { etiquetaMedioPrincipal } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { obtenerCliente } from "@/server/services/cliente.service";
 
-import { MedioPagoBadge } from "../../ventas/_componentes/medio-pago";
+import { EstadoPagoBadge, MedioPagoBadge } from "../../ventas/_componentes/medio-pago";
 import { AccionesCliente } from "./acciones-cliente";
 
 export const metadata: Metadata = { title: "Cliente" };
@@ -47,6 +44,10 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
   const verVentas = puedeEn(Modulo.VENTAS, "ver");
   const verDevoluciones = puedeEn(Modulo.DEVOLUCIONES, "ver");
   const crearDevolucion = puedeEn(Modulo.DEVOLUCIONES, "crear") && c.activo;
+  const verFiados = puedeEn(Modulo.FIADOS, "ver");
+  const debe = Number(c.saldoDeudor) > 0;
+  const hrefCuenta = rutaPanel(slug, `/fiados/${c.id}`);
+  const tarjetas = 2 + (detalle.compras.total !== null ? 1 : 0) + (verFiados && debe ? 1 : 0);
   const hrefVenta = (ventaId: string) => rutaPanel(slug, `/ventas/${ventaId}`);
   const hrefDevolucion = (devId: string) => rutaPanel(slug, `/devoluciones/${devId}`);
 
@@ -84,8 +85,19 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
       )}
       <section
         aria-label="Resumen de compras"
-        className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4"
+        className={cn(
+          "mb-4 grid grid-cols-2 gap-3 md:gap-4",
+          tarjetas >= 4 ? "md:grid-cols-4" : "md:grid-cols-3",
+        )}
       >
+        {verFiados && debe && (
+          <StatCard
+            label="Debe"
+            value={formatearPesos(c.saldoDeudor)}
+            hint="Ver cuenta corriente"
+            href={hrefCuenta}
+          />
+        )}
         <StatCard label="Compras" value={String(detalle.compras.cantidad)} />
         {detalle.compras.total !== null && (
           <StatCard label="Total comprado" value={formatearPesos(detalle.compras.total)} />
@@ -111,6 +123,19 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
               <dd className="text-right">{formatearFecha(c.createdAt)}</dd>
               <dt className="text-muted">Estado</dt>
               <dd className="text-right">{c.activo ? "Activo" : "Desactivado"}</dd>
+              {verFiados && (
+                <>
+                  <dt className="text-muted">Cuenta corriente</dt>
+                  <dd className="text-right">
+                    <Link
+                      href={hrefCuenta}
+                      className="text-foreground font-medium underline-offset-4 hover:underline"
+                    >
+                      {debe ? `Debe ${formatearPesos(c.saldoDeudor)}` : "Al día"}
+                    </Link>
+                  </dd>
+                </>
+              )}
               {c.notas && (
                 <>
                   <dt className="text-muted col-span-2">Notas</dt>
@@ -168,7 +193,14 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
                 {
                   key: "medio",
                   header: "Pago",
-                  cell: (v) => <MedioPagoBadge medio={v.medioPago} />,
+                  cell: (v) => (
+                    <span className="flex flex-wrap items-center gap-1">
+                      <MedioPagoBadge medio={v.medioPago} />
+                      {v.estado === "CONFIRMADA" && (
+                        <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />
+                      )}
+                    </span>
+                  ),
                 },
                 {
                   key: "total",
@@ -217,11 +249,16 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
                       <span className="text-muted text-xs">
-                        {formatearFechaHora(v.fecha)} · {MEDIO_PAGO_LABEL[v.medioPago]}
+                        {formatearFechaHora(v.fecha)} · {etiquetaMedioPrincipal(v.medioPago)}
                       </span>
-                      <Badge variant={ESTADO_VENTA_CLIENTE[v.estado].variante}>
-                        {ESTADO_VENTA_CLIENTE[v.estado].label}
-                      </Badge>
+                      <span className="flex items-center gap-1">
+                        {v.estado === "CONFIRMADA" && (
+                          <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />
+                        )}
+                        <Badge variant={ESTADO_VENTA_CLIENTE[v.estado].variante}>
+                          {ESTADO_VENTA_CLIENTE[v.estado].label}
+                        </Badge>
+                      </span>
                     </div>
                   </>
                 );

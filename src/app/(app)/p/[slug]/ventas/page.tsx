@@ -29,7 +29,7 @@ import {
   type VentaListada,
 } from "@/server/services/venta.service";
 
-import { MedioPagoBadge } from "./_componentes/medio-pago";
+import { EstadoPagoBadge, MedioPagoBadge } from "./_componentes/medio-pago";
 import { FiltrosVentas } from "./filtros-ventas";
 import { GenerarVenta } from "./generar-venta";
 import type { ConversionVenta } from "./modal-venta";
@@ -100,6 +100,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
               depositos={depositos}
               unidades={unidades}
               puedeEditar={puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "editar")}
+              puedeFiar={puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "crear")}
               abrirAlCargar={conversion ? null : abrirAlCargar}
               conversion={conversion}
             />
@@ -206,7 +207,18 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             className: "text-right tabular-nums",
             cell: (v) => `${v.unidades} u.`,
           },
-          { key: "medio", header: "Pago", cell: (v) => <MedioPagoBadge medio={v.medioPago} /> },
+          {
+            key: "medio",
+            header: "Pago",
+            cell: (v) => (
+              <span className="flex flex-wrap items-center gap-1">
+                <MedioPagoBadge medio={v.medioPago} />
+                {v.estado === "CONFIRMADA" && (
+                  <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />
+                )}
+              </span>
+            ),
+          },
           {
             key: "tipo",
             header: "Tipo",
@@ -256,7 +268,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
                   · {telefonoVisible(v.cliente.telefono)}
                 </span>
               </span>
-              <MedioPagoBadge medio={v.medioPago} />
+              <span className="flex shrink-0 items-center gap-1">
+                {v.estado === "CONFIRMADA" && (
+                  <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />
+                )}
+                <MedioPagoBadge medio={v.medioPago} />
+              </span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <p className="text-muted text-small">

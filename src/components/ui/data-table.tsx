@@ -43,7 +43,7 @@ export function DataTable<T>({
   return (
     <div className={className}>
       {/* Desktop */}
-      <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
+      <div className="border-border bg-surface rounded-card hidden overflow-x-auto border md:block">
         <table className="w-full text-left text-sm tabular-nums">
           {caption && <caption className="sr-only">{caption}</caption>}
           <thead className="border-border bg-card text-muted border-b text-xs font-medium">

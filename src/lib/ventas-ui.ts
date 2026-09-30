@@ -1,6 +1,7 @@
-import type { EstadoVenta, MedioPago, TipoVenta } from "@prisma/client";
+import type { EstadoPago, EstadoVenta, MedioPago, TipoVenta } from "@prisma/client";
 
 import { formatearPesos } from "./format";
+import { formatearFecha } from "./utils";
 
 export const ESTADO_VENTA_UI: Record<
   EstadoVenta,
@@ -17,6 +18,20 @@ export const ETIQUETA_MEDIO_PAGO: Record<MedioPago, string> = {
   EFECTIVO: "Efectivo",
   TRANSFERENCIA: "Transferencia",
   BINANCE: "Binance",
+};
+
+/** Medio principal de una venta: null = se fió todo (no hubo pago al vender). */
+export const etiquetaMedioPrincipal = (medio: MedioPago | null) =>
+  medio ? ETIQUETA_MEDIO_PAGO[medio] : "Fiado";
+
+/** Estado de pago: badge neutro si está pagada, ámbar apagado si debe algo. */
+export const ESTADO_PAGO_UI: Record<
+  EstadoPago,
+  { label: string; variante: "neutral" | "warning" }
+> = {
+  PAGADA: { label: "Pagada", variante: "neutral" },
+  PARCIAL: { label: "Pago parcial", variante: "warning" },
+  PENDIENTE: { label: "Pendiente", variante: "warning" },
 };
 
 /**
@@ -58,7 +73,11 @@ export function textoResumenVenta(v: {
   items: { titulo: string; cantidad: number; subtotal: string }[];
   descuento: string;
   total: string;
+  /** Solo si quedó saldo pendiente (venta fiada). */
+  pagado?: string;
+  pendiente?: string;
 }): string {
+  const debe = v.pendiente !== undefined && Number(v.pendiente) > 0;
   const lineas = [
     `¡Hola ${v.cliente}! Gracias por tu compra.`,
     `Venta ${v.codigo}`,
@@ -66,6 +85,33 @@ export function textoResumenVenta(v: {
     ...v.items.map((i) => `• ${i.cantidad} × ${i.titulo}: ${formatearPesos(i.subtotal)}`),
     ...(Number(v.descuento) > 0 ? [`Descuento: −${formatearPesos(v.descuento)}`] : []),
     `Total: ${formatearPesos(v.total)}`,
+    ...(debe
+      ? [`Pagado: ${formatearPesos(v.pagado ?? "0")}`, `Pendiente: ${formatearPesos(v.pendiente!)}`]
+      : []),
+  ];
+  return lineas.join("\n");
+}
+
+/** Recibo de un cobro de cuenta corriente para mandar por WhatsApp. */
+export function textoReciboCobro(c: {
+  cliente: string;
+  monto: string;
+  medio: MedioPago;
+  fecha: Date;
+  ventas: { codigo: string; monto: string }[];
+  saldoRestante: string;
+}): string {
+  const lineas = [
+    `¡Hola ${c.cliente}! Te confirmamos el pago recibido.`,
+    `Fecha: ${formatearFecha(c.fecha)}`,
+    `Cobrado: ${formatearPesos(c.monto)} (${ETIQUETA_MEDIO_PAGO[c.medio]})`,
+    ...(c.ventas.length > 0
+      ? ["", ...c.ventas.map((v) => `• Venta ${v.codigo}: ${formatearPesos(v.monto)}`)]
+      : []),
+    "",
+    Number(c.saldoRestante) > 0
+      ? `Saldo pendiente: ${formatearPesos(c.saldoRestante)}`
+      : "Tu cuenta quedó al día. ¡Gracias!",
   ];
   return lineas.join("\n");
 }

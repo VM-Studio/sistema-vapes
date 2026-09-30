@@ -178,7 +178,8 @@ export const convertirCotizacionAction = actionHandler(async (input: unknown) =>
   const clienteId = datos.cliente ? await resolverCliente(ctx, datos.cliente) : undefined;
   const venta = await convertirEnVenta(ctx, datos.id, {
     depositoId: datos.depositoId,
-    medioPago: datos.medioPago,
+    pagos: datos.pagos,
+    fiar: datos.fiar,
     ...(clienteId ? { clienteId } : {}),
     ...(datos.recalcular ? { recalcular: true } : {}),
   });

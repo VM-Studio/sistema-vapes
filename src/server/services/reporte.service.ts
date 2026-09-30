@@ -58,7 +58,8 @@ export interface VentaReporte {
   vendedor: string;
   deposito: string;
   tipo: TipoVenta;
-  medioPago: MedioPago;
+  /** Medio principal; null si se fió todo. */
+  medioPago: MedioPago | null;
   estado: EstadoVenta;
   unidades: number;
   total: string;
@@ -80,7 +81,12 @@ function whereVentas(ctx: Ctx, r: RangoReporte, f: FiltrosVentasReporte): Prisma
     ${estado === "TODAS" ? Prisma.empty : Prisma.sql`AND v."estado" = ${estado}::"EstadoVenta"`}
     ${f.vendedorId ? Prisma.sql`AND v."vendedorId" = ${f.vendedorId}` : Prisma.empty}
     ${f.depositoId ? Prisma.sql`AND v."depositoId" = ${f.depositoId}` : Prisma.empty}
-    ${f.medioPago ? Prisma.sql`AND v."medioPago" = ${f.medioPago}::"MedioPago"` : Prisma.empty}
+    ${
+      f.medioPago
+        ? Prisma.sql`AND EXISTS (SELECT 1 FROM "PagoVenta" pv WHERE pv."ventaId" = v."id"
+            AND pv."panelId" = ${ctx.panelId} AND pv."medioPago" = ${f.medioPago}::"MedioPago")`
+        : Prisma.empty
+    }
     ${f.tipo ? Prisma.sql`AND v."tipo" = ${f.tipo}::"TipoVenta"` : Prisma.empty}`;
 }
 
@@ -93,7 +99,7 @@ const filaVentaSchema = z.array(
     vendedor: z.string(),
     deposito: z.string(),
     tipo: z.enum(["UNITARIA", "MAYORISTA"]),
-    medio_pago: z.enum(["EFECTIVO", "TRANSFERENCIA", "BINANCE"]),
+    medio_pago: z.enum(["EFECTIVO", "TRANSFERENCIA", "BINANCE"]).nullable(),
     estado: z.enum(["CONFIRMADA", "ANULADA"]),
     unidades: entero,
     total: monto,

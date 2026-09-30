@@ -1358,92 +1358,201 @@ export { listar as listarProductos, obtener as obtenerProducto };
 // =============================================================================
 
 export interface ResumenCargaStock {
+  /** Galpón de ingreso: el elegido en el paso 1 (o, sin él, el que más recibió). */
   deposito: { id: string; nombre: string };
   unidades: number;
   items: {
     varianteId: string;
     titulo: string;
     cantidad: number;
+    /** Stock del sabor en los galpones que recibieron, antes y después de la carga. */
     stockAnterior: number;
     stockPosterior: number;
+    /** Cuánto fue a cada galpón. */
+    distribucion: { depositoId: string; nombre: string; cantidad: number }[];
   }[];
+  /** Unidades cargadas en cada galpón ("150 a Ayres Plaza · 50 a Mercedes"), mayor primero. */
+  cargadoPorDeposito: { depositoId: string; nombre: string; unidades: number }[];
   /** Unidades de los sabores cargados en cada galpón activo, después de la carga. */
   porDeposito: { depositoId: string; nombre: string; unidades: number }[];
 }
 
+type EntradaCarga = CargarStock["items"][number];
+
 /**
- * Ingreso manual de lo escaneado en UN galpón elegido: exige un depósito
- * activo del panel y registra un movimiento INGRESO_MANUAL por sabor, todo en
- * una transacción (si algo falla, no se carga nada).
+ * Normaliza la carga a (variante, depósito) → cantidad. Un item simple va
+ * entero al galpón de ingreso (`depositoId`); uno distribuido, a cada galpón
+ * de su distribución. Un sabor escaneado en dos tandas (o el mismo galpón
+ * repetido) se suma. Valida cantidades > 0 y, si el item trae lo escaneado,
+ * que la distribución sume exactamente eso.
+ */
+function normalizarCarga(
+  depositoIngreso: string | undefined,
+  items: EntradaCarga[],
+  titulo: (varianteId: string) => string,
+): Map<string, Map<string, number>> {
+  const porVariante = new Map<string, Map<string, number>>();
+  const sumar = (varianteId: string, depositoId: string, cantidad: number) => {
+    if (!Number.isSafeInteger(cantidad) || cantidad <= 0)
+      throw new DomainError(`${titulo(varianteId)}: cada cantidad tiene que ser mayor a 0`);
+    const m = porVariante.get(varianteId) ?? new Map<string, number>();
+    m.set(depositoId, (m.get(depositoId) ?? 0) + cantidad);
+    porVariante.set(varianteId, m);
+  };
+  for (const item of items) {
+    if ("distribucion" in item) {
+      const suma = item.distribucion.reduce((a, d) => a + d.cantidad, 0);
+      if (item.cantidad !== undefined && suma !== item.cantidad)
+        throw new DomainError(
+          `${titulo(item.varianteId)}: la distribución suma ${suma} y se escanearon ${item.cantidad}`,
+          "DISTRIBUCION_INVALIDA",
+        );
+      for (const d of item.distribucion) sumar(item.varianteId, d.depositoId, d.cantidad);
+    } else {
+      if (!depositoIngreso) throw new DomainError(MENSAJE_SIN_GALPON, "SIN_GALPON");
+      sumar(item.varianteId, depositoIngreso, item.cantidad);
+    }
+  }
+  return porVariante;
+}
+
+/**
+ * Ingreso manual de lo escaneado, en el galpón de ingreso o repartido entre
+ * galpones (paso "Distribuir"). Cada depósito tiene que ser un depósito
+ * activo del panel. Registra un INGRESO_MANUAL por (sabor, depósito), todo en
+ * una transacción (si algo falla, no se carga nada). Firma vieja
+ * (`depositoId` + items con cantidad) = una sola entrada en la distribución.
  */
 export async function cargarStockPorEscaneo(
   ctx: Ctx,
-  input: Omit<CargarStock, "depositoId"> & { depositoId?: string | null },
+  input: {
+    depositoId?: string | null;
+    items: EntradaCarga[];
+    motivo?: string;
+  },
 ): Promise<ResumenCargaStock> {
-  const depositoId = input.depositoId?.trim();
-  if (!depositoId) throw new DomainError(MENSAJE_SIN_GALPON, "SIN_GALPON");
-  // Un sabor escaneado en dos tandas es un solo movimiento; orden fijo por id (bloqueos sin deadlock).
-  const cantidades = new Map<string, number>();
-  for (const i of input.items)
-    cantidades.set(i.varianteId, (cantidades.get(i.varianteId) ?? 0) + i.cantidad);
-  const ids = [...cantidades.keys()].sort();
-  if (ids.length === 0) throw new DomainError("No hay nada para cargar");
+  const depositoIngreso = input.depositoId?.trim() || undefined;
+  const distribuidos = input.items.some((i) => "distribucion" in i);
+  if (!depositoIngreso && !distribuidos) throw new DomainError(MENSAJE_SIN_GALPON, "SIN_GALPON");
+  if (input.items.length === 0) throw new DomainError("No hay nada para cargar");
 
   return transaccion(
     ctx,
     async (tx) => {
-      const deposito = await tx.deposito.findFirst({
-        where: { id: depositoId, activo: true },
-        select: { id: true, nombre: true },
-      });
-      if (!deposito) throw new DomainError(MENSAJE_SIN_GALPON, "SIN_GALPON");
-
       const variantes = await tx.variante.findMany({
-        where: { id: { in: ids }, deletedAt: null, producto: { deletedAt: null } },
+        where: {
+          id: { in: [...new Set(input.items.map((i) => i.varianteId))] },
+          deletedAt: null,
+          producto: { deletedAt: null },
+        },
         select: { id: true, nombre: true, producto: { select: { nombreCompleto: true } } },
       });
-      if (variantes.length !== ids.length)
-        throw new NotFoundError("Alguno de los productos ya no existe. Quitalo de la lista.");
       const porId = new Map(variantes.map((v) => [v.id, v]));
+      const titulo = (id: string) => {
+        const v = porId.get(id);
+        return v ? nombreConSabor(v.producto.nombreCompleto, v.nombre) : "Un producto";
+      };
+      const carga = normalizarCarga(depositoIngreso, input.items, titulo);
+      // Orden fijo por sabor y galpón: los bloqueos de Stock siempre en el mismo orden (sin deadlocks).
+      const ids = [...carga.keys()].sort();
+      if (ids.some((id) => !porId.has(id)))
+        throw new NotFoundError("Alguno de los productos ya no existe. Quitalo de la lista.");
 
+      const depositos = await tx.deposito.findMany({
+        where: { activo: true },
+        orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
+        select: { id: true, nombre: true },
+      });
+      const activos = new Map(depositos.map((d) => [d.id, d]));
+      if (depositoIngreso && !activos.has(depositoIngreso))
+        throw new DomainError(MENSAJE_SIN_GALPON, "SIN_GALPON");
+      for (const m of carga.values())
+        for (const depositoId of m.keys())
+          if (!activos.has(depositoId))
+            throw new DomainError(
+              "Alguno de los galpones de la distribución no existe o está inactivo",
+              "SIN_GALPON",
+            );
+
+      const motivo = input.motivo ?? "Carga por escaneo";
       const items: ResumenCargaStock["items"] = [];
+      const cargado = new Map<string, number>();
       for (const varianteId of ids) {
-        const cantidad = cantidades.get(varianteId)!;
-        const m = await registrarMovimiento(tx, {
-          tipo: TipoMovimiento.INGRESO_MANUAL,
-          varianteId,
-          depositoId: deposito.id,
-          cantidad,
-          usuarioId: ctx.usuarioId,
-          motivo: input.motivo ?? "Carga por escaneo",
-        });
-        const v = porId.get(varianteId)!;
+        const destinos = [...carga.get(varianteId)!.entries()].sort(([a], [b]) =>
+          a.localeCompare(b),
+        );
+        let stockAnterior = 0;
+        let stockPosterior = 0;
+        for (const [depositoId, cantidad] of destinos) {
+          const m = await registrarMovimiento(tx, {
+            tipo: TipoMovimiento.INGRESO_MANUAL,
+            varianteId,
+            depositoId,
+            cantidad,
+            usuarioId: ctx.usuarioId,
+            motivo,
+          });
+          stockAnterior += m.stockAnterior;
+          stockPosterior += m.stockPosterior;
+          cargado.set(depositoId, (cargado.get(depositoId) ?? 0) + cantidad);
+        }
         items.push({
           varianteId,
-          titulo: nombreConSabor(v.producto.nombreCompleto, v.nombre),
-          cantidad,
-          stockAnterior: m.stockAnterior,
-          stockPosterior: m.stockPosterior,
+          titulo: titulo(varianteId),
+          cantidad: destinos.reduce((a, [, c]) => a + c, 0),
+          stockAnterior,
+          stockPosterior,
+          distribucion: depositos
+            .filter((d) => carga.get(varianteId)!.has(d.id))
+            .map((d) => ({
+              depositoId: d.id,
+              nombre: d.nombre,
+              cantidad: carga.get(varianteId)!.get(d.id)!,
+            })),
         });
       }
 
-      const [depositos, sumas] = await Promise.all([
-        tx.deposito.findMany({
-          where: { activo: true },
-          orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
-          select: { id: true, nombre: true },
-        }),
-        tx.stock.groupBy({
-          by: ["depositoId"],
-          where: { varianteId: { in: ids } },
-          _sum: { cantidad: true },
-        }),
-      ]);
+      const cargadoPorDeposito = depositos
+        .filter((d) => cargado.has(d.id))
+        .map((d) => ({ depositoId: d.id, nombre: d.nombre, unidades: cargado.get(d.id)! }))
+        .sort((a, b) => b.unidades - a.unidades);
+      const ingreso = activos.get(depositoIngreso ?? "") ?? {
+        id: cargadoPorDeposito[0]!.depositoId,
+        nombre: cargadoPorDeposito[0]!.nombre,
+      };
+      const unidades = items.reduce((a, i) => a + i.cantidad, 0);
+
+      await registrarAuditoria(tx, {
+        usuarioId: ctx.usuarioId,
+        accion: AccionAuditoria.CREATE,
+        entidad: "IngresoManual",
+        datosDespues: {
+          origen: "carga-por-escaneo",
+          depositoIngresoId: ingreso.id,
+          motivo,
+          unidades,
+          items: items.map((i) => ({
+            varianteId: i.varianteId,
+            distribucion: i.distribucion.map((d) => ({
+              depositoId: d.depositoId,
+              cantidad: d.cantidad,
+            })),
+          })),
+        },
+        meta: ctx.meta,
+      });
+
+      const sumas = await tx.stock.groupBy({
+        by: ["depositoId"],
+        where: { varianteId: { in: ids } },
+        _sum: { cantidad: true },
+      });
       const suma = new Map(sumas.map((s) => [s.depositoId, s._sum.cantidad ?? 0]));
       return {
-        deposito,
-        unidades: items.reduce((a, i) => a + i.cantidad, 0),
+        deposito: { id: ingreso.id, nombre: ingreso.nombre },
+        unidades,
         items,
+        cargadoPorDeposito,
         porDeposito: depositos.map((d) => ({
           depositoId: d.id,
           nombre: d.nombre,

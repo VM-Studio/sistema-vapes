@@ -13,6 +13,7 @@ import { EstadoVenta, RolUsuario } from "@prisma/client";
 
 import { prisma } from "../src/lib/db";
 import { formatearIdVenta } from "../src/lib/paneles";
+import { precioVentaEfectivo } from "../src/lib/precios";
 import { generarVentaSchema } from "../src/lib/validations/venta";
 import { dbPara, type Ctx } from "../src/server/db/panel-scoped";
 import { crearCliente } from "../src/server/services/cliente.service";
@@ -75,17 +76,23 @@ async function main() {
       motivo: "Prueba de concurrencia",
     });
   };
-  const venta = (varianteId: string) =>
-    generarVenta(
+  /** Una unidad, pagada en efectivo por su precio de lista. */
+  const venta = async (varianteId: string) => {
+    const v = await db.variante.findUniqueOrThrow({
+      where: { id: varianteId },
+      select: { precioVenta: true, producto: { select: { precioVenta: true } } },
+    });
+    return generarVenta(
       ctx,
       generarVentaSchema.parse({
         depositoId: deposito.id,
         cliente: { id: cliente.id },
         items: [{ varianteId, cantidad: 1 }],
-        medioPago: "EFECTIVO",
+        pagos: [{ medioPago: "EFECTIVO", monto: precioVentaEfectivo(v, v.producto) }],
       }),
       { puedeEditar: false },
     );
+  };
 
   // ---------------------------------------------------------------------------
   console.log(

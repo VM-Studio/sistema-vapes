@@ -5,7 +5,12 @@ import { z } from "zod";
 
 import { esOwner, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
-import { ETIQUETA_MEDIO_PAGO, ETIQUETA_TIPO_VENTA, nombreConSabor } from "@/lib/ventas-ui";
+import {
+  ETIQUETA_MEDIO_PAGO,
+  ETIQUETA_TIPO_VENTA,
+  etiquetaMedioPrincipal,
+  nombreConSabor,
+} from "@/lib/ventas-ui";
 import {
   diaEn,
   diasEntre,
@@ -18,6 +23,7 @@ import {
 } from "@/lib/zona-horaria";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
 import { ForbiddenError, NotFoundError } from "@/server/errors";
+import { puedeFiados } from "@/server/services/fiado.service";
 
 /**
  * ANALÍTICA del panel (dashboard, rendimiento del equipo, reportes).
@@ -402,7 +408,15 @@ const ticket = (total: string, cantidad: number) =>
 export interface KpisPeriodo {
   periodo: Periodo;
   anterior: Periodo;
+  /** Σ total de las ventas (lo vendido, incluye lo fiado). */
   facturado: Comparado<string>;
+  /**
+   * Σ pagos no anulados con fecha en el período (al vender y cobros de
+   * fiados). Solo dueños o FIADOS "ver" (null para el resto).
+   */
+  cobrado: Comparado<string> | null;
+  /** Deuda total actual de los clientes (no depende del período). Idem `cobrado`. */
+  porCobrar: string | null;
   cantidadVentas: Comparado<number>;
   unidadesVendidas: Comparado<number>;
   /** Solo dueños (null para el resto). */
@@ -447,10 +461,43 @@ async function ventasActualAnterior(ctx: Ctx, p: Periodo) {
   };
 }
 
+/** Cobrado del período actual y del anterior, y la deuda total de hoy. */
+async function cobranzas(ctx: Ctx, p: Periodo) {
+  const { a, b } = rangos(p);
+  const [cobrado, [deuda]] = await Promise.all([
+    consultar(
+      ctx,
+      z.object({ actual: z.boolean(), total: montoTexto }),
+      Prisma.sql`
+        SELECT (pv."fecha" >= ${ts(a.inicio)}) AS "actual", COALESCE(SUM(pv."monto"), 0)::text AS "total"
+        FROM "PagoVenta" pv
+        WHERE pv."panelId" = ${ctx.panelId} AND NOT pv."anulado"
+          AND pv."fecha" >= ${ts(b.inicio)} AND pv."fecha" < ${ts(a.fin)}
+        GROUP BY 1`,
+    ),
+    consultar(
+      ctx,
+      z.object({ total: montoTexto }),
+      Prisma.sql`
+        SELECT COALESCE(SUM(c."saldoDeudor"), 0)::text AS "total"
+        FROM "Cliente" c WHERE c."panelId" = ${ctx.panelId} AND c."saldoDeudor" > 0`,
+    ),
+  ]);
+  return {
+    cobrado: compararMonto(
+      cobrado.find((f) => f.actual)?.total ?? "0",
+      cobrado.find((f) => !f.actual)?.total ?? "0",
+    ),
+    porCobrar: aMonto(deuda?.total ?? "0"),
+  };
+}
+
 export async function kpis(ctx: Ctx, p: Periodo): Promise<KpisPeriodo> {
   const { a, b, anterior } = rangos(p);
-  const [owner, ventas, unidades, [otros]] = await Promise.all([
+  const [owner, verCobranzas, ventas, unidades, [otros]] = await Promise.all([
     esOwnerCtx(ctx),
+    // Lo cobrado y la deuda de los clientes: dueños o FIADOS "ver".
+    puedeFiados(ctx, "ver"),
     ventasActualAnterior(ctx, p),
     consultar(
       ctx,
@@ -488,10 +535,13 @@ export async function kpis(ctx: Ctx, p: Periodo): Promise<KpisPeriodo> {
   ]);
   const va = ventas.actual;
   const vb = ventas.anterior;
+  const cobros = verCobranzas ? await cobranzas(ctx, p) : null;
   return {
     periodo: p,
     anterior,
     facturado: compararMonto(va.facturado, vb.facturado),
+    cobrado: cobros?.cobrado ?? null,
+    porCobrar: cobros?.porCobrar ?? null,
     cantidadVentas: compararNumero(va.cantidad, vb.cantidad),
     unidadesVendidas: compararNumero(
       unidades.find((u) => u.actual)?.unidades ?? 0,
@@ -560,17 +610,22 @@ export interface PorMedioPago {
   total: string;
 }
 
+/**
+ * Lo cobrado por medio de pago: Σ PagoVenta no anulados con FECHA DE PAGO en
+ * el período (pagos al vender, mixtos por separado, y cobros de fiados).
+ * `cantidad` = pagos registrados en ese medio.
+ */
 export async function ventasPorMedioPago(ctx: Ctx, p: Periodo): Promise<PorMedioPago[]> {
   const { inicio, fin } = instantesDe(p);
   const filas = await consultar(
     ctx,
     z.object({ medio: z.enum(MedioPago), cantidad: z.number().int(), total: montoTexto }),
     Prisma.sql`
-      SELECT v."medioPago"::text AS "medio", COUNT(*)::int AS "cantidad",
-             COALESCE(SUM(v."total"), 0)::text AS "total"
-      FROM "Venta" v
-      WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
-        AND v."fecha" >= ${ts(inicio)} AND v."fecha" < ${ts(fin)}
+      SELECT pv."medioPago"::text AS "medio", COUNT(*)::int AS "cantidad",
+             COALESCE(SUM(pv."monto"), 0)::text AS "total"
+      FROM "PagoVenta" pv
+      WHERE pv."panelId" = ${ctx.panelId} AND NOT pv."anulado"
+        AND pv."fecha" >= ${ts(inicio)} AND pv."fecha" < ${ts(fin)}
       GROUP BY 1`,
   );
   return Object.values(MedioPago).map((medio) => {
@@ -973,7 +1028,8 @@ export interface VentaDeVendedor {
   fecha: Date;
   tipo: TipoVenta;
   cliente: string;
-  medioPago: MedioPago;
+  /** Medio principal; null si se fió todo. */
+  medioPago: MedioPago | null;
   unidades: number;
   total: string;
 }
@@ -1088,7 +1144,7 @@ export async function exportarVentasVendedorExcel(
       }).format(v.fecha),
       tipo: ETIQUETA_TIPO_VENTA[v.tipo],
       cliente: v.cliente,
-      medio: ETIQUETA_MEDIO_PAGO[v.medioPago],
+      medio: etiquetaMedioPrincipal(v.medioPago),
       unidades: v.unidades,
       total: Number(v.total),
     });

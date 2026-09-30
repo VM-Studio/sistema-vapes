@@ -1,6 +1,7 @@
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Info, Minus } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { formatearDelta } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -17,50 +18,65 @@ export function KpiCard({
   etiquetaAnterior,
   deltaPct,
   extra,
+  ayuda,
   className,
 }: {
   label: string;
   valor: ReactNode;
-  anterior: ReactNode;
+  /** Sin `anterior` (un saldo de hoy, no un período) no se muestra la comparación. */
+  anterior?: ReactNode;
   /** "Ayer", "Semana pasada"… */
-  etiquetaAnterior: string;
-  deltaPct: number | null;
+  etiquetaAnterior?: string;
+  deltaPct?: number | null;
   extra?: ReactNode;
+  /** Aclaración de qué mide (tooltip con un ícono de info al lado de la etiqueta). */
+  ayuda?: string;
   className?: string;
 }) {
-  const sube = deltaPct !== null && deltaPct > 0;
-  const baja = deltaPct !== null && deltaPct < 0;
+  const sube = deltaPct != null && deltaPct > 0;
+  const baja = deltaPct != null && deltaPct < 0;
   const Icono = sube ? ArrowUpRight : baja ? ArrowDownRight : Minus;
   return (
     <div
       className={cn("bg-card rounded-card flex min-w-0 flex-col gap-1 p-4 md:p-5", className)}
       data-testid={`kpi-${label}`}
     >
-      <p className="text-muted text-small truncate font-medium">{label}</p>
+      <p className="text-muted text-small flex min-w-0 items-center gap-1 font-medium">
+        <span className="truncate">{label}</span>
+        {ayuda && (
+          <Tooltip content={ayuda}>
+            <span tabIndex={0} aria-label={ayuda} className="rounded-control inline-flex">
+              <Info className="text-subtle size-3.5" strokeWidth={1.75} aria-hidden />
+            </span>
+          </Tooltip>
+        )}
+      </p>
       <p className="text-xl leading-tight font-semibold tracking-tight break-words tabular-nums md:text-2xl xl:text-xl 2xl:text-2xl">
         {valor}
       </p>
-      <div className="text-small mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span
-          className={cn(
-            "inline-flex items-center gap-0.5 font-semibold tabular-nums",
-            sube && "text-marca-azul",
-            baja && "text-marca-naranja-oscuro",
-            !sube && !baja && "text-subtle",
-          )}
-          aria-label={
-            deltaPct === null
-              ? "Sin comparación"
-              : `${sube ? "Subió" : baja ? "Bajó" : "Igual"} ${formatearDelta(deltaPct)}`
-          }
-        >
-          <Icono className="size-3.5" strokeWidth={2} aria-hidden />
-          {deltaPct === null ? "—" : formatearDelta(deltaPct)}
-        </span>
-        <span className="text-subtle min-w-0 tabular-nums">
-          {etiquetaAnterior}: <span className="whitespace-nowrap">{anterior}</span>
-        </span>
-      </div>
+      {anterior !== undefined && (
+        <div className="text-small mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span
+            className={cn(
+              "inline-flex items-center gap-0.5 font-semibold tabular-nums",
+              sube && "text-marca-azul",
+              baja && "text-marca-naranja-oscuro",
+              !sube && !baja && "text-subtle",
+            )}
+            aria-label={
+              deltaPct == null
+                ? "Sin comparación"
+                : `${sube ? "Subió" : baja ? "Bajó" : "Igual"} ${formatearDelta(deltaPct)}`
+            }
+          >
+            <Icono className="size-3.5" strokeWidth={2} aria-hidden />
+            {deltaPct == null ? "—" : formatearDelta(deltaPct)}
+          </span>
+          <span className="text-subtle min-w-0 tabular-nums">
+            {etiquetaAnterior}: <span className="whitespace-nowrap">{anterior}</span>
+          </span>
+        </div>
+      )}
       {extra && <p className="text-subtle text-small">{extra}</p>}
     </div>
   );

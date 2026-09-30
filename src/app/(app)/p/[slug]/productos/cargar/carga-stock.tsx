@@ -2,6 +2,7 @@
 
 import { Modulo } from "@prisma/client";
 import {
+  ArrowLeft,
   ArrowRight,
   Boxes,
   Camera,
@@ -56,7 +57,13 @@ interface ListaGuardada {
   ts: number;
 }
 
-type Paso = "galpon" | "escaneo" | "exito";
+type Paso = "galpon" | "escaneo" | "distribuir" | "exito";
+
+/** Por sabor: unidades a cada galpón (depositoId → cantidad). */
+type Distribucion = Record<string, Record<string, number>>;
+
+const sumaFila = (fila: Record<string, number> | undefined) =>
+  Object.values(fila ?? {}).reduce((a, n) => a + n, 0);
 
 function leer<T>(clave: string): T | null {
   try {
@@ -117,9 +124,78 @@ export function CargaStock({
   const [enviando, setEnviando] = useState(false);
   const [resumen, setResumen] = useState<ResumenCargaStock | null>(null);
   const [selectorKey, setSelectorKey] = useState(0);
+  const [distribucion, setDistribucion] = useState<Distribucion>({});
 
   const deposito = depositos.find((d) => d.id === depositoId) ?? null;
   const unidades = items.reduce((a, i) => a + i.cantidad, 0);
+  /** Con más de un galpón, después de escanear viene el paso "Distribuir entre galpones". */
+  const conDistribucion = depositos.length > 1;
+  const filasInvalidas = items.filter(
+    (i) => sumaFila(distribucion[i.variante.varianteId]) !== i.cantidad,
+  );
+  const totalPorGalpon = depositos
+    .map((d) => ({
+      ...d,
+      unidades: items.reduce((a, i) => a + (distribucion[i.variante.varianteId]?.[d.id] ?? 0), 0),
+    }))
+    .filter((d) => d.unidades > 0)
+    .sort((a, b) => b.unidades - a.unidades);
+
+  /**
+   * Entra al paso Distribuir: por default todo al galpón de ingreso. Si un
+   * sabor ya estaba repartido y su cantidad no cambió, conserva el reparto.
+   */
+  function irADistribuir() {
+    if (!depositoId) return;
+    setDistribucion((prev) =>
+      Object.fromEntries(
+        items.map((i) => {
+          const id = i.variante.varianteId;
+          const previa = prev[id];
+          return [
+            id,
+            previa && sumaFila(previa) === i.cantidad
+              ? previa
+              : Object.fromEntries(
+                  depositos.map((d) => [d.id, d.id === depositoId ? i.cantidad : 0]),
+                ),
+          ];
+        }),
+      ),
+    );
+    setPaso("distribuir");
+  }
+
+  const cambiarReparto = (varianteId: string, depId: string, n: number) =>
+    setDistribucion((d) => ({ ...d, [varianteId]: { ...d[varianteId], [depId]: Math.max(0, n) } }));
+
+  /** "Todo a {galpón}": cada sabor entero a ese galpón. */
+  const todoA = (depId: string) =>
+    setDistribucion(
+      Object.fromEntries(
+        items.map((i) => [
+          i.variante.varianteId,
+          Object.fromEntries(depositos.map((d) => [d.id, d.id === depId ? i.cantidad : 0])),
+        ]),
+      ),
+    );
+
+  /** Reparte cada sabor en partes iguales (50/50 con dos galpones); el resto va al de ingreso. */
+  const repartirParejo = () =>
+    setDistribucion(
+      Object.fromEntries(
+        items.map((i) => {
+          const base = Math.floor(i.cantidad / depositos.length);
+          const resto = i.cantidad - base * depositos.length;
+          return [
+            i.variante.varianteId,
+            Object.fromEntries(
+              depositos.map((d) => [d.id, base + (d.id === depositoId ? resto : 0)]),
+            ),
+          ];
+        }),
+      ),
+    );
 
   // Al montar: último galpón usado (preseleccionado, NO confirmado) y lista sin terminar.
   useEffect(() => {
@@ -213,7 +289,17 @@ export function CargaStock({
     setEnviando(true);
     const r = await cargarStockPorEscaneoAction({
       depositoId,
-      items: items.map((i) => ({ varianteId: i.variante.varianteId, cantidad: i.cantidad })),
+      items: items.map((i) =>
+        conDistribucion
+          ? {
+              varianteId: i.variante.varianteId,
+              cantidad: i.cantidad,
+              distribucion: Object.entries(distribucion[i.variante.varianteId] ?? {})
+                .filter(([, n]) => n > 0)
+                .map(([id, n]) => ({ depositoId: id, cantidad: n })),
+            }
+          : { varianteId: i.variante.varianteId, cantidad: i.cantidad },
+      ),
     });
     setEnviando(false);
     if (!r.ok) {
@@ -222,6 +308,7 @@ export function CargaStock({
     }
     setConfirmando(false);
     setItems([]);
+    setDistribucion({});
     escribir(CLAVE_LISTA, null);
     invalidarResoluciones(); // el stock cambió: los próximos escaneos traen números frescos
     setResumen(r.data);
@@ -267,9 +354,23 @@ export function CargaStock({
         }
       />
       <Stepper
-        pasos={["Galpón", "Escaneo", "Listo"]}
-        actual={paso === "galpon" ? 0 : paso === "escaneo" ? 1 : 2}
-        className="mb-6 max-w-md"
+        pasos={
+          conDistribucion
+            ? ["Galpón de ingreso", "Escaneo", "Distribuir", "Listo"]
+            : ["Galpón de ingreso", "Escaneo", "Listo"]
+        }
+        actual={
+          paso === "galpon"
+            ? 0
+            : paso === "escaneo"
+              ? 1
+              : paso === "distribuir"
+                ? 2
+                : conDistribucion
+                  ? 3
+                  : 2
+        }
+        className="mb-6 max-w-lg"
       />
     </>
   );
@@ -331,8 +432,17 @@ export function CargaStock({
           <CircleCheck className="text-success size-14" strokeWidth={1.25} aria-hidden />
           <div className="flex flex-col gap-1">
             <h1 className="text-h1 font-semibold">
-              Cargaste {formatearNumero(resumen.unidades)} unidades en {resumen.deposito.nombre}
+              {resumen.cargadoPorDeposito.length > 1
+                ? `Cargaste ${formatearNumero(resumen.unidades)} unidades`
+                : `Cargaste ${formatearNumero(resumen.unidades)} unidades en ${resumen.deposito.nombre}`}
             </h1>
+            {resumen.cargadoPorDeposito.length > 1 && (
+              <p className="text-body font-medium" data-testid="resumen-por-galpon">
+                {resumen.cargadoPorDeposito
+                  .map((d) => `${formatearNumero(d.unidades)} a ${d.nombre}`)
+                  .join(" · ")}
+              </p>
+            )}
             <p className="text-muted text-body">
               {resumen.items.length} producto{resumen.items.length === 1 ? "" : "s"} · quedó
               registrado como ingreso manual.
@@ -343,7 +453,9 @@ export function CargaStock({
             <h2 className="text-muted text-small font-medium">Stock de lo cargado, por galpón</h2>
             <ul className="grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="Totales por galpón">
               {resumen.porDeposito.map((d) => {
-                const actual = d.depositoId === resumen.deposito.id;
+                const actual = resumen.cargadoPorDeposito.some(
+                  (c) => c.depositoId === d.depositoId,
+                );
                 return (
                   <li
                     key={d.depositoId}
@@ -366,7 +478,14 @@ export function CargaStock({
             <ul className="bg-surface divide-border rounded-control mt-2 flex flex-col divide-y px-4 text-sm">
               {resumen.items.map((i) => (
                 <li key={i.varianteId} className="flex items-center justify-between gap-3 py-2.5">
-                  <span className="min-w-0 truncate">{i.titulo}</span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">{i.titulo}</span>
+                    {i.distribucion.length > 1 && (
+                      <span className="text-muted text-xs">
+                        {i.distribucion.map((d) => `${d.cantidad} a ${d.nombre}`).join(" · ")}
+                      </span>
+                    )}
+                  </span>
                   <span className="text-muted flex shrink-0 items-center gap-1.5 tabular-nums">
                     <strong className="text-success font-semibold">+{i.cantidad}</strong>
                     <span aria-hidden>·</span>
@@ -400,6 +519,184 @@ export function CargaStock({
             )}
           </div>
         </Card>
+        {escaner.ui}
+      </div>
+    );
+  }
+
+  // --- Paso 3: distribuir entre galpones ------------------------------------------
+  if (paso === "distribuir" && deposito) {
+    const reparto = (varianteId: string, depId: string) => distribucion[varianteId]?.[depId] ?? 0;
+    return (
+      <div className="mx-auto flex max-w-5xl flex-col pb-40 md:pb-0">
+        {cabecera}
+        <Card className="flex flex-col gap-5 p-5 md:p-6">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-h2 font-semibold">Distribuir entre galpones</h2>
+            <p className="text-muted text-body">
+              Por defecto todo entra en {deposito.nombre}. Si una parte va a otro galpón, anotala
+              acá: cada fila tiene que sumar lo escaneado.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Repartos rápidos">
+            {depositos.map((d) => (
+              <Button key={d.id} variant="secondary" size="sm" onClick={() => todoA(d.id)}>
+                Todo a {d.nombre}
+              </Button>
+            ))}
+            <Button variant="secondary" size="sm" onClick={repartirParejo}>
+              {depositos.length === 2 ? "Repartir 50/50" : "Repartir en partes iguales"}
+            </Button>
+          </div>
+
+          {/* Desktop: tabla con una columna por galpón. */}
+          <div className="border-border bg-surface rounded-control hidden overflow-x-auto border md:block">
+            <table
+              className="w-full text-left text-sm tabular-nums"
+              aria-label="Distribución por galpón"
+            >
+              <thead className="border-border bg-card text-muted border-b text-xs">
+                <tr>
+                  <th scope="col" className="h-10 px-4 font-medium">
+                    Producto — sabor
+                  </th>
+                  <th scope="col" className="h-10 px-4 text-right font-medium">
+                    Escaneado
+                  </th>
+                  {depositos.map((d) => (
+                    <th key={d.id} scope="col" className="h-10 px-4 text-right font-medium">
+                      {d.nombre}
+                    </th>
+                  ))}
+                  <th scope="col" className="h-10 px-4 font-medium">
+                    <span className="sr-only">Control</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-border divide-y">
+                {items.map((i) => {
+                  const id = i.variante.varianteId;
+                  const suma = sumaFila(distribucion[id]);
+                  const mal = suma !== i.cantidad;
+                  return (
+                    <tr
+                      key={id}
+                      aria-label={i.variante.titulo}
+                      aria-invalid={mal || undefined}
+                      className={cn(mal && "bg-danger-soft")}
+                    >
+                      <td className="px-4 py-2 font-medium">{i.variante.titulo}</td>
+                      <td className="px-4 py-2 text-right font-semibold">{i.cantidad}</td>
+                      {depositos.map((d) => (
+                        <td key={d.id} className="px-4 py-2 text-right">
+                          <CantidadInput
+                            etiqueta={`${i.variante.titulo} a ${d.nombre}`}
+                            valor={reparto(id, d.id)}
+                            min={0}
+                            onCambio={(n) => cambiarReparto(id, d.id, n)}
+                            className="ml-auto w-20"
+                          />
+                        </td>
+                      ))}
+                      <td className="px-4 py-2 text-xs whitespace-nowrap">
+                        {mal ? (
+                          <span className="text-danger font-medium">
+                            {suma < i.cantidad
+                              ? `Faltan ${i.cantidad - suma}`
+                              : `Sobran ${suma - i.cantidad}`}
+                          </span>
+                        ) : (
+                          <Check
+                            className="text-success size-4"
+                            strokeWidth={2}
+                            aria-label="Suma bien"
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: una tarjeta por sabor con los galpones apilados. */}
+          <ul className="flex flex-col gap-3 md:hidden" aria-label="Distribución por sabor">
+            {items.map((i) => {
+              const id = i.variante.varianteId;
+              const suma = sumaFila(distribucion[id]);
+              const mal = suma !== i.cantidad;
+              return (
+                <li
+                  key={id}
+                  className={cn(
+                    "border-border bg-surface rounded-control flex flex-col gap-3 border p-4",
+                    mal && "bg-danger-soft",
+                  )}
+                >
+                  <p className="font-medium">{i.variante.titulo}</p>
+                  {depositos.map((d) => (
+                    <label key={d.id} className="flex items-center justify-between gap-3 text-sm">
+                      {d.nombre}
+                      <CantidadInput
+                        etiqueta={`${i.variante.titulo} a ${d.nombre}`}
+                        valor={reparto(id, d.id)}
+                        min={0}
+                        onCambio={(n) => cambiarReparto(id, d.id, n)}
+                        className="w-24"
+                      />
+                    </label>
+                  ))}
+                  <p
+                    className={cn(
+                      "text-small flex justify-between tabular-nums",
+                      mal ? "text-danger font-medium" : "text-muted",
+                    )}
+                  >
+                    <span>
+                      Total {suma} de {i.cantidad} escaneadas
+                    </span>
+                    {!mal && <Check className="text-success size-4" strokeWidth={2} aria-hidden />}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+
+        <div className="border-border bg-surface fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:sticky md:bottom-0 md:mt-6 md:px-0 md:py-4">
+          <p className="text-muted text-center text-sm tabular-nums" aria-live="polite">
+            {filasInvalidas.length > 0
+              ? `${filasInvalidas.length === 1 ? "Una fila no suma" : `${filasInvalidas.length} filas no suman`} lo escaneado.`
+              : totalPorGalpon
+                  .map((d) => `${formatearNumero(d.unidades)} a ${d.nombre}`)
+                  .join(" · ")}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => setPaso("escaneo")}
+              disabled={enviando}
+            >
+              <ArrowLeft strokeWidth={1.75} /> Volver
+            </Button>
+            <Button
+              size="lg"
+              className="flex-1"
+              onClick={() => void cargar()}
+              loading={enviando}
+              disabled={filasInvalidas.length > 0 || !offline.online}
+            >
+              {!enviando && <PackageCheck strokeWidth={1.75} />} Confirmar carga
+            </Button>
+          </div>
+          {!offline.online && (
+            <p className="text-muted text-center text-xs">
+              Sin conexión: confirmá cuando vuelva la señal (la lista queda guardada).
+            </p>
+          )}
+        </div>
         {escaner.ui}
       </div>
     );
@@ -565,16 +862,23 @@ export function CargaStock({
       </div>
 
       {items.length > 0 && deposito && (
-        <div className="border-border bg-surface pl-safe pr-safe fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t px-4 py-3 md:sticky md:bottom-0 md:mt-6 md:px-0 md:py-4">
-          <Button
-            size="lg"
-            fullWidth
-            onClick={() => setConfirmando(true)}
-            disabled={!offline.online}
-          >
-            <PackageCheck strokeWidth={1.75} /> Cargar {formatearNumero(unidades)} unidad
-            {unidades === 1 ? "" : "es"} en {deposito.nombre}
-          </Button>
+        <div className="border-border bg-surface fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:sticky md:bottom-0 md:mt-6 md:px-0 md:py-4">
+          {conDistribucion ? (
+            <Button size="lg" fullWidth onClick={irADistribuir}>
+              <ArrowRight strokeWidth={1.75} /> Continuar con {formatearNumero(unidades)} unidad
+              {unidades === 1 ? "" : "es"}
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              fullWidth
+              onClick={() => setConfirmando(true)}
+              disabled={!offline.online}
+            >
+              <PackageCheck strokeWidth={1.75} /> Cargar {formatearNumero(unidades)} unidad
+              {unidades === 1 ? "" : "es"} en {deposito.nombre}
+            </Button>
+          )}
           {!offline.online && (
             <p className="text-muted mt-1 text-center text-xs">
               Sin conexión: confirmá cuando vuelva la señal (la lista queda guardada).

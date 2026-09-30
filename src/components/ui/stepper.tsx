@@ -20,12 +20,12 @@ export function Stepper({
         return (
           <li
             key={paso}
-            className="flex min-w-0 flex-1 items-center gap-2"
+            className="flex min-w-0 flex-1 items-center gap-2 md:flex-auto"
             aria-current={activo ? "step" : undefined}
           >
             <span
               className={cn(
-                "flex size-6 shrink-0 items-center justify-center rounded-control text-xs font-semibold tabular-nums",
+                "rounded-control flex size-6 shrink-0 items-center justify-center text-xs font-semibold tabular-nums",
                 hecho || activo ? "bg-foreground text-background" : "bg-surface-3 text-muted",
               )}
             >
@@ -33,7 +33,7 @@ export function Stepper({
             </span>
             <span
               className={cn(
-                "text-small truncate font-medium",
+                "text-small truncate font-medium md:shrink-0",
                 activo ? "text-foreground" : "text-subtle",
                 !activo && "max-md:sr-only",
               )}

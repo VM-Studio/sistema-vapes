@@ -21,8 +21,10 @@ test("carga de stock por escáner simulado (teclas cada 10 ms) → stock y ledge
   await pistola(page, codigo);
   await pistola(page, codigo);
   await expect(page.getByLabel(`Cantidad de ${ELF_BAR_BC5000} — Cool Mint`)).toHaveValue("3");
-  await page.getByRole("button", { name: "Cargar 3 unidades en Ayres Plaza" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Confirmar carga" }).click();
+  // Vapes tiene dos galpones: paso "Distribuir" con todo en el de ingreso.
+  await page.getByRole("button", { name: "Continuar con 3 unidades" }).click();
+  await expect(page.getByRole("heading", { name: "Distribuir entre galpones" })).toBeVisible();
+  await page.getByRole("button", { name: "Confirmar carga" }).click();
   await expect(page.getByText("Cargaste 3 unidades en Ayres Plaza")).toBeVisible();
 
   expect(await stock(ELF_BAR_BC5000, "Cool Mint", "Ayres Plaza")).toBe(antes + 3);

@@ -48,10 +48,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     // sharp es externo y su binario depende de la plataforma: en el deploy (Linux)
     // el trazado no siempre lo encuentra solo, así que se incluye explícito.
-    "/**": [
-      "./src/server/auth/passwords-comunes.txt",
-      "./docs/MANUAL-USUARIO.md",
-    ],
+    "/**": ["./src/server/auth/passwords-comunes.txt", "./docs/MANUAL-USUARIO.md"],
   },
   async headers() {
     return [

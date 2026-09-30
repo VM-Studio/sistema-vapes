@@ -270,8 +270,13 @@ async function main() {
   console.log("\n6) Convertir una mayorista cuyo precio de lista subió (Trinidad, sin editar)");
   await db.producto.update({ where: { id: elf.id }, data: { precioVenta: "12000.00" } });
   const g2 = await db.deposito.findFirstOrThrow({ where: { esPrincipal: false } });
+  // Un pago por el total cotizado.
+  const pagoTotal = async (id: string, medioPago: "EFECTIVO" | "TRANSFERENCIA" = "EFECTIVO") => [
+    { medioPago, monto: Number((await obtener(ctx, id)).total) },
+  ];
+  const pagosQ1 = await pagoTotal(q1.id);
   const sinStock = await error(() =>
-    convertirEnVenta(ctxTri, q1.id, { depositoId: g2.id, medioPago: "EFECTIVO" }),
+    convertirEnVenta(ctxTri, q1.id, { depositoId: g2.id, pagos: pagosQ1 }),
   );
   const tras = await obtener(ctx, q1.id);
   check(
@@ -279,7 +284,7 @@ async function main() {
     `sin stock en el otro galpón → falla entera y la cotización queda igual («${msg(sinStock).slice(0, 60)}…»)`,
   );
   const clientesAntes = await db.cliente.count();
-  const venta = await convertirEnVenta(ctxTri, q1.id, { depositoId: g1.id, medioPago: "EFECTIVO" });
+  const venta = await convertirEnVenta(ctxTri, q1.id, { depositoId: g1.id, pagos: pagosQ1 });
   const v = await db.venta.findUniqueOrThrow({ where: { id: venta.id }, include: { items: true } });
   check(v.tipo === TipoVenta.MAYORISTA, "venta MAYORISTA");
   check(
@@ -303,7 +308,7 @@ async function main() {
     `cotización CONVERTIDA → ${conv.venta?.codigo}`,
   );
   const otraVez = await error(() =>
-    convertirEnVenta(ctx, q1.id, { depositoId: g1.id, medioPago: "EFECTIVO" }),
+    convertirEnVenta(ctx, q1.id, { depositoId: g1.id, pagos: pagosQ1 }),
   );
   check(otraVez instanceof DomainError, "no se convierte dos veces");
   const tocar = await error(() =>
@@ -340,9 +345,10 @@ async function main() {
     prep.vencida && prep.cambios.length === 1 && prep.cambios[0]!.despues === "11000.00",
     "vencida: prepararConversion informa el cambio 10000 → 11000",
   );
+  // Recalculada: 2 × $11.000 de hoy.
   const v2 = await convertirEnVenta(ctx, q2.id, {
     depositoId: g1.id,
-    medioPago: "TRANSFERENCIA",
+    pagos: [{ medioPago: "TRANSFERENCIA", monto: 22000 }],
     recalcular: true,
   });
   check(
@@ -454,7 +460,10 @@ async function main() {
   );
   check(
     (await error(() =>
-      convertirEnVenta(ctxCos, q2.id, { depositoId: g1.id, medioPago: "EFECTIVO" }),
+      convertirEnVenta(ctxCos, q2.id, {
+        depositoId: g1.id,
+        pagos: [{ medioPago: "EFECTIVO", monto: 22000 }],
+      }),
     )) instanceof NotFoundError,
     "convertir una de Vapes desde Cosmetic → no existe",
   );

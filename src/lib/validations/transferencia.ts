@@ -1,7 +1,14 @@
 import { z } from "zod";
 
+import { prefijoPanel } from "@/lib/paneles";
+
 import { enteroPositivo, id, sinDuplicados, textoOpcional } from "./common";
 import { motivoAjuste } from "./movimiento";
+
+/** ID visible de una transferencia: VAP-T-000001. */
+export function formatearIdTransferencia(slug: string, numero: number): string {
+  return `${prefijoPanel(slug)}-T-${String(numero).padStart(6, "0")}`;
+}
 
 export const transferenciaItemSchema = z.object({
   varianteId: id,
@@ -13,7 +20,7 @@ export const crearTransferenciaSchema = z
     depositoOrigenId: id,
     depositoDestinoId: id,
     fecha: z.coerce.date().optional(),
-    notas: textoOpcional(2000),
+    observacion: textoOpcional(2000),
     items: z
       .array(transferenciaItemSchema)
       .min(1, "La transferencia debe tener al menos un ítem")
@@ -24,7 +31,7 @@ export const crearTransferenciaSchema = z
       ),
   })
   .refine((t) => t.depositoOrigenId !== t.depositoDestinoId, {
-    message: "El depósito de destino debe ser distinto al de origen",
+    message: "El galpón de destino tiene que ser distinto al de origen",
     path: ["depositoDestinoId"],
   });
 
@@ -32,23 +39,7 @@ export const completarTransferenciaSchema = z.object({ id });
 
 export const anularTransferenciaSchema = z.object({ id, motivo: motivoAjuste });
 
+export const remitoTransferenciaSchema = z.object({ id });
+
 export type CrearTransferenciaInput = z.input<typeof crearTransferenciaSchema>;
 export type CrearTransferencia = z.output<typeof crearTransferenciaSchema>;
-
-/** Transferir un sabor a otro galpón desde la pantalla de stock (se completa en el acto). */
-export const transferenciaRapidaSchema = z
-  .object({
-    varianteId: id,
-    depositoOrigenId: id,
-    depositoDestinoId: id,
-    cantidad: enteroPositivo,
-    notas: textoOpcional(500),
-  })
-  .refine((t) => t.depositoOrigenId !== t.depositoDestinoId, {
-    message: "El galpón de destino debe ser distinto al de origen",
-    path: ["depositoDestinoId"],
-  });
-
-export type TransferenciaRapida = Omit<z.output<typeof transferenciaRapidaSchema>, "notas"> & {
-  notas?: string;
-};

@@ -27,7 +27,7 @@ export function TabsGalpones({
               scroll={false}
               aria-current={t.activo ? "page" : undefined}
               className={cn(
-                "flex h-11 items-center rounded-control border px-4 text-sm font-medium whitespace-nowrap transition-colors md:h-10",
+                "rounded-control flex h-11 items-center border px-4 text-sm font-medium whitespace-nowrap transition-colors md:h-10",
                 t.activo
                   ? "border-foreground bg-foreground text-background"
                   : "border-border bg-surface text-muted hover:border-input hover:text-foreground",

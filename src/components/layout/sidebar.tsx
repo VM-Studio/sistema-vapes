@@ -33,9 +33,9 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
           aria-current={activo ? "page" : undefined}
           title={colapsado ? item.label : undefined}
           className={cn(
-            "relative flex h-10 items-center gap-3 rounded-control px-3 text-sm font-medium transition-colors",
+            "rounded-control relative flex h-10 items-center gap-3 px-3 text-sm font-medium transition-colors",
             activo
-              ? "bg-card text-foreground before:bg-marca-azul before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-circle"
+              ? "bg-card text-foreground before:bg-marca-azul before:rounded-circle before:absolute before:inset-y-2 before:left-0 before:w-0.5"
               : "text-muted hover:bg-surface-2/70 hover:text-foreground",
             colapsado && "justify-center px-0",
           )}
@@ -80,7 +80,7 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
           type="button"
           onClick={onToggle}
           className={cn(
-            "text-subtle hover:bg-surface-2 hover:text-foreground flex h-9 w-full items-center gap-3 rounded-control px-3 text-xs font-medium",
+            "text-subtle hover:bg-surface-2 hover:text-foreground rounded-control flex h-9 w-full items-center gap-3 px-3 text-xs font-medium",
             colapsado && "justify-center px-0",
           )}
           aria-label={colapsado ? "Expandir menú" : "Colapsar menú"}

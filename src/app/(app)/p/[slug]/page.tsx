@@ -38,7 +38,8 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 /**
  * Inicio del panel. Con DASHBOARD: selector de período (estado en la URL),
- * KPIs contra el período anterior, gráfico comparativo, medios de pago,
+ * KPIs contra el período anterior (con cobrado y por cobrar para dueños y
+ * FIADOS "ver"), gráfico comparativo, medios de pago (sobre pagos reales),
  * unitaria vs. mayorista, galpones, rankings, alertas y pendientes. Los
  * dueños ven además ganancia, compras vs. ventas y el rendimiento del equipo;
  * un empleado ve "Mi rendimiento". Cada tarjeta carga por su cuenta
@@ -69,6 +70,9 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
   const clave = `${periodo.modo}-${diaDe(periodo.desde)}-${diaDe(periodo.hasta)}`;
   const preset = typeof sp.preset === "string" ? sp.preset : null;
   const props = { ctx, periodo };
+  // Facturado, unidades, clientes, ventas y ticket; + ganancia (dueños) + cobrado y por cobrar.
+  const cantidadKpis =
+    5 + (owner ? 1 : 0) + (puede(usuario, panelId, Modulo.FIADOS, "ver") ? 2 : 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,7 +89,7 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
         />
       </header>
 
-      <Suspense key={`k${clave}`} fallback={<SkeletonKpis n={owner ? 6 : 5} />}>
+      <Suspense key={`k${clave}`} fallback={<SkeletonKpis n={cantidadKpis} />}>
         <SeccionKpis {...props} />
       </Suspense>
 

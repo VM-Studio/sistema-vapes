@@ -86,7 +86,7 @@ export function SearchInput({
           <button
             type="button"
             onClick={() => setValor("")}
-            className="text-muted hover:bg-surface-2 hover:text-foreground absolute top-1/2 right-1.5 flex size-9 -translate-y-1/2 items-center justify-center rounded-control"
+            className="text-muted hover:bg-surface-2 hover:text-foreground rounded-control absolute top-1/2 right-1.5 flex size-9 -translate-y-1/2 items-center justify-center"
             aria-label="Limpiar búsqueda"
           >
             <X className="size-4" strokeWidth={1.75} aria-hidden />

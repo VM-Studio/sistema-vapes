@@ -38,6 +38,10 @@ async function clienteConVenta(
       depositoId,
       vendedorId: dueno.id,
       medioPago: "EFECTIVO",
+      montoPagado: precio,
+      pagos: {
+        create: { panelId: PANEL_VAPES, medioPago: "EFECTIVO", monto: precio, usuarioId: dueno.id },
+      },
       subtotal: precio,
       total: precio,
       costoTotal: 0,

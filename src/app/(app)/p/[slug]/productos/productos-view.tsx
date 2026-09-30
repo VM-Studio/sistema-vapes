@@ -43,9 +43,7 @@ function PrecioSabor({ sabor }: { sabor: SaborListado }) {
     <span className="inline-flex items-center gap-1.5 tabular-nums">
       {formatearPesos(sabor.precioVenta)}
       {sabor.tienePrecioPropio && (
-        <Badge title="Este sabor tiene un precio distinto al del producto">
-          propio
-        </Badge>
+        <Badge title="Este sabor tiene un precio distinto al del producto">propio</Badge>
       )}
     </span>
   );
@@ -168,7 +166,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
       ) : (
         <>
           {/* Desktop: tabla, cada producto se expande en sus sabores */}
-          <div className="border-border bg-surface hidden overflow-x-auto rounded-card border md:block">
+          <div className="border-border bg-surface rounded-card hidden overflow-x-auto border md:block">
             <table className="w-full text-left text-sm tabular-nums">
               <caption className="sr-only">Productos</caption>
               <thead className="border-border bg-card text-muted border-b text-xs">
@@ -213,7 +211,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
                           <button
                             type="button"
                             onClick={() => toggle(p.id)}
-                            className="text-muted hover:bg-surface-3 hover:text-foreground flex size-9 items-center justify-center rounded-control transition-colors"
+                            className="text-muted hover:bg-surface-3 hover:text-foreground rounded-control flex size-9 items-center justify-center transition-colors"
                             aria-expanded={abierto}
                             aria-label={`${abierto ? "Ocultar" : "Ver"} sabores de ${p.nombreCompleto}`}
                           >
@@ -370,7 +368,7 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
                   </button>
                   {abierto && (
                     <div className="px-4 pb-4">
-                      <ul className="bg-surface divide-border divide-y rounded-control px-3">
+                      <ul className="bg-surface divide-border rounded-control divide-y px-3">
                         {p.sabores.map((s) => (
                           <li key={s.id} className="py-3">
                             <div className="flex items-baseline justify-between gap-3">

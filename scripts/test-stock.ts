@@ -11,7 +11,6 @@ import { Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
 import { prisma } from "../src/lib/db";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { StockInsuficienteError } from "../src/server/errors";
-import { transferirAhora } from "../src/server/services/movimiento.service";
 import {
   movimientos,
   registrarMovimiento,
@@ -21,6 +20,7 @@ import {
   stockTotalVariante,
   transferirStock,
 } from "../src/server/services/stock.service";
+import { crearYCompletarTransferencia } from "../src/server/services/transferencia.service";
 import { sembrarCatalogoEjemplo } from "../e2e/fixtures/catalogo-ejemplo";
 
 const PANEL = "pnl_vapes";
@@ -363,18 +363,17 @@ async function main() {
     }),
   );
   const totalAntes = await stockTotalVariante(db, variante.id);
-  const t = await transferirAhora(ctx, {
-    varianteId: variante.id,
+  const t = await crearYCompletarTransferencia(ctx, {
     depositoOrigenId: g1.id,
     depositoDestinoId: g2.id,
-    cantidad: 5,
-    notas: MOTIVO,
+    observacion: MOTIVO,
+    items: [{ varianteId: variante.id, cantidad: 5 }],
   });
   const doc = await db.transferencia.findUniqueOrThrow({ where: { id: t.id } });
   const resumenDespues = await resumenStock(ctx);
   check(
     doc.estado === "COMPLETADA" && (await stockTotalVariante(db, variante.id)) === totalAntes,
-    `transferirAhora: Transferencia #${t.numero} COMPLETADA en el acto; total sin cambios (${totalAntes})`,
+    `crearYCompletarTransferencia: ${t.codigo} COMPLETADA en el acto; total sin cambios (${totalAntes})`,
   );
   check(
     resumenDespues.total === resumenAntes.total + 5,
@@ -385,23 +384,23 @@ async function main() {
   check(
     ledgerG2.total === 1 &&
       ledgerG2.movimientos[0]?.cantidad === 5 &&
-      ledgerG2.movimientos[0].referencia?.etiqueta === `Transferencia #${t.numero}` &&
+      ledgerG2.movimientos[0].referencia?.etiqueta === t.codigo &&
       ledgerTodos.total === 2 &&
       ledgerTodos.movimientos.some((m) => m.cantidad === -5 && m.depositoId === g1.id),
     "movimientos(): filtrado por galpón (+5 en destino) o de todos (−5 / +5) con la referencia",
   );
   const transferenciasAntes = await db.transferencia.count();
   const errorSinStock = await esperarError(() =>
-    transferirAhora(ctx, {
-      varianteId: variante.id,
+    crearYCompletarTransferencia(ctx, {
       depositoOrigenId: g1.id,
       depositoDestinoId: g2.id,
-      cantidad: 100_000,
+      observacion: undefined,
+      items: [{ varianteId: variante.id, cantidad: 100_000 }],
     }),
   );
   check(
     errorSinStock !== null && (await db.transferencia.count()) === transferenciasAntes,
-    `transferirAhora sin stock → error («${errorSinStock}») y no queda ninguna transferencia`,
+    `crearYCompletarTransferencia sin stock → error («${errorSinStock}») y no queda ninguna transferencia`,
   );
 
   console.log(

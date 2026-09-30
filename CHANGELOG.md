@@ -5,7 +5,40 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
-## [Sin publicar]
+## [2.2.0] - 2026-09-30 — Pagos mixtos, fiados, ingreso distribuido y transferencias con pistola
+
+### Agregado
+
+- **Pagos mixtos**: una venta se cobra con hasta tres medios (efectivo, transferencia, Binance) con
+  referencia opcional; el vuelto se calcula en pantalla. Cada pago queda en `PagoVenta` (inmutable, solo
+  se anula) y la venta guarda `estadoPago`, `montoPagado` y `saldoPendiente`.
+- **Fiados (cuenta corriente)**: con el permiso nuevo FIADOS se puede «Fiar el resto». `/p/{slug}/fiados`
+  lista deudores con antigüedad; la ficha muestra la cuenta corriente con saldo acumulado y registra
+  cobros imputados de la venta más vieja a la más nueva (o a las elegidas), con recibo por WhatsApp.
+  Anular una venta fiada anula sus pagos y revierte el saldo del cliente.
+- **Dashboard**: KPIs Cobrado y Por cobrar; el donut de medios de pago mide lo cobrado por fecha de pago.
+- **Carga de stock con paso «Distribuir entre galpones»**: lo escaneado se reparte por galpón antes de
+  confirmar (un ingreso por sabor y galpón).
+- **Transferencias con pistola** en `/p/{slug}/stock/transferencias`: origen y destino, escaneo con stock
+  disponible, «Mover ahora» o «Registrar envío, confirmar al recibir», código `VAP-T-000001` y **remito
+  PDF** con marca, modelo, especificación, sabor, cantidad y firmas.
+- Verificaciones `pnpm test:fiados` y `pnpm test:transferencias`.
+
+### Cambiado
+
+- Favicon nuevo (osito en el aro), transparente y sin margen.
+- La base verifica al cerrar cada transacción que lo pagado coincida con los pagos y que la deuda del
+  cliente coincida con sus ventas pendientes.
+
+### Corregido
+
+- CI: tipos de imágenes versionados (`next-env.d.ts` no se sube), formato y prueba de restauración sin
+  depender de un contenedor con nombre.
+- Barras de acción fijas en celular sin margen lateral.
+
+## [2.1.0] - 2026-09-29 — Rediseño
+
+Sistema de diseño aplicado a todas las pantallas (ver `docs/DISENO.md`), assets de marca y PWA.
 
 ### Cambiado
 

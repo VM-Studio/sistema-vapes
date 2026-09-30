@@ -105,12 +105,12 @@ export function IndicadorRed({ className }: { className?: string }) {
       aria-label={online ? "Con conexión" : "Sin conexión"}
       title={online ? "Con conexión" : "Sin conexión: el escáner solo puede consultar"}
       className={cn(
-        "flex h-10 items-center gap-1.5 rounded-control px-2 text-xs font-medium",
+        "rounded-control flex h-10 items-center gap-1.5 px-2 text-xs font-medium",
         className,
       )}
     >
       <span
-        className={cn("size-2.5 rounded-circle", online ? "bg-success" : "bg-muted")}
+        className={cn("rounded-circle size-2.5", online ? "bg-success" : "bg-muted")}
         aria-hidden
       />
       {!online && <span className="text-muted">Sin red</span>}

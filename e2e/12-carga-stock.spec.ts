@@ -56,6 +56,23 @@ test("sin elegir galpón no se carga nada (ni escaneando ni llamando a la acció
     "/p/vapes/productos/cargar",
   );
   expect(sinDeposito).toContain(SIN_GALPON);
+  // Distribución que no suma lo escaneado: rechazada en el servidor.
+  const malDistribuida = await llamarAccion(
+    page,
+    "cargarStockPorEscaneoAction",
+    {
+      depositoId: await depositoId("Ayres Plaza"),
+      items: [
+        {
+          varianteId: variante.id,
+          cantidad: 3,
+          distribucion: [{ depositoId: await depositoId("Mercedes"), cantidad: 2 }],
+        },
+      ],
+    },
+    "/p/vapes/productos/cargar",
+  );
+  expect(malDistribuida).toContain("DISTRIBUCION_INVALIDA");
   const invalido = await llamarAccion(
     page,
     "cargarStockPorEscaneoAction",
@@ -114,8 +131,16 @@ test("Mercedes: 5 códigos (2 desconocidos por alta rápida) → 5 INGRESO_MANUA
   await sheet.getByRole("button", { name: "Guardar y agregar" }).click();
   await expect(page.getByLabel(`Cantidad de ${ELF_BAR_BC5000} — Frutilla`)).toHaveValue("1");
 
-  await page.getByRole("button", { name: "Cargar 5 unidades en Mercedes" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Confirmar carga" }).click();
+  // Paso Distribuir: por defecto todo va al galpón de ingreso (Mercedes).
+  await page.getByRole("button", { name: "Continuar con 5 unidades" }).click();
+  await expect(page.getByRole("heading", { name: "Distribuir entre galpones" })).toBeVisible();
+  await expect(
+    page.getByLabel(`${ELF_BAR_BC5000} — Mango a Mercedes`).locator("visible=true"),
+  ).toHaveValue("1");
+  await expect(
+    page.getByLabel(`${ELF_BAR_BC5000} — Mango a Ayres Plaza`).locator("visible=true"),
+  ).toHaveValue("0");
+  await page.getByRole("button", { name: "Confirmar carga" }).click();
   await expect(page.getByText("Cargaste 5 unidades en Mercedes")).toBeVisible();
   await expect(page.getByRole("button", { name: "Cargar más" })).toBeVisible();
 
@@ -147,6 +172,60 @@ test("Mercedes: 5 códigos (2 desconocidos por alta rápida) → 5 INGRESO_MANUA
       await expect(fila.locator('[data-deposito="Total"]')).toHaveText(String(enMercedes));
     }
   }
+});
+
+test("Distribuir entre galpones: ingreso en Ayres Plaza, 50/50 y una fila que no suma bloquea", async ({
+  page,
+}) => {
+  const [mint, peach] = ["Cool Mint", "Peach Mango"];
+  const codigos = await Promise.all([mint, peach].map((s) => codigoDe(ELF_BAR_BC5000, s)));
+  const [ayres, mercedes] = [await depositoId("Ayres Plaza"), await depositoId("Mercedes")];
+  const antes = {
+    mintAyres: await stock(ELF_BAR_BC5000, mint, "Ayres Plaza"),
+    mintMercedes: await stock(ELF_BAR_BC5000, mint, "Mercedes"),
+    peachAyres: await stock(ELF_BAR_BC5000, peach, "Ayres Plaza"),
+    peachMercedes: await stock(ELF_BAR_BC5000, peach, "Mercedes"),
+  };
+  const desde = new Date();
+
+  await loginDueno(page);
+  await page.goto("/p/vapes/productos/cargar");
+  await page.getByRole("radio", { name: /Ayres Plaza/ }).click();
+  await page.getByRole("button", { name: "Continuar con Ayres Plaza" }).click();
+  await soltarFoco(page);
+  for (let i = 0; i < 4; i++) await pistola(page, codigos[0]!);
+  for (let i = 0; i < 2; i++) await pistola(page, codigos[1]!);
+  await page.getByRole("button", { name: "Continuar con 6 unidades" }).click();
+
+  const campo = (sabor: string, galpon: string) =>
+    page.getByLabel(`${ELF_BAR_BC5000} — ${sabor} a ${galpon}`).locator("visible=true");
+  await page.getByRole("button", { name: "Repartir 50/50" }).click();
+  await expect(campo(mint, "Ayres Plaza")).toHaveValue("2");
+  await expect(campo(mint, "Mercedes")).toHaveValue("2");
+  await expect(campo(peach, "Mercedes")).toHaveValue("1");
+
+  // Una fila que no suma lo escaneado queda marcada y no deja confirmar.
+  await campo(mint, "Mercedes").fill("3");
+  await campo(mint, "Mercedes").blur();
+  await expect(page.getByText("Una fila no suma lo escaneado.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirmar carga" })).toBeDisabled();
+  await campo(mint, "Ayres Plaza").fill("1");
+  await campo(mint, "Ayres Plaza").blur();
+  await expect(page.getByText("4 a Mercedes · 2 a Ayres Plaza")).toBeVisible();
+  await page.getByRole("button", { name: "Confirmar carga" }).click();
+
+  await expect(page.getByRole("heading", { name: "Cargaste 6 unidades" })).toBeVisible();
+  await expect(page.getByTestId("resumen-por-galpon")).toHaveText("4 a Mercedes · 2 a Ayres Plaza");
+  const movs = await db.movimientoStock.findMany({
+    where: { panelId: PANEL_VAPES, createdAt: { gte: desde }, tipo: "INGRESO_MANUAL" },
+  });
+  expect(movs).toHaveLength(4); // uno por (sabor, galpón)
+  expect(movs.filter((m) => m.depositoId === ayres).reduce((a, m) => a + m.cantidad, 0)).toBe(2);
+  expect(movs.filter((m) => m.depositoId === mercedes).reduce((a, m) => a + m.cantidad, 0)).toBe(4);
+  expect(await stock(ELF_BAR_BC5000, mint, "Ayres Plaza")).toBe(antes.mintAyres + 1);
+  expect(await stock(ELF_BAR_BC5000, mint, "Mercedes")).toBe(antes.mintMercedes + 3);
+  expect(await stock(ELF_BAR_BC5000, peach, "Ayres Plaza")).toBe(antes.peachAyres + 1);
+  expect(await stock(ELF_BAR_BC5000, peach, "Mercedes")).toBe(antes.peachMercedes + 1);
 });
 
 test("el mismo EAN en Cosmetic no se reconoce: ofrece alta rápida", async ({ page }) => {

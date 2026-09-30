@@ -57,7 +57,7 @@ export function MenuUsuario({
         aria-label="Menú de cuenta"
         aria-haspopup="menu"
         aria-expanded={abierto}
-        className="hover:bg-surface-2 flex h-11 items-center gap-2 rounded-control px-1 md:h-10 md:px-1.5"
+        className="hover:bg-surface-2 rounded-control flex h-11 items-center gap-2 px-1 md:h-10 md:px-1.5"
       >
         <Avatar nombre={usuario.nombre} className="size-8" />
         {mostrarNombre && (
@@ -74,7 +74,7 @@ export function MenuUsuario({
       {abierto && (
         <div
           role="menu"
-          className="bg-surface border-border shadow-pop absolute top-[calc(100%+6px)] right-0 z-50 w-64 rounded-card border p-1.5"
+          className="bg-surface border-border shadow-pop rounded-card absolute top-[calc(100%+6px)] right-0 z-50 w-64 border p-1.5"
         >
           <div className="flex items-center gap-3 px-3 py-2.5">
             <Avatar nombre={usuario.nombre} />

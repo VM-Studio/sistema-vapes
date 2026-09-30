@@ -87,6 +87,16 @@ async function venta(opciones: {
         vendedorId: opciones.vendedorId,
         tipo: opciones.tipo,
         medioPago: "EFECTIVO",
+        montoPagado: total,
+        pagos: {
+          create: {
+            panelId: PANEL_VAPES,
+            medioPago: "EFECTIVO",
+            monto: total,
+            fecha: opciones.fecha,
+            usuarioId: opciones.vendedorId,
+          },
+        },
         subtotal: total,
         total,
         costoTotal: costo,
@@ -192,6 +202,12 @@ test("dueño: los cuatro modos con su comparación y sus ejes", async ({ page })
   await expect(page.getByTestId("kpi-Vapes vendidos")).toContainText(String(hoy.unidades));
   await expect(page.getByTestId("kpi-Facturado")).toContainText(formatearPesos(hoy.facturado));
   await expect(page.getByTestId("kpi-Facturado")).toContainText("%");
+  // Facturado = lo vendido (incluye fiados); Cobrado y Por cobrar, sobre los pagos reales.
+  await expect(
+    page.getByTestId("kpi-Facturado").getByRole("tooltip", { includeHidden: true }),
+  ).toHaveText("Total vendido, incluye fiados");
+  await expect(page.getByTestId("kpi-Cobrado")).toBeVisible();
+  await expect(page.getByTestId("kpi-Por cobrar")).toContainText("Ver fiados");
 
   await irCon(
     page,
@@ -263,6 +279,9 @@ test("Trinidad ve Mi rendimiento, sin ganancia ni equipo; el export le da 403", 
     page.getByRole("region", { name: "Indicadores" }).getByTestId("kpi-Facturado"),
   ).toBeVisible();
   await expect(page.getByTestId("kpi-Ganancia")).toHaveCount(0);
+  // Sin FIADOS: ni lo cobrado ni la deuda de los clientes.
+  await expect(page.getByTestId("kpi-Cobrado")).toHaveCount(0);
+  await expect(page.getByTestId("kpi-Por cobrar")).toHaveCount(0);
   await expect(page.getByTestId("tarjeta-equipo")).toHaveCount(0);
   await expect(page.getByTestId("tarjeta-compras")).toHaveCount(0);
   await expect(page.getByText(/margen/)).toHaveCount(0);

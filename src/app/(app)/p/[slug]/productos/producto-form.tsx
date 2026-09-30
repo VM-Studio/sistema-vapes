@@ -472,7 +472,7 @@ export function ProductoForm({
 
         <EditorSabores form={form} ocupados={ocupados} />
 
-        <div className="border-border bg-surface pl-safe pr-safe fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 grid grid-cols-2 gap-2 border-t px-4 py-3 md:static md:flex md:justify-end md:border-0 md:bg-transparent md:p-0">
+        <div className="border-border bg-surface fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 grid grid-cols-2 gap-2 border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:static md:flex md:justify-end md:border-0 md:bg-transparent md:p-0">
           <Button variant="secondary" onClick={() => router.back()} disabled={enviando}>
             Cancelar
           </Button>

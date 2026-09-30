@@ -23,7 +23,7 @@ export function BarraAccion({
     <>
       <div
         className={cn(
-          "border-border pl-safe pr-safe bg-background fixed inset-x-0 z-20 flex gap-2 border-t px-4 py-3 md:hidden [&>*]:flex-1",
+          "border-border bg-background fixed inset-x-0 z-20 flex gap-2 border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:hidden [&>*]:flex-1",
           sinBottomNav
             ? "bottom-0 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
             : "bottom-[calc(3.5rem+env(safe-area-inset-bottom))]",

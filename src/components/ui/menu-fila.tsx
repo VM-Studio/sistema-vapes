@@ -55,14 +55,14 @@ export function MenuFila({
         aria-haspopup="menu"
         aria-expanded={abierto}
         onClick={() => setAbierto((a) => !a)}
-        className="text-muted hover:bg-surface-2 hover:text-foreground flex size-9 items-center justify-center rounded-control"
+        className="text-muted hover:bg-surface-2 hover:text-foreground rounded-control flex size-9 items-center justify-center"
       >
         <Ellipsis className="size-5" strokeWidth={1.75} aria-hidden />
       </button>
       {abierto && (
         <div
           role="menu"
-          className="bg-surface shadow-pop border-border absolute top-[calc(100%+4px)] right-0 z-40 min-w-44 rounded-control border p-1"
+          className="bg-surface shadow-pop border-border rounded-control absolute top-[calc(100%+4px)] right-0 z-40 min-w-44 border p-1"
         >
           {acciones.map((a) => {
             const Icono = a.icon;

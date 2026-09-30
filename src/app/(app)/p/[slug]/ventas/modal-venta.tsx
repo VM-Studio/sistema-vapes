@@ -1,6 +1,5 @@
 "use client";
 
-import type { MedioPago } from "@prisma/client";
 import { ArrowLeft, Lock, Warehouse, WifiOff, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -24,6 +23,7 @@ import {
   MENSAJE_SIN_CONEXION,
   montoTipeado,
   PASOS,
+  resumirPago,
   totalesVenta,
   useEnLinea,
   ventaTieneDatos,
@@ -72,6 +72,7 @@ export function ModalVenta({
   depositos,
   unidadesIniciales,
   puedeEditar,
+  puedeFiar,
   puedeAltaProductos,
   claveStorage,
   conversion = null,
@@ -82,6 +83,8 @@ export function ModalVenta({
   depositos: DepositoVenta[];
   unidadesIniciales: Record<string, number>;
   puedeEditar: boolean;
+  /** FIADOS "crear": puede dejar parte (o todo) el pago pendiente. */
+  puedeFiar: boolean;
   puedeAltaProductos: boolean;
   claveStorage: string;
   conversion?: ConversionVenta | null;
@@ -242,17 +245,25 @@ export function ModalVenta({
 
   // --- Confirmar ------------------------------------------------------------------
 
+  const resumenPago = resumirPago(venta, totales.total);
+  const quedaPendiente = Number(resumenPago.pendiente) > 0;
+  const fiar = venta.dividido && venta.fiar && puedeFiar && quedaPendiente;
+  const pagoValido =
+    resumenPago.error === null &&
+    (venta.dividido || venta.medioPago !== null) &&
+    (!quedaPendiente || fiar);
+
   const puedeConfirmar =
     enLinea &&
     !enviando &&
-    venta.medioPago !== null &&
+    pagoValido &&
     venta.cliente !== null &&
     venta.items.length > 0 &&
     !!venta.depositoId &&
     (!puedeEditar || venta.descuento.trim() === "" || montoTipeado(venta.descuento) !== null);
 
   async function confirmar() {
-    if (!puedeConfirmar || !venta.cliente || !venta.medioPago || !venta.depositoId) return;
+    if (!puedeConfirmar || !venta.cliente || !venta.depositoId) return;
     setEnviando(true);
     setError(null);
     const cliente: ClienteElegido = venta.cliente;
@@ -260,7 +271,8 @@ export function ModalVenta({
       const rc = await convertirCotizacionAction({
         id: conversion.cotizacionId,
         depositoId: venta.depositoId,
-        medioPago: venta.medioPago,
+        pagos: resumenPago.pagos,
+        fiar,
         ...(conversion.recalcular ? { recalcular: true } : {}),
         // El cliente de la cotización lo resuelve el servidor; solo viaja el elegido acá.
         ...(conversion.cliente === null
@@ -299,7 +311,8 @@ export function ModalVenta({
         cantidad: i.cantidad,
         ...(i.precioEspecial !== null ? { precioEspecial: i.precioEspecial } : {}),
       })),
-      medioPago: venta.medioPago,
+      pagos: resumenPago.pagos,
+      fiar,
       ...(descuento && Number(descuento) > 0 ? { descuento } : {}),
       notas: venta.notas,
     }).catch(() => null);
@@ -562,13 +575,15 @@ export function ModalVenta({
                     deposito={deposito.nombre}
                     cliente={venta.cliente}
                     items={venta.items}
-                    medioPago={venta.medioPago}
+                    pago={venta}
+                    resumenPago={resumenPago}
+                    puedeFiar={puedeFiar}
                     descuento={venta.descuento}
                     notas={venta.notas}
                     puedeEditar={puedeEditar}
                     bloqueado={conversion !== null}
                     totales={totales}
-                    onMedioPago={(medioPago: MedioPago) => cambiar({ medioPago })}
+                    onPago={(p) => cambiar(p)}
                     onDescuento={(descuento) => cambiar({ descuento })}
                     onNotas={(notas) => cambiar({ notas })}
                   />

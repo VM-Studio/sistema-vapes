@@ -16,7 +16,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
 import { cn, formatearFechaHora } from "@/lib/utils";
-import { ETIQUETA_MEDIO_PAGO, ETIQUETA_TIPO_VENTA } from "@/lib/ventas-ui";
+import { ETIQUETA_TIPO_VENTA, etiquetaMedioPrincipal } from "@/lib/ventas-ui";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import {
   describirPeriodo,
@@ -75,7 +75,7 @@ export default async function EquipoVendedorPage({
     {
       key: "medio",
       header: "Medio",
-      cell: (v: VentaDeVendedor) => ETIQUETA_MEDIO_PAGO[v.medioPago],
+      cell: (v: VentaDeVendedor) => etiquetaMedioPrincipal(v.medioPago),
       ocultarEnMobile: true,
     },
     {
@@ -218,7 +218,7 @@ export default async function EquipoVendedorPage({
                 </Badge>
               </div>
               <p className="text-subtle text-small tabular-nums">
-                {formatearFechaHora(v.fecha)} · {ETIQUETA_MEDIO_PAGO[v.medioPago]} ·{" "}
+                {formatearFechaHora(v.fecha)} · {etiquetaMedioPrincipal(v.medioPago)} ·{" "}
                 {formatearNumero(v.unidades)} u.
               </p>
             </Link>

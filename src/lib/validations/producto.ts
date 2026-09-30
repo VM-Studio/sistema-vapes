@@ -136,10 +136,32 @@ export const altaRapidaSchema = z.object({
 });
 
 /** Carga de stock por escaneo. `depositoId` se valida en el servicio (mensaje propio). */
+/** Un sabor escaneado que va entero al galpón de ingreso (`depositoId` de la carga). */
+const itemCargaSimple = z.object({ varianteId: id, cantidad });
+
+/**
+ * Un sabor escaneado repartido entre galpones. `cantidad` (opcional) es lo
+ * escaneado: si viene, la suma de la distribución tiene que ser igual.
+ */
+const itemCargaDistribuido = z.object({
+  varianteId: id,
+  cantidad: cantidad.optional(),
+  distribucion: z
+    .array(z.object({ depositoId: id, cantidad }))
+    .min(1, "Elegí al menos un galpón para cada producto")
+    .max(50),
+});
+
+/**
+ * Carga por escaneo. Dos formas (se pueden mezclar):
+ *  - `depositoId` + items `{ varianteId, cantidad }`: todo al galpón de ingreso.
+ *  - items `{ varianteId, distribucion: [{ depositoId, cantidad }] }`: repartido.
+ * `depositoId` es el galpón de ingreso (obligatorio para los items simples).
+ */
 export const cargarStockSchema = z.object({
   depositoId: z.preprocess(vacioAUndefined, z.string().trim().optional()),
   items: z
-    .array(z.object({ varianteId: id, cantidad }))
+    .array(z.union([itemCargaDistribuido, itemCargaSimple]))
     .min(1, "No hay nada para cargar")
     .max(500, "Máximo 500 productos por carga"),
   motivo: textoOpcional(300),

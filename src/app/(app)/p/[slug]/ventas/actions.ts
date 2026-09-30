@@ -23,6 +23,7 @@ import {
  * Permisos de VENTAS (en el panel actual):
  *   ver → listado y detalle · crear → generar ventas (y dar de alta al cliente nuevo)
  *   editar → precio especial y descuento global · anular → solo dueños
+ * Vender fiado (pagos que no cubren el total) exige además FIADOS "crear" (lo valida el servicio).
  * Precios, costos y totales los calcula el servicio: acá solo se decide qué puede el usuario.
  */
 
@@ -32,6 +33,7 @@ function revalidar() {
   revalidatePath("/p/[slug]/stock", "layout");
   revalidatePath("/p/[slug]/productos", "layout");
   revalidatePath("/p/[slug]/clientes", "layout");
+  revalidatePath("/p/[slug]/fiados", "layout");
   revalidatePath("/p/[slug]", "page");
 }
 

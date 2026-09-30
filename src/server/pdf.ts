@@ -3,7 +3,9 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { rgb, type PDFDocument, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+
+import { obtenerStorage } from "@/server/storage";
 
 /** Puntos por milímetro (PDF = 72 pt por pulgada). */
 export const MM = 72 / 25.4;
@@ -134,6 +136,37 @@ export async function leerArchivoPublico(ruta: string): Promise<Uint8Array | nul
   if (!destino.startsWith(raiz + path.sep)) return null;
   try {
     return new Uint8Array(await readFile(destino));
+  } catch {
+    return null;
+  }
+}
+
+const PREFIJO_ARCHIVOS = "/api/publico/archivos/";
+
+/**
+ * Logo del panel para un PDF: del storage (`/api/publico/archivos/...`), de
+ * una URL pública o de `public/`. PNG o JPG; null si no hay o no se puede leer
+ * (el PDF muestra el nombre del panel en su lugar).
+ */
+export async function cargarLogoPdf(
+  doc: PDFDocument,
+  logoUrl: string | null,
+): Promise<PDFImage | null> {
+  if (!logoUrl) return null;
+  try {
+    let datos: Uint8Array | null = null;
+    if (logoUrl.startsWith(PREFIJO_ARCHIVOS)) {
+      datos = (await obtenerStorage().leer(logoUrl.slice(PREFIJO_ARCHIVOS.length)))?.datos ?? null;
+    } else if (/^https?:\/\//.test(logoUrl)) {
+      const r = await fetch(logoUrl, { signal: AbortSignal.timeout(3000) });
+      if (r.ok) datos = new Uint8Array(await r.arrayBuffer());
+    } else if (logoUrl.startsWith("/")) {
+      datos = await leerArchivoPublico(logoUrl);
+    }
+    if (!datos || datos.length < 4) return null;
+    if (datos[0] === 0x89 && datos[1] === 0x50) return await doc.embedPng(datos);
+    if (datos[0] === 0xff && datos[1] === 0xd8) return await doc.embedJpg(datos);
+    return null;
   } catch {
     return null;
   }

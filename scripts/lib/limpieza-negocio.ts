@@ -22,6 +22,7 @@ import type { PrismaClient } from "@prisma/client";
 /** Hijas primero (el orden de las FKs; TRUNCATE de la lista entera igual lo resuelve junto). */
 export const TABLAS_NEGOCIO = [
   "CotizacionItem",
+  "PagoVenta",
   "VentaItem",
   "DevolucionItem",
   "CompraItem",

@@ -82,7 +82,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div
               key={t.id}
               role={t.variant === "error" ? "alert" : "status"}
-              className="bg-card shadow-pop pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-card border border-black/[0.04] p-4"
+              className="bg-card shadow-pop rounded-card pointer-events-auto flex w-full max-w-sm items-start gap-3 border border-black/[0.04] p-4"
             >
               <Icono
                 className={cn(
@@ -101,7 +101,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => cerrar(t.id)}
-                className="text-muted hover:bg-surface-3 hover:text-foreground -m-1.5 flex size-8 items-center justify-center rounded-control"
+                className="text-muted hover:bg-surface-3 hover:text-foreground rounded-control -m-1.5 flex size-8 items-center justify-center"
                 aria-label="Cerrar aviso"
               >
                 <X className="size-4" strokeWidth={1.75} aria-hidden />

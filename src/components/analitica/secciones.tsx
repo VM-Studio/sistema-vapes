@@ -105,12 +105,17 @@ function Vacio({ children }: { children: ReactNode }) {
   );
 }
 
-/** Grilla de KPIs: 2 columnas en mobile, 3 en lg y todas en una fila en xl.
- * Con cantidad impar, en mobile la última ocupa el ancho completo. */
+/** Grilla de KPIs: 2 columnas en mobile, 3 en lg y todas en una fila en xl (con 7 u 8,
+ * dos filas de 4). Con cantidad impar, en mobile la última ocupa el ancho completo. */
 function claseGrillaKpis(n: number) {
   return cn(
-    "grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3",
-    n >= 6 ? "xl:grid-cols-6" : n === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4",
+    "grid grid-cols-2 gap-3 md:gap-4",
+    n >= 7
+      ? "lg:grid-cols-4"
+      : cn(
+          "lg:grid-cols-3",
+          n === 6 ? "xl:grid-cols-6" : n === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4",
+        ),
     "[&>*:last-child:nth-child(odd)]:col-span-2 lg:[&>*:last-child:nth-child(odd)]:col-span-1",
   );
 }
@@ -154,10 +159,39 @@ export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Pe
   const k = await kpis(ctx, periodo);
   const ant = ETIQUETA_ANTERIOR[periodo.modo];
   const sinVentas = k.cantidadVentas.actual === 0;
+  const cantidad = 5 + (k.ganancia ? 1 : 0) + (k.cobrado ? 2 : 0);
   return (
     <div className="flex flex-col gap-3">
-      <section aria-label="Indicadores" className={claseGrillaKpis(k.ganancia ? 6 : 5)}>
-        <KpiCard label="Facturado" etiquetaAnterior={ant} {...pesos(k.facturado)} />
+      <section aria-label="Indicadores" className={claseGrillaKpis(cantidad)}>
+        <KpiCard
+          label="Facturado"
+          etiquetaAnterior={ant}
+          ayuda="Total vendido, incluye fiados"
+          {...pesos(k.facturado)}
+        />
+        {k.cobrado && (
+          <KpiCard
+            label="Cobrado"
+            etiquetaAnterior={ant}
+            ayuda="Pagos recibidos en el período: al vender y cobros de fiados"
+            {...pesos(k.cobrado)}
+          />
+        )}
+        {k.porCobrar !== null && (
+          <KpiCard
+            label="Por cobrar"
+            ayuda="Deuda total de hoy de los clientes (fiados sin cobrar)"
+            valor={formatearPesos(k.porCobrar)}
+            extra={
+              <Link
+                href={rutaPanel(ctx.panel.slug, "/fiados")}
+                className="text-foreground font-medium underline-offset-4 hover:underline"
+              >
+                Ver fiados
+              </Link>
+            }
+          />
+        )}
         {k.ganancia && (
           <KpiCard
             label="Ganancia"
@@ -225,7 +259,11 @@ export async function SeccionMedios({
   const medios = await ventasPorMedioPago(ctx, periodo);
   const hay = medios.some((m) => m.cantidad > 0);
   return (
-    <Tarjeta titulo="Medios de pago" className={className}>
+    <Tarjeta
+      titulo="Medios de pago"
+      subtitulo="Lo cobrado, por fecha de pago"
+      className={className}
+    >
       {hay ? (
         <DonutMedios
           datos={medios.map((m) => ({

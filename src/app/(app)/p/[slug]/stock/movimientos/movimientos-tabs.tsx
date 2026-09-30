@@ -27,7 +27,7 @@ export function StockTabs({
     { id: "ledger", href: con("/stock/movimientos", "depositoId"), label: "Movimientos" },
     {
       id: "transferencias",
-      href: con("/stock/movimientos/transferencias", "depositoId"),
+      href: con("/stock/transferencias", "depositoId"),
       label: "Transferencias",
     },
   ] as const;

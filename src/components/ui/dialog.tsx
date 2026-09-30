@@ -36,7 +36,7 @@ export function Dialog({
       onClick={onBackdropClick}
       aria-labelledby={idTitulo}
       className={cn(
-        "anim-dialog bg-card text-foreground shadow-sheet m-auto w-[calc(100%-2rem)] max-w-md rounded-card p-0",
+        "anim-dialog bg-card text-foreground shadow-sheet rounded-card m-auto w-[calc(100%-2rem)] max-w-md p-0",
         "mb-[calc(1rem+env(safe-area-inset-bottom))] md:mb-auto",
         className,
       )}

@@ -29,12 +29,15 @@ export function GenerarVenta({
   depositos,
   unidades,
   puedeEditar,
+  puedeFiar,
   abrirAlCargar,
   conversion,
 }: {
   depositos: DepositoVenta[];
   unidades: Record<string, number>;
   puedeEditar: boolean;
+  /** FIADOS "crear". */
+  puedeFiar: boolean;
   abrirAlCargar: {
     depositoId: string | null;
     cliente: { id: string; nombre: string; telefono: string } | null;
@@ -127,6 +130,7 @@ export function GenerarVenta({
         depositos={depositos}
         unidadesIniciales={unidades}
         puedeEditar={puedeEditar}
+        puedeFiar={puedeFiar}
         puedeAltaProductos={puedeAltaProductos}
         claveStorage={clave}
         conversion={convirtiendo}

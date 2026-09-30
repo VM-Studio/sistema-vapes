@@ -8,6 +8,7 @@ import { formatearFecha, formatearFechaHora } from "@/lib/utils";
 import {
   ESTADO_VENTA_UI,
   ETIQUETA_MEDIO_PAGO,
+  etiquetaMedioPrincipal,
   ETIQUETA_TIPO_VENTA,
   saborVisible,
   telefonoVisible,
@@ -390,7 +391,7 @@ export async function armarExportacion(
               x.vendedor,
               x.deposito,
               ETIQUETA_TIPO_VENTA[x.tipo],
-              ETIQUETA_MEDIO_PAGO[x.medioPago],
+              etiquetaMedioPrincipal(x.medioPago),
               ESTADO_VENTA_UI[x.estado].label,
               x.unidades,
               x.total,

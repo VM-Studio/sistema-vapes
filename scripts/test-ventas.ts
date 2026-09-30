@@ -2,11 +2,13 @@
  * Ventas a nivel servicios + DB (panel Vapes): generarVenta con cliente nuevo o
  * existente, precios de lista y costos del servidor, precio especial y
  * descuento (solo con "editar"), falta de stock (todo o nada), teléfono
- * repetido, listado y totales, anulación (solo dueños), ventas de un cliente,
+ * repetido, pagos (PagoVenta por el total), listado y totales, anulación (solo
+ * dueños, anula los pagos), ventas de un cliente,
  * más vendidos y aislamiento entre paneles (VAP-/COS-).
  * Uso: pnpm test:ventas — pensado para una DB recién sembrada (crea datos).
  */
 import {
+  EstadoPago,
   EstadoVenta,
   MedioPago,
   Prisma,
@@ -124,8 +126,13 @@ async function main() {
     });
   }
   const telefono = `11${suf.slice(-4)}${String(Math.floor(Math.random() * 9000) + 1000)}`;
-  const entrada = (datos: Record<string, unknown>) =>
-    generarVentaSchema.parse({ depositoId: g1.id, medioPago: "EFECTIVO", ...datos });
+  // Un pago por el total esperado (medio EFECTIVO y $16.000 = 1 Mango, salvo que se indique).
+  const entrada = ({
+    medioPago = "EFECTIVO",
+    monto = 16000,
+    ...datos
+  }: Record<string, unknown> & { medioPago?: string; monto?: number }) =>
+    generarVentaSchema.parse({ depositoId: g1.id, pagos: [{ medioPago, monto }], ...datos });
 
   // ---------------------------------------------------------------------------
   console.log(`\n1) Cliente nuevo, 2 Mango + 1 Frutilla con precio especial, transferencia`);
@@ -139,6 +146,7 @@ async function main() {
         { varianteId: frutilla.id, cantidad: 1, precioEspecial: 15000 },
       ],
       medioPago: "TRANSFERENCIA",
+      monto: 47000,
     }),
     DUENO,
   );
@@ -184,6 +192,16 @@ async function main() {
       venta1.tipo === TipoVenta.UNITARIA,
     "CONFIRMADA · TRANSFERENCIA · vendedor = usuario del ctx · UNITARIA",
   );
+  const pagos1 = await db.pagoVenta.findMany({ where: { ventaId: v1.id } });
+  check(
+    pagos1.length === 1 &&
+      pagos1[0]!.medioPago === MedioPago.TRANSFERENCIA &&
+      $(pagos1[0]!.monto) === "47000.00" &&
+      venta1.estadoPago === EstadoPago.PAGADA &&
+      $(venta1.montoPagado) === "47000.00" &&
+      $(venta1.saldoPendiente) === "0.00",
+    "un PagoVenta por el total · PAGADA",
+  );
   const movs1 = await db.movimientoStock.findMany({
     where: { referenciaTipo: "VENTA", referenciaId: v1.id },
   });
@@ -205,7 +223,7 @@ async function main() {
     generarVenta(
       ctx,
       generarVentaSchema.parse({
-        medioPago: "EFECTIVO",
+        pagos: [{ medioPago: "EFECTIVO", monto: 16000 }],
         cliente: { id: v1.cliente.id },
         items: [{ varianteId: mango.id, cantidad: 1 }],
       }),
@@ -333,6 +351,7 @@ async function main() {
       items: [{ varianteId: sinCompras.id, cantidad: 2 }],
       descuento: 2000,
       medioPago: "BINANCE",
+      monto: 30000,
       tipo: "MAYORISTA",
     }),
     DUENO,
@@ -420,6 +439,11 @@ async function main() {
     anulada.estado === EstadoVenta.ANULADA && anulada.anuladaPorId === owner.id,
     "venta ANULADA por el dueño",
   );
+  check(
+    (await db.pagoVenta.findMany({ where: { ventaId: v1.id } })).every((p) => p.anulado) &&
+      $(anulada.montoPagado) === "0.00",
+    "sus pagos quedan anulados (montoPagado 0)",
+  );
   const movsAnul = await db.movimientoStock.findMany({
     where: { referenciaId: v1.id, tipo: TipoMovimiento.VENTA_ANULADA },
   });
@@ -474,7 +498,7 @@ async function main() {
       ctxCos,
       generarVentaSchema.parse({
         depositoId: gCos.id,
-        medioPago: "EFECTIVO",
+        pagos: [{ medioPago: "EFECTIVO", monto: 17000 }],
         cliente: { id: v1.cliente.id },
         items: [{ varianteId: podCos.variantes[0]!.id, cantidad: 1 }],
       }),
@@ -486,7 +510,7 @@ async function main() {
     ctxCos,
     generarVentaSchema.parse({
       depositoId: gCos.id,
-      medioPago: "EFECTIVO",
+      pagos: [{ medioPago: "EFECTIVO", monto: 17000 }],
       cliente: { nuevo: { nombre: "Clienta Cosmetic", telefono } },
       items: [{ varianteId: podCos.variantes[0]!.id, cantidad: 1 }],
     }),

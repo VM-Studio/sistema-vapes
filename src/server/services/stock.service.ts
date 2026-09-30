@@ -385,7 +385,7 @@ export async function resumenStock(ctx: Ctx): Promise<ResumenStockPanel> {
 export interface ReferenciaMovimiento {
   tipo: string;
   id: string;
-  /** Código visible (VAP-000001, VAP-C-000001, VAP-D-000001, Transferencia #3). */
+  /** Código visible (VAP-000001, VAP-C-000001, VAP-D-000001, VAP-T-000001). */
   etiqueta: string;
   /** Ruta completa (/p/{slug}/...) a la pantalla del documento, cuando existe. */
   href: string | null;
@@ -468,7 +468,7 @@ async function resolverReferencias(
     db.panel.findUniqueOrThrow({ where: { id: ctx.panelId }, select: { slug: true } }),
     db.transferencia.findMany({
       where: { id: { in: ids("TRANSFERENCIA") } },
-      select: { id: true, numero: true },
+      select: { id: true, codigo: true },
     }),
     db.venta.findMany({ where: { id: { in: ids("VENTA") } }, select: { id: true, codigo: true } }),
     db.compra.findMany({
@@ -485,8 +485,8 @@ async function resolverReferencias(
     mapa.set(`TRANSFERENCIA:${t.id}`, {
       tipo: "TRANSFERENCIA",
       id: t.id,
-      etiqueta: `Transferencia #${t.numero}`,
-      href: ruta(`/stock/movimientos/transferencias/${t.id}`),
+      etiqueta: t.codigo,
+      href: ruta(`/stock/transferencias/${t.id}`),
     });
   for (const v of ventas)
     mapa.set(`VENTA:${v.id}`, {

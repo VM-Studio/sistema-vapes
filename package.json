@@ -1,6 +1,6 @@
 {
   "name": "sistema-vapes",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -20,6 +20,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
     "test:stock": "PRISMA_LOG=silent tsx --conditions=react-server scripts/test-stock.ts",
+    "test:transferencias": "PRISMA_LOG=silent tsx --conditions=react-server scripts/test-transferencias.ts",
     "postinstall": "prisma generate",
     "test:integridad": "PRISMA_LOG=silent tsx --conditions=react-server scripts/test-integridad.ts",
     "test": "vitest run",
@@ -29,6 +30,7 @@
     "test:unit": "vitest run",
     "test:compras": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-compras.ts",
     "test:ventas": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas.ts",
+    "test:fiados": "PRISMA_LOG=silent LOG_LEVEL=warn tsx --conditions=react-server --env-file=.env scripts/test-fiados.ts",
     "test:ventas:concurrencia": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas-concurrentes.ts",
     "iconos": "tsx scripts/generar-iconos.ts",
     "backup": "tsx --env-file-if-exists=.env --conditions=react-server scripts/backup.ts",

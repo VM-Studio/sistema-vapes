@@ -12,12 +12,13 @@ import { formatearPesos } from "@/lib/format";
 
 import { anularVentaAction } from "../actions";
 
-/** Anular una venta confirmada (solo dueños, motivo obligatorio): el stock vuelve al galpón. */
+/** Anular una venta confirmada (solo dueños, motivo obligatorio): el stock vuelve al galpón y sus pagos se anulan. */
 export function AnularVenta({
   venta,
   bloqueada,
 }: {
-  venta: { id: string; codigo: string; total: string };
+  /** montoPagado: lo cobrado (al vender y cobros de fiado); saldoPendiente: lo que se fió. */
+  venta: { id: string; codigo: string; montoPagado: string; saldoPendiente: string };
   /** Tiene devoluciones registradas: primero hay que anularlas. */
   bloqueada: boolean;
 }) {
@@ -60,7 +61,16 @@ export function AnularVenta({
         open={abierto}
         onOpenChange={(o) => !enviando && setAbierto(o)}
         title={`¿Anular la venta ${venta.codigo}?`}
-        description={`Vuelve todo el stock al galpón. Si ya cobraste ${formatearPesos(venta.total)}, devolvéselo al cliente. No se puede deshacer.`}
+        description={[
+          "Vuelve todo el stock al galpón y se anulan sus pagos.",
+          Number(venta.montoPagado) > 0 &&
+            `Si ya cobraste ${formatearPesos(venta.montoPagado)}, devolvéselo al cliente.`,
+          Number(venta.saldoPendiente) > 0 &&
+            `Se descuentan ${formatearPesos(venta.saldoPendiente)} de su cuenta corriente.`,
+          "No se puede deshacer.",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         footer={
           <>
             <Button variant="secondary" onClick={() => setAbierto(false)} disabled={enviando}>
