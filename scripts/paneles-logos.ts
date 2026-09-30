@@ -4,12 +4,7 @@
  * Si un slug no existe, lo avisa y sigue con el resto.
  */
 import { prisma } from "../src/lib/db";
-
-const LOGOS: Record<string, string> = {
-  vapes: "/logoVape.png",
-  cosmetic: "/logoCosmetics.png",
-  especiales: "/logoEspecial.png",
-};
+import { LOGOS_MARCA as LOGOS } from "../src/lib/paneles";
 
 async function main() {
   for (const [slug, logoUrl] of Object.entries(LOGOS)) {

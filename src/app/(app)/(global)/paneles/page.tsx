@@ -59,11 +59,14 @@ export default async function PanelesPage({
       <Suspense>
         <AvisosPaneles slugs={paneles.map((p) => p.slug)} />
       </Suspense>
-      <header className="flex flex-col gap-2">
-        <h1 className="text-h1 md:text-display font-semibold">Elegí un sistema</h1>
-        <p className="text-muted text-body">
-          Cada sistema tiene sus propios productos, ventas y stock
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-h1 md:text-display font-semibold">Elegí un sistema</h1>
+          <p className="text-muted text-body">
+            Cada sistema tiene sus propios productos, ventas y stock
+          </p>
+        </div>
+        {owner && <AgregarPanel />}
       </header>
 
       {paneles.length === 0 && !owner ? (
@@ -82,7 +85,7 @@ export default async function PanelesPage({
                   href={rutaPanel(panel.slug)}
                   className="group bg-card hover:bg-card-hover hover:shadow-card-hover rounded-card flex h-full flex-col gap-5 p-4 transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 md:p-5"
                 >
-                  <LogoTarjeta nombre={panel.nombre} logoUrl={panel.logoUrl} />
+                  <LogoTarjeta nombre={panel.nombre} slug={panel.slug} logoUrl={panel.logoUrl} />
                   <div className="flex flex-1 items-end justify-between gap-3 px-1">
                     <div className="flex min-w-0 flex-col gap-1">
                       <h2 className="text-h2 truncate font-semibold">{panel.nombre}</h2>
@@ -101,11 +104,6 @@ export default async function PanelesPage({
               </li>
             );
           })}
-          {owner && (
-            <li>
-              <AgregarPanel />
-            </li>
-          )}
         </ul>
       )}
     </div>

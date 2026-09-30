@@ -15,6 +15,23 @@ export interface PanelBasico {
   orden: number;
 }
 
+/** Logos de marca de los paneles originales (archivos en /public). */
+export const LOGOS_MARCA: Record<string, string> = {
+  vapes: "/logoVape.png",
+  cosmetic: "/logoCosmetics.png",
+  especiales: "/logoEspecial.png",
+};
+
+/**
+ * Imágenes a probar, en orden, para el logo de un panel: el que cargó el
+ * dueño y, si falta o no carga (p.ej. un archivo que ya no está en el
+ * storage), el logo de marca del slug.
+ */
+export function logosCandidatos(slug: string | undefined, logoUrl: string | null): string[] {
+  const marca = slug ? LOGOS_MARCA[slug] : undefined;
+  return [...new Set([logoUrl, marca].filter((u): u is string => !!u))];
+}
+
 /** Prefijo de los IDs visibles del panel: 3 primeras letras del slug ("vapes" → "VAP"). */
 export function prefijoPanel(slug: string): string {
   return slug

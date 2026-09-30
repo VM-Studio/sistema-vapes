@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { crearPanelAction } from "./actions";
 import { LogoTarjeta } from "./logo-tarjeta";
 
-/** Tarjeta punteada "Agregar sistema" y el formulario de alta (solo dueños). */
+/** Botón "Agregar sistema" (arriba a la derecha de /paneles) y el formulario de alta (solo dueños). */
 export function AgregarPanel() {
   const router = useRouter();
   const toast = useToast();
@@ -53,15 +53,10 @@ export function AgregarPanel() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setAbierto(true)}
-        className="border-input text-muted hover:border-subtle hover:text-foreground rounded-card flex h-full min-h-64 w-full flex-col items-center justify-center gap-3 border border-dashed p-6 transition-colors"
-      >
-        <Plus className="size-10" strokeWidth={1.25} aria-hidden />
-        <span className="text-h3 text-foreground font-semibold">Agregar sistema</span>
-        <span className="text-sm">Un sistema nuevo, completo y vacío</span>
-      </button>
+      <Button onClick={() => setAbierto(true)} className="self-start sm:self-auto">
+        <Plus strokeWidth={1.75} aria-hidden />
+        Agregar sistema
+      </Button>
 
       <Sheet
         open={abierto}
