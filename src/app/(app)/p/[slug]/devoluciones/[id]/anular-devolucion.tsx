@@ -9,11 +9,24 @@ import { Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
+import { formatearPesos } from "@/lib/format";
 
 import { anularDevolucionAction } from "../actions";
 
-/** Solo dueños: anula la devolución y repone la unidad al stock del galpón. */
-export function AnularDevolucion({ id, codigo }: { id: string; codigo: string }) {
+/**
+ * Solo dueños: anula la devolución y repone la unidad entregada al stock del
+ * galpón. Si hubo diferencia de precio, avisa que hay que devolverla o recuperarla.
+ */
+export function AnularDevolucion({
+  id,
+  codigo,
+  diferencia = 0,
+}: {
+  id: string;
+  codigo: string;
+  /** > 0 la pagó el cliente; < 0 se le devolvió. */
+  diferencia?: number;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [abierto, setAbierto] = useState(false);
@@ -45,7 +58,14 @@ export function AnularDevolucion({ id, codigo }: { id: string; codigo: string })
         open={abierto}
         onOpenChange={(o) => !enviando && setAbierto(o)}
         title={`¿Anular la devolución ${codigo}?`}
-        description="La unidad entregada vuelve al stock del galpón. No se puede deshacer."
+        description={
+          "La unidad entregada vuelve al stock del galpón. No se puede deshacer." +
+          (diferencia > 0
+            ? ` El cliente había pagado ${formatearPesos(diferencia)} de diferencia: devolvéselos.`
+            : diferencia < 0
+              ? ` Se le habían devuelto ${formatearPesos(-diferencia)} de diferencia: recuperalos.`
+              : "")
+        }
         footer={
           <>
             <Button variant="secondary" onClick={() => setAbierto(false)} disabled={enviando}>

@@ -46,7 +46,7 @@ export function DataTable<T>({
       <div className="border-border bg-surface rounded-card hidden overflow-x-auto border md:block">
         <table className="w-full text-left text-sm tabular-nums">
           {caption && <caption className="sr-only">{caption}</caption>}
-          <thead className="border-border bg-card text-muted border-b text-xs font-medium">
+          <thead className="border-border bg-surface-2 text-muted border-b text-xs font-medium">
             <tr>
               {columns.map((c) => (
                 <th
@@ -61,7 +61,7 @@ export function DataTable<T>({
           </thead>
           <tbody className="divide-border divide-y">
             {rows.map((row) => (
-              <tr key={getRowKey(row)} className="hover:bg-card/60 transition-colors">
+              <tr key={getRowKey(row)} className="hover:bg-surface-2/60 transition-colors">
                 {columns.map((c) => (
                   <td key={c.key} className={cn("h-12 px-4 py-3 align-middle", c.className)}>
                     {c.cell(row)}

@@ -353,6 +353,9 @@ export function streamExportarTodo(meta: {
         { header: "Venta", key: "v", width: 12 },
         { header: "Depósito", key: "d", width: 14 },
         { header: "Observación", key: "o", width: 40 },
+        { header: "Diferencia calculada", key: "dc", width: 14, numFmt: MONEDA },
+        { header: "Diferencia cobrada (+) / devuelta (−)", key: "df", width: 18, numFmt: MONEDA },
+        { header: "Medio de la diferencia", key: "dm", width: 14 },
         { header: "Registró", key: "u", width: 14 },
         { header: "Motivo de anulación", key: "an", width: 30 },
       ],
@@ -376,6 +379,9 @@ export function streamExportarTodo(meta: {
         v: x.venta?.codigo ?? "",
         d: x.deposito.nombre,
         o: x.observacion,
+        dc: Number(x.diferenciaCalculada),
+        df: Number(x.diferencia),
+        dm: x.medioPagoDiferencia ? ETIQUETA_MEDIO_PAGO[x.medioPagoDiferencia] : "",
         u: x.usuario.nombre,
         an: x.motivoAnulacion ?? "",
       }),
@@ -387,9 +393,13 @@ export function streamExportarTodo(meta: {
       [
         SISTEMA,
         { header: "ID de devolución", key: "n", width: 15 },
-        { header: "Producto", key: "p", width: 30 },
-        { header: "Sabor", key: "v", width: 20 },
+        { header: "Producto devuelto", key: "p", width: 30 },
+        { header: "Sabor devuelto", key: "v", width: 20 },
         { header: "Cantidad", key: "c", width: 9 },
+        { header: "Producto entregado", key: "pe", width: 30 },
+        { header: "Sabor entregado", key: "ve", width: 20 },
+        { header: "Precio devuelto", key: "prd", width: 13, numFmt: MONEDA },
+        { header: "Precio entregado", key: "pre", width: 13, numFmt: MONEDA },
       ],
       (c) =>
         prisma.devolucionItem.findMany({
@@ -398,6 +408,8 @@ export function streamExportarTodo(meta: {
             devolucion: { select: { codigo: true } },
             variante: { select: { nombre: true } },
             producto: { select: { nombreCompleto: true } },
+            varianteEntregada: { select: { nombre: true } },
+            productoEntregado: { select: { nombreCompleto: true } },
           },
         }),
       (i) => ({
@@ -406,6 +418,10 @@ export function streamExportarTodo(meta: {
         p: i.producto.nombreCompleto,
         v: saborVisible(i.variante.nombre) ?? "",
         c: i.cantidad,
+        pe: i.productoEntregado.nombreCompleto,
+        ve: saborVisible(i.varianteEntregada.nombre) ?? "",
+        prd: i.precioDevuelto === null ? "" : Number(i.precioDevuelto),
+        pre: i.precioEntregado === null ? "" : Number(i.precioEntregado),
       }),
     );
 

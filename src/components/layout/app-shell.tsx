@@ -17,15 +17,25 @@ interface AppShellProps {
   sidebarColapsadoInicial: boolean;
   /** Contraseña pendiente de cambio: sin navegación, solo /cuenta y salir. */
   restringido: boolean;
+  /**
+   * Pantalla global (usuarios, configuración…) dentro del shell del último
+   * panel: sin el indicador de red, que vive en la sincronización del panel.
+   */
+  fueraDelPanel?: boolean;
 }
 
 /**
  * Esqueleto de las pantallas DENTRO de un panel: barra superior blanca fija
- * (logo + nombre, red, cambiar de sistema, avatar).
+ * (logo del panel, red, cambiar de sistema, avatar).
  * - Mobile (<768px): + bottom navigation + sheet "Más".
  * - Desktop (≥768px): + sidebar de 240px colapsable. Contenido máx. 1280px.
  */
-export function AppShell({ children, sidebarColapsadoInicial, restringido }: AppShellProps) {
+export function AppShell({
+  children,
+  sidebarColapsadoInicial,
+  restringido,
+  fueraDelPanel = false,
+}: AppShellProps) {
   const usuario = useUsuario();
   const panel = usePanel();
   const [colapsado, setColapsado] = useState(sidebarColapsadoInicial);
@@ -39,9 +49,9 @@ export function AppShell({ children, sidebarColapsadoInicial, restringido }: App
 
   if (restringido) {
     return (
-      <div className="bg-background min-h-dvh">
+      <div className="fondo-marca min-h-dvh">
         <TopBar restringido />
-        <main className="mx-auto max-w-3xl px-4 pt-[calc(3.5rem+env(safe-area-inset-top)+1.5rem)] pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-8">
+        <main className="mx-auto max-w-3xl px-4 pt-[calc(3.5rem+env(safe-area-inset-top)+1.5rem)] pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-8 md:pt-[calc(4rem+env(safe-area-inset-top)+2rem)]">
           {children}
         </main>
       </div>
@@ -49,13 +59,14 @@ export function AppShell({ children, sidebarColapsadoInicial, restringido }: App
   }
 
   return (
-    <div className="bg-background min-h-dvh">
-      <TopBar />
+    <div className="fondo-marca min-h-dvh">
+      <TopBar conRed={!fueraDelPanel} />
       <Sidebar items={items} colapsado={colapsado} onToggle={toggleSidebar} />
       <main
         className={cn(
           // barra superior fija (+ safe area); en mobile, además la bottom bar
           "pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(4.5rem+env(safe-area-inset-bottom))]",
+          "md:pt-[calc(4rem+env(safe-area-inset-top))]",
           "md:pb-0 md:transition-[padding] md:duration-200",
           colapsado ? "md:pl-16" : "md:pl-60",
         )}

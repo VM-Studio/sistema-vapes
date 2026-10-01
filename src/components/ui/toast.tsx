@@ -82,7 +82,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div
               key={t.id}
               role={t.variant === "error" ? "alert" : "status"}
-              className="bg-card shadow-pop rounded-card pointer-events-auto flex w-full max-w-sm items-start gap-3 border border-black/[0.04] p-4"
+              className="bg-card shadow-pop rounded-card border-marca-azul/[0.07] pointer-events-auto flex w-full max-w-sm items-start gap-3 border p-4"
             >
               <Icono
                 className={cn(

@@ -2,7 +2,9 @@ import { z } from "zod";
 
 import { prefijoPanel } from "@/lib/paneles";
 
-import { id, texto } from "./common";
+import { MedioPago } from "@prisma/client";
+
+import { id, montoOpcional, texto } from "./common";
 
 /** ID visible de una devolución: VAP-D-000001. */
 export function formatearIdDevolucion(slug: string, numero: number): string {
@@ -22,12 +24,15 @@ export const observacionDevolucion = z
   .max(1000, "Máximo 1000 caracteres");
 
 export const itemDevolucionSchema = z.object({
+  /** El sabor fallado que trae el cliente. */
   varianteId: id,
   cantidad: z
     .number({ error: "Cantidad inválida" })
     .int("Tiene que ser un número entero")
     .positive("Tiene que ser mayor a 0")
     .max(10_000, "Cantidad demasiado grande"),
+  /** Lo que se le entrega (otro sabor u otro modelo). Ausente = el mismo sabor. */
+  varianteEntregadaId: id.optional().nullable(),
 });
 
 export const registrarDevolucionSchema = z.object({
@@ -36,6 +41,17 @@ export const registrarDevolucionSchema = z.object({
   depositoId: id,
   items: z.array(itemDevolucionSchema).min(1, "Agregá al menos un producto").max(100),
   observacion: observacionDevolucion,
+  /**
+   * Diferencia de precio que vio la pantalla (con signo: > 0 cobrar, < 0
+   * devolver). Si el servidor calcula otra (cambió un precio), no se registra.
+   */
+  diferenciaVista: z.number().finite().optional(),
+  /**
+   * Cuánto se cobra o se devuelve efectivamente (valor absoluto): la
+   * diferencia entera si no viene, o menos para bonificar.
+   */
+  montoDiferencia: montoOpcional,
+  medioPagoDiferencia: z.enum(MedioPago, { error: "Elegí el medio de pago" }).optional().nullable(),
 });
 
 export const anularDevolucionSchema = z.object({

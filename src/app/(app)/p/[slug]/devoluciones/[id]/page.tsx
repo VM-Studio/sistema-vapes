@@ -11,7 +11,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
+import { formatearPesos } from "@/lib/format";
 import { formatearFechaHora } from "@/lib/utils";
+import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { obtenerDevolucion } from "@/server/services/devolucion.service";
@@ -32,6 +34,9 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
   const verVentas = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "ver");
   const anulada = d.estado === EstadoDevolucion.ANULADA;
   const unidades = d.items.reduce((a, i) => a + i.cantidad, 0);
+  const conCambio = d.items.some((i) => i.cambio);
+  const diferencia = Number(d.diferencia);
+  const calculada = Number(d.diferenciaCalculada);
 
   return (
     <>
@@ -51,11 +56,18 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
             <Badge variant={ESTADO_DEVOLUCION_UI[d.estado].variante}>
               {ESTADO_DEVOLUCION_UI[d.estado].label}
             </Badge>
-            <span>{formatearFechaHora(d.fecha)} · Garantía: se entregó una unidad nueva</span>
+            <span>
+              {formatearFechaHora(d.fecha)} ·{" "}
+              {conCambio
+                ? "Garantía con cambio por otro sabor o modelo"
+                : "Garantía: se entregó una unidad nueva"}
+            </span>
           </span>
         }
         actions={
-          !anulada && esOwner(ctx.usuario) ? <AnularDevolucion id={d.id} codigo={d.codigo} /> : null
+          !anulada && esOwner(ctx.usuario) ? (
+            <AnularDevolucion id={d.id} codigo={d.codigo} diferencia={diferencia} />
+          ) : null
         }
       />
       {anulada && (
@@ -63,6 +75,8 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
           Anulada {d.anuladaAt ? `el ${formatearFechaHora(d.anuladaAt)}` : ""}
           {d.anuladaPor ? ` por ${d.anuladaPor}` : ""}. Motivo: {d.motivoAnulacion}. La unidad
           volvió al stock de {d.deposito.nombre}.
+          {diferencia !== 0 &&
+            ` La diferencia de ${formatearPesos(Math.abs(diferencia))} ya no cuenta en lo cobrado.`}
         </div>
       )}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
@@ -83,15 +97,73 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
             <ul className="divide-border border-border bg-surface rounded-card flex flex-col divide-y border text-sm">
               {d.items.map((i) => (
                 <li
-                  key={i.varianteId}
-                  className="flex items-center justify-between gap-3 px-4 py-3"
+                  key={`${i.varianteId}-${i.cambio?.varianteId ?? ""}`}
+                  className="flex flex-col gap-1 px-4 py-3"
+                  data-testid="item-devolucion"
                 >
-                  <span className="min-w-0 font-medium">{i.titulo}</span>
-                  <span className="shrink-0 font-semibold tabular-nums">{i.cantidad}</span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-muted text-xs">Devolvió</p>
+                      <p className="font-medium">{i.titulo}</p>
+                    </div>
+                    <span className="shrink-0 font-semibold tabular-nums">{i.cantidad}</span>
+                  </div>
+                  <p className="text-sm">
+                    <span className="text-muted">Se llevó: </span>
+                    {i.cambio ? (
+                      <>
+                        <strong>{i.cambio.titulo}</strong>{" "}
+                        <Badge variant="primary">
+                          {i.cambio.tipo === "sabor" ? "Otro sabor" : "Otro modelo"}
+                        </Badge>
+                      </>
+                    ) : (
+                      "el mismo sabor"
+                    )}
+                  </p>
+                  {i.cambio && i.precioDevuelto && i.precioEntregado && (
+                    <p className="text-muted text-xs tabular-nums">
+                      {formatearPesos(i.precioDevuelto)} → {formatearPesos(i.precioEntregado)} c/u
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
           </SectionCard>
+          {calculada !== 0 && (
+            <SectionCard
+              title="Diferencia de precio"
+              description="Precio de lista de lo que se llevó menos lo que devolvió."
+            >
+              <dl
+                className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm"
+                data-testid="diferencia-devolucion"
+              >
+                <dt className="text-muted">Diferencia</dt>
+                <dd className="text-right tabular-nums">{formatearPesos(Math.abs(calculada))}</dd>
+                {diferencia !== calculada && (
+                  <>
+                    <dt className="text-muted">Bonificado</dt>
+                    <dd className="text-right tabular-nums">
+                      {formatearPesos(Math.abs(calculada) - Math.abs(diferencia))}
+                    </dd>
+                  </>
+                )}
+                <dt className="font-semibold">
+                  {calculada > 0 ? "Pagó el cliente" : "Se le devolvió"}
+                </dt>
+                <dd className="text-right font-semibold tabular-nums">
+                  {formatearPesos(Math.abs(diferencia))}
+                  {d.medioPagoDiferencia && (
+                    <span className="text-muted font-normal">
+                      {" "}
+                      · {ETIQUETA_MEDIO_PAGO[d.medioPagoDiferencia]}
+                    </span>
+                  )}
+                </dd>
+              </dl>
+            </SectionCard>
+          )}
         </div>
         <SectionCard title="Datos">
           <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3 text-sm">

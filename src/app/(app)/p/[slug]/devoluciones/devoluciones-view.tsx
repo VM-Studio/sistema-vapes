@@ -24,8 +24,15 @@ import type { DevolucionListada } from "@/server/services/devolucion.service";
 
 import { RegistrarDevolucion, type InicialDevolucion } from "./registrar-devolucion";
 
+/** "2 × Elf Bar — Grape → Elf Bar — Mango, Lost Mary — Kiwi" (con el cambio, si lo hubo). */
 const productos = (d: DevolucionListada) =>
-  d.items.map((i) => (i.cantidad > 1 ? `${i.cantidad} × ${i.titulo}` : i.titulo)).join(", ");
+  d.items
+    .map(
+      (i) =>
+        (i.cantidad > 1 ? `${i.cantidad} × ${i.titulo}` : i.titulo) +
+        (i.cambio ? ` → ${i.cambio.titulo}` : ""),
+    )
+    .join(", ");
 
 export function DevolucionesView({
   resultado,

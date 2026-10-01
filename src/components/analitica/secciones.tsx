@@ -1,6 +1,13 @@
 import "server-only";
 
-import { AlertTriangle, ChevronRight, ClipboardList, FileClock, Package } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  ChevronRight,
+  ClipboardList,
+  FileClock,
+  Package,
+} from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -185,9 +192,10 @@ export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Pe
             extra={
               <Link
                 href={rutaPanel(ctx.panel.slug, "/fiados")}
-                className="text-foreground font-medium underline-offset-4 hover:underline"
+                className="text-marca-azul inline-flex items-center gap-1 font-semibold underline-offset-4 hover:underline"
               >
                 Ver fiados
+                <ArrowRight className="size-3.5" strokeWidth={2.25} aria-hidden />
               </Link>
             }
           />

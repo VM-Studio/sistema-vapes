@@ -110,7 +110,10 @@ export function IndicadorRed({ className }: { className?: string }) {
       )}
     >
       <span
-        className={cn("rounded-circle size-2.5", online ? "bg-success" : "bg-muted")}
+        className={cn(
+          "rounded-circle size-2.5",
+          online ? "bg-marca-oliva ring-marca-oliva/20 ring-4" : "bg-muted",
+        )}
         aria-hidden
       />
       {!online && <span className="text-muted">Sin red</span>}

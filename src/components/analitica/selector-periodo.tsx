@@ -26,10 +26,10 @@ const PRESETS = [
   { valor: "anio", label: "Este año" },
 ] as const;
 
-/** Segmento del grupo de modos: rectangular, 44px en mobile; activo negro con texto blanco. */
+/** Segmento del grupo de modos: rectangular, 44px en mobile; activo azul de marca con texto blanco. */
 const segmento =
   "inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-inner px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9 md:flex-none [&_svg]:size-4";
-const segmentoActivo = "bg-foreground text-background";
+const segmentoActivo = "bg-marca-azul text-white shadow-control font-semibold";
 const segmentoInactivo = "text-muted hover:bg-surface-2 hover:text-foreground";
 
 /**
@@ -86,7 +86,7 @@ export function SelectorPeriodo({
       <div
         role="group"
         aria-label="Período"
-        className="border-border bg-surface rounded-control flex w-full gap-0.5 border p-0.5 md:w-auto"
+        className="bg-surface rounded-control shadow-card flex w-full gap-0.5 p-1 md:w-auto"
       >
         {MODOS.map((m) =>
           m.modo === "PERSONALIZADO" ? (

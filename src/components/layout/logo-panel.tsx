@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- logos subidos por el dueño (storage) o de /public: tamaño fijo y chico, sin optimización de next/image */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { logosCandidatos, type PanelBasico } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
@@ -9,18 +9,37 @@ import { cn } from "@/lib/utils";
 /**
  * Logo de un panel; sin logo (o si la imagen no carga), el nombre del panel
  * tipografiado (nunca iniciales ni colores por panel). `size` en px (alto;
- * el logo conserva su proporción).
+ * el logo conserva su proporción); `sizeMd`, el alto desde 768px.
  */
 export function LogoPanel({
   panel,
   size = 32,
+  sizeMd,
   className,
 }: {
   panel: Pick<PanelBasico, "nombre" | "logoUrl" | "colorAcento"> & { slug?: string };
   size?: number;
+  sizeMd?: number;
   className?: string;
 }) {
   const src = useLogoConRespaldo(logosCandidatos(panel.slug, panel.logoUrl));
+  if (src && sizeMd) {
+    return (
+      <img
+        ref={src.ref}
+        key={src.url}
+        src={src.url}
+        alt={`Logo de ${panel.nombre}`}
+        height={sizeMd}
+        onError={src.siguiente}
+        style={{ "--alto": `${size}px`, "--alto-md": `${sizeMd}px` } as CSSProperties}
+        className={cn(
+          "h-(--alto) w-auto max-w-[calc(var(--alto)*4)] shrink-0 object-contain md:h-(--alto-md) md:max-w-[calc(var(--alto-md)*4)]",
+          className,
+        )}
+      />
+    );
+  }
   if (src) {
     return (
       <img

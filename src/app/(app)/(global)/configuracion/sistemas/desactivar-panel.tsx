@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 
-import { desactivarPanelAction } from "../../paneles/actions";
+import { desactivarPanelAction } from "@/app/(app)/(selector)/paneles/actions";
 
 export function DesactivarPanel({ panelId, nombre }: { panelId: string; nombre: string }) {
   const router = useRouter();

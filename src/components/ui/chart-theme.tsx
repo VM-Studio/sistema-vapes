@@ -3,20 +3,22 @@ import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Tema central de los gráficos (recharts). Es el ÚNICO lugar del sistema donde
- * aparecen el azul y el naranja del logo:
+ * Tema central de los gráficos (recharts): acá se definen los colores con que
+ * aparecen el azul, el naranja y el oliva del logo en los datos:
  * - serie "Actual" = azul, serie "Anterior" = naranja (punteada);
- * - escala categórica fija: azul → azul claro → naranja → naranja claro → grises;
+ * - escala categórica fija: azul → azul claro → naranja → naranja claro → oliva → gris;
  * - deltas: sube = azul, baja = naranja (con flecha/signo: no depende solo del color).
  * Grilla gris, ejes sin línea, tooltips con el estilo de tarjeta.
  */
 export const COLORES_MARCA = {
-  azul: "#0047b0",
-  azulClaro: "#7fa6e0",
-  azulOscuro: "#00337f",
-  naranja: "#fe7b38",
-  naranjaClaro: "#ffb892",
-  naranjaOscuro: "#d95e1e",
+  azul: "#004aac",
+  azulClaro: "#7fa3d6",
+  azulOscuro: "#003580",
+  naranja: "#ff914d",
+  naranjaClaro: "#ffc59f",
+  naranjaOscuro: "#d9661f",
+  oliva: "#aeb03f",
+  marron: "#594a42",
 } as const;
 
 export const ChartTheme = {
@@ -30,36 +32,36 @@ export const ChartTheme = {
     COLORES_MARCA.azulClaro,
     COLORES_MARCA.naranja,
     COLORES_MARCA.naranjaClaro,
-    "#a3a3a3",
-    "#d4d4d4",
+    COLORES_MARCA.oliva,
+    "#cfc7c1",
   ],
-  grilla: "#eceef1",
-  eje: "#e6e8eb",
-  texto: "#525252",
-  textoFuerte: "#0a0a0a",
-  cursor: "#d4d7dc",
-  cursorArea: "rgba(10,10,10,0.04)",
+  grilla: "#e9eef5",
+  eje: "#e3e9f1",
+  texto: "#6e625b",
+  textoFuerte: COLORES_MARCA.marron,
+  cursor: "#cfd8e4",
+  cursorArea: "rgba(0,74,172,0.05)",
   fuente: 12,
   /** Props listas para <CartesianGrid>. */
-  grid: { stroke: "#eceef1", vertical: false } as const,
+  grid: { stroke: "#e9eef5", vertical: false } as const,
   /** Props listas para <XAxis>/<YAxis>. */
   ejeX: {
     tickLine: false,
-    axisLine: { stroke: "#e6e8eb" },
-    tick: { fontSize: 12, fill: "#525252" },
+    axisLine: { stroke: "#e3e9f1" },
+    tick: { fontSize: 12, fill: "#6e625b" },
   } as const,
-  ejeY: { tickLine: false, axisLine: false, tick: { fontSize: 12, fill: "#525252" } } as const,
+  ejeY: { tickLine: false, axisLine: false, tick: { fontSize: 12, fill: "#6e625b" } } as const,
   /** contentStyle del <Tooltip> por defecto de recharts. */
   tooltip: {
-    background: "#f4f5f7",
-    border: "1px solid rgba(10,10,10,0.06)",
+    background: "#f2f6fb",
+    border: "1px solid rgba(0,74,172,0.08)",
     borderRadius: 10,
-    boxShadow: "0 8px 20px -6px rgb(10 10 10 / 0.1)",
+    boxShadow: "0 8px 20px -6px rgb(16 36 72 / 0.1)",
     fontSize: 13,
-    color: "#0a0a0a",
+    color: COLORES_MARCA.marron,
     padding: "8px 12px",
   } satisfies CSSProperties,
-  leyenda: { fontSize: 12, color: "#525252" } satisfies CSSProperties,
+  leyenda: { fontSize: 12, color: "#6e625b" } satisfies CSSProperties,
 } as const;
 
 /** Color de la categoría i (escala fija, sin ciclar colores de marca). */
@@ -78,7 +80,7 @@ export function ChartTooltipCard({
   return (
     <div
       className={cn(
-        "bg-card shadow-pop rounded-card min-w-44 border border-black/[0.06] p-3 text-sm",
+        "bg-card shadow-pop rounded-card border-marca-azul/[0.08] min-w-44 border p-3 text-sm",
         className,
       )}
     >

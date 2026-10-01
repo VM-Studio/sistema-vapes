@@ -115,14 +115,14 @@ test("garantía: 1 sabor desde Mercedes vinculada a la venta, y anularla repone 
   await modal.getByRole("radio", { name: /Mercedes/ }).click();
   await modal.getByRole("button", { name: "Continuar con Mercedes" }).click();
 
-  // Paso 3: el sabor de la venta ya está cargado, con el aviso de stock.
+  // Paso 3: el sabor de la venta ya está cargado, con tope en lo vendido (1).
   await expect(modal.getByTestId("galpon-devolucion")).toHaveText("Mercedes");
+  await expect(modal.getByText(`Vinculada a ${venta.codigo}`)).toBeVisible();
   await expect(
-    modal.getByText("Se descuenta del stock la unidad nueva que se entrega al cliente."),
-  ).toBeVisible();
-  await expect(
-    modal.getByRole("list", { name: "Productos a entregar" }).getByRole("listitem"),
+    modal.getByRole("list", { name: "Productos que devuelve" }).getByRole("listitem"),
   ).toHaveCount(1);
+  await expect(modal.getByRole("button", { name: /^Sumar uno de/ })).toBeDisabled();
+  await expect(modal.getByTestId("stock-entrega")).toContainText("Stock en Mercedes");
   await modal.getByRole("button", { name: "Continuar", exact: true }).click();
 
   // Paso 4: observación obligatoria y confirmar.
@@ -182,6 +182,100 @@ test("garantía: 1 sabor desde Mercedes vinculada a la venta, y anularla repone 
   expect(movs[1]).toMatchObject({ cantidad: 1, depositoId, stockPosterior: stockAntes });
   expect((await db.stock.findUniqueOrThrow({ where: { id: stockId } })).cantidad).toBe(stockAntes);
   expect((await db.devolucion.findUniqueOrThrow({ where: { id: dev.id } })).estado).toBe("ANULADA");
+});
+
+test("devolución vinculada: tope en lo vendido y cambio por otro modelo cobrando la diferencia", async ({
+  page,
+}) => {
+  const s = sufijo();
+  const { variante, depositoId } = await saborConStockEnMercedes();
+  const { cliente, venta } = await clienteConVenta(s, variante, depositoId);
+  const precio = (v: { precioVenta: unknown; producto: { precioVenta: unknown } }) =>
+    Number(v.precioVenta ?? v.producto.precioVenta);
+  // Otro modelo con stock en Mercedes y precio distinto.
+  const otros = await db.stock.findMany({
+    where: {
+      panelId: PANEL_VAPES,
+      depositoId,
+      cantidad: { gte: 2 },
+      variante: { productoId: { not: variante.productoId }, activo: true, deletedAt: null },
+    },
+    include: { variante: { include: { producto: true } } },
+  });
+  const otro = otros.find((o) => precio(o.variante) !== precio(variante));
+  test.skip(!otro, "El catálogo de ejemplo no tiene otro modelo con precio distinto en Mercedes");
+  const entregada = otro!.variante;
+  const diferencia = precio(entregada) - precio(variante);
+  const base = {
+    clienteId: cliente.id,
+    ventaId: venta.id,
+    depositoId,
+    observacion: "No carga, luz roja parpadea",
+  };
+
+  await loginDueno(page);
+  const accion = (input: object) =>
+    llamarAccion(page, "registrarDevolucionAction", input, "/p/vapes/devoluciones");
+
+  // Más de lo vendido (1): lo rechaza el servidor.
+  const deMas = await accion({ ...base, items: [{ varianteId: variante.id, cantidad: 2 }] });
+  expect(deMas).toContain('"ok":false');
+  expect(deMas).toContain("se pueden devolver hasta 1");
+
+  // Un sabor que no está en la venta: rechazado.
+  const ajeno = await accion({ ...base, items: [{ varianteId: entregada.id, cantidad: 1 }] });
+  expect(ajeno).toContain('"ok":false');
+  expect(ajeno).toContain(`no está en la venta ${venta.codigo}`);
+
+  // Precios desactualizados en pantalla: no se registra.
+  const vieja = await accion({
+    ...base,
+    items: [{ varianteId: variante.id, cantidad: 1, varianteEntregadaId: entregada.id }],
+    diferenciaVista: diferencia + 1,
+    medioPagoDiferencia: "EFECTIVO",
+  });
+  expect(vieja).toContain("PRECIOS_CAMBIARON");
+
+  // Cambio por otro modelo: la diferencia se cobra (o se devuelve) con su medio.
+  const stockEntregadaAntes = otro!.cantidad;
+  const ok = await accion({
+    ...base,
+    items: [{ varianteId: variante.id, cantidad: 1, varianteEntregadaId: entregada.id }],
+    diferenciaVista: diferencia,
+    medioPagoDiferencia: "TRANSFERENCIA",
+  });
+  expect(ok).toContain('"ok":true');
+
+  const dev = await db.devolucion.findFirstOrThrow({
+    where: { panelId: PANEL_VAPES, ventaId: venta.id, estado: "REGISTRADA" },
+    include: { items: true },
+  });
+  expect(Number(dev.diferenciaCalculada)).toBe(diferencia);
+  expect(Number(dev.diferencia)).toBe(diferencia);
+  expect(dev.medioPagoDiferencia).toBe("TRANSFERENCIA");
+  expect(dev.items[0]).toMatchObject({
+    varianteId: variante.id,
+    varianteEntregadaId: entregada.id,
+    productoEntregadoId: entregada.productoId,
+  });
+  const mov = await db.movimientoStock.findFirstOrThrow({
+    where: { panelId: PANEL_VAPES, referenciaTipo: "DEVOLUCION", referenciaId: dev.id },
+  });
+  expect(mov).toMatchObject({ tipo: "GARANTIA", varianteId: entregada.id, cantidad: 1 });
+  expect((await db.stock.findUniqueOrThrow({ where: { id: otro!.id } })).cantidad).toBe(
+    stockEntregadaAntes - 1,
+  );
+
+  // Ya se devolvió todo lo vendido: otra devolución de la misma venta, rechazada.
+  const otraVez = await accion({ ...base, items: [{ varianteId: variante.id, cantidad: 1 }] });
+  expect(otraVez).toContain("se pueden devolver hasta 0");
+
+  // El detalle muestra el cambio y la diferencia.
+  await page.goto(`/p/vapes/devoluciones/${dev.id}`);
+  await expect(page.getByTestId("item-devolucion")).toContainText("Otro modelo");
+  await expect(page.getByTestId("diferencia-devolucion")).toContainText(
+    diferencia > 0 ? "Pagó el cliente" : "Se le devolvió",
+  );
 });
 
 test("un cliente de Cosmetic no aparece en el buscador de Vapes", async ({ page }) => {

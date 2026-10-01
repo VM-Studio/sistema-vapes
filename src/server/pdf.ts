@@ -95,15 +95,15 @@ const hex = (h: string) =>
     parseInt(h.slice(5, 7), 16) / 255,
   );
 export const COLOR_PDF = {
-  texto: hex("#0A0A0A"),
-  muted: hex("#525252"),
-  subtle: hex("#6D6D6D"),
-  card: hex("#F4F5F7"),
-  borde: hex("#E6E8EB"),
-  actual: hex("#0047B0"),
-  anterior: hex("#FE7B38"),
-  sube: hex("#0047B0"),
-  baja: hex("#D95E1E"),
+  texto: hex("#594A42"),
+  muted: hex("#6E625B"),
+  subtle: hex("#736861"),
+  card: hex("#F2F6FB"),
+  borde: hex("#E3E9F1"),
+  actual: hex("#004AAC"),
+  anterior: hex("#FF914D"),
+  sube: hex("#004AAC"),
+  baja: hex("#D9661F"),
 };
 
 /** Rectángulo con esquinas redondeadas; (x, y) es la esquina inferior izquierda. */

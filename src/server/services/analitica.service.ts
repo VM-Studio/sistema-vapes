@@ -461,7 +461,24 @@ async function ventasActualAnterior(ctx: Ctx, p: Periodo) {
   };
 }
 
-/** Cobrado del período actual y del anterior, y la deuda total de hoy. */
+/**
+ * Movimientos de plata del panel: los pagos de ventas (no anulados) y las
+ * diferencias de precio de las devoluciones con cambio (registradas): > 0 la
+ * pagó el cliente, < 0 se le devolvió. Columnas: fecha, monto, medio.
+ */
+function movimientosDePlata(ctx: Ctx) {
+  return Prisma.sql`(
+    SELECT pv."fecha", pv."monto", pv."medioPago"
+    FROM "PagoVenta" pv
+    WHERE pv."panelId" = ${ctx.panelId} AND NOT pv."anulado"
+    UNION ALL
+    SELECT d."fecha", d."diferencia", d."medioPagoDiferencia"
+    FROM "Devolucion" d
+    WHERE d."panelId" = ${ctx.panelId} AND d."estado" = 'REGISTRADA' AND d."diferencia" <> 0
+  )`;
+}
+
+/** Cobrado del período actual y del anterior (con las diferencias de devoluciones), y la deuda de hoy. */
 async function cobranzas(ctx: Ctx, p: Periodo) {
   const { a, b } = rangos(p);
   const [cobrado, [deuda]] = await Promise.all([
@@ -470,9 +487,8 @@ async function cobranzas(ctx: Ctx, p: Periodo) {
       z.object({ actual: z.boolean(), total: montoTexto }),
       Prisma.sql`
         SELECT (pv."fecha" >= ${ts(a.inicio)}) AS "actual", COALESCE(SUM(pv."monto"), 0)::text AS "total"
-        FROM "PagoVenta" pv
-        WHERE pv."panelId" = ${ctx.panelId} AND NOT pv."anulado"
-          AND pv."fecha" >= ${ts(b.inicio)} AND pv."fecha" < ${ts(a.fin)}
+        FROM ${movimientosDePlata(ctx)} pv
+        WHERE pv."fecha" >= ${ts(b.inicio)} AND pv."fecha" < ${ts(a.fin)}
         GROUP BY 1`,
     ),
     consultar(
@@ -612,8 +628,9 @@ export interface PorMedioPago {
 
 /**
  * Lo cobrado por medio de pago: Σ PagoVenta no anulados con FECHA DE PAGO en
- * el período (pagos al vender, mixtos por separado, y cobros de fiados).
- * `cantidad` = pagos registrados en ese medio.
+ * el período (pagos al vender, mixtos por separado, y cobros de fiados), más
+ * las diferencias de las devoluciones con cambio (restan si se le devolvió al
+ * cliente). `cantidad` = movimientos registrados en ese medio.
  */
 export async function ventasPorMedioPago(ctx: Ctx, p: Periodo): Promise<PorMedioPago[]> {
   const { inicio, fin } = instantesDe(p);
@@ -623,9 +640,8 @@ export async function ventasPorMedioPago(ctx: Ctx, p: Periodo): Promise<PorMedio
     Prisma.sql`
       SELECT pv."medioPago"::text AS "medio", COUNT(*)::int AS "cantidad",
              COALESCE(SUM(pv."monto"), 0)::text AS "total"
-      FROM "PagoVenta" pv
-      WHERE pv."panelId" = ${ctx.panelId} AND NOT pv."anulado"
-        AND pv."fecha" >= ${ts(inicio)} AND pv."fecha" < ${ts(fin)}
+      FROM ${movimientosDePlata(ctx)} pv
+      WHERE pv."fecha" >= ${ts(inicio)} AND pv."fecha" < ${ts(fin)}
       GROUP BY 1`,
   );
   return Object.values(MedioPago).map((medio) => {

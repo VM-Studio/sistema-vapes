@@ -56,7 +56,7 @@ export function Sheet({
             className="bg-input rounded-circle mx-auto mt-2 h-1 w-9 shrink-0 md:hidden"
             aria-hidden
           />
-          <header className="flex items-start justify-between gap-3 border-b border-black/[0.06] px-4 py-3 md:px-6 md:py-5">
+          <header className="border-marca-azul/[0.08] flex items-start justify-between gap-3 border-b px-4 py-3 md:px-6 md:py-5">
             <div className="flex min-w-0 flex-col gap-1 pt-1.5">
               <h2 id={idTitulo} className="text-h2 font-semibold">
                 {title}
@@ -77,7 +77,11 @@ export function Sheet({
             {children}
           </div>
           {footer && (
-            <footer className="pb-safe bg-card flex shrink-0 gap-3 border-t border-black/[0.06] px-4 pt-4 md:justify-end md:px-6 md:pb-5 [&>*]:flex-1 md:[&>*]:flex-none">
+            <footer
+              // Aire abajo siempre (no solo la safe area: en desktop vale 0 y dejaba
+              // los botones pegados al borde); en iPhone, además, la barra de inicio.
+              className="bg-card border-marca-azul/[0.08] flex shrink-0 gap-3 border-t px-4 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:justify-end md:px-6 md:pt-5 md:pb-[calc(1.75rem+env(safe-area-inset-bottom))] [&>*]:flex-1 md:[&>*]:flex-none"
+            >
               {footer}
             </footer>
           )}

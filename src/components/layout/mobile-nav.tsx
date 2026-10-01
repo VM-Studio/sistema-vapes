@@ -2,12 +2,12 @@
 
 import { CircleHelp, Ellipsis, LayoutGrid, UserRound } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { esRutaActiva, type ItemNavegacion } from "@/config/navigation";
+import { useRutaOptimista } from "@/hooks/use-ruta-optimista";
 import { cn } from "@/lib/utils";
 
 import { IndicadorRed } from "@/components/pwa/sincronizacion-offline";
@@ -24,28 +24,35 @@ function LinkInicioPanel() {
   return (
     <Link
       href={ruta()}
-      className="flex min-w-0 items-center gap-2.5"
+      className="flex min-w-0 items-center"
       aria-label={`Inicio de ${panel.nombre}`}
     >
-      <LogoPanel panel={panel} size={28} />
-      <span className="hidden truncate text-sm font-semibold sm:inline">{panel.nombre}</span>
+      {/* Solo el logo (sin el nombre al lado); sin logo, LogoPanel muestra el nombre. */}
+      <LogoPanel panel={panel} size={44} sizeMd={52} />
     </Link>
   );
 }
 
 /**
- * Barra superior del panel (mobile y desktop): logo + nombre a la izquierda;
+ * Barra superior del panel (mobile y desktop): logo del panel a la izquierda;
  * a la derecha estado de red, "Cambiar de sistema" y el avatar con su menú.
  */
-export function TopBar({ restringido = false }: { restringido?: boolean }) {
+export function TopBar({
+  restringido = false,
+  conRed = true,
+}: {
+  restringido?: boolean;
+  /** Indicador de red (necesita la sincronización offline del panel). */
+  conRed?: boolean;
+}) {
   const panel = usePanelOpcional();
 
   return (
     <header className="pt-safe pl-safe pr-safe border-border bg-surface fixed inset-x-0 top-0 z-30 border-b">
-      <div className="flex h-14 items-center justify-between gap-3 px-4 md:px-5">
+      <div className="flex h-14 items-center justify-between gap-3 px-4 md:h-16 md:px-6">
         {panel ? <LinkInicioPanel /> : <span />}
         <div className="flex items-center gap-1 md:gap-2">
-          {!restringido && panel && <IndicadorRed />}
+          {!restringido && panel && conRed && <IndicadorRed />}
           {!restringido && (
             <Link
               href="/paneles"
@@ -70,7 +77,8 @@ export function TopBar({ restringido = false }: { restringido?: boolean }) {
  * "Más", que abre un sheet con el resto de los módulos permitidos.
  */
 export function BottomNav({ items }: { items: ItemNavegacion[] }) {
-  const pathname = usePathname();
+  // Activo al instante al tocar, sin esperar la respuesta del servidor.
+  const { ruta: pathname, marcar } = useRutaOptimista();
   const [masAbierto, setMasAbierto] = useState(false);
 
   const enOrden = [...items].sort((a, b) => a.ordenMobile - b.ordenMobile);
@@ -83,7 +91,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
   const claseItem = (activo: boolean) =>
     cn(
       "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
-      activo ? "text-foreground" : "text-subtle",
+      activo ? "text-foreground [&>svg]:text-marca-azul" : "text-subtle",
     );
   const claseLink =
     "hover:bg-surface-3/60 flex min-h-12 items-center gap-3 rounded-control px-3 text-sm font-medium";
@@ -102,6 +110,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
               <li key={item.href} className="flex flex-1">
                 <Link
                   href={item.href}
+                  onClick={marcar(item.href)}
                   aria-current={activo ? "page" : undefined}
                   className={claseItem(activo)}
                 >
@@ -136,7 +145,10 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
                 <li key={item.href}>
                   <Link
                     href={item.href}
-                    onClick={() => setMasAbierto(false)}
+                    onClick={(e) => {
+                      marcar(item.href)(e);
+                      setMasAbierto(false);
+                    }}
                     aria-current={activo ? "page" : undefined}
                     className={cn(
                       "rounded-control flex min-h-20 flex-col items-center justify-center gap-1.5 px-1 text-center text-xs font-medium transition-colors",

@@ -66,11 +66,6 @@ export interface ItemNavegacion {
   descripcion: string;
   /** Ruta global (fuera del panel): /usuarios, /configuracion. */
   global?: boolean;
-  /**
-   * Destino directo si el usuario puede hacer `accion` en el módulo (Ventas abre el POS);
-   * si no, `href`. El ítem queda activo en todo `href/*` igual.
-   */
-  accionPrincipal?: { href: string; accion: "crear" };
   /** Prefijo de ruta absoluto para marcar el ítem activo (lo completa navegacionPermitida). */
   base?: string;
 }
@@ -89,8 +84,8 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
   {
     modulo: Modulo.VENTAS,
     label: "Ventas",
+    // El listado: el modal de venta se abre solo con el botón "Generar venta".
     href: "/ventas",
-    accionPrincipal: { href: "/ventas?nueva=1", accion: "crear" },
     icon: ShoppingCart,
     grupo: "Operación",
     enBottomBar: true,
@@ -273,13 +268,8 @@ export function navegacionPermitida(
   const abs = (item: ItemNavegacion, href: string) =>
     item.global ? href : rutaPanel(panel.slug, href);
   return NAVEGACION.filter((item) => puedeVerItem(usuario, panel.id, item)).map((item) => {
-    const principal = item.accionPrincipal;
-    const modulo =
-      Array.isArray(item.modulo) || item.modulo === "OWNER" ? null : (item.modulo as Modulo | null);
-    const base = abs(item, item.href);
-    return principal && modulo && puede(usuario, panel.id, modulo, principal.accion)
-      ? { ...item, href: abs(item, principal.href), base }
-      : { ...item, href: base, base };
+    const href = abs(item, item.href);
+    return { ...item, href, base: href };
   });
 }
 

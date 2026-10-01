@@ -2,63 +2,75 @@
 
 /*
  * Sistema de diseño (docs/DISENO.md). Reglas:
- * - Blanco y negro. Fondo de página blanco puro; texto casi negro, gris
- *   oscuro (secundario) y gris medio (terciario).
- * - Tarjetas, Sheets y Dialogs: gris clarito (--card) sin borde ni sombra en
- *   reposo; lo que va adentro (inputs, tablas) sobre blanco.
- * - Azul y naranja del logo: SOLO en gráficos y comparación de datos
- *   (--dato-*). Única excepción: la línea del ítem activo del sidebar.
- * - Semánticos (éxito / error / alerta) apagados: badges, toasts, validaciones.
+ * - Colores del logo, siempre sutiles: marrón #594a42 (texto y acción, en
+ *   lugar del negro), azul #004aac (velos transparentes de fondo, foco,
+ *   ítem activo), naranja #ff914d y oliva #aeb03f (datos y semánticos).
+ * - Fondo de página gris azulado muy claro con un velo azul tenue; tarjetas
+ *   blancas con un filete y una sombra muy suave (--sombra-tarjeta); Sheets y
+ *   Dialogs blancos. Ítem activo, selección y foco en azul.
+ * - Cada KPI con un ícono sobre un círculo del color de su tono (--tono-*).
+ * - Semánticos apagados: éxito = oliva, alerta = naranja, error = rojo.
+ * - El osito sin fondo (/brand/osito*.png) como marca y marca de agua.
  * - Controles con radio 6px, tarjetas 10px. Nada de píldoras.
- * Sin dark mode, sin gradientes, sin acento por panel.
+ * Sin dark mode, sin acento por panel.
  */
 :root {
   color-scheme: light;
 
-  /* Neutros */
-  --background: #ffffff;
+  /* Marca (colores del logo) */
+  --marca-marron: #594a42;
+  --marca-marron-oscuro: #473a33;
+  --marca-azul: #004aac;
+  --marca-azul-claro: #7fa3d6;
+  --marca-azul-oscuro: #003580;
+  --marca-naranja: #ff914d;
+  --marca-naranja-claro: #ffc59f;
+  --marca-naranja-oscuro: #d9661f;
+  --marca-oliva: #aeb03f;
+  --marca-oliva-claro: #d8d99c;
+  --marca-oliva-oscuro: #6f7120;
+
+  /* Velos azules (transparentes, sobre blanco) */
+  --azul-velo-1: rgb(0 74 172 / 0.035);
+  --azul-velo-2: rgb(0 74 172 / 0.06);
+  --azul-velo-3: rgb(0 74 172 / 0.1);
+
+  /* Neutros: grises levemente azulados; textos en la gama del marrón. */
+  --background: #f5f7fb;
   --surface: #ffffff;
-  --card: #f4f5f7;
-  --card-hover: #eef0f3;
-  --surface-2: #f4f5f7;
-  --surface-3: #e9ebee;
-  --foreground: #0a0a0a;
-  --muted: #525252;
-  --subtle: #6d6d6d;
-  --border: #e6e8eb;
-  --input: #d4d7dc;
+  --card: #ffffff;
+  --card-hover: #fcfdff;
+  --surface-2: #f3f6fb;
+  --surface-3: #e8eef7;
+  --foreground: var(--marca-marron);
+  --muted: #6e625b;
+  --subtle: #736861;
+  --border: #e5eaf1;
+  --input: #cfd8e4;
 
-  /* Acción = negro (los alias primary/accent se conservan para no romper pantallas). */
-  --primary: #0a0a0a;
-  --primary-hover: #262626;
+  /* Acción = marrón del logo (los alias primary/accent se conservan para no romper pantallas). */
+  --primary: var(--marca-marron);
+  --primary-hover: var(--marca-marron-oscuro);
   --primary-foreground: #ffffff;
-  --primary-soft: #f4f5f7;
-  --primary-soft-foreground: #0a0a0a;
+  --primary-soft: #ebf1f9;
+  --primary-soft-foreground: var(--marca-azul-oscuro);
 
-  /* Semánticos apagados */
+  /* Semánticos apagados (éxito = oliva, alerta = naranja del logo) */
   --danger: #b04a45;
   --danger-hover: #963d39;
   --danger-foreground: #ffffff;
   --danger-soft: #f8eeed;
   --danger-soft-foreground: #8f3b37;
 
-  --success: #3e7a56;
-  --success-soft: #edf4ef;
-  --success-soft-foreground: #336648;
-  --warning: #a0721f;
-  --warning-soft: #f8f2e6;
-  --warning-soft-foreground: #7d5816;
+  --success: #66691c;
+  --success-soft: #f3f4e3;
+  --success-soft-foreground: #585a17;
+  --warning: #a64f15;
+  --warning-soft: #fff3ea;
+  --warning-soft-foreground: #96480f;
 
-  --ring: #0a0a0a;
-  --backdrop: rgb(10 10 10 / 0.32);
-
-  /* Marca (extraídos de los logos): solo datos. */
-  --marca-azul: #0047b0;
-  --marca-azul-claro: #7fa6e0;
-  --marca-azul-oscuro: #00337f;
-  --marca-naranja: #fe7b38;
-  --marca-naranja-claro: #ffb892;
-  --marca-naranja-oscuro: #d95e1e;
+  --ring: var(--marca-azul);
+  --backdrop: rgb(34 28 25 / 0.34);
 
   /* Gráficos: actual = azul, anterior = naranja; escala categórica fija. */
   --dato-actual: var(--marca-azul);
@@ -67,9 +79,29 @@
   --serie-2: var(--marca-azul-claro);
   --serie-3: var(--marca-naranja);
   --serie-4: var(--marca-naranja-claro);
-  --serie-5: #a3a3a3;
-  --serie-6: #d4d4d4;
-  --grilla: #eceef1;
+  --serie-5: var(--marca-oliva);
+  --serie-6: #cfc7c1;
+  --grilla: #e9eef5;
+
+  /* Tarjetas: filete + sombra muy suave (azul profundo, no negro). */
+  --sombra-tarjeta:
+    0 0 0 1px rgb(16 36 72 / 0.055), 0 1px 2px 0 rgb(16 36 72 / 0.04),
+    0 6px 20px -10px rgb(16 36 72 / 0.1);
+  --sombra-tarjeta-hover:
+    0 0 0 1px rgb(0 74 172 / 0.12), 0 2px 4px 0 rgb(16 36 72 / 0.05),
+    0 12px 28px -12px rgb(16 36 72 / 0.18);
+
+  /* Tonos de los íconos de KPI y de las variaciones (fondo suave + color). */
+  --tono-azul: #004aac;
+  --tono-azul-suave: #e8effa;
+  --tono-cielo: #2f78d6;
+  --tono-cielo-suave: #e9f2fd;
+  --tono-oliva: #6f7120;
+  --tono-oliva-suave: #f2f3dc;
+  --tono-naranja: #d9661f;
+  --tono-naranja-suave: #fff0e5;
+  --tono-marron: #594a42;
+  --tono-marron-suave: #f2ede9;
 
   /* Radios */
   --radius-control: 6px;
@@ -93,6 +125,9 @@
   --radius-3xl: 10px;
   --radius-control: 6px;
   --radius-card: 10px;
+  /* Tienen que estar en @theme para que existan rounded-inner y rounded-circle. */
+  --radius-inner: 4px;
+  --radius-circle: 9999px;
 
   /* Tipografía: display 32/36 · h1 24 · h2 20 · h3 16 · body 15 · small 13 */
   --text-display: 2rem;
@@ -149,6 +184,24 @@
   --color-warning-soft: var(--warning-soft);
   --color-warning-soft-foreground: var(--warning-soft-foreground);
 
+  --color-marca-marron: var(--marca-marron);
+  --color-marca-marron-oscuro: var(--marca-marron-oscuro);
+  --color-marca-oliva: var(--marca-oliva);
+  --color-marca-oliva-claro: var(--marca-oliva-claro);
+  --color-marca-oliva-oscuro: var(--marca-oliva-oscuro);
+  --color-azul-velo-1: var(--azul-velo-1);
+  --color-azul-velo-2: var(--azul-velo-2);
+  --color-azul-velo-3: var(--azul-velo-3);
+  --color-tono-azul: var(--tono-azul);
+  --color-tono-azul-suave: var(--tono-azul-suave);
+  --color-tono-cielo: var(--tono-cielo);
+  --color-tono-cielo-suave: var(--tono-cielo-suave);
+  --color-tono-oliva: var(--tono-oliva);
+  --color-tono-oliva-suave: var(--tono-oliva-suave);
+  --color-tono-naranja: var(--tono-naranja);
+  --color-tono-naranja-suave: var(--tono-naranja-suave);
+  --color-tono-marron: var(--tono-marron);
+  --color-tono-marron-suave: var(--tono-marron-suave);
   --color-marca-azul: var(--marca-azul);
   --color-marca-azul-claro: var(--marca-azul-claro);
   --color-marca-azul-oscuro: var(--marca-azul-oscuro);
@@ -166,16 +219,20 @@
   --color-grilla: var(--grilla);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Títulos: Poppins, la misma tipografía del logo. */
+  --font-titulo:
+    var(--font-poppins), var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Sin sombra en reposo. Solo hover de tarjetas clickeables y flotantes. */
-  --shadow-card: 0 0 #0000;
-  --shadow-card-hover: 0 1px 2px 0 rgb(10 10 10 / 0.04), 0 4px 12px -4px rgb(10 10 10 / 0.08);
-  --shadow-pop: 0 2px 4px -1px rgb(10 10 10 / 0.05), 0 8px 20px -6px rgb(10 10 10 / 0.1);
-  --shadow-sheet: 0 12px 32px -12px rgb(10 10 10 / 0.18);
-  --shadow-control: 0 1px 2px 0 rgb(10 10 10 / 0.08);
-  --shadow-knob: 0 1px 2px 0 rgb(10 10 10 / 0.2);
-  --shadow-scrim: 0 0 0 100vmax rgb(10 10 10 / 0.35);
+  --shadow-card: var(--sombra-tarjeta);
+  --shadow-card-hover: var(--sombra-tarjeta-hover);
+  --shadow-pop: 0 2px 4px -1px rgb(16 36 72 / 0.05), 0 8px 20px -6px rgb(16 36 72 / 0.1);
+  --shadow-sheet: 0 12px 32px -12px rgb(16 36 72 / 0.18);
+  --shadow-control: 0 1px 2px 0 rgb(16 36 72 / 0.08);
+  --shadow-knob: 0 1px 2px 0 rgb(16 36 72 / 0.2);
+  --shadow-scrim: 0 0 0 100vmax rgb(16 36 72 / 0.35);
 }
 
 @layer base {
@@ -184,7 +241,7 @@
     text-rendering: optimizeLegibility;
   }
   body {
-    background: #ffffff;
+    background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: var(--text-body);
@@ -197,13 +254,27 @@
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
   }
+  /*
+   * Todos los títulos (etiquetas h* y las clases de la escala de títulos) en
+   * Poppins, la tipografía del logo. Está en la capa base: una utilidad
+   * (p. ej. font-mono en un código de venta) la sigue pisando.
+   */
   h1,
   h2,
-  h3 {
+  h3,
+  h4,
+  h5,
+  h6,
+  .text-display,
+  .text-h1,
+  .text-h2,
+  .text-h3 {
+    font-family: var(--font-titulo);
+    font-feature-settings: normal;
     letter-spacing: -0.02em;
   }
   ::selection {
-    background: #e2e4e8;
+    background: rgb(0 74 172 / 0.14);
   }
   /* Con un <dialog> modal abierto, la página de fondo no scrollea. */
   html:has(dialog[open]) {
@@ -230,6 +301,40 @@
   }
   .pr-safe {
     padding-right: env(safe-area-inset-right);
+  }
+  /*
+   * Fondo de las pantallas: blanco con dos velos azules muy tenues (arriba a
+   * la derecha y arriba a la izquierda). Fijo, para que no "viaje" al scrollear.
+   */
+  .fondo-marca {
+    background-color: var(--background);
+    background-image:
+      radial-gradient(1100px 560px at 100% -160px, rgb(0 74 172 / 0.075), transparent 70%),
+      radial-gradient(800px 480px at -8% -120px, rgb(0 74 172 / 0.04), transparent 70%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+  /*
+   * Marca de agua con la silueta del osito (sin fondo), teñida con
+   * currentColor. Se usa decorativa (aria-hidden, sin eventos).
+   */
+  .marca-agua {
+    pointer-events: none;
+    user-select: none;
+    background-color: currentColor;
+    -webkit-mask: url("/brand/osito-512.png") center / contain no-repeat;
+    mask: url("/brand/osito-512.png") center / contain no-repeat;
+  }
+  /*
+   * Toda tarjeta del sistema (bg-card + rounded-card) lleva el filete y la
+   * sombra suave, sin tener que tocar cada pantalla. Los <dialog> (Sheets y
+   * Dialogs) tienen su propia sombra. hover:shadow-card-hover la sigue pisando.
+   */
+  .bg-card.rounded-card:not(dialog) {
+    box-shadow: var(--sombra-tarjeta);
+  }
+  .bg-card.rounded-card:not(dialog):is(.hover\:shadow-card-hover:hover) {
+    box-shadow: var(--sombra-tarjeta-hover);
   }
   /* Cifras siempre alineadas. */
   .cifra {

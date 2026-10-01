@@ -760,8 +760,18 @@ async function main() {
   );
 
   console.log("E2) Devoluciones por garantía");
-  async function devolucion(tx: Tx, observacion: string) {
+  async function devolucion(
+    tx: Tx,
+    observacion: string,
+    extra: {
+      entregada?: { id: string; productoId: string };
+      diferenciaCalculada?: string;
+      diferencia?: string;
+      medioPagoDiferencia?: "EFECTIVO" | "TRANSFERENCIA" | "BINANCE" | null;
+    } = {},
+  ) {
     const numero = await siguienteNumero(tx, VAPES, "DEVOLUCION");
+    const entregada = extra.entregada ?? va;
     return tx.devolucion.create({
       data: {
         numero,
@@ -770,7 +780,20 @@ async function main() {
         depositoId: g1.id,
         observacion,
         usuarioId: owner.id,
-        items: { create: [{ varianteId: va.id, productoId: va.productoId, cantidad: 1 }] },
+        diferenciaCalculada: extra.diferenciaCalculada ?? "0",
+        diferencia: extra.diferencia ?? "0",
+        medioPagoDiferencia: extra.medioPagoDiferencia ?? null,
+        items: {
+          create: [
+            {
+              varianteId: va.id,
+              productoId: va.productoId,
+              cantidad: 1,
+              varianteEntregadaId: entregada.id,
+              productoEntregadoId: entregada.productoId,
+            },
+          ],
+        },
       },
       include: { items: true },
     });
@@ -805,6 +828,84 @@ async function main() {
         await tx.devolucionItem.update({ where: { id: d.items[0]!.id }, data: { cantidad: 2 } });
       }),
     /inmutable|no se pueden modificar|prevent/i,
+  );
+  // Cambio por otro sabor/modelo: lo entregado coherente y la plata con su medio.
+  const cambio = await enRollback((tx) =>
+    devolucion(tx, "No enciende desde el primer día", {
+      entregada: vb,
+      diferenciaCalculada: "1500",
+      diferencia: "1000",
+      medioPagoDiferencia: "EFECTIVO",
+    }),
+  );
+  check(
+    cambio?.items[0]?.varianteEntregadaId === vb.id && cambio.diferencia.toFixed(2) === "1000.00",
+    "devolución con cambio de sabor y diferencia bonificada: OK",
+  );
+  await rechaza(
+    "devolución con diferencia y sin medio de pago",
+    () =>
+      transaccion(ctxVapes, (tx) =>
+        devolucion(tx, "No enciende desde el primer día", {
+          entregada: vb,
+          diferenciaCalculada: "1500",
+          diferencia: "1500",
+        }),
+      ),
+    "Devolucion_medio_diferencia_chk",
+  );
+  await rechaza(
+    "devolución que cobra más que la diferencia calculada",
+    () =>
+      transaccion(ctxVapes, (tx) =>
+        devolucion(tx, "No enciende desde el primer día", {
+          entregada: vb,
+          diferenciaCalculada: "1500",
+          diferencia: "2000",
+          medioPagoDiferencia: "EFECTIVO",
+        }),
+      ),
+    "Devolucion_diferencia_chk",
+  );
+  await rechaza(
+    "devolución que cobra cuando había que devolverle al cliente",
+    () =>
+      transaccion(ctxVapes, (tx) =>
+        devolucion(tx, "No enciende desde el primer día", {
+          entregada: vb,
+          diferenciaCalculada: "-1500",
+          diferencia: "500",
+          medioPagoDiferencia: "EFECTIVO",
+        }),
+      ),
+    "Devolucion_diferencia_chk",
+  );
+  await rechaza(
+    "ítem de devolución con producto entregado que no es el de la variante",
+    () =>
+      transaccion(ctxVapes, (tx) =>
+        devolucion(tx, "No enciende desde el primer día", {
+          entregada: { id: vb.id, productoId: "producto-que-no-es" },
+        }),
+      ),
+    /productoEntregadoId no corresponde|foreign key|violates/i,
+  );
+  await rechaza(
+    "modificar la diferencia de una devolución",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const d = await devolucion(tx, "No enciende desde el primer día", {
+          entregada: vb,
+          diferenciaCalculada: "1500",
+          diferencia: "1500",
+          medioPagoDiferencia: "EFECTIVO",
+        });
+        await tx.devolucion.update({
+          where: { id: d.id },
+          data: { diferencia: "0", medioPagoDiferencia: null },
+        });
+      }),
+    "no se modifica: se anula",
   );
 
   console.log("E3) Signo de los movimientos (motor = trigger = UI)");

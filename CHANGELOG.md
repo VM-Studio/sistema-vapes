@@ -5,6 +5,41 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.3.0] - 2026-09-30 — Colores del logo, devoluciones con cambio y navegación
+
+### Agregado
+
+- **Devoluciones con cambio**: si no hay stock del sabor fallado (o el cliente prefiere otro), se
+  entrega **otro sabor u otro modelo**. Se compara el precio de lista: el cliente paga la diferencia o
+  se le devuelve, con medio de pago y bonificación opcional (nunca más ni de otro signo, CHECK en la
+  base). Si un precio cambió mientras se cargaba, no se registra. La diferencia suma (o resta) en
+  «Cobrado» y «Medios de pago»; anular repone la unidad entregada y saca la diferencia.
+  Migración `20261005090000_devolucion_cambios` (las devoluciones existentes quedan como «mismo sabor»).
+- Devolución vinculada a una venta: solo sus sabores y **hasta lo vendido menos lo ya devuelto**
+  (controlado en el servidor). El detalle muestra «Devolvió → Se llevó» y la diferencia.
+- Esqueleto de carga dentro de cada sistema y en las pantallas globales, y el ítem del menú se marca
+  al tocarlo: la navegación responde al instante.
+- Íconos de métrica con color (`iconoMetrica`) en todas las tarjetas de KPIs y métricas.
+
+### Cambiado
+
+- **Diseño con los colores del logo**: marrón `#594A42` en lugar del negro (texto y botones), velos
+  azules `#004AAC` de fondo, tarjetas blancas con filete y sombra suave, naranja y oliva en gráficos y
+  semánticos. Ítem activo y selector de período en azul. Gráfico con relleno en degradé y donut con
+  leyenda al costado.
+- **Títulos en Poppins** (la tipografía del logo); el texto sigue en Inter.
+- Osito sin fondo como marca y marca de agua; logo del sistema más grande en la barra (52px).
+- Usuarios, Configuración, Cuenta y Ayuda se muestran dentro de la barra y el menú del último sistema
+  abierto (cookie `panel_ultimo`); el selector de sistemas pasa a `(selector)`.
+- El menú «Ventas» abre el listado: el modal de venta se abre solo con «Generar venta».
+- Login sin la marca chica ni el nombre del negocio arriba del formulario.
+
+### Corregido
+
+- `rounded-circle` y `rounded-inner` no existían en el tema de Tailwind (avatares y puntos salían
+  cuadrados).
+- Pie de los paneles laterales (Sheet) pegado al borde inferior en computadora.
+
 ## [2.2.0] - 2026-09-30 — Pagos mixtos, fiados, ingreso distribuido y transferencias con pistola
 
 ### Agregado

@@ -53,7 +53,7 @@ export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElemen
   return (
     <div
       className={cn(
-        "flex items-center justify-end gap-3 border-t border-black/[0.06] px-5 py-4 md:px-6",
+        "border-marca-azul/[0.08] flex items-center justify-end gap-3 border-t px-5 py-4 md:px-6",
         className,
       )}
       {...props}

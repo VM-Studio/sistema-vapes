@@ -145,18 +145,18 @@ export function Catalogo() {
 
       <Seccion id="colores" titulo="Colores">
         <p className="text-muted max-w-2xl text-sm">
-          Blanco y negro. Tarjetas en gris clarito. Azul y naranja del logo solo en gráficos y
-          comparación de datos (y la línea del ítem activo del menú). Semánticos apagados solo en
-          badges, toasts y validaciones.
+          Colores del logo, sutiles: marrón para texto y acciones (en lugar del negro), velos azules
+          transparentes para fondos, tarjetas e ítems activos; naranja y oliva en gráficos y
+          semánticos. El osito sin fondo aparece como marca y marca de agua.
         </p>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
-          <Muestra nombre="Fondo" hex="#FFFFFF" borde />
-          <Muestra nombre="Tarjeta" hex="#F4F5F7" />
-          <Muestra nombre="Superficie 3" hex="#E9EBEE" />
-          <Muestra nombre="Borde" hex="#E6E8EB" />
-          <Muestra nombre="Texto" hex="#0A0A0A" />
-          <Muestra nombre="Secundario" hex="#525252" />
-          <Muestra nombre="Terciario" hex="#6D6D6D" />
+          <Muestra nombre="Fondo" hex="#FBFCFE" borde />
+          <Muestra nombre="Tarjeta" hex="#F2F6FB" />
+          <Muestra nombre="Superficie 3" hex="#E5ECF6" />
+          <Muestra nombre="Borde" hex="#E3E9F1" />
+          <Muestra nombre="Texto" hex="#594A42" />
+          <Muestra nombre="Secundario" hex="#6E625B" />
+          <Muestra nombre="Terciario" hex="#736861" />
         </div>
         <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
           <Muestra nombre="Azul oscuro" hex={COLORES_MARCA.azulOscuro.toUpperCase()} />
@@ -165,11 +165,13 @@ export function Catalogo() {
           <Muestra nombre="Naranja oscuro" hex={COLORES_MARCA.naranjaOscuro.toUpperCase()} />
           <Muestra nombre="Naranja (anterior)" hex={COLORES_MARCA.naranja.toUpperCase()} />
           <Muestra nombre="Naranja claro" hex={COLORES_MARCA.naranjaClaro.toUpperCase()} />
+          <Muestra nombre="Oliva" hex={COLORES_MARCA.oliva.toUpperCase()} />
+          <Muestra nombre="Marrón" hex={COLORES_MARCA.marron.toUpperCase()} />
         </div>
         <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
-          <Muestra nombre="Éxito" hex="#3E7A56" />
+          <Muestra nombre="Éxito" hex="#66691C" />
           <Muestra nombre="Error" hex="#B04A45" />
-          <Muestra nombre="Alerta" hex="#A0721F" />
+          <Muestra nombre="Alerta" hex="#A64F15" />
         </div>
       </Seccion>
 

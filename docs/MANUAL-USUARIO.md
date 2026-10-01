@@ -195,18 +195,23 @@ En **Clientes** buscás por nombre o teléfono y ves cuántos clientes nuevos hu
 
 ## Devoluciones por garantía
 
-Cuando un cliente trae un producto fallado, se le entrega **una unidad nueva**, que sale del stock del galpón que elijas (movimiento **Garantía**). No hay devolución de dinero.
+Cuando un cliente trae un producto fallado, se le entrega **una unidad nueva**, que sale del stock del galpón que elijas (movimiento **Garantía**). Lo fallado no vuelve al stock. Si es el mismo sabor, no hay plata de por medio.
 
 En **Devoluciones** tocá **Registrar devolución**:
 
 1. **Cliente**: buscalo por nombre o teléfono (o dalo de alta). Aparecen sus ventas: si sabés cuál fue, marcá la **venta original** y sus productos se cargan solos. Tocá **Continuar**.
 2. **¿De qué galpón sale la unidad nueva?** Elegí el galpón y tocá **Continuar con {galpón}**.
-3. **Productos a entregar**: los de la venta, o escaneá / buscá los que correspondan, con su cantidad. El aviso te recuerda que se descuenta del stock la unidad nueva. Tocá **Continuar**.
-4. **Observación**: contá qué le pasó al producto (por ejemplo, «No carga, luz roja parpadea»; mínimo 10 caracteres). Tocá **Confirmar devolución**.
+3. **Productos y cambio**: lo que trae el cliente, con su cantidad. Si vinculaste la venta, **no se puede devolver más de lo que se vendió** de cada sabor (menos lo ya devuelto en otras devoluciones). Si no la vinculaste, escaneá o buscá el producto.
+   - Debajo de cada producto ves **qué se lleva**: por defecto, **el mismo sabor**, con el stock del galpón.
+   - Si **no hay stock** de ese sabor (o el cliente prefiere otro), tocá **Cambiar**: te muestra los **otros sabores del mismo modelo** con stock, y un buscador para elegir **otro modelo**. Al lado de cada opción ves la diferencia de precio por unidad.
+   - Tocá **Continuar**.
+4. **Observación y confirmar**: contá qué le pasó al producto (por ejemplo, «No carga, luz roja parpadea»; mínimo 10 caracteres).
+   - Si hubo cambio a algo de **otro precio**, aparece la diferencia (precio de lista de lo que se lleva menos lo que devuelve): **el cliente paga** si lo nuevo es más caro, o **hay que devolverle** si es más barato. Elegí el medio (efectivo, transferencia o Binance). Con **Bonificar** podés cobrar o devolver menos (nunca más).
+   - Tocá **Confirmar devolución**. Si un precio cambió mientras la cargabas, el sistema te avisa y no la registra hasta que la revises.
 
-Queda registrada con su código, por ejemplo **VAP-D-000001**, y aparece en la ficha del cliente y en los reportes de devoluciones.
+Queda registrada con su código, por ejemplo **VAP-D-000001**, y aparece en la ficha del cliente y en los reportes de devoluciones. En el detalle ves qué devolvió, qué se llevó y la diferencia. La diferencia cobrada (o devuelta) se suma (o se resta) en **Cobrado** y **Medios de pago** del inicio.
 
-Una devolución no se edita: si fue un error, un dueño la **anula** desde su detalle (con motivo) y la unidad vuelve al galpón (movimiento **Garantía anulada**).
+Una devolución no se edita: si fue un error, un dueño la **anula** desde su detalle (con motivo). La unidad entregada vuelve al galpón (movimiento **Garantía anulada**) y la diferencia deja de contar en lo cobrado; el sistema te recuerda devolvérsela al cliente o recuperarla.
 
 ## Cotizar por unidad y por mayor
 

@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element -- foto chica de perfil, tamaño fijo */
 import { cn, iniciales } from "@/lib/utils";
 
-/** Avatar circular: foto si hay `src`, si no las iniciales sobre gris. */
+/** Avatar circular: foto si hay `src`, si no las iniciales en azul sobre azul suave. */
 export function Avatar({
   nombre,
   src,
@@ -12,7 +12,7 @@ export function Avatar({
   className?: string;
 }) {
   const clase = cn(
-    "bg-surface-3 text-foreground flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-circle text-xs font-semibold",
+    "bg-tono-azul-suave text-marca-azul flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-circle text-xs font-semibold",
     className,
   );
   if (src) return <img src={src} alt="" aria-hidden className={cn(clase, "object-cover")} />;

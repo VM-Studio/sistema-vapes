@@ -1,9 +1,10 @@
 "use client";
 
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -71,16 +72,16 @@ function Contenido({
   );
 }
 
-/** Leyenda propia: cuadraditos rectangulares (Actual azul, Anterior naranja). */
+/** Leyenda propia: punto azul (Actual) y trazo naranja punteado (Anterior). */
 function Leyenda() {
   return (
-    <ul className="text-muted text-small flex items-center gap-4" aria-hidden>
+    <ul className="text-muted text-small flex items-center justify-end gap-4" aria-hidden>
       <li className="flex items-center gap-1.5">
-        <span className="bg-dato-actual inline-block h-2.5 w-3.5" />
+        <span className="bg-dato-actual rounded-circle inline-block size-2.5" />
         Actual
       </li>
       <li className="flex items-center gap-1.5">
-        <span className="bg-dato-anterior inline-block h-2.5 w-3.5" />
+        <span className="border-dato-anterior inline-block w-3.5 border-t-2 border-dashed" />
         Anterior
       </li>
     </ul>
@@ -89,7 +90,7 @@ function Leyenda() {
 
 const ALTO = "h-[280px] md:h-[360px]";
 
-/** Facturado del período actual (azul) contra el anterior (naranja punteado). */
+/** Facturado del período actual (azul, con relleno) contra el anterior (naranja punteado). */
 export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
   if (!datos.some((p) => p.actual || p.anterior)) {
     return (
@@ -103,7 +104,18 @@ export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
       <Leyenda />
       <div className={cn("-ml-2 w-[calc(100%+0.5rem)]", ALTO)}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={datos} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <ComposedChart data={datos} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <defs>
+              {/* Relleno en degradé bajo cada línea: color arriba, transparente abajo. */}
+              <linearGradient id="relleno-actual" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={ACTUAL} stopOpacity={0.22} />
+                <stop offset="100%" stopColor={ACTUAL} stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="relleno-anterior" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={ANTERIOR} stopOpacity={0.14} />
+                <stop offset="100%" stopColor={ANTERIOR} stopOpacity={0} />
+              </linearGradient>
+            </defs>
             <CartesianGrid {...ChartTheme.grid} />
             <XAxis
               dataKey="etiqueta"
@@ -125,6 +137,25 @@ export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
               )}
               cursor={{ stroke: ChartTheme.cursor, strokeWidth: 1 }}
             />
+            <Area
+              type="monotone"
+              dataKey="anterior"
+              stroke="none"
+              fill="url(#relleno-anterior)"
+              tooltipType="none"
+              activeDot={false}
+              isAnimationActive={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="actual"
+              stroke="none"
+              fill="url(#relleno-actual)"
+              tooltipType="none"
+              activeDot={false}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
             <Line
               name="Anterior"
               type="monotone"
@@ -133,7 +164,7 @@ export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
               strokeWidth={2}
               strokeDasharray="5 4"
               dot={false}
-              activeDot={{ r: 4, stroke: "var(--background)", strokeWidth: 2 }}
+              activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
               isAnimationActive={false}
             />
             <Line
@@ -143,11 +174,11 @@ export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
               stroke={ACTUAL}
               strokeWidth={2.25}
               dot={false}
-              activeDot={{ r: 5, stroke: "var(--background)", strokeWidth: 2 }}
+              activeDot={{ r: 5, stroke: "var(--card)", strokeWidth: 2 }}
               connectNulls={false}
               isAnimationActive={false}
             />
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </div>

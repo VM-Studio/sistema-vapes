@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Poppins } from "next/font/google";
 import { headers } from "next/headers";
 
 import { PwaProvider } from "@/components/pwa/pwa-provider";
@@ -9,6 +9,14 @@ import "./globals.css";
 
 // Inter self-hosteada por next/font; la variable alimenta --font-sans (globals.css).
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
+// Poppins: la tipografía del logo ("BISSCHEN"), solo para títulos (--font-titulo).
+const poppins = Poppins({
+  variable: "--font-poppins",
+  subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
 
 /**
  * Pantallas de inicio de iOS (las genera `pnpm iconos`, ver SPLASH en
@@ -65,7 +73,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // su propio nonce de CSP (lo pone el middleware y Next lo aplica a sus scripts).
   await headers();
   return (
-    <html lang="es" className={inter.variable}>
+    <html lang="es" className={`${inter.variable} ${poppins.variable}`}>
       <body className="bg-background text-foreground font-sans antialiased">
         <PwaProvider>
           <ToastProvider>{children}</ToastProvider>
