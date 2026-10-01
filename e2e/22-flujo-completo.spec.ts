@@ -233,7 +233,7 @@ test("Vapes: cargar stock en un galpón → venta con cliente nuevo → garantí
   await dev.getByRole("radio", { name: /Ayres Plaza/ }).click();
   await dev.getByRole("button", { name: "Continuar con Ayres Plaza" }).click();
   await expect(
-    dev.getByRole("list", { name: "Productos a entregar" }).getByRole("listitem"),
+    dev.getByRole("list", { name: "Productos que devuelve" }).getByRole("listitem"),
   ).toHaveCount(1);
   await dev.getByRole("button", { name: "Continuar", exact: true }).click();
   await dev.getByLabel("Observación").fill("No enciende desde el primer día");
