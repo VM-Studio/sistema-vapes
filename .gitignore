@@ -53,3 +53,4 @@ verificacion/
 test-results/
 playwright-report/
 .storage-e2e/
+.claude/worktrees/

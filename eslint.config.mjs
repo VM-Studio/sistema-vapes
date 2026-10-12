@@ -44,6 +44,7 @@ const eslintConfig = [
       "playwright-report/**",
       "verificacion/**",
       ".storage*/**",
+      ".claude/**",
     ],
   },
   {
