@@ -203,6 +203,7 @@ model Usuario {
   comisionesPagadas    ComisionPasista[]
   sesiones             Sesion[]                 @relation("SesionUsuario")
   sesionesRevocadas    Sesion[]                 @relation("SesionRevocadaPor")
+  clientesCreados      Cliente[]                @relation("ClienteCreadoPor")
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -488,28 +489,35 @@ model ProveedorProducto {
 }
 
 model Cliente {
-  id          String    @id @default(cuid())
-  panelId     String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  nombre      String
+  id              String    @id @default(cuid())
+  panelId         String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  nombre          String
   /// Obligatorio, normalizado "+54" + dígitos. Único por panel entre clientes no
   /// borrados (índice único parcial en SQL + CHECK de formato).
-  telefono    String
-  notas       String?
+  telefono        String
+  notas           String?
   /// Caché de Σ saldoPendiente de sus ventas confirmadas: solo cambia en la
   /// transacción de la venta fiada, del cobro o de la anulación (CHECK >= 0).
-  saldoDeudor Decimal   @default(0) @db.Decimal(12, 2)
-  activo      Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
+  saldoDeudor     Decimal   @default(0) @db.Decimal(12, 2)
+  activo          Boolean   @default(true)
+  /// Quién lo dio de alta (null en los cargados por seed o importación sin rastro).
+  creadoPorId     String?
+  /// La venta en la que se dio de alta (null si se cargó desde Clientes o el cotizador).
+  creadoEnVentaId String?   @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
 
-  panel        Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  ventas       Venta[]
-  devoluciones Devolucion[]
-  cotizaciones Cotizacion[]
+  panel         Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  creadoPor     Usuario?     @relation("ClienteCreadoPor", fields: [creadoPorId], references: [id], onDelete: Restrict)
+  creadoEnVenta Venta?       @relation("ClienteCreadoEnVenta", fields: [creadoEnVentaId], references: [id], onDelete: Restrict)
+  ventas        Venta[]
+  devoluciones  Devolucion[]
+  cotizaciones  Cotizacion[]
 
   @@index([panelId, nombre])
   @@index([panelId, saldoDeudor])
+  @@index([panelId, creadoPorId, createdAt])
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_nombre_trgm")
   @@index([telefono(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_telefono_trgm")
 }
@@ -903,6 +911,8 @@ model Venta {
   /// total − costoTotal (CHECK en DB).
   gananciaBruta   Decimal     @db.Decimal(12, 2)
   notas           String?
+  /// true si el cliente se dio de alta con esta venta (inmutable, como el resto).
+  clienteNuevo    Boolean     @default(false)
   /// La cotización de la que salió (trazabilidad).
   cotizacionId    String?     @unique
   anuladaPorId    String?
@@ -921,6 +931,7 @@ model Venta {
   devoluciones     Devolucion[]
   cotizacionOrigen Cotizacion?  @relation("CotizacionVenta")
   pagos            PagoVenta[]
+  clienteCreado    Cliente?     @relation("ClienteCreadoEnVenta")
 
   @@unique([panelId, numero])
   @@unique([panelId, codigo])

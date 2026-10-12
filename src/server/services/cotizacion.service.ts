@@ -1272,6 +1272,7 @@ export async function convertirEnVenta(
 
       // Cliente
       let clienteId = opciones.clienteId ?? c.clienteId;
+      let clienteRecienCreado = false;
       if (!clienteId) {
         if (!c.clienteNombre || !c.clienteTelefono)
           throw new DomainError("Elegí el cliente de la venta.");
@@ -1279,6 +1280,7 @@ export async function convertirEnVenta(
           clienteId = (
             await crearCliente(ctx, { nombre: c.clienteNombre, telefono: c.clienteTelefono }, tx)
           ).id;
+          clienteRecienCreado = true;
         } catch (e) {
           if (!(e instanceof ClienteDuplicadoError)) throw e;
           clienteId = e.clienteExistente.id;
@@ -1340,7 +1342,7 @@ export async function convertirEnVenta(
             };
           }),
         },
-        { puedeEditar: false, origen: "COTIZACION", cotizacionId: c.id },
+        { puedeEditar: false, origen: "COTIZACION", cotizacionId: c.id, clienteRecienCreado },
         tx,
       );
 

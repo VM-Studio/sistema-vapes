@@ -34,7 +34,11 @@ export default async function VendedoresPage({ searchParams }: { searchParams: P
   ) as Record<string, string>;
   const periodo = periodoDesdeParams(sp);
   const filas = await rendimientoVendedores(ctx, periodo);
-  const detalle = (id: string) => rutaPanel(ctx.panel.slug, `/equipo/${id}${queryPeriodo(sp)}`);
+  // El detalle de cada uno es "Ventas de {nombre}" (Equipo): una sola pantalla.
+  const detalle = (id: string) => {
+    const qs = queryPeriodo(sp);
+    return rutaPanel(ctx.panel.slug, `/equipo/${id}${qs ? `${qs}&` : "?"}origen=reportes`);
+  };
   return (
     <>
       <CabeceraReporte
@@ -124,6 +128,12 @@ export default async function VendedoresPage({ searchParams }: { searchParams: P
                 header: "Clientes nuevos",
                 className: "text-right tabular-nums",
                 cell: (r) => formatearNumero(r.clientesNuevos),
+              },
+              {
+                key: "cliVentas",
+                header: "Ventas a nuevos",
+                className: "text-right tabular-nums",
+                cell: (r) => formatearNumero(r.ventasAClientesNuevos),
               },
               {
                 key: "dev",

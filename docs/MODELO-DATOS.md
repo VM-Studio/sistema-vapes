@@ -398,12 +398,15 @@ Table Proveedor {
   nombreTienda text [not null]
   notas text
   activo boolean [not null, default: true]
+  creadoPorId text [note: 'Quién lo dio de alta (null en los cargados por seed o importación sin rastro).']
+  creadoEnVentaId text [unique, note: 'La venta en la que se dio de alta (null si se cargó desde Clientes o el cotizador).']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
   deletedAt timestamp
 
   indexes {
     (panelId, nombre)
+    (panelId, creadoPorId, createdAt)
     (panelId, nombreTienda)
   }
 }
@@ -693,6 +696,7 @@ Table Venta {
   total decimal(12,2) [not null, note: 'subtotal − descuento (CHECK en DB).']
   costoTotal decimal(12,2) [not null, note: 'Σ cantidad × costoUnitario (snapshot del último costo al vender).']
   gananciaBruta decimal(12,2) [not null, note: 'total − costoTotal (CHECK en DB).']
+  clienteNuevo boolean [not null, default: false, note: 'El cliente se dio de alta con esta venta (inmutable).']
   notas text
   cotizacionId text [unique, note: 'La cotización de la que salió (trazabilidad).']
   anuladaPorId text
@@ -1182,6 +1186,7 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 
 - `Cliente.telefono` es obligatorio y cumple `^\+54[0-9]{6,13}$` (CHECK `Cliente_telefono_chk`); nombre no vacío (`Cliente_nombre_chk`).
 - Teléfono único por panel entre los clientes no borrados.
+- `Cliente.creadoPorId` es quien lo cargó (alta desde Clientes, el cotizador o una venta). Si se dio de alta en una venta, `Cliente.creadoEnVentaId` apunta a esa venta (del mismo panel y del mismo cliente: trigger `trg_cliente_creado_en_venta`) y la venta tiene `clienteNuevo = true`, que no se modifica (`trg_fn_venta_estado`). Convertir la cotización de alguien que no era cliente también cuenta como venta a cliente nuevo. "Ventas de {vendedor}" cuenta los clientes nuevos por `creadoPorId` + `createdAt` y las ventas a clientes nuevos por `clienteNuevo`.
 - `Proveedor.telefono` es nulo o cumple el mismo formato (CHECK `Proveedor_telefono_chk`) y es único por panel entre los proveedores no borrados (índice parcial `proveedor_telefono_unico`).
 - `Proveedor.nombreTienda` no vacío (CHECK `Proveedor_nombreTienda_chk`).
 - `ProveedorProducto.precio ≥ 0` y una sola fila por (panel, proveedor, producto).

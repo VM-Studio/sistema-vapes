@@ -263,7 +263,7 @@ En **Cotizar por mayor** cargás cantidades grandes y el precio baja por **escal
 
 ## Rendimiento del equipo
 
-En el dashboard, los dueños ven **Rendimiento del equipo** para el período elegido: por cada vendedor, sus ventas **unitarias** y **mayoristas**, unidades, cotizaciones convertidas, clientes nuevos, ticket promedio y la **comisión estimada**. También está en el menú, **Análisis → Equipo** (solo dueños). Tocando un vendedor se abre su detalle (**Rendimiento del vendedor**) con sus ventas del período y la exportación.
+En el dashboard, los dueños ven **Rendimiento del equipo** para el período elegido: por cada vendedor, sus ventas **unitarias** y **mayoristas**, unidades, cotizaciones convertidas, clientes nuevos, ticket promedio y la **comisión estimada**. También está en el menú, **Análisis → Equipo** (solo dueños). Tocando un vendedor se abre **Ventas de {vendedor}**: ventas, vapes vendidos (unidades en los otros sistemas), clientes nuevos que cargó (y cuántas de sus ventas fueron a un cliente que se dio de alta en esa misma venta) y total, contra el período anterior; el facturado por día; y sus ventas del período (las de clientes nuevos con la etiqueta **Nuevo**; tocando una se abre la venta completa), con la exportación a Excel. La misma pantalla se abre desde **Reportes**, donde cada empleado que vende tiene su tarjeta destacada **Ventas de {nombre}** con lo del mes.
 
 La comisión es **orientativa**: sale del % que el dueño le cargó a ese usuario para ventas unitarias y para mayoristas (ver [Dar acceso a un empleado](#dar-acceso-a-un-empleado)). No se descuenta ni se paga desde el sistema; si el usuario no tiene %, dice **Sin comisión**.
 

@@ -2,6 +2,7 @@ import { FileSpreadsheet, Receipt } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { GraficoComparativo } from "@/components/analitica/grafico-comparativo";
 import { ETIQUETA_ANTERIOR, KpisVendedor } from "@/components/analitica/secciones";
 import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
 import { Avatar } from "@/components/ui/avatar";
@@ -23,15 +24,44 @@ import {
   diaDe,
   periodoDesdeParams,
   queryPeriodo,
-  rendimientoVendedorDetalle,
+  ventasDeVendedor,
   type VentaDeVendedor,
 } from "@/server/services/analitica.service";
 
-export const metadata: Metadata = { title: "Rendimiento del vendedor" };
+import { EstadoPagoBadge } from "../../ventas/_componentes/medio-pago";
+
+export const metadata: Metadata = { title: "Ventas del vendedor" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-/** Detalle de un vendedor (solo dueños): KPIs vs. el período anterior y todas sus ventas. */
+/** "Nuevo" al lado del cliente que se dio de alta con esa venta. */
+function ClienteVenta({ v }: { v: VentaDeVendedor }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="min-w-0 truncate">{v.cliente}</span>
+      {v.clienteNuevo && (
+        <Badge variant="success" title="Se dio de alta con esta venta">
+          Nuevo
+        </Badge>
+      )}
+    </span>
+  );
+}
+
+/** Estado de pago: "Debe $ X" si quedó saldo, "Pagada" si no. */
+function PagoVenta({ v }: { v: VentaDeVendedor }) {
+  if (v.estadoPago === "PAGADA" || !(Number(v.saldoPendiente) > 0))
+    return <span className="text-muted text-small">Pagada</span>;
+  return <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />;
+}
+
+/**
+ * "Ventas de {vendedor}" (solo dueños): la única pantalla del rendimiento de
+ * una persona. Se llega desde Equipo y desde la tarjeta de Reportes
+ * (`?origen=reportes`, que solo cambia la miga de pan): ventas, vapes
+ * vendidos, clientes nuevos y total contra el período anterior, el facturado
+ * por día y todas sus ventas (cada una abre su detalle).
+ */
 export default async function EquipoVendedorPage({
   params,
   searchParams,
@@ -44,9 +74,11 @@ export default async function EquipoVendedorPage({
   const periodo = periodoDesdeParams(sp);
   const desc = describirPeriodo(periodo);
   const page = Number(typeof sp.page === "string" ? sp.page : 1) || 1;
-  const d = await rendimientoVendedorDetalle(ctx, usuarioId, periodo, page);
+  const d = await ventasDeVendedor(ctx, usuarioId, periodo, page);
   const ruta = (r: string) => rutaPanel(ctx.panel.slug, r);
   const qs = queryPeriodo(sp);
+  const desdeReportes = sp.origen === "reportes";
+  const etiquetaUnidades = ctx.panel.etiquetaUnidades;
 
   const columnas = [
     {
@@ -62,6 +94,7 @@ export default async function EquipoVendedorPage({
       ),
     },
     { key: "fecha", header: "Fecha", cell: (v: VentaDeVendedor) => formatearFechaHora(v.fecha) },
+    { key: "cliente", header: "Cliente", cell: (v: VentaDeVendedor) => <ClienteVenta v={v} /> },
     {
       key: "tipo",
       header: "Tipo",
@@ -70,13 +103,6 @@ export default async function EquipoVendedorPage({
           {ETIQUETA_TIPO_VENTA[v.tipo]}
         </Badge>
       ),
-    },
-    { key: "cliente", header: "Cliente", cell: (v: VentaDeVendedor) => v.cliente },
-    {
-      key: "medio",
-      header: "Medio",
-      cell: (v: VentaDeVendedor) => etiquetaMedioPrincipal(v.medioPago),
-      ocultarEnMobile: true,
     },
     {
       key: "unidades",
@@ -90,6 +116,17 @@ export default async function EquipoVendedorPage({
       className: "text-right font-semibold",
       cell: (v: VentaDeVendedor) => formatearPesos(v.total),
     },
+    {
+      key: "pago",
+      header: "Pago",
+      cell: (v: VentaDeVendedor) => (
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-muted text-small">{etiquetaMedioPrincipal(v.medioPago)}</span>
+          <PagoVenta v={v} />
+        </span>
+      ),
+      ocultarEnMobile: true,
+    },
   ];
 
   const detalle: [string, string][] = [
@@ -101,6 +138,7 @@ export default async function EquipoVendedorPage({
       "Mayoristas",
       `${formatearNumero(d.actual.mayoristas.cantidad)} · ${formatearPesos(d.actual.mayoristas.total)}`,
     ],
+    ["Ventas a clientes nuevos", formatearNumero(d.actual.ventasAClientesNuevos)],
     [
       "Cotizaciones",
       `${d.actual.cotizaciones.convertidas}/${d.actual.cotizaciones.creadas} convertidas${
@@ -116,17 +154,25 @@ export default async function EquipoVendedorPage({
     <div className="flex flex-col gap-4">
       <header className="mb-2 flex flex-col gap-4 md:mb-4">
         <Breadcrumb
-          items={[
-            { label: "Inicio", href: `${rutaPanel(ctx.panel.slug)}${qs}` },
-            { label: "Equipo", href: `${ruta("/equipo")}${qs}` },
-            { label: d.usuario.nombre },
-          ]}
+          items={
+            desdeReportes
+              ? [
+                  { label: "Inicio", href: rutaPanel(ctx.panel.slug) },
+                  { label: "Reportes", href: ruta("/reportes") },
+                  { label: `Ventas de ${d.usuario.nombre}` },
+                ]
+              : [
+                  { label: "Inicio", href: `${rutaPanel(ctx.panel.slug)}${qs}` },
+                  { label: "Equipo", href: `${ruta("/equipo")}${qs}` },
+                  { label: d.usuario.nombre },
+                ]
+          }
         />
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
           <div className="flex min-w-0 items-center gap-3">
             <Avatar nombre={d.usuario.nombre} className="size-12 text-sm" />
             <div className="flex min-w-0 flex-col gap-1">
-              <h1 className="text-h1 truncate font-semibold">{d.usuario.nombre}</h1>
+              <h1 className="text-h1 truncate font-semibold">Ventas de {d.usuario.nombre}</h1>
               <div>
                 <Badge variant={d.usuario.rol === "OWNER" ? "primary" : "neutral"}>
                   {d.usuario.rol === "OWNER" ? "Dueño" : "Empleado"}
@@ -146,7 +192,15 @@ export default async function EquipoVendedorPage({
         </div>
       </header>
 
-      <KpisVendedor r={d} periodo={periodo} sinComision />
+      <KpisVendedor r={d} periodo={periodo} etiquetaUnidades={etiquetaUnidades} sinComision />
+
+      <section className="bg-card rounded-card flex flex-col gap-4 p-5 md:p-6">
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-h3 font-semibold">{desc.tituloGrafico}</h2>
+          <p className="text-muted text-small">Facturado por {d.usuario.nombre}</p>
+        </div>
+        <GraficoComparativo datos={d.serie} />
+      </section>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <section
@@ -156,7 +210,7 @@ export default async function EquipoVendedorPage({
           )}
         >
           <h2 className="text-h3 font-semibold">Detalle del período</h2>
-          <dl className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <dl className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
             {detalle.map(([label, valor]) => (
               <div
                 key={label}
@@ -201,7 +255,7 @@ export default async function EquipoVendedorPage({
           columns={columnas}
           rows={d.ventas.filas}
           getRowKey={(v) => v.id}
-          caption="Ventas del vendedor"
+          caption={`Ventas de ${d.usuario.nombre}`}
           renderMobile={(v) => (
             <Link
               href={ruta(`/ventas/${v.id}`)}
@@ -212,15 +266,20 @@ export default async function EquipoVendedorPage({
                 <span className="font-semibold tabular-nums">{formatearPesos(v.total)}</span>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="min-w-0 truncate text-sm">{v.cliente}</span>
+                <span className="min-w-0 text-sm">
+                  <ClienteVenta v={v} />
+                </span>
                 <Badge variant={v.tipo === "MAYORISTA" ? "primary" : "neutral"}>
                   {ETIQUETA_TIPO_VENTA[v.tipo]}
                 </Badge>
               </div>
-              <p className="text-subtle text-small tabular-nums">
-                {formatearFechaHora(v.fecha)} · {etiquetaMedioPrincipal(v.medioPago)} ·{" "}
-                {formatearNumero(v.unidades)} u.
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-subtle text-small tabular-nums">
+                  {formatearFechaHora(v.fecha)} · {etiquetaMedioPrincipal(v.medioPago)} ·{" "}
+                  {formatearNumero(v.unidades)} u.
+                </p>
+                <PagoVenta v={v} />
+              </div>
             </Link>
           )}
           empty={<EmptyState icon={Receipt} title="Todavía no hay ventas en este período" />}

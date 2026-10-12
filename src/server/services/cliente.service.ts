@@ -118,7 +118,7 @@ export async function crearCliente(
       const otro = await duplicadoDe(t, telefono);
       if (otro) throw new ClienteDuplicadoError(otro);
       const c = await t.cliente.create({
-        data: { nombre, telefono, notas },
+        data: { nombre, telefono, notas, creadoPorId: ctx.usuarioId },
         select: { id: true, nombre: true, telefono: true },
       });
       await registrarAuditoria(t, {

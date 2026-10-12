@@ -548,7 +548,9 @@ function DatosRendimiento({ r, ancho = false }: { r: RendimientoVendedor; ancho?
       <p className="text-muted text-small tabular-nums">
         {r.cotizaciones.convertidas}/{r.cotizaciones.creadas} cotizaciones convertidas ·{" "}
         {formatearNumero(r.clientesNuevos)}{" "}
-        {r.clientesNuevos === 1 ? "cliente nuevo" : "clientes nuevos"} · ticket{" "}
+        {r.clientesNuevos === 1 ? "cliente nuevo" : "clientes nuevos"} ·{" "}
+        {formatearNumero(r.ventasAClientesNuevos)}{" "}
+        {r.ventasAClientesNuevos === 1 ? "venta" : "ventas"} a clientes nuevos · ticket{" "}
         {formatearPesos(r.ticketPromedio)}
       </p>
       {r.comision && (
@@ -670,25 +672,41 @@ export async function SeccionEquipo({
 }
 
 /** KPIs de un vendedor (su detalle, o "Mi rendimiento"). */
+/**
+ * Cifras de un vendedor contra el período anterior: ventas, unidades ("Vapes
+ * vendidos"), clientes nuevos que cargó (y cuántas ventas fueron a clientes
+ * nuevos), total vendido y ticket. Nunca costos ni ganancia: es lo mismo que
+ * ve el vendedor en "Mi rendimiento".
+ */
 export function KpisVendedor({
   r,
   periodo,
+  etiquetaUnidades,
   sinComision = false,
 }: {
   r: RendimientoComparado;
   periodo: Periodo;
+  /** Panel.etiquetaUnidades: "Vapes vendidos" en Vapes. */
+  etiquetaUnidades: string;
   /** El detalle del vendedor muestra la comisión en una tarjeta aparte. */
   sinComision?: boolean;
 }) {
   const ant = ETIQUETA_ANTERIOR[periodo.modo];
   const conComision = !!r.comision && !sinComision;
+  const aNuevos = r.ventasAClientesNuevos.actual;
   return (
     <div className={claseGrillaKpis(conComision ? 6 : 5)}>
-      <KpiCard label="Facturado" etiquetaAnterior={ant} {...pesos(r.facturado)} />
       <KpiCard label="Ventas" etiquetaAnterior={ant} {...numero(r.cantidadVentas)} />
-      <KpiCard label="Unidades" etiquetaAnterior={ant} {...numero(r.unidades)} />
+      <KpiCard label={etiquetaUnidades} etiquetaAnterior={ant} {...numero(r.unidades)} />
+      <KpiCard
+        label="Clientes nuevos"
+        etiquetaAnterior={ant}
+        {...numero(r.clientesNuevos)}
+        extra={`${formatearNumero(aNuevos)} ${aNuevos === 1 ? "venta" : "ventas"} a clientes nuevos`}
+        ayuda="Clientes que cargó en el período (desde una venta o desde Clientes). Debajo, cuántas de sus ventas fueron a un cliente que se dio de alta en esa misma venta."
+      />
+      <KpiCard label="Total vendido" etiquetaAnterior={ant} {...pesos(r.facturado)} />
       <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...pesos(r.ticketPromedio)} />
-      <KpiCard label="Clientes nuevos" etiquetaAnterior={ant} {...numero(r.clientesNuevos)} />
       {conComision && r.comision && (
         <KpiCard
           label="Comisión estimada"
@@ -717,7 +735,7 @@ export async function SeccionMiRendimiento({
       data-testid="tarjeta-mi-rendimiento"
     >
       <EncabezadoSeccion titulo="Mi rendimiento" />
-      <KpisVendedor r={r} periodo={periodo} />
+      <KpisVendedor r={r} periodo={periodo} etiquetaUnidades={ctx.panel.etiquetaUnidades} />
       <div className="bg-card rounded-card flex flex-col gap-4 p-5">
         <div className="flex items-center gap-3">
           <Avatar nombre={r.usuario.nombre} className="size-10" />

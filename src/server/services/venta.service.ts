@@ -61,6 +61,12 @@ export interface PermisosVenta {
    */
   origen?: "COTIZACION";
   cotizacionId?: string;
+  /**
+   * El cliente `{ id }` se dio de alta recién, en la misma transacción
+   * (convertir una cotización de alguien que no era cliente): la venta queda
+   * como venta a cliente nuevo igual que si lo creara ella.
+   */
+  clienteRecienCreado?: boolean;
 }
 
 export interface OpcionesLectura {
@@ -311,6 +317,7 @@ async function generarEnTx(
     if (!c) throw new NotFoundError("El cliente no existe o fue dado de baja.");
     if (!c.activo) throw new DomainError(`El cliente "${c.nombre}" está inactivo.`);
     cliente = { id: c.id, nombre: c.nombre, telefono: c.telefono };
+    clienteNuevo = permisos.clienteRecienCreado === true;
   }
   // Fiada: la fila del cliente se bloquea antes de sumarle la deuda (mismo orden que los cobros).
   if (fiada) await bloquearCliente(tx, ctx, cliente.id);
@@ -339,6 +346,7 @@ async function generarEnTx(
       costoTotal,
       gananciaBruta: total.minus(costoTotal),
       notas: input.notas ?? null,
+      clienteNuevo,
       cotizacionId: desdeCotizacion ? permisos.cotizacionId : null,
       items: {
         create: items.map((i) => ({
@@ -364,6 +372,13 @@ async function generarEnTx(
     },
     select: { id: true, fecha: true },
   });
+  // El cliente nuevo queda atado a la venta en la que se dio de alta (Reportes → vendedor).
+  if (clienteNuevo) {
+    await tx.cliente.updateMany({
+      where: { id: cliente.id, creadoEnVentaId: null },
+      data: { creadoEnVentaId: venta.id },
+    });
+  }
   if (fiada) {
     await tx.cliente.update({
       where: { id: cliente.id },
@@ -783,6 +798,8 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
       usuario: p.usuario.nombre,
     })),
     cliente: v.cliente,
+    /** El cliente se dio de alta con esta venta. */
+    clienteNuevo: v.clienteNuevo,
     vendedor: v.vendedor,
     deposito: v.deposito,
     subtotal: dec(v.subtotal),

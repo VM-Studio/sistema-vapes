@@ -1,11 +1,20 @@
 import ExcelJS from "exceljs";
-import { EstadoCotizacion, MedioPago, Prisma, RolUsuario, TipoVenta } from "@prisma/client";
+import {
+  EstadoCotizacion,
+  EstadoPago,
+  MedioPago,
+  Modulo,
+  Prisma,
+  RolUsuario,
+  TipoVenta,
+} from "@prisma/client";
 import { getDaysInMonth, getISODay, parseISO } from "date-fns";
 import { z } from "zod";
 
 import { esOwner, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import {
+  ESTADO_PAGO_UI,
   ETIQUETA_MEDIO_PAGO,
   ETIQUETA_TIPO_VENTA,
   etiquetaMedioPrincipal,
@@ -582,7 +591,7 @@ export async function kpis(ctx: Ctx, p: Periodo): Promise<KpisPeriodo> {
 // =============================================================================
 
 /** SQL de la serie (exportado para EXPLAIN / verificación). */
-export function sqlSerieComparativa(ctx: Ctx, p: Periodo): Prisma.Sql {
+export function sqlSerieComparativa(ctx: Ctx, p: Periodo, vendedorId?: string): Prisma.Sql {
   const { a, b, anterior } = rangos(p);
   const local = Prisma.sql`((v."fecha" AT TIME ZONE 'UTC') AT TIME ZONE ${TZ})`;
   const idx =
@@ -597,15 +606,23 @@ export function sqlSerieComparativa(ctx: Ctx, p: Periodo): Prisma.Sql {
     WHERE v."panelId" = ${ctx.panelId}
       AND v."estado" = 'CONFIRMADA'
       AND v."fecha" >= ${ts(b.inicio)} AND v."fecha" < ${ts(a.fin)}
+      ${vendedorId ? Prisma.sql`AND v."vendedorId" = ${vendedorId}` : Prisma.empty}
     GROUP BY 1, 2`;
 }
 
-/** Facturado por punto (hora / día) del período actual y del anterior, alineados. */
-export async function serieComparativa(ctx: Ctx, p: Periodo): Promise<PuntoSerie[]> {
+/**
+ * Facturado por punto (hora / día) del período actual y del anterior, alineados.
+ * Con `vendedorId`, solo las ventas de ese vendedor.
+ */
+export async function serieComparativa(
+  ctx: Ctx,
+  p: Periodo,
+  vendedorId?: string,
+): Promise<PuntoSerie[]> {
   const filas = await consultar(
     ctx,
     z.object({ actual: z.boolean(), idx: z.number().int(), total: montoTexto }),
-    sqlSerieComparativa(ctx, p),
+    sqlSerieComparativa(ctx, p, vendedorId),
   );
   const instante = ahora();
   return armarSerie(
@@ -808,8 +825,10 @@ export interface RendimientoVendedor {
   unidades: number;
   ticketPromedio: string;
   cotizaciones: { creadas: number; convertidas: number; tasaPct: number | null };
-  /** Clientes que dio de alta (AuditLog CREATE Cliente). */
+  /** Clientes que dio de alta en el período (Cliente.creadoPorId), desde una venta o desde Clientes. */
   clientesNuevos: number;
+  /** Ventas a clientes que se dieron de alta con esa misma venta (Venta.clienteNuevo). */
+  ventasAClientesNuevos: number;
   devoluciones: number;
   /** null si el usuario no tiene porcentajes de comisión cargados. */
   comision: { unitariaPct: string | null; mayoristaPct: string | null; estimada: string } | null;
@@ -832,11 +851,14 @@ async function agregadosVendedores(ctx: Ctx, r: Instantes, usuarioId?: string) {
         usuarioId: z.string(),
         tipo: z.enum(TipoVenta),
         cantidad: z.number().int(),
+        aClientesNuevos: z.number().int(),
         total: montoTexto,
       }),
       Prisma.sql`
         SELECT v."vendedorId" AS "usuarioId", v."tipo"::text AS "tipo",
-               COUNT(*)::int AS "cantidad", COALESCE(SUM(v."total"), 0)::text AS "total"
+               COUNT(*)::int AS "cantidad",
+               (COUNT(*) FILTER (WHERE v."clienteNuevo"))::int AS "aClientesNuevos",
+               COALESCE(SUM(v."total"), 0)::text AS "total"
         FROM "Venta" v
         WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
           AND v."fecha" >= ${ts(r.inicio)} AND v."fecha" < ${ts(r.fin)} ${soloV}
@@ -870,12 +892,11 @@ async function agregadosVendedores(ctx: Ctx, r: Instantes, usuarioId?: string) {
       ctx,
       z.object({ usuarioId: z.string(), cantidad: z.number().int() }),
       Prisma.sql`
-        SELECT a."usuarioId" AS "usuarioId", COUNT(*)::int AS "cantidad"
-        FROM "AuditLog" a
-        WHERE a."panelId" = ${ctx.panelId} AND a."accion" = 'CREATE' AND a."entidad" = 'Cliente'
-          AND a."usuarioId" IS NOT NULL
-          AND a."createdAt" >= ${ts(r.inicio)} AND a."createdAt" < ${ts(r.fin)}
-          ${usuarioId ? Prisma.sql`AND a."usuarioId" = ${usuarioId}` : Prisma.empty}
+        SELECT c."creadoPorId" AS "usuarioId", COUNT(*)::int AS "cantidad"
+        FROM "Cliente" c
+        WHERE c."panelId" = ${ctx.panelId} AND c."creadoPorId" IS NOT NULL
+          AND c."createdAt" >= ${ts(r.inicio)} AND c."createdAt" < ${ts(r.fin)}
+          ${usuarioId ? Prisma.sql`AND c."creadoPorId" = ${usuarioId}` : Prisma.empty}
         GROUP BY 1`,
     ),
     consultar(
@@ -925,6 +946,9 @@ function filaRendimiento(u: UsuarioRend, ag: Agregados): RendimientoVendedor {
       tasaPct: creadas === 0 ? null : Math.round((convertidas / creadas) * 1000) / 10,
     },
     clientesNuevos: ag.clientes.find((x) => x.usuarioId === u.id)?.cantidad ?? 0,
+    ventasAClientesNuevos: ag.ventas
+      .filter((x) => x.usuarioId === u.id)
+      .reduce((a, x) => a + x.aClientesNuevos, 0),
     devoluciones: ag.devoluciones.find((x) => x.usuarioId === u.id)?.cantidad ?? 0,
     comision:
       pctU === null && pctM === null
@@ -997,6 +1021,7 @@ export interface RendimientoComparado {
   unidades: Comparado<number>;
   ticketPromedio: Comparado<string>;
   clientesNuevos: Comparado<number>;
+  ventasAClientesNuevos: Comparado<number>;
   comision: Comparado<string> | null;
 }
 
@@ -1026,6 +1051,10 @@ async function rendimientoDe(
     unidades: compararNumero(actual.unidades, anterior.unidades),
     ticketPromedio: compararMonto(actual.ticketPromedio, anterior.ticketPromedio),
     clientesNuevos: compararNumero(actual.clientesNuevos, anterior.clientesNuevos),
+    ventasAClientesNuevos: compararNumero(
+      actual.ventasAClientesNuevos,
+      anterior.ventasAClientesNuevos,
+    ),
     comision:
       actual.comision && anterior.comision
         ? compararMonto(actual.comision.estimada, anterior.comision.estimada)
@@ -1044,15 +1073,19 @@ export interface VentaDeVendedor {
   fecha: Date;
   tipo: TipoVenta;
   cliente: string;
+  /** El cliente se dio de alta con esta venta. */
+  clienteNuevo: boolean;
   /** Medio principal; null si se fió todo. */
   medioPago: MedioPago | null;
+  estadoPago: EstadoPago;
+  saldoPendiente: string;
   unidades: number;
   total: string;
 }
 
 export const PAGE_SIZE_VENTAS_VENDEDOR = 25;
 
-async function ventasDeVendedor(
+async function listarVentasVendedor(
   ctx: Ctx,
   usuarioId: string,
   p: Periodo,
@@ -1077,6 +1110,9 @@ async function ventasDeVendedor(
         fecha: true,
         tipo: true,
         medioPago: true,
+        estadoPago: true,
+        saldoPendiente: true,
+        clienteNuevo: true,
         total: true,
         cliente: { select: { nombre: true } },
       },
@@ -1098,34 +1134,73 @@ async function ventasDeVendedor(
       fecha: v.fecha,
       tipo: v.tipo,
       cliente: v.cliente.nombre,
+      clienteNuevo: v.clienteNuevo,
       medioPago: v.medioPago,
+      estadoPago: v.estadoPago,
+      saldoPendiente: aMonto(v.saldoPendiente),
       unidades: unidades.find((u) => u.ventaId === v.id)?._sum.cantidad ?? 0,
       total: aMonto(v.total),
     })),
   };
 }
 
-export interface RendimientoVendedorDetalle extends RendimientoComparado {
+export interface VentasDeVendedor extends RendimientoComparado {
+  /** Facturado del vendedor por hora / día, contra el período anterior. */
+  serie: PuntoSerie[];
   ventas: { filas: VentaDeVendedor[]; total: number; page: number; pageSize: number };
 }
 
-/** Detalle de un vendedor: KPIs vs. el período anterior y todas sus ventas (paginadas). Solo dueños. */
-export async function rendimientoVendedorDetalle(
+/**
+ * "Ventas de {vendedor}" (Reportes y Equipo, solo dueños): cantidad de ventas,
+ * unidades ("vapes vendidos"), facturado, clientes nuevos que cargó y ventas a
+ * clientes nuevos, unitarias vs. mayoristas (todo contra el período anterior),
+ * el facturado por día y sus ventas paginadas.
+ */
+export async function ventasDeVendedor(
   ctx: Ctx,
   usuarioId: string,
   p: Periodo,
   page = 1,
-): Promise<RendimientoVendedorDetalle> {
-  await exigirOwner(ctx, "El rendimiento de un vendedor");
+): Promise<VentasDeVendedor> {
+  await exigirOwner(ctx, "Las ventas de un vendedor");
   const pagina = Math.max(1, Math.trunc(page) || 1);
-  const [rend, ventas] = await Promise.all([
+  const [rend, serie, ventas] = await Promise.all([
     rendimientoDe(ctx, usuarioId, p),
-    ventasDeVendedor(ctx, usuarioId, p, {
+    serieComparativa(ctx, p, usuarioId),
+    listarVentasVendedor(ctx, usuarioId, p, {
       skip: (pagina - 1) * PAGE_SIZE_VENTAS_VENDEDOR,
       take: PAGE_SIZE_VENTAS_VENDEDOR,
     }),
   ]);
-  return { ...rend, ventas: { ...ventas, page: pagina, pageSize: PAGE_SIZE_VENTAS_VENDEDOR } };
+  return {
+    ...rend,
+    serie,
+    ventas: { ...ventas, page: pagina, pageSize: PAGE_SIZE_VENTAS_VENDEDOR },
+  };
+}
+
+export interface VendedorDestacado {
+  id: string;
+  nombre: string;
+}
+
+/**
+ * Empleados que venden en el panel (activos, con acceso y VENTAS "crear"):
+ * una tarjeta "Ventas de {nombre}" cada uno en Reportes. Solo dueños.
+ */
+export async function vendedoresDestacados(ctx: Ctx): Promise<VendedorDestacado[]> {
+  await exigirOwner(ctx, "Los vendedores del panel");
+  return dbPara(ctx.panelId).usuario.findMany({
+    where: {
+      rol: RolUsuario.EMPLEADO,
+      activo: true,
+      deletedAt: null,
+      paneles: { some: { panelId: ctx.panelId } },
+      permisos: { some: { panelId: ctx.panelId, modulo: Modulo.VENTAS, puedeCrear: true } },
+    },
+    orderBy: { nombre: "asc" },
+    select: { id: true, nombre: true },
+  });
 }
 
 /** Excel con todas las ventas del vendedor en el período (máx. 20.000). Solo dueños. */
@@ -1136,7 +1211,7 @@ export async function exportarVentasVendedorExcel(
 ): Promise<{ buffer: Buffer; nombre: string }> {
   await exigirOwner(ctx, "Exportar las ventas de un vendedor");
   const rend = await rendimientoDe(ctx, usuarioId, p);
-  const { filas } = await ventasDeVendedor(ctx, usuarioId, p, { skip: 0, take: 20_000 });
+  const { filas } = await listarVentasVendedor(ctx, usuarioId, p, { skip: 0, take: 20_000 });
   const libro = new ExcelJS.Workbook();
   libro.created = new Date();
   const hoja = libro.addWorksheet("Ventas", { views: [{ state: "frozen", ySplit: 1 }] });
@@ -1145,7 +1220,9 @@ export async function exportarVentasVendedorExcel(
     { header: "Fecha", key: "fecha", width: 18 },
     { header: "Tipo", key: "tipo", width: 12 },
     { header: "Cliente", key: "cliente", width: 28 },
+    { header: "Cliente nuevo", key: "nuevo", width: 13 },
     { header: "Medio de pago", key: "medio", width: 16 },
+    { header: "Estado de pago", key: "estadoPago", width: 15 },
     { header: "Unidades", key: "unidades", width: 10 },
     { header: "Total", key: "total", width: 14, style: { numFmt: '"$" #,##0.00' } },
   ];
@@ -1160,7 +1237,9 @@ export async function exportarVentasVendedorExcel(
       }).format(v.fecha),
       tipo: ETIQUETA_TIPO_VENTA[v.tipo],
       cliente: v.cliente,
+      nuevo: v.clienteNuevo ? "Sí" : "",
       medio: etiquetaMedioPrincipal(v.medioPago),
+      estadoPago: ESTADO_PAGO_UI[v.estadoPago].label,
       unidades: v.unidades,
       total: Number(v.total),
     });

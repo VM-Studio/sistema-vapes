@@ -274,6 +274,11 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                       <p className="truncate font-semibold">{v.cliente.nombre}</p>
                     )}
                     <p className="text-muted tabular-nums">{telefonoVisible(v.cliente.telefono)}</p>
+                    {v.clienteNuevo && (
+                      <Badge variant="success" className="mt-1">
+                        Cliente nuevo
+                      </Badge>
+                    )}
                   </dd>
                 </div>
               </div>
