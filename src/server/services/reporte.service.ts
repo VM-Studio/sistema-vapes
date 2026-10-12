@@ -22,6 +22,7 @@ import type {
   FiltrosVentasReporte,
   RangoReporte,
 } from "@/server/reportes/filtros";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
 
 /**
  * REPORTES del panel (4 a 9). Todo se agrega en PostgreSQL ($queryRaw con
@@ -353,7 +354,14 @@ export interface CompraPorProveedor {
   tienda: string | null;
   compras: number;
   unidades: number;
+  /** En pesos (lo que se pagó). */
   total: string;
+  /**
+   * El mismo total en USDT: cada compra con su cotización (snapshot
+   * Compra.tipoCambioUSDT); las que no la tienen, con la vigente. null = sin
+   * cotización USDT.
+   */
+  totalUSDT: string | null;
   ultima: Date | null;
 }
 
@@ -365,20 +373,38 @@ const filaCompraProvSchema = z.array(
     compras: entero,
     unidades: entero,
     total: monto,
+    usdt_snapshot: monto,
+    sin_snapshot: monto,
     ultima: z.date().nullable(),
   }),
 );
+
+/** Pesos → USDT: Σ con snapshot + (Σ sin snapshot ÷ cotización vigente). */
+export function totalEnUsdt(
+  usdtConSnapshot: string,
+  pesosSinSnapshot: string,
+  cotizacionUsdt: number | null,
+): string | null {
+  if (cotizacionUsdt === null || !(cotizacionUsdt > 0)) return null;
+  return new Prisma.Decimal(usdtConSnapshot)
+    .plus(new Prisma.Decimal(pesosSinSnapshot).div(cotizacionUsdt))
+    .toFixed(2);
+}
 
 export async function comprasPorProveedor(
   ctx: Ctx,
   r: RangoReporte,
   f: FiltrosComprasReporte,
 ): Promise<CompraPorProveedor[]> {
+  const cotizacion = (await obtenerCotizacion("USDT"))?.valor ?? null;
   const crudas = await dbPara(ctx.panelId).$queryRaw`
     SELECT c."proveedorId" AS proveedor_id, pr."nombre" AS proveedor, pr."nombreTienda" AS tienda,
            COUNT(*) AS compras,
            COALESCE(SUM((SELECT SUM(ci."cantidad") FROM "CompraItem" ci WHERE ci."compraId" = c."id")), 0) AS unidades,
-           COALESCE(SUM(c."total"), 0) AS total, MAX(c."fecha") AS ultima
+           COALESCE(SUM(c."total"), 0) AS total,
+           COALESCE(SUM(c."total" / c."tipoCambioUSDT") FILTER (WHERE c."tipoCambioUSDT" IS NOT NULL), 0) AS usdt_snapshot,
+           COALESCE(SUM(c."total") FILTER (WHERE c."tipoCambioUSDT" IS NULL), 0) AS sin_snapshot,
+           MAX(c."fecha") AS ultima
     FROM "Compra" c
     LEFT JOIN "Proveedor" pr ON pr."id" = c."proveedorId"
     WHERE c."panelId" = ${ctx.panelId} AND c."estado" = ${EstadoCompra.RECIBIDA}::"EstadoCompra"
@@ -393,6 +419,7 @@ export async function comprasPorProveedor(
     compras: x.compras,
     unidades: x.unidades,
     total: x.total,
+    totalUSDT: totalEnUsdt(x.usdt_snapshot, x.sin_snapshot, cotizacion),
     ultima: x.ultima,
   }));
 }

@@ -28,7 +28,7 @@
     "test:e2e": "playwright test",
     "test:catalogo": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-catalogo.ts",
     "test:unit": "vitest run",
-    "test:compras": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-compras.ts",
+    "test:compras": "PRISMA_LOG=silent CAMBIO_SIN_RED=1 tsx --conditions=react-server --env-file=.env scripts/test-compras.ts",
     "test:ventas": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas.ts",
     "test:fiados": "PRISMA_LOG=silent LOG_LEVEL=warn tsx --conditions=react-server --env-file=.env scripts/test-fiados.ts",
     "test:ventas:concurrencia": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas-concurrentes.ts",

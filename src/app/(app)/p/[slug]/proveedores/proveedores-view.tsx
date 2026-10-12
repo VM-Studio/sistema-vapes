@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { EquivalenteUsdt } from "@/components/compras/equivalente-usdt";
 import { ProveedorForm } from "@/components/compras/proveedor-form";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
@@ -16,7 +17,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SearchInput } from "@/components/ui/search-input";
 import { Sheet } from "@/components/ui/sheet";
-import { formatearMonto } from "@/components/compras/formato";
+import type { CotizacionVigente } from "@/lib/cambio";
+import { formatearMonto } from "@/lib/format";
 import { cn, formatearFecha } from "@/lib/utils";
 import { enlaceWhatsApp, formatearTelefono } from "@/lib/validations/proveedor";
 import type { ProveedorTarjeta } from "@/server/services/proveedor.service";
@@ -27,10 +29,12 @@ export function ProveedoresView({
   proveedores,
   verPrecios,
   buscado,
+  cotizacionUsdt,
 }: {
   proveedores: ProveedorTarjeta[];
   verPrecios: boolean;
   buscado: string;
+  cotizacionUsdt: CotizacionVigente | null;
 }) {
   const router = useRouter();
   const ruta = useRutaPanel();
@@ -82,7 +86,12 @@ export function ProveedoresView({
           className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3"
         >
           {proveedores.map((p) => (
-            <TarjetaProveedor key={p.id} proveedor={p} verPrecios={verPrecios} />
+            <TarjetaProveedor
+              key={p.id}
+              proveedor={p}
+              verPrecios={verPrecios}
+              cotizacionUsdt={cotizacionUsdt}
+            />
           ))}
         </ul>
       )}
@@ -106,6 +115,7 @@ export function ProveedoresView({
             formId={FORM_ID}
             proveedor={null}
             verPrecios={verPrecios}
+            cotizacionUsdt={cotizacionUsdt}
             onEnviando={setEnviando}
             onListo={() => {
               setNuevo(false);
@@ -121,9 +131,11 @@ export function ProveedoresView({
 function TarjetaProveedor({
   proveedor: p,
   verPrecios,
+  cotizacionUsdt,
 }: {
   proveedor: ProveedorTarjeta;
   verPrecios: boolean;
+  cotizacionUsdt: CotizacionVigente | null;
 }) {
   const ruta = useRutaPanel();
   const [abierta, setAbierta] = useState(false);
@@ -247,8 +259,13 @@ function TarjetaProveedor({
                       <span className="text-muted hidden text-xs sm:block">
                         {prod.moneda ?? "—"}
                       </span>
-                      <span className="text-right font-semibold tabular-nums">
-                        {prod.precio !== null ? formatearMonto(prod.precio, prod.moneda) : "—"}
+                      <span className="flex flex-col items-end">
+                        <span className="text-right font-semibold tabular-nums">
+                          {prod.precio !== null ? formatearMonto(prod.precio, prod.moneda) : "—"}
+                        </span>
+                        {prod.moneda === "USDT" && (
+                          <EquivalenteUsdt monto={prod.precio} cotizacion={cotizacionUsdt} />
+                        )}
                       </span>
                     </>
                   )}

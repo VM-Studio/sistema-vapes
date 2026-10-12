@@ -60,6 +60,8 @@ export const anularCompraSchema = z.object({ id, motivo: motivoAjuste });
 
 export const costoSugeridoSchema = z.object({
   proveedorId: id,
+  /** Borrador en edición: usa su cotización USDT (snapshot) en vez de la vigente. */
+  compraId: z.preprocess(vacioAUndefined, id.optional()),
   varianteIds: z.array(id).min(1).max(500),
 });
 

@@ -148,7 +148,7 @@ async function main() {
       nombre: `Juan ${sufijo}`,
       nombreTienda: `Importadora ${sufijo}`,
       telefono: tel,
-      productos: [{ productoId: producto.id, precio: "5100" }],
+      productos: [{ productoId: producto.id, precio: "5100", moneda: "ARS" }],
     }),
   );
   const guardado = await prisma.proveedor.findUniqueOrThrow({ where: { id: prov.id } });
@@ -172,7 +172,7 @@ async function main() {
     crearProveedorSchema.parse({
       nombre: `Ana ${sufijo}`,
       nombreTienda: `Mayorista ${sufijo}`,
-      productos: [{ productoId: producto.id, precio: "4900" }],
+      productos: [{ productoId: producto.id, precio: "4900", moneda: "ARS" }],
     }),
   );
   const enDolares = await crearProveedor(
@@ -182,13 +182,13 @@ async function main() {
   await asignarProducto(actor, enDolares.id, {
     productoId: producto.id,
     precio: 4,
-    moneda: Moneda.USD,
+    moneda: Moneda.USDT,
   });
   const comparador = await proveedoresDeProducto(actor, producto.id);
   const enPesos = comparador.filter((c) => c.moneda === Moneda.ARS);
   check(
     comparador.length === 3 &&
-      comparador.some((c) => c.proveedorId === enDolares.id && c.moneda === Moneda.USD) &&
+      comparador.some((c) => c.proveedorId === enDolares.id && c.moneda === Moneda.USDT) &&
       enPesos[0]?.proveedorId === barato.id &&
       enPesos[1]?.proveedorId === prov.id,
     `proveedores del producto por precio: ${comparador.map((c) => `${c.nombreTienda} ${c.moneda} ${c.precio}`).join(" < ")}`,
@@ -605,6 +605,101 @@ async function main() {
       (await proveedoresDeProducto(ctxCosmetic, producto.id)).length === 0,
     "los proveedores y precios de Vapes no aparecen en Cosmetic",
   );
+
+  // ---------------------------------------------------------------------------
+  console.log("\n9) Proveedor en USDT: costo sugerido en pesos y snapshot de la cotización");
+  check(
+    crearProveedorSchema.parse({
+      nombre: "X",
+      nombreTienda: "Y",
+      productos: [{ productoId: producto.id, precio: "1" }],
+    }).productos[0]?.moneda === Moneda.USDT,
+    "precio de proveedor sin moneda → USDT por defecto",
+  );
+  // Override manual de la cotización (global) para que el test no dependa de las APIs.
+  const CLAVE = "cambio.overrideUSDT";
+  const overridePrevio = await prisma.configuracionGlobal.findUnique({ where: { clave: CLAVE } });
+  await prisma.configuracionGlobal.upsert({
+    where: { clave: CLAVE },
+    create: { clave: CLAVE, valor: { valor: 1300, cargadoAt: new Date().toISOString() } },
+    update: { valor: { valor: 1300, cargadoAt: new Date().toISOString() } },
+  });
+  try {
+    const sug = await costoSugerido(actor, enDolares.id, [uva.id]);
+    check(
+      sug[uva.id]?.fuente === "PROVEEDOR_USDT" &&
+        sug[uva.id]?.costo === "5200.00" &&
+        sug[uva.id]?.precioUsdt === "4.00" &&
+        sug[uva.id]?.tipoCambio === "1300.00",
+      `4 USDT × $ 1.300 → costo sugerido ${sug[uva.id]?.costo} (${sug[uva.id]?.fuente})`,
+    );
+    const cUsdt = await crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: enDolares.id,
+        depositoId: g1.id,
+        items: [
+          { varianteId: uva.id, cantidad: 2, costoUnitario: 5200 },
+          { varianteId: limon.id, cantidad: 1, costoUnitario: 5850 },
+        ],
+      }),
+    );
+    const det = await obtenerCompra(actor, cUsdt.id);
+    check(
+      det.tipoCambioUSDT === "1300.00" &&
+        det.items.find((i) => i.varianteId === uva.id)?.costoUnitarioUSDT === "4.00" &&
+        det.items.find((i) => i.varianteId === limon.id)?.costoUnitarioUSDT === "4.50" &&
+        det.total === "16250.00",
+      `snapshot: cotización ${det.tipoCambioUSDT}, costos USDT ${det.items.map((i) => i.costoUnitarioUSDT).join(" / ")}, total ARS ${det.total}`,
+    );
+    // Editar el borrador con otra cotización vigente conserva el snapshot.
+    await prisma.configuracionGlobal.update({
+      where: { clave: CLAVE },
+      data: { valor: { valor: 1500, cargadoAt: new Date().toISOString() } },
+    });
+    await actualizarCompra(
+      actor,
+      cUsdt.id,
+      compraSchema.parse({
+        proveedorId: enDolares.id,
+        depositoId: g1.id,
+        items: [
+          { varianteId: uva.id, cantidad: 2, costoUnitario: 5200 },
+          { varianteId: limon.id, cantidad: 1, costoUnitario: 5850 },
+        ],
+      }),
+    );
+    const sugBorrador = await costoSugerido(actor, enDolares.id, [uva.id], cUsdt.id);
+    check(
+      (await obtenerCompra(actor, cUsdt.id)).tipoCambioUSDT === "1300.00" &&
+        sugBorrador[uva.id]?.costo === "5200.00",
+      "editar el borrador conserva su cotización (y el sugerido del borrador usa esa misma)",
+    );
+    const cambiosUsdt = await preciosQueCambian(actor, cUsdt.id);
+    check(
+      cambiosUsdt.length === 1 &&
+        cambiosUsdt[0]?.monedaAntes === Moneda.USDT &&
+        cambiosUsdt[0]?.monedaDespues === Moneda.USDT &&
+        cambiosUsdt[0]?.antes === "4.00" &&
+        cambiosUsdt[0]?.despues === "4.50",
+      `recibir: el precio en USDT del proveedor cambiaría ${cambiosUsdt[0]?.antes} → ${cambiosUsdt[0]?.despues} ${cambiosUsdt[0]?.monedaDespues}`,
+    );
+    await recibirCompra(actor, cUsdt.id, { actualizarPrecioProveedor: true });
+    const ppUsdt = await db.proveedorProducto.findFirstOrThrow({
+      where: { proveedorId: enDolares.id, productoId: producto.id },
+    });
+    check(
+      ppUsdt.moneda === Moneda.USDT && ppUsdt.precio.toFixed(2) === "4.50",
+      `precio del proveedor actualizado en USDT: ${ppUsdt.precio.toFixed(2)} ${ppUsdt.moneda}`,
+    );
+  } finally {
+    if (overridePrevio)
+      await prisma.configuracionGlobal.update({
+        where: { clave: CLAVE },
+        data: { valor: overridePrevio.valor ?? {} },
+      });
+    else await prisma.configuracionGlobal.delete({ where: { clave: CLAVE } });
+  }
 
   console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);
   process.exitCode = fallos === 0 ? 0 : 1;

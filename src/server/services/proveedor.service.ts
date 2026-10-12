@@ -1,6 +1,7 @@
 import { AccionAuditoria, EstadoCompra, Modulo, Prisma, type Moneda } from "@prisma/client";
 import { z } from "zod";
 
+import type { CotizacionVigente } from "@/lib/cambio";
 import { puede, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import type {
@@ -16,7 +17,7 @@ import {
   type ResultadoComparacion,
 } from "@/server/reportes/comparador";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { obtenerCotizacionUsd } from "@/server/services/configuracion.service";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
 
 /**
  * PROVEEDORES del panel: contacto (persona + tienda + teléfono) y la lista de
@@ -89,8 +90,16 @@ export interface ProveedorDetalle {
   };
   productos: ProductoDeProveedorDTO[];
   cantidadCompras: number;
-  /** Σ compras RECIBIDAS. null = quien mira no ve totales. */
+  /** Σ compras RECIBIDAS (pesos). null = quien mira no ve totales. */
   totalComprado: string | null;
+  /**
+   * El mismo total en USDT: cada compra con su cotización (snapshot
+   * Compra.tipoCambioUSDT) y las que no la tienen, con la vigente. null = no
+   * ve totales o no hay cotización.
+   */
+  totalCompradoUSDT: string | null;
+  /** Cotización USDT vigente (equivalentes en pesos de los precios en USDT). */
+  cotizacionUsdt: CotizacionUsdt;
   /** Últimas 50. */
   compras: CompraDeProveedor[];
 }
@@ -469,14 +478,22 @@ export async function obtener(ctx: CtxProveedores, id: string): Promise<Proveedo
   const p = await db.proveedor.findFirst({ where: { id, deletedAt: null } });
   if (!p) throw new NotFoundError("El proveedor no existe o fue dado de baja");
   const conTotales = veCostosCompras(ctx);
-  const [productos, cantidadCompras, suma, compras] = await Promise.all([
+  const [productos, cantidadCompras, suma, compras, cotizacionUsdt] = await Promise.all([
     listarProductosDeProveedor(ctx, id),
     db.compra.count({ where: { proveedorId: id } }),
     conTotales
-      ? db.compra.aggregate({
-          where: { proveedorId: id, estado: EstadoCompra.RECIBIDA },
-          _sum: { total: true },
-        })
+      ? db.$queryRaw<
+          {
+            total: Prisma.Decimal | null;
+            usdt: Prisma.Decimal | null;
+            sin: Prisma.Decimal | null;
+          }[]
+        >`
+          SELECT SUM("total") AS total,
+                 SUM("total" / "tipoCambioUSDT") FILTER (WHERE "tipoCambioUSDT" IS NOT NULL) AS usdt,
+                 SUM("total") FILTER (WHERE "tipoCambioUSDT" IS NULL) AS sin
+          FROM "Compra"
+          WHERE "panelId" = ${ctx.panelId} AND "proveedorId" = ${id} AND "estado" = 'RECIBIDA'`
       : Promise.resolve(null),
     db.compra.findMany({
       where: { proveedorId: id },
@@ -492,7 +509,15 @@ export async function obtener(ctx: CtxProveedores, id: string): Promise<Proveedo
         items: { select: { cantidad: true } },
       },
     }),
+    obtenerCotizacion("USDT"),
   ]);
+  const fila = suma?.[0];
+  const totalCompradoUSDT =
+    fila && cotizacionUsdt
+      ? new Prisma.Decimal(fila.usdt ?? 0)
+          .plus(new Prisma.Decimal(fila.sin ?? 0).div(cotizacionUsdt.valor))
+          .toFixed(2)
+      : null;
   return {
     proveedor: {
       id: p.id,
@@ -504,7 +529,9 @@ export async function obtener(ctx: CtxProveedores, id: string): Promise<Proveedo
     },
     productos,
     cantidadCompras,
-    totalComprado: suma ? dec(suma._sum.total ?? 0) : null,
+    totalComprado: fila ? dec(fila.total ?? 0) : null,
+    totalCompradoUSDT,
+    cotizacionUsdt,
     compras: compras.map((c) => ({
       id: c.id,
       numero: c.numero,
@@ -607,7 +634,7 @@ export async function buscarProductosDelPanel(
 const num = z.union([z.number(), z.bigint(), z.string(), z.instanceof(Prisma.Decimal)]);
 const monto = num.transform((v) => new Prisma.Decimal(v.toString()).toFixed(2));
 const entero = num.transform((v) => Number(v));
-const moneda = z.enum(["ARS", "USD"]);
+const moneda = z.enum(["ARS", "USDT"]);
 
 const filaComparadorSchema = z.array(
   z.object({
@@ -623,9 +650,12 @@ const filaComparadorSchema = z.array(
   }),
 );
 
+/** Cotización USDT vigente (global) con la que se pasan a pesos los precios en USDT. */
+export type CotizacionUsdt = CotizacionVigente | null;
+
 export interface ComparacionProducto extends ResultadoComparacion {
   producto: { id: string; nombreCompleto: string; marca: string };
-  cotizacionUsd: number | null;
+  cotizacionUsdt: CotizacionUsdt;
 }
 
 /**
@@ -647,9 +677,9 @@ export async function compararProveedores(
     select: { id: true, nombreCompleto: true, marca: { select: { nombre: true } } },
   });
   if (!producto) throw new NotFoundError("El producto no existe o fue dado de baja");
-  const [filas, cotizacionUsd] = await Promise.all([
+  const [filas, cotizacionUsdt] = await Promise.all([
     db.$queryRaw(sqlComparador(ctx.panelId, productoId)),
-    obtenerCotizacionUsd(ctx),
+    obtenerCotizacion("USDT"),
   ]);
   const ofertas: OfertaProveedor[] = filaComparadorSchema.parse(filas).map((f) => ({
     proveedorId: f.proveedor_id,
@@ -667,8 +697,8 @@ export async function compararProveedores(
       nombreCompleto: producto.nombreCompleto,
       marca: producto.marca.nombre,
     },
-    cotizacionUsd,
-    ...compararOfertas(ofertas, { cotizacionUsd, ahora: ahora() }),
+    cotizacionUsdt,
+    ...compararOfertas(ofertas, { cotizacionUsdt: cotizacionUsdt?.valor, ahora: ahora() }),
   };
 }
 
@@ -705,8 +735,8 @@ export interface ProductoConVariosProveedores {
   productoId: string;
   nombreCompleto: string;
   proveedores: number;
-  /** En pesos (USD convertido con la cotización) o en la única moneda que tenga. */
-  moneda: "ARS" | "USD";
+  /** En pesos (USDT convertido con la cotización) o en la única moneda que tenga. */
+  moneda: "ARS" | "USDT";
   minimo: string;
   maximo: string;
   ahorro: string;
@@ -728,14 +758,14 @@ const filaVariosSchema = z.array(
 
 /**
  * Productos con 2+ proveedores: mínimo, máximo y ahorro potencial por unidad
- * (mayor ahorro primero). Con cotización, los USD se pasan a pesos para
+ * (mayor ahorro primero). Con cotización, los USDT se pasan a pesos para
  * comparar; sin ella, se compara dentro de cada moneda (la de más proveedores).
  */
 export async function productosConVariosProveedores(
   ctx: Pick<Ctx, "panelId">,
   opciones: { limite?: number } = {},
 ): Promise<ProductoConVariosProveedores[]> {
-  const cotizacion = await obtenerCotizacionUsd(ctx);
+  const cotizacion = (await obtenerCotizacion("USDT"))?.valor ?? null;
   const filas = filaVariosSchema.parse(
     await dbPara(ctx.panelId).$queryRaw`
       SELECT p."id" AS producto_id, p."nombreCompleto" AS nombre_completo,
@@ -743,9 +773,9 @@ export async function productosConVariosProveedores(
              MIN(CASE WHEN pp."moneda" = 'ARS' THEN pp."precio" WHEN ${cotizacion}::numeric IS NOT NULL THEN pp."precio" * ${cotizacion}::numeric END) AS min_ars,
              MAX(CASE WHEN pp."moneda" = 'ARS' THEN pp."precio" WHEN ${cotizacion}::numeric IS NOT NULL THEN pp."precio" * ${cotizacion}::numeric END) AS max_ars,
              COUNT(*) FILTER (WHERE pp."moneda" = 'ARS' OR ${cotizacion}::numeric IS NOT NULL) AS n_ars,
-             MIN(pp."precio") FILTER (WHERE pp."moneda" = 'USD') AS min_usd,
-             MAX(pp."precio") FILTER (WHERE pp."moneda" = 'USD') AS max_usd,
-             COUNT(*) FILTER (WHERE pp."moneda" = 'USD') AS n_usd
+             MIN(pp."precio") FILTER (WHERE pp."moneda" = 'USDT') AS min_usd,
+             MAX(pp."precio") FILTER (WHERE pp."moneda" = 'USDT') AS max_usd,
+             COUNT(*) FILTER (WHERE pp."moneda" = 'USDT') AS n_usd
       FROM "ProveedorProducto" pp
       JOIN "Producto" p ON p."id" = pp."productoId" AND p."deletedAt" IS NULL
       JOIN "Proveedor" pr ON pr."id" = pp."proveedorId" AND pr."deletedAt" IS NULL
@@ -764,7 +794,7 @@ export async function productosConVariosProveedores(
           productoId: f.producto_id,
           nombreCompleto: f.nombre_completo,
           proveedores: f.proveedores,
-          moneda: usarUsd ? ("USD" as const) : ("ARS" as const),
+          moneda: usarUsd ? ("USDT" as const) : ("ARS" as const),
           minimo: min,
           maximo: max,
           ahorro: new Prisma.Decimal(max).minus(min).toFixed(2),
@@ -786,10 +816,10 @@ export interface MatrizProveedores {
     marca: string;
     precios: Record<
       string,
-      { precio: string; moneda: "ARS" | "USD"; masBarato: boolean; desactualizado: boolean }
+      { precio: string; moneda: "ARS" | "USDT"; masBarato: boolean; desactualizado: boolean }
     >;
   }[];
-  cotizacionUsd: number | null;
+  cotizacionUsdt: CotizacionUsdt;
 }
 
 const filaMatrizSchema = z.array(
@@ -811,7 +841,7 @@ export async function matrizProveedores(
   ctx: Pick<Ctx, "panelId">,
   opciones: { marcaId?: string } = {},
 ): Promise<MatrizProveedores> {
-  const [crudas, cotizacionUsd] = await Promise.all([
+  const [crudas, cotizacionUsdt] = await Promise.all([
     dbPara(ctx.panelId).$queryRaw`
       SELECT p."id" AS producto_id, p."nombreCompleto" AS nombre_completo, m."nombre" AS marca,
              pr."id" AS proveedor_id, pr."nombre" AS proveedor, pr."nombreTienda" AS tienda,
@@ -824,7 +854,7 @@ export async function matrizProveedores(
         ${opciones.marcaId ? Prisma.sql`AND p."marcaId" = ${opciones.marcaId}` : Prisma.empty}
       ORDER BY m."nombre", p."nombreCompleto", pr."nombre"
       LIMIT 5000`,
-    obtenerCotizacionUsd(ctx),
+    obtenerCotizacion("USDT"),
   ]);
   const filas = filaMatrizSchema.parse(crudas);
   const proveedores = new Map<string, { id: string; nombre: string; tienda: string }>();
@@ -835,7 +865,7 @@ export async function matrizProveedores(
   }
   const momento = ahora();
   return {
-    cotizacionUsd,
+    cotizacionUsdt,
     proveedores: [...proveedores.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
     filas: [...porProducto.values()].map((grupo) => {
       const r = compararOfertas(
@@ -849,7 +879,7 @@ export async function matrizProveedores(
           actualizadoAt: f.actualizado_at,
           ultimaCompra: null,
         })),
-        { cotizacionUsd, ahora: momento },
+        { cotizacionUsdt: cotizacionUsdt?.valor, ahora: momento },
       );
       return {
         productoId: grupo[0]!.producto_id,
@@ -880,10 +910,10 @@ export interface CambioPrecioHistorial {
   productoId: string;
   nombreCompleto: string;
   precio: string;
-  moneda: "ARS" | "USD";
+  moneda: "ARS" | "USDT";
   /** Precio anterior de ese proveedor para ese producto (null = alta). */
   anterior: string | null;
-  monedaAnterior: "ARS" | "USD" | null;
+  monedaAnterior: "ARS" | "USDT" | null;
   /** Variación % contra el anterior (solo misma moneda). */
   variacionPct: number | null;
 }

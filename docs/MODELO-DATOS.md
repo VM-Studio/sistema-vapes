@@ -15,7 +15,7 @@ Convenciones generales:
 
 - **Paneles**: la app son varios sistemas independientes (`Panel`: Vapes, Cosmetic, Especiales y los que se agreguen). Toda tabla de negocio tiene `panelId` y solo puede apuntar a filas de su mismo panel. Lo global (usuarios, sesiones, `ConfiguracionGlobal`, backups, rate limit, auditoría) no pertenece a ningún panel.
 - **IDs**: `cuid()` en texto (los paneles, depósitos y secuencias creados por la migración tienen ids fijos: `pnl_vapes`, `pnl_cosmetic`, `pnl_especiales`). Los documentos que ve el usuario (ventas, compras, transferencias, devoluciones) tienen además un `numero` **correlativo por panel** (tabla `Secuencia`). El ID de venta visible es `{3 letras del slug}-{número con 6 dígitos}`: `VAP-000001`; el de compra lleva una `C`: `VAP-C-000001` y el de devolución una `D`: `VAP-D-000001` (`formatearIdVenta` / `formatearIdCompra` en `src/lib/paneles.ts`, `formatearIdDevolucion`). Venta y devolución guardan ese código en la columna `codigo` (única por panel).
-- **Dinero**: `Decimal(12,2)`, en pesos salvo `ProveedorProducto.precio`, que lleva su `moneda` (`ARS` o `USD`). **Cantidades**: enteros.
+- **Dinero**: `Decimal(12,2)`, en pesos salvo `ProveedorProducto.precio`, que lleva su `moneda` (`USDT`, por defecto, o `ARS`); su equivalente en pesos sale de la cotización USDT global (`TipoCambio`). **Cantidades**: enteros.
 - **Fechas**: `timestamp` en UTC sin zona. Los rangos de días se calculan en la zona horaria del negocio (`ConfiguracionGlobal.timezone`, por defecto `America/Argentina/Buenos_Aires`).
 - **Nada se borra físicamente** en las tablas de negocio: los maestros usan soft delete (`deletedAt`) o `activo = false` (también los paneles), y los documentos confirmados se **anulan**.
 - **Caché verificado**: `Stock` es derivado del ledger `MovimientoStock`; la base verifica que solo cambie junto con su movimiento.
@@ -176,7 +176,7 @@ Enum EstadoTransferencia {
 
 Enum Moneda {
   ARS
-  USD
+  USDT
 }
 
 Enum MedioPago {
@@ -409,7 +409,7 @@ Table ProveedorProducto {
   proveedorId text [not null]
   productoId text [not null]
   precio decimal(12,2) [not null]
-  moneda Moneda [not null, default: 'ARS']
+  moneda Moneda [not null, default: 'USDT']
   actualizadoAt timestamp [not null, default: `now()`]
   usuarioId text [not null, note: 'Quién fijó el precio vigente.']
   createdAt timestamp [not null, default: `now()`]
@@ -562,6 +562,7 @@ Table Compra {
   descuento decimal(12,2) [not null, default: 0]
   total decimal(12,2) [not null]
   notas text
+  tipoCambioUSDT decimal(14,2) [note: 'Snapshot de la cotización USDT (pesos por USDT) al cargar la compra.']
   usuarioId text [not null]
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
@@ -582,7 +583,8 @@ Table CompraItem {
   varianteId text [not null]
   productoId text [not null]
   cantidad int [not null]
-  costoUnitario decimal(12,2) [not null]
+  costoUnitario decimal(12,2) [not null, note: 'En pesos: es lo que contabiliza el sistema.']
+  costoUnitarioUSDT decimal(12,2) [note: 'Trazabilidad: costoUnitario ÷ Compra.tipoCambioUSDT si el proveedor cotiza el producto en USDT.']
   subtotal decimal(12,2) [not null]
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
@@ -978,7 +980,7 @@ Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [dele
 - **Panel**: cada sistema independiente de la app. `slug` (kebab-case) arma las rutas `/p/{slug}` y el prefijo de los IDs visibles (tres primeras letras: `vapes` → `VAP`); la app no deja crear un panel cuyo prefijo choque con otro. `colorAcento` tiñe la interfaz dentro del panel y `etiquetaEspecificacion` es cómo el panel llama al atributo principal de sus productos («Pitadas», «Contenido», «Detalle»). No se borra: se desactiva (`activo = false`) desde `/configuracion/sistemas` y sus datos se conservan. La migración crea **Vapes** (`pnl_vapes`), **Cosmetic** (`pnl_cosmetic`) y **Especiales** (`pnl_especiales`); los dueños agregan otros desde `/paneles`, y cada uno nace con un depósito «Principal» y sus secuencias en cero.
 - **Secuencia**: último número usado por (panel, entidad) para `VENTA`, `COMPRA`, `TRANSFERENCIA`, `DEVOLUCION` y `COTIZACION`. `siguienteNumero()` (`src/server/db/secuencia.ts`) la toma con `SELECT … FOR UPDATE` dentro de la transacción que inserta el documento: dos transacciones del mismo panel se serializan y nunca repiten número, y si la transacción falla el número no se consume.
 - **Panel.etiquetaUnidades**: cómo se llaman las unidades vendidas en el dashboard («Vapes vendidos» en Vapes, «Unidades vendidas» en el resto).
-- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas` (`redondeoVentas`), `cotizacion` (validez, modo de escalón, leyenda, mostrar stock), `cotizacionUsd` (pesos por dólar, para comparar precios de proveedores en USD), `alertaStockMinimo` y `prefijoSku`.
+- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas` (`redondeoVentas`), `cotizacion` (validez, modo de escalón, leyenda, mostrar stock), `alertaStockMinimo` y `prefijoSku`.
 - **ConfiguracionGlobal**: pares clave-valor JSON que valen para toda la app: `nombreNegocio`, `iconoApp` y `timezone`.
 
 ### Usuarios, sesiones y seguridad
@@ -997,7 +999,7 @@ Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [dele
 - **Deposito**: locales o galpones de un panel. Uno solo por panel puede ser el principal. En Vapes: **Ayres Plaza** (principal) y **Mercedes**. No se borra: se desactiva, y solo si no tiene stock y no es el principal.
 - **Categoria** y **Marca**: clasificación de productos, con nombre único por panel. No se pueden desactivar si tienen productos activos. La marca es obligatoria en todo producto (la categoría no); el alta de productos crea la marca si no existe. Renombrar una marca recalcula el `nombreCompleto` de sus productos (trigger `trg_marca_renombrada`). La marca «Sin marca» (creada por la migración R2 para los productos que no tenían) no aparece en el nombre completo.
 - **Proveedor**: `nombre` es la persona de contacto y `nombreTienda` (obligatorio) el comercio. Teléfono opcional, normalizado igual que el de los clientes (`+54` + dígitos) y único por panel entre los no borrados. `notas` libres (la migración R2 pasó ahí el CUIT, el email y la dirección, que dejaron de ser columnas, y los teléfonos repetidos). Un proveedor inactivo no aparece para compras nuevas; no se desactiva si tiene compras en borrador.
-- **ProveedorProducto**: qué productos vende cada proveedor y a cuánto: un `precio` por (proveedor, producto), sin importar el sabor, con su `moneda` (`ARS` o `USD`), cuándo se actualizó y quién lo fijó. Se pisa al editarlo desde la ficha del proveedor o al recibir una compra con «actualizar precio del proveedor» (cada alta o cambio de precio o moneda queda en `ProveedorProductoHistorial`). La ficha del producto lista los proveedores de menor a mayor precio (índice `(panelId, productoId, precio)`). Precios y montos comprados solo los ven los dueños o quien tiene `ver` en `COMPRAS` (`veCostosCompras()` en `proveedor.service.ts`).
+- **ProveedorProducto**: qué productos vende cada proveedor y a cuánto: un `precio` por (proveedor, producto), sin importar el sabor, con su `moneda` (`USDT`, por defecto, o `ARS`), cuándo se actualizó y quién lo fijó. Se pisa al editarlo desde la ficha del proveedor o al recibir una compra con «actualizar precio del proveedor» (cada alta o cambio de precio o moneda queda en `ProveedorProductoHistorial`). La ficha del producto lista los proveedores de menor a mayor precio (índice `(panelId, productoId, precio)`). Precios y montos comprados solo los ven los dueños o quien tiene `ver` en `COMPRAS` (`veCostosCompras()` en `proveedor.service.ts`).
 - **ProveedorProductoHistorial**: una fila por cada precio que tuvo un proveedor para un producto (`precio`, `moneda`, `createdAt` = `actualizadoAt` del cambio). La inserta el trigger `trg_pp_historial` al crear o cambiar `ProveedorProducto`; la app nunca la escribe. Inmutable. Alimenta el historial de precios de Reportes.
 - **Cliente**: `nombre`, `telefono` **obligatorio** (único por panel entre los no borrados) y `notas`. El teléfono se guarda normalizado: `+54` seguido solo de dígitos (la app y la función SQL `fn_normalizar_telefono` aplican la misma regla: se quitan los no-dígitos y los ceros iniciales; si ya empieza con `54` y tiene al menos 12 dígitos se respeta el código de país). Desde R3 no hay apellido, documento, email ni dirección (la migración los pasó al nombre y a las notas; los clientes sin teléfono recibieron uno provisorio `+54000…` anotado en las notas, y las ventas sin cliente quedaron en «Cliente sin datos»).
 

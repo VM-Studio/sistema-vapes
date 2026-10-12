@@ -31,7 +31,7 @@ import { ScanInput } from "@/features/scanner/ScanInput";
 import { useBarcodeScanner } from "@/features/scanner/useBarcodeScanner";
 import { useScanFeedback } from "@/features/scanner/useScanFeedback";
 import { hoyAR } from "@/lib/fechas";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { CambioPrecioProveedor } from "@/server/services/compra.service";
 
@@ -54,7 +54,9 @@ export interface ItemCompraForm {
   cantidad: string;
   costo: string;
   /** De dónde salió el costo sugerido (o "manual" si lo editaron). */
-  origenCosto: "PROVEEDOR" | "ULTIMO_COSTO" | "manual" | "cargando" | null;
+  origenCosto: "PROVEEDOR" | "PROVEEDOR_USDT" | "ULTIMO_COSTO" | "manual" | "cargando" | null;
+  /** Solo PROVEEDOR_USDT: "150 USDT × $ 1.350" (de dónde salió el costo en pesos). */
+  detalleUsdt?: string | null;
 }
 
 export interface ProveedorOpcion {
@@ -135,10 +137,17 @@ export function CompraForm({
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
+  const compraIdRef = useRef(compraId);
+  compraIdRef.current = compraId;
+
   /** Completa el costo sugerido de los sabores que todavía no tienen costo cargado a mano. */
   const sugerirCostos = useCallback(async (provId: string, varianteIds: string[]) => {
     if (!provId || varianteIds.length === 0) return;
-    const r = await costoSugeridoAction({ proveedorId: provId, varianteIds });
+    const r = await costoSugeridoAction({
+      proveedorId: provId,
+      varianteIds,
+      compraId: compraIdRef.current ?? undefined,
+    });
     if (!r.ok) {
       setItems((its) =>
         its.map((i) => (i.origenCosto === "cargando" ? { ...i, origenCosto: null } : i)),
@@ -153,6 +162,10 @@ export function CompraForm({
           ...i,
           costo: s.costo === null ? "" : String(Number(s.costo)),
           origenCosto: s.fuente,
+          detalleUsdt:
+            s.fuente === "PROVEEDOR_USDT" && s.precioUsdt && s.tipoCambio
+              ? `${formatearUsdt(s.precioUsdt)} × ${formatearPesos(s.tipoCambio)}`
+              : null,
         };
       }),
     );
@@ -607,7 +620,9 @@ export function CompraForm({
                 const t = tituloItem(it);
                 const errorDe = (campo: string) => errores[`items.${i}.${campo}`];
                 const sugerido =
-                  it.origenCosto === "PROVEEDOR" || it.origenCosto === "ULTIMO_COSTO";
+                  it.origenCosto === "PROVEEDOR" ||
+                  it.origenCosto === "PROVEEDOR_USDT" ||
+                  it.origenCosto === "ULTIMO_COSTO";
                 return (
                   <li
                     key={it.varianteId}
@@ -619,6 +634,8 @@ export function CompraForm({
                         {it.sabor ? `${it.sabor} · ` : ""}
                         {it.sku}
                         {it.origenCosto === "PROVEEDOR" && " · costo del proveedor"}
+                        {it.origenCosto === "PROVEEDOR_USDT" &&
+                          ` · costo del proveedor: ${it.detalleUsdt ?? "en USDT"}`}
                         {it.origenCosto === "ULTIMO_COSTO" && " · último costo"}
                         {it.origenCosto === "cargando" && " · buscando costo…"}
                       </p>

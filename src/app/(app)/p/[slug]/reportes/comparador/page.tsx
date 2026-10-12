@@ -9,6 +9,7 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { textoCotizacionUsdt } from "@/components/compras/equivalente-usdt";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, cardVariants } from "@/components/ui/card";
@@ -17,37 +18,39 @@ import { hrefCon } from "@/components/ui/pagination";
 import { SearchInput } from "@/components/ui/search-input";
 import { SectionCard } from "@/components/ui/section-card";
 import { TabsNav } from "@/components/ui/tabs-nav";
-import { formatearDolares, formatearPesos } from "@/lib/format";
+import { Tooltip } from "@/components/ui/tooltip";
+import { fechaHoraCotizacion } from "@/lib/cambio";
+import { formatearMonto, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
 import { cn, formatearFecha } from "@/lib/utils";
 import { telefonoVisible, telefonoWhatsApp } from "@/lib/ventas-ui";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import type { OfertaComparada } from "@/server/reportes/comparador";
-import { obtenerCotizacionUsd } from "@/server/services/configuracion.service";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
 import {
   buscarProductosDelPanel,
   compararProveedores,
   matrizProveedores,
   productosConVariosProveedores,
+  type CotizacionUsdt,
 } from "@/server/services/proveedor.service";
 import { opcionesFiltros } from "@/server/services/reporte.service";
 
 import { BarraFiltros } from "../_componentes/barra-filtros";
 import { CabeceraReporte } from "../_componentes/cabecera-reporte";
 import { FiltroSelect } from "../_componentes/filtro-select";
-import { CotizacionUsd } from "./cotizacion-usd";
+import { CotizacionUsdtChip } from "./cotizacion-usdt";
 
 export const metadata: Metadata = { title: "Comparador de proveedores" };
 
 type SP = Record<string, string | string[] | undefined>;
 
-const precioEn = (precio: string, moneda: "ARS" | "USD") =>
-  moneda === "USD" ? formatearDolares(precio) : formatearPesos(precio);
-
 /**
  * Comparador de proveedores (SOLO dueños): buscador de productos,
  * sugerencias de productos con varios proveedores y, para el elegido, la
  * lista del más barato al más caro. Vista Matriz (escritorio) por marca.
+ * Los precios en USDT se pasan a pesos con la cotización USDT vigente
+ * (global, /configuracion/cambio) para ordenar todo junto.
  */
 export default async function ComparadorPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanelOwner();
@@ -59,9 +62,9 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
   const vista = plano.vista === "matriz" ? "matriz" : "lista";
   const q = (plano.q ?? "").trim();
 
-  const [cotizacionUsd, sugerencias, resultados, comparacion, matriz, opciones] = await Promise.all(
-    [
-      obtenerCotizacionUsd(ctx),
+  const [cotizacionUsdt, sugerencias, resultados, comparacion, matriz, opciones] =
+    await Promise.all([
+      obtenerCotizacion("USDT"),
       productosConVariosProveedores(ctx, { limite: 12 }),
       q ? buscarProductosDelPanel(ctx, q) : Promise.resolve([]),
       plano.productoId && vista === "lista"
@@ -71,8 +74,7 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
         ? matrizProveedores(ctx, { marcaId: plano.marcaId })
         : Promise.resolve(null),
       vista === "matriz" ? opcionesFiltros(ctx) : Promise.resolve(null),
-    ],
-  );
+    ]);
 
   return (
     <>
@@ -123,7 +125,7 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
             />
           )
         )}
-        <CotizacionUsd valor={cotizacionUsd} />
+        <CotizacionUsdtChip cotizacion={cotizacionUsdt} />
       </BarraFiltros>
 
       {vista === "lista" ? (
@@ -197,10 +199,7 @@ export default async function ComparadorPage({ searchParams }: { searchParams: P
                           <span className="text-muted text-small">
                             {s.proveedores} proveedores · ahorrás hasta{" "}
                             <span className="text-foreground font-medium tabular-nums">
-                              {s.moneda === "USD"
-                                ? formatearDolares(s.ahorro)
-                                : formatearPesos(s.ahorro)}
-                              /u
+                              {formatearMonto(s.ahorro, s.moneda)}/u
                             </span>
                           </span>
                         </span>
@@ -267,27 +266,44 @@ function ListaComparacion({
             data-testid="aviso-monedas"
           >
             <AlertTriangle className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-            Hay precios en pesos y en dólares: se ordenan por separado. Cargá la cotización del
-            dólar para compararlos juntos.
+            Hay precios en pesos y en USDT y todavía no hay cotización USDT: se ordenan por
+            separado. Cargala a mano en Configuración → Cotizaciones para compararlos juntos.
           </p>
         )}
-        {c.cotizacionUsd && c.ofertas.some((o) => o.moneda === "USD") && (
+        {c.cotizacionUsdt && c.ofertas.some((o) => o.moneda === "USDT") && (
           <p className="text-muted text-sm" data-testid="aviso-conversion">
-            Los precios en dólares se convierten a pesos a {formatearPesos(c.cotizacionUsd)} solo
-            para ordenarlos.
+            Los precios en USDT se convierten a pesos a {formatearPesos(c.cotizacionUsdt.valor)}{" "}
+            (cotización USDT del {fechaHoraCotizacion(c.cotizacionUsdt.obtenidoAt)}) para
+            ordenarlos.
           </p>
         )}
       </Card>
       <ol className="flex flex-col gap-3" data-testid="lista-comparador">
         {c.ofertas.map((o) => (
-          <FilaOferta key={o.proveedorId} slug={slug} o={o} producto={c.producto.nombreCompleto} />
+          <FilaOferta
+            key={o.proveedorId}
+            slug={slug}
+            o={o}
+            producto={c.producto.nombreCompleto}
+            cotizacionUsdt={c.cotizacionUsdt}
+          />
         ))}
       </ol>
     </section>
   );
 }
 
-function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; producto: string }) {
+function FilaOferta({
+  slug,
+  o,
+  producto,
+  cotizacionUsdt,
+}: {
+  slug: string;
+  o: OfertaComparada;
+  producto: string;
+  cotizacionUsdt: CotizacionUsdt;
+}) {
   const mensaje = `Hola ${o.proveedor}, ¿qué precio tenés hoy para ${producto}?`;
   return (
     <li
@@ -322,7 +338,7 @@ function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; p
               {o.masBarato && (
                 <Badge variant="success" data-testid="badge-mas-barato">
                   <BadgeCheck strokeWidth={1.75} /> Más barato
-                  {o.grupo === "USD" ? " en dólares" : ""}
+                  {o.grupo === "USDT" ? " en USDT" : ""}
                 </Badge>
               )}
               {o.desactualizado && (
@@ -340,12 +356,18 @@ function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; p
           className="text-2xl leading-tight font-semibold tracking-tight tabular-nums md:text-[1.75rem]"
           data-testid="precio"
         >
-          {precioEn(o.precio, o.moneda)}
+          {formatearMonto(o.precio, o.moneda)}
         </span>
         <span className="text-small tabular-nums">
           {o.precioArsEquivalente && (
             <span className="text-muted block text-right" data-testid="equivalente">
-              ≈ {formatearPesos(o.precioArsEquivalente)}
+              {cotizacionUsdt ? (
+                <Tooltip content={textoCotizacionUsdt(cotizacionUsdt)}>
+                  <span tabIndex={0}>≈ {formatearPesos(o.precioArsEquivalente)}</span>
+                </Tooltip>
+              ) : (
+                <>≈ {formatearPesos(o.precioArsEquivalente)}</>
+              )}
             </span>
           )}
           <span
@@ -357,7 +379,7 @@ function FilaOferta({ slug, o, producto }: { slug: string; o: OfertaComparada; p
           >
             {o.masBarato
               ? "El mejor precio"
-              : `+${o.grupo === "USD" ? formatearDolares(o.diferencia) : formatearPesos(o.diferencia)} (+${o.diferenciaPct.toLocaleString("es-AR")} %)`}
+              : `+${formatearMonto(o.diferencia, o.grupo)} (+${o.diferenciaPct.toLocaleString("es-AR")} %)`}
           </span>
         </span>
       </div>
@@ -448,7 +470,7 @@ function Matriz({ slug, m }: { slug: string; m: Awaited<ReturnType<typeof matriz
                     >
                       {x ? (
                         <>
-                          {precioEn(x.precio, x.moneda)}
+                          {formatearMonto(x.precio, x.moneda)}
                           {x.desactualizado && (
                             <AlertTriangle
                               className="text-warning ml-1 inline size-3.5 align-[-2px]"

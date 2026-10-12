@@ -15,7 +15,8 @@ const telefonoProveedor = z
     "Teléfono inválido: tiene que tener entre 6 y 13 dígitos (con código de área)",
   );
 
-export const monedaSchema = z.enum(Moneda).default(Moneda.ARS);
+/** Los proveedores cotizan en USDT: es la moneda por defecto. */
+export const monedaSchema = z.enum(Moneda).default(Moneda.USDT);
 
 /** Un producto que vende el proveedor, con su precio. */
 export const productoDeProveedorSchema = z.object({

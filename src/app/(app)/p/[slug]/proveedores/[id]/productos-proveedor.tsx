@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { BuscadorRemoto } from "@/components/compras/buscador-remoto";
-import { formatearMonto } from "@/components/compras/formato";
+import { EquivalenteUsdt } from "@/components/compras/equivalente-usdt";
+import type { CotizacionVigente } from "@/lib/cambio";
+import { formatearMonto } from "@/lib/format";
 import { soloDecimal } from "@/components/compras/proveedor-form";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -22,7 +24,7 @@ import {
   quitarProductoAction,
 } from "../actions";
 
-type Moneda = "ARS" | "USD";
+type Moneda = "ARS" | "USDT";
 
 interface Fila {
   productoId: string;
@@ -38,27 +40,31 @@ const aFila = (p: ProductoDeProveedorDTO): Fila => ({
   productoId: p.productoId,
   nombreCompleto: p.nombreCompleto,
   precio: p.precio === null ? "" : String(Number(p.precio)),
-  moneda: p.moneda ?? "ARS",
+  moneda: p.moneda ?? "USDT",
   actualizadoAt: p.actualizadoAt,
   guardado:
-    p.precio === null ? null : { precio: String(Number(p.precio)), moneda: p.moneda ?? "ARS" },
+    p.precio === null ? null : { precio: String(Number(p.precio)), moneda: p.moneda ?? "USDT" },
 });
 
 /**
  * Productos que vende el proveedor. Con precios visibles y permiso de
  * edición: tabla editable inline (guardar fija actualizadoAt = ahora),
- * agregar y quitar. Sin precios: solo la lista de productos.
+ * agregar y quitar. Sin precios: solo la lista de productos. Los precios en
+ * USDT muestran al lado, en gris y en vivo, su equivalente en pesos con la
+ * cotización USDT vigente (`cotizacionUsdt`, la manda el servidor).
  */
 export function ProductosProveedor({
   proveedorId,
   productos,
   verPrecios,
   puedeEditar,
+  cotizacionUsdt,
 }: {
   proveedorId: string;
   productos: ProductoDeProveedorDTO[];
   verPrecios: boolean;
   puedeEditar: boolean;
+  cotizacionUsdt: CotizacionVigente | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -183,10 +189,21 @@ export function ProductosProveedor({
                   <div className={cn("min-w-0", editable && "col-span-2 md:col-span-1")}>
                     <p className="font-medium">{f.nombreCompleto}</p>
                     {verPrecios && (
-                      <p className="text-subtle text-xs">
-                        {f.actualizadoAt
-                          ? `Actualizado ${formatearFecha(f.actualizadoAt)}`
-                          : "Sin guardar"}
+                      <p className="text-subtle flex flex-wrap items-center gap-x-1.5 text-xs">
+                        <span>
+                          {f.actualizadoAt
+                            ? `Actualizado ${formatearFecha(f.actualizadoAt)}`
+                            : "Sin guardar"}
+                        </span>
+                        {editable && f.moneda === "USDT" && f.precio !== "" && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span className="tabular-nums">
+                              {formatearMonto(f.precio.replace(",", "."), "USDT")}
+                            </span>
+                            <EquivalenteUsdt monto={f.precio} cotizacion={cotizacionUsdt} />
+                          </>
+                        )}
                       </p>
                     )}
                     {errores[f.productoId] && (
@@ -213,8 +230,8 @@ export function ProductosProveedor({
                         }
                         className={cn(controlClass, "h-11 md:h-10")}
                       >
+                        <option value="USDT">USDT</option>
                         <option value="ARS">ARS</option>
-                        <option value="USD">USD</option>
                       </select>
                       <Button
                         size="sm"
@@ -230,8 +247,13 @@ export function ProductosProveedor({
                     </>
                   ) : (
                     verPrecios && (
-                      <span className="text-right font-semibold tabular-nums">
-                        {formatearMonto(f.guardado?.precio, f.guardado?.moneda)}
+                      <span className="flex flex-col items-end">
+                        <span className="text-right font-semibold tabular-nums">
+                          {formatearMonto(f.guardado?.precio, f.guardado?.moneda)}
+                        </span>
+                        {f.guardado?.moneda === "USDT" && (
+                          <EquivalenteUsdt monto={f.guardado.precio} cotizacion={cotizacionUsdt} />
+                        )}
                       </span>
                     )
                   )}
@@ -273,7 +295,7 @@ export function ProductosProveedor({
                       productoId: p.id,
                       nombreCompleto: p.nombreCompleto,
                       precio: "",
-                      moneda: "ARS",
+                      moneda: "USDT",
                       actualizadoAt: null,
                       guardado: null,
                     },

@@ -13,7 +13,7 @@ const hace = (dias: number) => new Date(AHORA.getTime() - dias * 86_400_000);
 const oferta = (
   proveedorId: string,
   precio: string,
-  moneda: "ARS" | "USD" = "ARS",
+  moneda: "ARS" | "USDT" = "ARS",
   extra: Partial<OfertaProveedor> = {},
 ): OfertaProveedor => ({
   proveedorId,
@@ -60,19 +60,19 @@ describe("compararOfertas", () => {
   it("monedas mezcladas SIN cotización: grupos separados, cada uno con su orden y su badge", () => {
     const r = compararOfertas(
       [
-        oferta("u2", "12", "USD"),
+        oferta("u2", "12", "USDT"),
         oferta("p1", "15000"),
-        oferta("u1", "10", "USD"),
+        oferta("u1", "10", "USDT"),
         oferta("p2", "14000"),
       ],
-      { ahora: AHORA, cotizacionUsd: null },
+      { ahora: AHORA, cotizacionUsdt: null },
     );
     expect(r.monedasSinConvertir).toBe(true);
     expect(r.ofertas.map((o) => `${o.grupo}:${o.proveedorId}:${o.posicion}`)).toEqual([
       "ARS:p2:1",
       "ARS:p1:2",
-      "USD:u1:1",
-      "USD:u2:2",
+      "USDT:u1:1",
+      "USDT:u2:2",
     ]);
     expect(r.ofertas.filter((o) => o.masBarato).map((o) => o.proveedorId)).toEqual(["p2", "u1"]);
     expect(r.ofertas.find((o) => o.proveedorId === "u2")!.diferencia).toBe("2.00");
@@ -80,16 +80,16 @@ describe("compararOfertas", () => {
     expect(r.ahorroMaximo).toBe("1000.00");
   });
 
-  it("monedas mezcladas CON cotización: convierte USD a pesos solo para ordenar", () => {
+  it("monedas mezcladas CON cotización: convierte USDT a pesos solo para ordenar", () => {
     const r = compararOfertas(
-      [oferta("p1", "15000"), oferta("u1", "10", "USD"), oferta("p2", "13000")],
-      { ahora: AHORA, cotizacionUsd: 1400 },
+      [oferta("p1", "15000"), oferta("u1", "10", "USDT"), oferta("p2", "13000")],
+      { ahora: AHORA, cotizacionUsdt: 1400 },
     );
     expect(r.monedasSinConvertir).toBe(false);
     expect(r.ofertas.map((o) => o.proveedorId)).toEqual(["p2", "u1", "p1"]);
     const usd = r.ofertas.find((o) => o.proveedorId === "u1")!;
     expect(usd.precio).toBe("10");
-    expect(usd.moneda).toBe("USD");
+    expect(usd.moneda).toBe("USDT");
     expect(usd.precioArsEquivalente).toBe("14000.00");
     expect(usd.diferencia).toBe("1000.00");
     expect(usd.diferenciaPct).toBe(7.7);
@@ -98,10 +98,10 @@ describe("compararOfertas", () => {
     expect(r.ahorroMaximo).toBe("2000.00");
   });
 
-  it("con cotización el USD puede ser el más barato", () => {
-    const r = compararOfertas([oferta("p", "15000"), oferta("u", "9.5", "USD")], {
+  it("con cotización el USDT puede ser el más barato", () => {
+    const r = compararOfertas([oferta("p", "15000"), oferta("u", "9.5", "USDT")], {
       ahora: AHORA,
-      cotizacionUsd: 1500,
+      cotizacionUsdt: 1500,
     });
     expect(r.ofertas[0]).toMatchObject({
       proveedorId: "u",
@@ -111,11 +111,26 @@ describe("compararOfertas", () => {
     expect(r.ofertas[1]).toMatchObject({ proveedorId: "p", diferencia: "750.00" });
   });
 
+  it("proveedor en USDT ordenado en pesos con la cotización USDT (150 USDT × 1.300 = 195.000)", () => {
+    const r = compararOfertas(
+      [oferta("caro", "200000"), oferta("usdt", "150", "USDT"), oferta("barato", "190000")],
+      { ahora: AHORA, cotizacionUsdt: 1300 },
+    );
+    expect(r.ofertas.map((o) => o.proveedorId)).toEqual(["barato", "usdt", "caro"]);
+    expect(r.ofertas[1]).toMatchObject({
+      precio: "150",
+      moneda: "USDT",
+      precioArsEquivalente: "195000.00",
+      diferencia: "5000.00",
+    });
+    expect(r.ahorroMaximo).toBe("10000.00");
+  });
+
   it("cotización inválida (0, negativa, NaN) se ignora", () => {
-    for (const cotizacionUsd of [0, -5, Number.NaN]) {
-      const r = compararOfertas([oferta("p", "15000"), oferta("u", "10", "USD")], {
+    for (const cotizacionUsdt of [0, -5, Number.NaN]) {
+      const r = compararOfertas([oferta("p", "15000"), oferta("u", "10", "USDT")], {
         ahora: AHORA,
-        cotizacionUsd,
+        cotizacionUsdt,
       });
       expect(r.monedasSinConvertir).toBe(true);
     }

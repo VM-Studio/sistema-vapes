@@ -33,13 +33,14 @@ async function crearProductos(sufijo: string) {
   });
 }
 
-test("crear a Lucas (Vape House) con 3 productos y precios → tarjeta con acordeón de productos", async ({
+test("crear a Lucas (Vape House) con 3 productos (2 en pesos y 1 en USDT) → tarjeta con acordeón y equivalente en pesos", async ({
   page,
 }) => {
   const sufijo = String(Date.now()).slice(-6);
   const productos = await crearProductos(sufijo);
-  const precios = ["7000", "8200", "9150"];
-  const enPesos = [/\$\s*7\.000/, /\$\s*8\.200/, /\$\s*9\.150/];
+  // Los dos primeros en pesos; el tercero en USDT (la moneda por defecto): 150 USDT × 1.350 (cotización del setup).
+  const precios = ["7000", "8200", "150"];
+  const enPesos = [/\$\s*7\.000/, /\$\s*8\.200/, /150 USDT/];
   const telefono = `11${sufijo}55`;
 
   await loginDueno(page);
@@ -53,7 +54,10 @@ test("crear a Lucas (Vape House) con 3 productos y precios → tarjeta con acord
     await sheet.getByRole("combobox", { name: "Agregar producto que vende" }).fill(p.nombre);
     await sheet.getByRole("option", { name: p.nombreCompleto }).click();
     await sheet.getByLabel(`Precio de ${p.nombreCompleto}`).fill(precios[i]!);
+    if (i < 2) await sheet.getByLabel(`Moneda de ${p.nombreCompleto}`).selectOption("ARS");
   }
+  // En vivo, en gris: el equivalente en pesos del precio en USDT.
+  await expect(sheet.getByTestId("equivalente-usdt")).toHaveText("≈ $ 202.500");
   await sheet.getByRole("button", { name: "Guardar", exact: true }).click();
   await expect(page.getByText("Proveedor creado")).toBeVisible();
 
@@ -73,11 +77,15 @@ test("crear a Lucas (Vape House) con 3 productos y precios → tarjeta con acord
     const fila = lista.getByRole("listitem").filter({ hasText: p.nombreCompleto });
     await expect(fila).toContainText(enPesos[i]!);
   }
+  await expect(
+    lista.getByRole("listitem").filter({ hasText: productos[2]!.nombreCompleto }),
+  ).toContainText("≈ $ 202.500");
 
   const proveedor = await db.proveedor.findFirstOrThrow({
     where: { panelId: PANEL_VAPES, telefono: `+54${telefono}` },
     include: { productos: true },
   });
   expect(proveedor).toMatchObject({ nombre: "Lucas", nombreTienda: "Vape House" });
-  expect(proveedor.productos.map((pp) => pp.precio.toFixed(0)).sort()).toEqual(precios);
+  expect(proveedor.productos.map((pp) => pp.precio.toFixed(0)).sort()).toEqual([...precios].sort());
+  expect(proveedor.productos.find((pp) => pp.precio.toFixed(0) === "150")?.moneda).toBe("USDT");
 });

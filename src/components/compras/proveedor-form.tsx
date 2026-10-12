@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import type { CotizacionVigente } from "@/lib/cambio";
+import { formatearMonto } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import {
@@ -18,6 +20,7 @@ import {
 } from "@/app/(app)/p/[slug]/proveedores/actions";
 
 import { BuscadorRemoto } from "./buscador-remoto";
+import { EquivalenteUsdt } from "./equivalente-usdt";
 
 export interface ProveedorEditable {
   id: string;
@@ -32,7 +35,7 @@ interface FilaProducto {
   productoId: string;
   nombreCompleto: string;
   precio: string;
-  moneda: "ARS" | "USD";
+  moneda: "ARS" | "USDT";
 }
 
 export const soloDecimal = (s: string) => s.replace(/[^\d.,]/g, "");
@@ -43,14 +46,16 @@ const telefonoEditable = (t: string | null) => (t ?? "").replace(/^\+54/, "");
 /**
  * Alta/edición de proveedor. En el alta (y si quien carga ve precios) incluye
  * "Productos que vende": filas con buscador de productos del panel + precio +
- * moneda (se puede guardar sin productos). `compacto`: solo lo esencial
- * (crear rápido desde una compra).
+ * moneda (USDT por defecto; al lado, en gris y en vivo, el equivalente en
+ * pesos con `cotizacionUsdt`, que manda el servidor). Se puede guardar sin
+ * productos. `compacto`: solo lo esencial (crear rápido desde una compra).
  */
 export function ProveedorForm({
   formId,
   proveedor,
   verPrecios,
   compacto = false,
+  cotizacionUsdt = null,
   onListo,
   onEnviando,
 }: {
@@ -58,6 +63,7 @@ export function ProveedorForm({
   proveedor: ProveedorEditable | null;
   verPrecios: boolean;
   compacto?: boolean;
+  cotizacionUsdt?: CotizacionVigente | null;
   onListo: (p: { id: string; nombre: string; nombreTienda: string }) => void;
   onEnviando?: (e: boolean) => void;
 }) {
@@ -201,7 +207,7 @@ export function ProveedorForm({
                         productoId: p.id,
                         nombreCompleto: p.nombreCompleto,
                         precio: "",
-                        moneda: "ARS",
+                        moneda: "USDT",
                       },
                     ],
               )
@@ -224,7 +230,17 @@ export function ProveedorForm({
                     key={f.productoId}
                     className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-2 px-3 py-2.5 md:grid-cols-[minmax(0,1fr)_7rem_5.5rem_2.75rem]"
                   >
-                    <p className="text-small min-w-0 font-medium">{f.nombreCompleto}</p>
+                    <div className="min-w-0">
+                      <p className="text-small font-medium">{f.nombreCompleto}</p>
+                      {f.moneda === "USDT" && f.precio !== "" && (
+                        <p className="text-subtle flex flex-wrap items-center gap-x-1.5 text-xs">
+                          <span className="tabular-nums">
+                            {formatearMonto(f.precio.replace(",", "."), "USDT")}
+                          </span>
+                          <EquivalenteUsdt monto={f.precio} cotizacion={cotizacionUsdt} />
+                        </p>
+                      )}
+                    </div>
                     <label className="flex flex-col gap-1">
                       <span className="sr-only">Precio de {f.nombreCompleto}</span>
                       <input
@@ -243,12 +259,12 @@ export function ProveedorForm({
                       aria-label={`Moneda de ${f.nombreCompleto}`}
                       value={f.moneda}
                       onChange={(e) =>
-                        actualizarFila(f.productoId, { moneda: e.target.value as "ARS" | "USD" })
+                        actualizarFila(f.productoId, { moneda: e.target.value as "ARS" | "USDT" })
                       }
                       className={cn(controlClass, "h-11 px-2.5")}
                     >
+                      <option value="USDT">USDT</option>
                       <option value="ARS">ARS</option>
-                      <option value="USD">USD</option>
                     </select>
                     <IconButton
                       variant="ghost"

@@ -1,14 +1,17 @@
 import { History, Truck } from "lucide-react";
 import type { Metadata } from "next";
 
+import { textoCotizacionUsdt } from "@/components/compras/equivalente-usdt";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionCard } from "@/components/ui/section-card";
-import { formatearDolares, formatearNumero, formatearPesos } from "@/lib/format";
+import { Tooltip } from "@/components/ui/tooltip";
+import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import { filtrosComprasSchema, rangoReporte } from "@/server/reportes/filtros";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
 import { historialPrecios, type CambioPrecioHistorial } from "@/server/services/proveedor.service";
 import {
   comprasPorProveedor,
@@ -27,8 +30,7 @@ import { paramsPlanos } from "../_componentes/params";
 
 export const metadata: Metadata = { title: "Compras y precios de proveedores" };
 
-const precio = (p: string, m: "ARS" | "USD") =>
-  m === "USD" ? formatearDolares(p) : formatearPesos(p);
+const precio = (p: string, m: "ARS" | "USDT") => formatearMonto(p, m);
 
 /** Reporte 7 (SOLO dueños): compras recibidas por proveedor y evolución de precios de proveedor. */
 export default async function ReporteComprasPage({
@@ -40,7 +42,7 @@ export default async function ReporteComprasPage({
   const plano = await paramsPlanos(searchParams);
   const r = rangoReporte(plano);
   const f = filtrosComprasSchema.parse(plano);
-  const [porProv, historial, o, productos] = await Promise.all([
+  const [porProv, historial, o, productos, cotizacionUsdt] = await Promise.all([
     comprasPorProveedor(ctx, r, f),
     historialPrecios(ctx, {
       proveedorId: f.proveedorId,
@@ -50,7 +52,11 @@ export default async function ReporteComprasPage({
     }),
     opcionesFiltros(ctx),
     productosConPrecioProveedor(ctx),
+    obtenerCotizacion("USDT"),
   ]);
+  const ayudaUsdt = cotizacionUsdt
+    ? `Cada compra a la cotización USDT con la que se cargó; las que no la tienen, a la vigente. ${textoCotizacionUsdt(cotizacionUsdt)}`
+    : null;
 
   // Evolución (un producto elegido, precios en pesos): una línea por proveedor.
   const enPesos = f.productoId ? [...historial].reverse().filter((h) => h.moneda === "ARS") : [];
@@ -138,7 +144,7 @@ export default async function ReporteComprasPage({
                 key: "t",
                 header: "Total",
                 className: "text-right tabular-nums font-medium",
-                cell: (x) => formatearPesos(x.total),
+                cell: (x) => <TotalDual pesos={x.total} usdt={x.totalUSDT} ayuda={ayudaUsdt} />,
               },
               {
                 key: "f",
@@ -154,7 +160,9 @@ export default async function ReporteComprasPage({
                     {x.compras} compras · {x.unidades} u.
                   </span>
                 </span>
-                <span className="font-semibold tabular-nums">{formatearPesos(x.total)}</span>
+                <span className="font-semibold tabular-nums">
+                  <TotalDual pesos={x.total} usdt={x.totalUSDT} ayuda={ayudaUsdt} />
+                </span>
               </FilaMobile>
             )}
           />
@@ -245,5 +253,26 @@ export default async function ReporteComprasPage({
         />
       </SectionCard>
     </>
+  );
+}
+
+/** Total en USDT con su equivalente en pesos (lo pagado) al lado; la cotización en el tooltip. */
+function TotalDual({
+  pesos,
+  usdt,
+  ayuda,
+}: {
+  pesos: string;
+  usdt: string | null;
+  ayuda: string | null;
+}) {
+  if (usdt === null || ayuda === null) return <>{formatearPesos(pesos)}</>;
+  return (
+    <Tooltip content={ayuda} className="flex-col items-end">
+      <span tabIndex={0} className="flex flex-col items-end" data-testid="total-usdt">
+        <span>{formatearUsdt(usdt)}</span>
+        <span className="text-subtle text-xs font-normal">{formatearPesos(pesos)}</span>
+      </span>
+    </Tooltip>
   );
 }

@@ -70,8 +70,8 @@ export const anularCompraAction = actionHandler(async (input: unknown) => {
 
 export const costoSugeridoAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.COMPRAS, "ver");
-  const { proveedorId, varianteIds } = costoSugeridoSchema.parse(input);
-  return costoSugerido(ctx, proveedorId, varianteIds);
+  const { proveedorId, varianteIds, compraId } = costoSugeridoSchema.parse(input);
+  return costoSugerido(ctx, proveedorId, varianteIds, compraId);
 });
 
 export interface SaborBuscado {

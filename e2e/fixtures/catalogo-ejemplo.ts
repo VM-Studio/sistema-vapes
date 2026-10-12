@@ -366,7 +366,7 @@ const PROVEEDORES: ProveedorSeed[] = [
     telefono: "11 5555-0001",
     precios: [
       { producto: "Ignite|V80|8000", precio: "9300.00", moneda: Moneda.ARS },
-      { producto: "Elf Bar|BC|10000", precio: "9.50", moneda: Moneda.USD },
+      { producto: "Elf Bar|BC|10000", precio: "9.50", moneda: Moneda.USDT },
     ],
   },
 ];

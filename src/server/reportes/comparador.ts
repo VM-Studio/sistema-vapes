@@ -4,14 +4,14 @@
  * un mismo producto y devuelve el orden, las diferencias contra el más barato,
  * el badge y el aviso de precio viejo.
  *
- * Monedas: ARS y USD NO se ordenan juntos salvo que el panel tenga
- * `cotizacionUsd` (pesos por dólar): ahí cada precio en USD se convierte a
- * pesos SOLO para ordenar y comparar (`precioArsEquivalente`); el precio del
- * proveedor sigue siendo el suyo. Sin cotización, cada moneda es un grupo
- * con su propio orden y su propio "más barato".
+ * Monedas: los precios en USDT se convierten a pesos con la cotización USDT
+ * vigente (global, cambio.service) SOLO para ordenar y comparar
+ * (`precioArsEquivalente`); el precio del proveedor sigue siendo el suyo. Si
+ * no hay cotización (nunca se pudo obtener ni hay override), cada moneda es
+ * un grupo con su propio orden y su propio "más barato".
  */
 
-export type MonedaOferta = "ARS" | "USD";
+export type MonedaOferta = "ARS" | "USDT";
 
 export interface OfertaProveedor {
   proveedorId: string;
@@ -29,9 +29,9 @@ export interface OfertaProveedor {
 export interface OfertaComparada extends OfertaProveedor {
   /** 1 = el más barato de su grupo. */
   posicion: number;
-  /** Grupo de orden: "ARS" (todo convertido a pesos con cotización, o solo pesos) o "USD". */
+  /** Grupo de orden: "ARS" (todo convertido a pesos con cotización, o solo pesos) o "USDT". */
   grupo: MonedaOferta;
-  /** Precio en pesos usado para ordenar (solo USD con cotización). */
+  /** Precio en pesos usado para ordenar (solo USDT con cotización). */
   precioArsEquivalente: string | null;
   /** Diferencia contra el más barato del grupo, en la moneda del grupo ("0.00" para el más barato). */
   diferencia: string;
@@ -44,7 +44,7 @@ export interface OfertaComparada extends OfertaProveedor {
 
 export interface ResultadoComparacion {
   ofertas: OfertaComparada[];
-  /** Hay precios en ARS y en USD y no hay cotización: se muestran en grupos separados. */
+  /** Hay precios en ARS y en USDT y no hay cotización: se muestran en grupos separados. */
   monedasSinConvertir: boolean;
   /** Ahorro por unidad entre el más caro y el más barato del grupo principal. */
   ahorroMaximo: string | null;
@@ -69,9 +69,9 @@ export function esDesactualizado(
 }
 
 /** Cotización utilizable: número finito > 0. */
-export function cotizacionValida(cotizacionUsd: number | null | undefined): number | null {
-  return typeof cotizacionUsd === "number" && Number.isFinite(cotizacionUsd) && cotizacionUsd > 0
-    ? cotizacionUsd
+export function cotizacionValida(cotizacionUsdt: number | null | undefined): number | null {
+  return typeof cotizacionUsdt === "number" && Number.isFinite(cotizacionUsdt) && cotizacionUsdt > 0
+    ? cotizacionUsdt
     : null;
 }
 
@@ -98,7 +98,7 @@ function ordenarGrupo(
       posicion: i + 1,
       grupo,
       precioArsEquivalente:
-        cotizacion !== null && o.moneda === "USD" ? deCentavos(Math.round(v)) : null,
+        cotizacion !== null && o.moneda === "USDT" ? deCentavos(Math.round(v)) : null,
       diferencia: deCentavos(Math.round(diff)),
       diferenciaPct: minimo > 0 ? Math.round((diff / minimo) * 1000) / 10 : 0,
       masBarato: diff === 0,
@@ -109,18 +109,18 @@ function ordenarGrupo(
 
 /**
  * Ordena de menor a mayor. Con cotización: un solo grupo en pesos. Sin
- * cotización: primero el grupo ARS y después el USD, cada uno con su orden.
+ * cotización: primero el grupo ARS y después el USDT, cada uno con su orden.
  * Empates de precio: primero el actualizado más recientemente.
  */
 export function compararOfertas(
   ofertas: OfertaProveedor[],
-  opciones: { cotizacionUsd?: number | null; ahora: Date; diasDesactualizado?: number },
+  opciones: { cotizacionUsdt?: number | null; ahora: Date; diasDesactualizado?: number },
 ): ResultadoComparacion {
-  const cotizacion = cotizacionValida(opciones.cotizacionUsd);
+  const cotizacion = cotizacionValida(opciones.cotizacionUsdt);
   const dias = opciones.diasDesactualizado ?? DIAS_DESACTUALIZADO;
   if (cotizacion !== null) {
     const valor = (o: OfertaProveedor) =>
-      o.moneda === "USD" ? aCentavos(o.precio) * cotizacion : aCentavos(o.precio);
+      o.moneda === "USDT" ? aCentavos(o.precio) * cotizacion : aCentavos(o.precio);
     const lista = ordenarGrupo(ofertas, "ARS", valor, cotizacion, opciones.ahora, dias);
     return { ofertas: lista, monedasSinConvertir: false, ahorroMaximo: ahorro(lista, valor) };
   }
@@ -133,18 +133,18 @@ export function compararOfertas(
     opciones.ahora,
     dias,
   );
-  const usd = ordenarGrupo(
-    ofertas.filter((o) => o.moneda === "USD"),
-    "USD",
+  const usdt = ordenarGrupo(
+    ofertas.filter((o) => o.moneda === "USDT"),
+    "USDT",
     valor,
     null,
     opciones.ahora,
     dias,
   );
   return {
-    ofertas: [...ars, ...usd],
-    monedasSinConvertir: ars.length > 0 && usd.length > 0,
-    ahorroMaximo: ahorro(ars.length ? ars : usd, valor),
+    ofertas: [...ars, ...usdt],
+    monedasSinConvertir: ars.length > 0 && usdt.length > 0,
+    ahorroMaximo: ahorro(ars.length ? ars : usdt, valor),
   };
 }
 

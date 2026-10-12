@@ -127,9 +127,11 @@ enum EstadoTransferencia {
   ANULADA
 }
 
+/// Moneda del precio de un proveedor. Los proveedores cotizan en USDT; el
+/// equivalente en pesos sale de la cotización USDT vigente (cambio.service).
 enum Moneda {
   ARS
-  USD
+  USDT
 }
 
 enum MedioPago {
@@ -459,7 +461,7 @@ model ProveedorProducto {
   proveedorId   String
   productoId    String
   precio        Decimal  @db.Decimal(12, 2)
-  moneda        Moneda   @default(ARS)
+  moneda        Moneda   @default(USDT)
   actualizadoAt DateTime @default(now())
   /// Quién fijó el precio vigente.
   usuarioId     String
@@ -668,22 +670,25 @@ model MovimientoStock {
 // -----------------------------------------------------------------------------
 
 model Compra {
-  id          String       @id @default(cuid())
-  panelId     String       @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  id             String       @id @default(cuid())
+  panelId        String       @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   /// Correlativo por panel (tabla Secuencia).
-  numero      Int
-  proveedorId String?
+  numero         Int
+  proveedorId    String?
   /// Depósito donde ingresa la mercadería.
-  depositoId  String
-  fecha       DateTime     @default(now())
-  estado      EstadoCompra @default(BORRADOR)
-  subtotal    Decimal      @db.Decimal(12, 2)
-  descuento   Decimal      @default(0) @db.Decimal(12, 2)
-  total       Decimal      @db.Decimal(12, 2)
-  notas       String?
-  usuarioId   String
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  depositoId     String
+  fecha          DateTime     @default(now())
+  estado         EstadoCompra @default(BORRADOR)
+  subtotal       Decimal      @db.Decimal(12, 2)
+  descuento      Decimal      @default(0) @db.Decimal(12, 2)
+  total          Decimal      @db.Decimal(12, 2)
+  notas          String?
+  /// Snapshot de la cotización USDT (pesos por USDT) al cargar la compra: con
+  /// ella se pasaron a pesos los precios en USDT del proveedor.
+  tipoCambioUSDT Decimal?     @db.Decimal(14, 2)
+  usuarioId      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   panel     Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
   proveedor Proveedor?   @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
@@ -701,16 +706,20 @@ model Compra {
 /// Se compra por sabor (el stock es por sabor); productoId desnormalizado
 /// (= variante.productoId, lo verifica un trigger) para precios por proveedor.
 model CompraItem {
-  id            String   @id @default(cuid())
-  panelId       String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  compraId      String
-  varianteId    String
-  productoId    String
-  cantidad      Int
-  costoUnitario Decimal  @db.Decimal(12, 2)
-  subtotal      Decimal  @db.Decimal(12, 2)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                String   @id @default(cuid())
+  panelId           String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  compraId          String
+  varianteId        String
+  productoId        String
+  cantidad          Int
+  /// En pesos: es lo que contabiliza el sistema (stock, ganancia).
+  costoUnitario     Decimal  @db.Decimal(12, 2)
+  /// Trazabilidad: el costo en USDT (costoUnitario ÷ Compra.tipoCambioUSDT)
+  /// cuando el proveedor cotiza ese producto en USDT.
+  costoUnitarioUSDT Decimal? @db.Decimal(12, 2)
+  subtotal          Decimal  @db.Decimal(12, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   compra   Compra   @relation(fields: [compraId], references: [id], onDelete: Cascade)

@@ -1509,14 +1509,14 @@ async function main() {
         proveedorId: prov.id,
         productoId: va.productoId,
         precio: "12.50",
-        moneda: "USD",
+        moneda: "USDT",
         usuarioId: owner.id,
       },
     });
   });
   check(
-    pp?.panelId === VAPES && pp.moneda === "USD",
-    "precio de proveedor en USD dentro del panel: OK",
+    pp?.panelId === VAPES && pp.moneda === "USDT",
+    "precio de proveedor en USDT dentro del panel: OK",
   );
   await rechaza(
     "proveedor sin nombre de tienda",
@@ -1688,7 +1688,7 @@ async function main() {
       nombreTienda: "T",
       productos: [
         { productoId: "p", precio: 1 },
-        { productoId: "p", precio: 2, moneda: "USD" },
+        { productoId: "p", precio: 2, moneda: "USDT" },
       ],
     }).success,
     "proveedor con el mismo producto dos veces es error",

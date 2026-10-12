@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { textoCotizacionUsdt } from "@/components/compras/equivalente-usdt";
 import { Badge } from "@/components/ui/badge";
 import { BarraAccion } from "@/components/ui/barra-accion";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -14,7 +15,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { Tooltip } from "@/components/ui/tooltip";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { puede } from "@/lib/permisos";
@@ -135,7 +137,25 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
             className={d.totalComprado === null ? "col-span-2" : undefined}
           />
           {d.totalComprado !== null && (
-            <StatCard label="Total comprado" value={formatearPesos(d.totalComprado)} />
+            <StatCard
+              label="Total comprado"
+              value={
+                d.totalCompradoUSDT !== null
+                  ? formatearUsdt(d.totalCompradoUSDT)
+                  : formatearPesos(d.totalComprado)
+              }
+              hint={
+                d.totalCompradoUSDT !== null && d.cotizacionUsdt ? (
+                  <Tooltip
+                    content={`Cada compra a la cotización USDT con la que se cargó; las que no la tienen, a la vigente. ${textoCotizacionUsdt(d.cotizacionUsdt)}`}
+                  >
+                    <span tabIndex={0} className="tabular-nums" data-testid="total-comprado-ars">
+                      {formatearPesos(d.totalComprado)} pagados
+                    </span>
+                  </Tooltip>
+                ) : undefined
+              }
+            />
           )}
         </div>
 
@@ -144,6 +164,7 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
           productos={d.productos}
           verPrecios={verPrecios}
           puedeEditar={puede(usuario, panelId, Modulo.PROVEEDORES, "editar")}
+          cotizacionUsdt={d.cotizacionUsdt}
         />
 
         <SectionCard

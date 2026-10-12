@@ -4,10 +4,8 @@ import { ArrowRight, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearMonto, formatearNumero } from "@/lib/format";
 import type { CambioPrecioProveedor } from "@/server/services/compra.service";
-
-import { formatearMonto } from "./formato";
 
 /**
  * Confirmación de "Recibir mercadería". Si hay productos cuyo precio del
@@ -110,7 +108,9 @@ export function DialogoRecibir({
                       strokeWidth={1.75}
                       aria-hidden
                     />
-                    <strong className="font-semibold">{formatearPesos(c.despues)}</strong>
+                    <strong className="font-semibold">
+                      {formatearMonto(c.despues, c.monedaDespues)}
+                    </strong>
                   </span>
                 </li>
               ))}

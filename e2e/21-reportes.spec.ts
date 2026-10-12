@@ -11,8 +11,8 @@ import { limpiarAlTerminar } from "./fixtures";
 limpiarAlTerminar();
 
 /**
- * Reportes: comparador de proveedores (orden, diferencias, badge, USD con
- * cotización), historial de precios, acceso de Trinidad a lo de dueños,
+ * Reportes: comparador de proveedores (orden, diferencias, badge, USDT
+ * convertido con la cotización USDT global), historial de precios, acceso de Trinidad a lo de dueños,
  * aislamiento por panel y el PDF del resumen mensual.
  */
 test.describe.configure({ mode: "serial" });
@@ -26,7 +26,7 @@ async function dueno() {
   return db.usuario.findFirstOrThrow({ where: { email: "juancruz@negocio.com" } });
 }
 
-/** Producto propio + 3 proveedores en pesos (10.000 / 11.800 / 10.500) + 1 en USD (6,50). */
+/** Producto propio + 3 proveedores en pesos (10.000 / 11.800 / 10.500) + 1 en USDT (7,50). */
 async function prepararComparador() {
   const usuarioId = (await dueno()).id;
   const marca = await db.marca.create({ data: { panelId: PANEL_VAPES, nombre: `Comp${sufijo}` } });
@@ -41,11 +41,11 @@ async function prepararComparador() {
     },
   });
   productoId = producto.id;
-  const filas: [string, string, "ARS" | "USD"][] = [
+  const filas: [string, string, "ARS" | "USDT"][] = [
     ["Ana", "10000", "ARS"],
     ["Beto", "11800", "ARS"],
     ["Ceci", "10500", "ARS"],
-    ["Dolarero", "6.50", "USD"],
+    ["Usdtero", "7.50", "USDT"],
   ];
   for (const [i, [nombre, precio, moneda]] of filas.entries()) {
     const p = await db.proveedor.create({
@@ -67,10 +67,10 @@ async function prepararComparador() {
     });
     proveedores[nombre] = p.id;
   }
-  await db.configuracion.deleteMany({ where: { panelId: PANEL_VAPES, clave: "cotizacionUsd" } });
+  await db.configuracionGlobal.deleteMany({ where: { clave: "cambio.overrideUSDT" } });
 }
 
-test("comparador: 3 proveedores en pesos ordenados con diferencias y badge; USD aparte sin cotización", async ({
+test("comparador: pesos y USDT ordenados juntos en pesos con la cotización USDT, con diferencias y badge", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
@@ -93,25 +93,29 @@ test("comparador: 3 proveedores en pesos ordenados con diferencias y badge; USD 
 
   const ofertas = page.getByTestId("oferta");
   await expect(ofertas).toHaveCount(4);
-  await expect(page.getByTestId("aviso-monedas")).toBeVisible();
-  // Pesos primero (ascendente), el USD en su propio grupo.
+  // Cotización USDT del setup: 1.350 → 7,50 USDT ≈ $ 10.125 (entre Ana y Ceci).
+  await expect(page.getByTestId("cotizacion-usdt")).toContainText("1.350");
+  await expect(page.getByTestId("aviso-monedas")).toHaveCount(0);
+  await expect(page.getByTestId("aviso-conversion")).toContainText("1.350");
   const nombres = await ofertas.evaluateAll((els) =>
     els.map((e) => e.getAttribute("data-proveedor")),
   );
   expect(nombres).toEqual([
     `Ana ${sufijo}`,
+    `Usdtero ${sufijo}`,
     `Ceci ${sufijo}`,
     `Beto ${sufijo}`,
-    `Dolarero ${sufijo}`,
   ]);
   await expect(ofertas.nth(0).getByTestId("badge-mas-barato")).toBeVisible();
   await expect(ofertas.nth(1).getByTestId("badge-mas-barato")).toHaveCount(0);
   await expect(ofertas.nth(0).getByTestId("diferencia")).toHaveText("El mejor precio");
-  await expect(ofertas.nth(1).getByTestId("diferencia")).toContainText("500");
-  await expect(ofertas.nth(1).getByTestId("diferencia")).toContainText("+5 %");
-  await expect(ofertas.nth(2).getByTestId("diferencia")).toContainText("1.800");
-  await expect(ofertas.nth(2).getByTestId("diferencia")).toContainText("+18 %");
-  await expect(ofertas.nth(3).getByTestId("badge-mas-barato")).toContainText("en dólares");
+  await expect(ofertas.nth(1).getByTestId("precio")).toContainText("7,50 USDT");
+  await expect(ofertas.nth(1).getByTestId("equivalente")).toContainText("10.125");
+  await expect(ofertas.nth(1).getByTestId("diferencia")).toContainText("125");
+  await expect(ofertas.nth(2).getByTestId("diferencia")).toContainText("500");
+  await expect(ofertas.nth(2).getByTestId("diferencia")).toContainText("+5 %");
+  await expect(ofertas.nth(3).getByTestId("diferencia")).toContainText("1.800");
+  await expect(ofertas.nth(3).getByTestId("diferencia")).toContainText("+18 %");
   const nueva = ofertas.nth(0).getByRole("link", { name: /Nueva compra/ });
   await expect(nueva).toHaveAttribute(
     "href",
@@ -122,21 +126,27 @@ test("comparador: 3 proveedores en pesos ordenados con diferencias y badge; USD 
   await expect(page.getByTestId("sugerencias")).toContainText("1.800/u");
 });
 
-test("con cotización del dólar el USD se convierte para ordenar e indica el equivalente", async ({
+test("con la cotización USDT cargada a mano el orden cambia: el de USDT pasa a ser el más barato", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
+  // Override manual global (Configuración → Cotizaciones): pisa a la automática.
+  await db.configuracionGlobal.upsert({
+    where: { clave: "cambio.overrideUSDT" },
+    create: {
+      clave: "cambio.overrideUSDT",
+      valor: { valor: 1300, cargadoAt: new Date().toISOString(), usuarioNombre: "e2e" },
+    },
+    update: { valor: { valor: 1300, cargadoAt: new Date().toISOString(), usuarioNombre: "e2e" } },
+  });
   await loginDueno(page);
   await page.goto(`/p/vapes/reportes/comparador?productoId=${productoId}`);
-  await page.getByLabel("Cotización del dólar").fill("1500");
-  await page.getByTestId("form-cotizacion").getByRole("button", { name: "Guardar" }).click();
-  await expect(page.getByTestId("aviso-conversion")).toBeVisible();
-  await expect(page.getByTestId("aviso-monedas")).toHaveCount(0);
+  await expect(page.getByTestId("cotizacion-usdt")).toContainText("1.300");
   const ofertas = page.getByTestId("oferta");
-  // 6,50 × 1.500 = 9.750 < 10.000: el de dólares pasa a ser el más barato.
-  await expect(ofertas.nth(0)).toHaveAttribute("data-proveedor", `Dolarero ${sufijo}`);
+  // 7,50 × 1.300 = 9.750 < 10.000: el de USDT pasa a ser el más barato.
+  await expect(ofertas.nth(0)).toHaveAttribute("data-proveedor", `Usdtero ${sufijo}`);
   await expect(ofertas.nth(0).getByTestId("badge-mas-barato")).toBeVisible();
-  await expect(ofertas.nth(0).getByTestId("precio")).toContainText("US$");
+  await expect(ofertas.nth(0).getByTestId("precio")).toContainText("USDT");
   await expect(ofertas.nth(0).getByTestId("equivalente")).toContainText("9.750");
   await expect(ofertas.nth(1)).toHaveAttribute("data-proveedor", `Ana ${sufijo}`);
   await expect(ofertas.nth(1).getByTestId("diferencia")).toContainText("250");
@@ -152,6 +162,7 @@ test("con cotización del dólar el USD se convierte para ordenar e indica el eq
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/p/vapes/reportes/comparador?vista=matriz`);
   await expect(page.getByTestId("matriz")).toContainText(`Comp${sufijo} Zeta 9000`);
+  await db.configuracionGlobal.deleteMany({ where: { clave: "cambio.overrideUSDT" } });
 });
 
 test("cambiar el precio de un proveedor aparece en el historial (reporte de compras)", async ({

@@ -10,7 +10,7 @@ import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { puede } from "@/lib/permisos";
@@ -111,7 +111,14 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                       header: "Costo unitario",
                       className: "text-right",
                       cell: (i: (typeof c.items)[number]) => (
-                        <span className="text-muted">{formatearPesos(i.costoUnitario)}</span>
+                        <span className="flex flex-col items-end">
+                          <span className="text-muted">{formatearPesos(i.costoUnitario)}</span>
+                          {i.costoUnitarioUSDT && (
+                            <span className="text-subtle text-xs">
+                              {formatearUsdt(i.costoUnitarioUSDT)}
+                            </span>
+                          )}
+                        </span>
                       ),
                     },
                     {
@@ -131,6 +138,7 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                     {i.sabor ? `${i.sabor} · ` : ""}
                     {i.sku} · {i.cantidad} u.
                     {verCostos && ` × ${formatearPesos(i.costoUnitario)}`}
+                    {verCostos && i.costoUnitarioUSDT && ` (${formatearUsdt(i.costoUnitarioUSDT)})`}
                   </p>
                 </div>
                 {verCostos && (
@@ -170,6 +178,11 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                 )}
               </Dato>
               <Dato label="Cargada por">{c.usuario}</Dato>
+              {verCostos && c.tipoCambioUSDT && (
+                <Dato label="Cotización USDT usada">
+                  <span className="tabular-nums">{formatearPesos(c.tipoCambioUSDT)} por USDT</span>
+                </Dato>
+              )}
               {c.notas && (
                 <Dato label="Notas" className="col-span-2 lg:col-span-1">
                   <span className="whitespace-pre-line">{c.notas}</span>

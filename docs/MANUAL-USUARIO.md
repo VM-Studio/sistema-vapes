@@ -291,7 +291,9 @@ En **Reportes** hay una tarjeta por reporte. Cada uno se filtra (período, galp�
 2. Ves los proveedores **del más barato al más caro**, con el precio, la fecha en que se actualizó, la última compra y cuánto ahorrás por unidad frente a los demás. El primero lleva **El mejor precio**. Un precio viejo aparece marcado como **posiblemente desactualizado**. Desde ahí podés escribirle por **WhatsApp** o armar una compra.
 3. La vista **Matriz** (en la computadora) muestra todos los productos de una marca contra todos los proveedores, para ver de un vistazo quién es más barato en cada uno.
 
-**Precios en dólares.** Si un proveedor tiene precios en USD, cargá la **Cotización del dólar** arriba del comparador (pesos por dólar): el comparador los convierte para ordenarlos junto con los precios en pesos. Sin cotización, los precios en dólares se muestran aparte.
+**Precios en USDT.** Los proveedores cotizan en **USDT** (es la moneda por defecto al cargar un precio; también se puede elegir ARS). Al lado de cada precio en USDT ves, en gris, su equivalente en pesos con la cotización USDT del momento (pasá el mouse para ver la hora y la fuente). El comparador pasa todo a pesos con esa cotización para ordenarlos juntos; la cotización se actualiza sola y, si hace falta, se carga a mano en **Configuración → Cotizaciones**.
+
+**Compras a proveedores en USDT.** El costo de la compra se carga en pesos: el sugerido es el precio en USDT × la cotización del momento, y la compra guarda esa cotización. En el detalle de la compra ves el costo en pesos y en USDT de cada producto.
 
 **Historial de precios.** Cada vez que cambia el precio de un proveedor (a mano en su ficha o al recibir una compra con «actualizar precio») queda registrado. Lo ves en el reporte **Compras y precios de proveedores**.
 
@@ -591,5 +593,5 @@ El dashboard suma todas las ventas confirmadas del período, de todos los medios
 **¿La comisión que veo en el dashboard se le paga sola al empleado?**
 No. Es una cuenta orientativa con el % cargado en su usuario; el pago lo arreglan por fuera del sistema.
 
-**Un proveedor me pasó precios en dólares. ¿Cómo los comparo?**
-Cargá el precio en USD en la ficha del proveedor y la **Cotización del dólar** en el comparador: el sistema los pasa a pesos para ordenarlos.
+**Un proveedor me pasó precios en USDT. ¿Cómo los comparo?**
+Cargá el precio en USDT en la ficha del proveedor: el sistema lo pasa a pesos con la cotización USDT del momento y lo ordena junto con los precios en pesos.

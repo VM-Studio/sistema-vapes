@@ -2,6 +2,7 @@ import "server-only";
 
 import { EstadoVenta, TipoVenta } from "@prisma/client";
 
+import { fechaHoraCotizacion } from "@/lib/cambio";
 import { ESTADO_STOCK_UI, TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { esOwner } from "@/lib/permisos";
 import { formatearFecha, formatearFechaHora } from "@/lib/utils";
@@ -80,8 +81,13 @@ export function periodoAnalitica(params: Params): { periodo: Periodo; etiqueta: 
   };
 }
 
-const conMoneda = (precio: string, moneda: "ARS" | "USD") =>
-  moneda === "USD" ? `US$ ${Number(precio).toLocaleString("es-AR")}` : precio;
+const conMoneda = (precio: string, moneda: "ARS" | "USDT") =>
+  moneda === "USDT" ? `${Number(precio).toLocaleString("es-AR")} USDT` : precio;
+
+const textoCotizacion = (c: { valor: number; obtenidoAt: string; fuente: string } | null) =>
+  c
+    ? `Cotización USDT: $ ${c.valor.toLocaleString("es-AR")} (${fechaHoraCotizacion(c.obtenidoAt)}, ${c.fuente})`
+    : "Sin cotización USDT";
 
 const filaComparado = (nombre: string, c: Comparado<string> | Comparado<number>): Celda[] => [
   nombre,
@@ -118,11 +124,7 @@ export async function armarExportacion(
           titulo: `Comparador: ${c.producto.nombreCompleto}`,
           archivo: archivo("comparador"),
           periodo: null,
-          filtros: [
-            c.cotizacionUsd
-              ? `Cotización USD: $ ${c.cotizacionUsd.toLocaleString("es-AR")}`
-              : "Sin cotización USD",
-          ],
+          filtros: [textoCotizacion(c.cotizacionUsdt)],
           tablas: [
             {
               columnas: [
@@ -142,7 +144,7 @@ export async function armarExportacion(
                 o.tienda,
                 conMoneda(o.precio, o.moneda),
                 o.precioArsEquivalente,
-                o.grupo === "USD" ? `US$ ${o.diferencia}` : o.diferencia,
+                o.grupo === "USDT" ? `${o.diferencia} USDT` : o.diferencia,
                 o.diferenciaPct,
                 `${formatearFecha(o.actualizadoAt)}${o.desactualizado ? " (viejo)" : ""}`,
                 o.ultimaCompra
@@ -164,9 +166,7 @@ export async function armarExportacion(
         apaisado: true,
         filtros: [
           ...(params.marcaId ? [`Marca: ${nombre(params.marcaId)}`] : []),
-          matriz.cotizacionUsd
-            ? `Cotización USD: $ ${matriz.cotizacionUsd.toLocaleString("es-AR")}`
-            : "Sin cotización USD",
+          textoCotizacion(matriz.cotizacionUsdt),
         ],
         tablas: [
           {
@@ -179,7 +179,7 @@ export async function armarExportacion(
               { titulo: "Ahorro por unidad", tipo: "moneda" },
             ],
             filas: varios.map((v) => [
-              `${v.nombreCompleto}${v.moneda === "USD" ? " (US$)" : ""}`,
+              `${v.nombreCompleto}${v.moneda === "USDT" ? " (USDT)" : ""}`,
               v.proveedores,
               v.minimo,
               v.maximo,
@@ -197,7 +197,7 @@ export async function armarExportacion(
               ...matriz.proveedores.map((p) => {
                 const x = f.precios[p.id];
                 if (!x) return null;
-                return `${x.moneda === "USD" ? `US$ ${x.precio}` : x.precio}${x.masBarato ? " *" : ""}`;
+                return `${x.moneda === "USDT" ? `${x.precio} USDT` : x.precio}${x.masBarato ? " *" : ""}`;
               }),
             ]),
           },
@@ -546,6 +546,7 @@ export async function armarExportacion(
               { titulo: "Compras", tipo: "numero" },
               { titulo: "Unidades", tipo: "numero" },
               { titulo: "Total", tipo: "moneda" },
+              { titulo: "Total USDT", ancho: 1.2 },
               { titulo: "Última", ancho: 1 },
             ],
             filas: porProv.map((x) => [
@@ -554,6 +555,7 @@ export async function armarExportacion(
               x.compras,
               x.unidades,
               x.total,
+              x.totalUSDT === null ? "—" : conMoneda(x.totalUSDT, "USDT"),
               formatearFecha(x.ultima),
             ]),
             totales: [
@@ -562,6 +564,12 @@ export async function armarExportacion(
               porProv.reduce((a, x) => a + x.compras, 0),
               porProv.reduce((a, x) => a + x.unidades, 0),
               porProv.reduce((a, x) => a + Number(x.total), 0).toFixed(2),
+              porProv.some((x) => x.totalUSDT !== null)
+                ? conMoneda(
+                    porProv.reduce((a, x) => a + Number(x.totalUSDT ?? 0), 0).toFixed(2),
+                    "USDT",
+                  )
+                : "—",
               "",
             ],
           },

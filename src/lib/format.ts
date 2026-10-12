@@ -32,8 +32,27 @@ export function formatearDolares(valor: string | number | null | undefined): str
   return `US$ ${t}`;
 }
 
-/** Monto en la moneda indicada: "USD" → formatearDolares, cualquier otra → pesos. */
-export function formatearMonto(valor: string | number | null | undefined, moneda?: string): string {
+/** "150 USDT" / "12,50 USDT" (precios de proveedores en USDT). */
+export function formatearUsdt(valor: string | number | null | undefined): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const n = typeof valor === "number" ? valor : Number(valor);
+  if (!Number.isFinite(n)) return "—";
+  const t = n.toLocaleString("es-AR", {
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+  return `${t} USDT`;
+}
+
+/**
+ * Monto en la moneda indicada: "USDT" → formatearUsdt, "USD" → formatearDolares,
+ * cualquier otra → pesos.
+ */
+export function formatearMonto(
+  valor: string | number | null | undefined,
+  moneda?: string | null,
+): string {
+  if (moneda === "USDT") return formatearUsdt(valor);
   return moneda === "USD" ? formatearDolares(valor) : formatearPesos(valor);
 }
 

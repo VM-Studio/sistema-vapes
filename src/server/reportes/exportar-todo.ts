@@ -436,6 +436,7 @@ export function streamExportarTodo(meta: {
         { header: "Proveedor", key: "p", width: 26 },
         { header: "Depósito", key: "d", width: 14 },
         { header: "Total", key: "t", width: 13, numFmt: MONEDA },
+        { header: "Cotización USDT", key: "tc", width: 14, numFmt: MONEDA },
       ],
       (c) => prisma.compra.findMany({ ...pag(c), include: { proveedor: true, deposito: true } }),
       (x) => ({
@@ -446,6 +447,7 @@ export function streamExportarTodo(meta: {
         p: x.proveedor ? `${x.proveedor.nombreTienda} (${x.proveedor.nombre})` : "",
         d: x.deposito.nombre,
         t: num(x.total),
+        tc: x.tipoCambioUSDT ? num(x.tipoCambioUSDT) : null,
       }),
     );
 
@@ -459,6 +461,7 @@ export function streamExportarTodo(meta: {
         { header: "Sabor", key: "v", width: 20 },
         { header: "Cantidad", key: "c", width: 9 },
         { header: "Costo unitario", key: "co", width: 12, numFmt: MONEDA },
+        { header: "Costo USDT", key: "cu", width: 11, numFmt: "#,##0.00" },
         { header: "Subtotal", key: "s", width: 12, numFmt: MONEDA },
       ],
       (c) =>
@@ -476,6 +479,7 @@ export function streamExportarTodo(meta: {
         v: saborVisible(i.variante.nombre) ?? "",
         c: i.cantidad,
         co: num(i.costoUnitario),
+        cu: i.costoUnitarioUSDT ? num(i.costoUnitarioUSDT) : null,
         s: num(i.subtotal),
       }),
     );

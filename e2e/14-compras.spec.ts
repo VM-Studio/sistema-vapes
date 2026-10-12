@@ -56,6 +56,7 @@ async function preparar(sufijo: string) {
           panelId: PANEL_VAPES,
           productoId: producto.id,
           precio: 7000,
+          moneda: "ARS",
           usuarioId: dueno.id,
         },
       },
