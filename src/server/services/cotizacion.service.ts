@@ -11,6 +11,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 
 import { obtenerEnv } from "@/env";
 import { finDelDia, hoyAR, inicioDelDia } from "@/lib/fechas";
+import { formatearUSD, leyendaBlue, precioEnUSD } from "@/lib/cambio";
 import { formatearPesos } from "@/lib/format";
 import { precioVentaEfectivo } from "@/lib/precios";
 import { ahora } from "@/lib/reloj";
@@ -44,7 +45,12 @@ import { registrarAuditoria } from "@/server/services/audit.service";
 import { ClienteDuplicadoError, crearCliente } from "@/server/services/cliente.service";
 import { obtenerConfigCotizacion } from "@/server/services/configuracion.service";
 import { nombreNegocio } from "@/server/services/identidad.service";
-import { calcularPrecios, type ResultadoPrecios } from "@/server/services/precio.service";
+import {
+  calcularPrecios,
+  totalEnUSD,
+  type MonedaPrecio,
+  type ResultadoPrecios,
+} from "@/server/services/precio.service";
 import type { CtxFiados } from "@/server/services/fiado.service";
 import { generarVenta, type VentaGenerada } from "@/server/services/venta.service";
 
@@ -59,6 +65,11 @@ import { generarVenta, type VentaGenerada } from "@/server/services/venta.servic
  *   más (lo garantiza un trigger).
  * - convertirEnVenta: todo en una transacción (alta de cliente si hace falta,
  *   venta con los precios cotizados como especiales, cotización CONVERTIDA).
+ * - Mayorista en dólares: la cotización guarda el SNAPSHOT del blue venta con
+ *   que se calcularon sus pesos (tipoCambioBlue / tipoCambioObtenidoAt). Al
+ *   editarla mientras sigue vigente se usa ese mismo blue (lo prometido al
+ *   cliente no cambia); creada, duplicada, editada después de vencer o
+ *   convertida vencida con "recalcular" usa el blue de hoy.
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -87,7 +98,12 @@ export interface PermisosCotizacion {
 
 export interface CotizacionInput {
   tipo: TipoCotizacion;
-  items: { varianteId: string; cantidad: number; precioManual?: number | string | null }[];
+  items: {
+    varianteId: string;
+    cantidad: number;
+    precioManual?: number | string | null;
+    monedaManual?: MonedaPrecio;
+  }[];
   cliente: ClienteCotizacion;
   descuento?: number;
   notas?: string;
@@ -179,9 +195,29 @@ const itemsParaCrear = (precios: ResultadoPrecios) =>
     cantidad: i.cantidad,
     precioLista: i.precioLista,
     precioUnitario: i.precioUnitario,
+    precioUnitarioUSD: i.precioUnitarioUSD,
     escalonAplicado: i.escalonAplicado,
     esPrecioManual: i.esPrecioManual,
     subtotal: i.subtotal,
+  }));
+
+/** Snapshot del blue a guardar en la cotización (solo mayorista con cotización). */
+const snapshotBlue = (precios: ResultadoPrecios) =>
+  precios.tipoCambioBlue
+    ? {
+        tipoCambioBlue: precios.tipoCambioBlue.valor,
+        tipoCambioObtenidoAt: new Date(precios.tipoCambioBlue.obtenidoAt),
+      }
+    : { tipoCambioBlue: null, tipoCambioObtenidoAt: null };
+
+/** Ítems para el auditor (con el precio en USD si lo tiene). */
+const itemsAuditoria = (precios: ResultadoPrecios) =>
+  precios.items.map((i) => ({
+    varianteId: i.varianteId,
+    cantidad: i.cantidad,
+    precioUnitario: i.precioUnitario,
+    ...(i.precioUnitarioUSD ? { precioUnitarioUSD: i.precioUnitarioUSD } : {}),
+    esPrecioManual: i.esPrecioManual,
   }));
 
 // =============================================================================
@@ -224,6 +260,7 @@ export async function crearCotizacion(
           descuento,
           total: subtotal.minus(descuento),
           notas: input.notas?.trim() || null,
+          ...snapshotBlue(precios),
           items: { create: itemsParaCrear(precios) },
         },
         select: { id: true },
@@ -240,12 +277,8 @@ export async function crearCotizacion(
           subtotal: precios.subtotal,
           descuento: dec(descuento),
           total: dec(subtotal.minus(descuento)),
-          items: precios.items.map((i) => ({
-            varianteId: i.varianteId,
-            cantidad: i.cantidad,
-            precioUnitario: i.precioUnitario,
-            esPrecioManual: i.esPrecioManual,
-          })),
+          tipoCambioBlue: precios.tipoCambioBlue?.valor ?? null,
+          items: itemsAuditoria(precios),
         },
         meta: ctx.meta,
       });
@@ -253,6 +286,45 @@ export async function crearCotizacion(
     },
     { maxRetries: 20, timeout: 30_000 },
   );
+}
+
+/**
+ * Blue a respetar al recalcular una cotización existente: el suyo (snapshot)
+ * si es mayorista, tiene snapshot y sigue vigente; si no (vencida, unitaria o
+ * de antes de los precios en dólares), `null` → el blue de hoy.
+ */
+export function blueCongelado(
+  c: {
+    tipo: TipoCotizacion;
+    estado: EstadoCotizacion;
+    validaHasta: Date;
+    tipoCambioBlue: Prisma.Decimal | null;
+    tipoCambioObtenidoAt: Date | null;
+  },
+  tipoNuevo: TipoCotizacion = c.tipo,
+): { valor: Prisma.Decimal; obtenidoAt: Date } | null {
+  if (tipoNuevo !== TipoCotizacion.MAYORISTA || c.tipo !== TipoCotizacion.MAYORISTA) return null;
+  if (!c.tipoCambioBlue || !c.tipoCambioObtenidoAt || estaVencida(c)) return null;
+  return { valor: c.tipoCambioBlue, obtenidoAt: c.tipoCambioObtenidoAt };
+}
+
+/** Snapshot a respetar al recalcular en vivo el armado de una cotización existente. */
+export async function blueDeCotizacion(
+  ctx: Ctx,
+  id: string,
+  tipoNuevo: TipoCotizacion,
+): Promise<{ valor: Prisma.Decimal; obtenidoAt: Date } | null> {
+  const c = await dbPara(ctx.panelId).cotizacion.findFirst({
+    where: { id, deletedAt: null },
+    select: {
+      tipo: true,
+      estado: true,
+      validaHasta: true,
+      tipoCambioBlue: true,
+      tipoCambioObtenidoAt: true,
+    },
+  });
+  return c ? blueCongelado(c, tipoNuevo) : null;
 }
 
 async function bloquear(tx: Tx, ctx: Ctx, id: string) {
@@ -282,16 +354,17 @@ export async function actualizarCotizacion(
         throw new DomainError(
           `La cotización ${actual.codigo} está ${actual.estado.toLowerCase()}: duplicala para armar una nueva.`,
         );
+      const vencida = estaVencida(actual);
       const precios = await calcularPrecios(
         ctx,
         { tipo: input.tipo, items: input.items },
         permisos,
         tx,
+        { tipoCambioBlue: blueCongelado(actual, input.tipo) },
       );
       const subtotal = D(precios.subtotal);
       const descuento = exigirDescuento(input.descuento, subtotal, permisos);
       const cliente = await resolverCliente(tx, input.cliente);
-      const vencida = estaVencida(actual);
       let validaHasta = actual.validaHasta;
       if (input.validezDias !== undefined)
         validaHasta = validaHastaDesde(ahora(), input.validezDias);
@@ -314,6 +387,7 @@ export async function actualizarCotizacion(
           total: subtotal.minus(descuento),
           notas: input.notas?.trim() || null,
           pdfUrl: null,
+          ...snapshotBlue(precios),
           items: { create: itemsParaCrear(precios) },
         },
       });
@@ -325,6 +399,7 @@ export async function actualizarCotizacion(
         datosAntes: {
           estado: actual.estado,
           total: dec(actual.total),
+          tipoCambioBlue: actual.tipoCambioBlue ? dec(actual.tipoCambioBlue) : null,
           items: actual.items.map((i) => ({
             varianteId: i.varianteId,
             cantidad: i.cantidad,
@@ -334,12 +409,8 @@ export async function actualizarCotizacion(
         datosDespues: {
           tipo: input.tipo,
           total: dec(subtotal.minus(descuento)),
-          items: precios.items.map((i) => ({
-            varianteId: i.varianteId,
-            cantidad: i.cantidad,
-            precioUnitario: i.precioUnitario,
-            esPrecioManual: i.esPrecioManual,
-          })),
+          tipoCambioBlue: precios.tipoCambioBlue?.valor ?? null,
+          items: itemsAuditoria(precios),
         },
         meta: ctx.meta,
       });
@@ -477,32 +548,38 @@ export async function obtener(ctx: Ctx, id: string) {
     },
   });
   if (!c) throw new NotFoundError("La cotización no existe.");
-  const config = await obtenerConfigCotizacion(ctx);
   const totalUnidades = c.items.reduce((a, i) => a + i.cantidad, 0);
+  // Resumen POR PRODUCTO: sus sabores suman las unidades que definen el escalón.
   const resumenEscalones: {
     productoId: string;
     nombreCompleto: string;
     unidades: number;
     escalonAplicado: number | null;
     precioUnitario: string;
+    precioUnitarioUSD: string | null;
   }[] = [];
   if (c.tipo === TipoCotizacion.MAYORISTA) {
     for (const i of c.items) {
       const r = resumenEscalones.find((x) => x.productoId === i.productoId);
       if (r) {
-        if (config.modoEscalonMayorista === "POR_PRODUCTO") r.unidades += i.cantidad;
+        r.unidades += i.cantidad;
         continue;
       }
       const ref = c.items.find((x) => x.productoId === i.productoId && !x.esPrecioManual) ?? i;
       resumenEscalones.push({
         productoId: i.productoId,
         nombreCompleto: i.producto.nombreCompleto,
-        unidades: config.modoEscalonMayorista === "POR_TOTAL" ? totalUnidades : i.cantidad,
+        unidades: i.cantidad,
         escalonAplicado: ref.escalonAplicado,
         precioUnitario: dec(ref.precioUnitario),
+        precioUnitarioUSD: ref.precioUnitarioUSD ? dec(ref.precioUnitarioUSD) : null,
       });
     }
   }
+  const tipoCambioBlue =
+    c.tipoCambioBlue && c.tipoCambioObtenidoAt
+      ? { valor: dec(c.tipoCambioBlue), obtenidoAt: c.tipoCambioObtenidoAt.toISOString() }
+      : null;
   return {
     id: c.id,
     numero: c.numero,
@@ -524,9 +601,19 @@ export async function obtener(ctx: Ctx, id: string) {
     notas: c.notas,
     motivoRechazo: c.motivoRechazo,
     venta: c.venta,
-    modo: config.modoEscalonMayorista,
     unidades: totalUnidades,
     resumenEscalones,
+    /** Snapshot del blue venta con que se calcularon los pesos (mayorista). */
+    tipoCambioBlue,
+    /** Equivalentes en dólares con ese blue (USD exactos + pesos ÷ blue). */
+    subtotalUSD: tipoCambioBlue ? dec(totalEnUSD(c.items, tipoCambioBlue.valor)) : null,
+    totalUSD: tipoCambioBlue
+      ? dec(
+          totalEnUSD(c.items, tipoCambioBlue.valor)
+            .minus(D(c.descuento).div(D(tipoCambioBlue.valor)))
+            .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
+        )
+      : null,
     items: c.items.map((i) => ({
       id: i.id,
       varianteId: i.varianteId,
@@ -538,8 +625,11 @@ export async function obtener(ctx: Ctx, id: string) {
       cantidad: i.cantidad,
       precioLista: dec(i.precioLista),
       precioUnitario: dec(i.precioUnitario),
+      precioUnitarioUSD: i.precioUnitarioUSD ? dec(i.precioUnitarioUSD) : null,
       escalonAplicado: i.escalonAplicado,
       esPrecioManual: i.esPrecioManual,
+      /** Un precio manual con USD fue cargado en dólares. */
+      monedaManual: (i.esPrecioManual && i.precioUnitarioUSD ? "USD" : "ARS") as MonedaPrecio,
       subtotal: dec(i.subtotal),
     })),
   };
@@ -708,13 +798,19 @@ export async function textoWhatsApp(
   const c = await obtener(ctx, id);
   const config = await obtenerConfigCotizacion(ctx);
   const mayorista = c.tipo === TipoCotizacion.MAYORISTA;
+  const blue = mayorista ? c.tipoCambioBlue : null;
+  const precioFila = (i: (typeof c.items)[number]) => {
+    const usd = blue ? precioEnUSD(i.precioUnitario, i.precioUnitarioUSD, blue.valor) : null;
+    return usd
+      ? `${formatearUSD(usd)} · ${formatearPesos(i.precioUnitario)}`
+      : formatearPesos(i.precioUnitario);
+  };
   const lineas = [
     c.cliente ? `¡Hola ${c.cliente.nombre}!` : "¡Hola!",
     `Te paso la cotización ${c.codigo} (${ETIQUETA_TIPO_COTIZACION[c.tipo].toLowerCase()}):`,
     "",
     ...c.items.map(
-      (i) =>
-        `• ${i.cantidad} × ${i.titulo}: ${formatearPesos(i.precioUnitario)} c/u = ${formatearPesos(i.subtotal)}`,
+      (i) => `• ${i.cantidad} × ${i.titulo}: ${precioFila(i)} c/u = ${formatearPesos(i.subtotal)}`,
     ),
     "",
     ...(mayorista
@@ -728,7 +824,8 @@ export async function textoWhatsApp(
     ...(Number(c.descuento) > 0
       ? [`Subtotal: ${formatearPesos(c.subtotal)}`, `Descuento: −${formatearPesos(c.descuento)}`]
       : []),
-    `Total: ${formatearPesos(c.total)}`,
+    `Total: ${formatearPesos(c.total)}${c.totalUSD ? ` (${formatearUSD({ usd: Number(c.totalUSD), aproximado: true })})` : ""}`,
+    ...(blue ? [`${leyendaBlue(blue.valor, blue.obtenidoAt)}.`] : []),
     `Válida hasta el ${formatearFecha(c.validaHasta)}.`,
     ...(config.leyenda ? [config.leyenda] : []),
     // Link firmado sin sesión: el PDF se genera al abrirlo (nunca queda roto).
@@ -760,15 +857,16 @@ export async function pdfCotizacion(
     obtenerConfigCotizacion(ctx),
     nombreNegocio(),
   ]);
-  const clave = clavePdf("cotizacion", ctx.panelId, id, { v: 1, c, panel, config, negocio });
+  const clave = clavePdf("cotizacion", ctx.panelId, id, { v: 2, c, panel, config, negocio });
   const pdf = await pdfCacheado(clave, () => dibujarPdfCotizacion(c, panel, config, negocio));
   return { pdf, archivo: `cotizacion-${c.codigo}.pdf` };
 }
 
 /**
  * Dibuja el PDF: logo y nombre del negocio, código, fecha, validez, cliente,
- * tabla de productos (en mayorista con columna "Escalón" y resumen de
- * escalones al pie), descuento, total, leyenda y vendedor.
+ * tabla de productos (en mayorista con columna "Escalón", precio en dólares
+ * y en pesos, y resumen de escalones al pie), descuento, total (en mayorista
+ * también en dólares), el blue usado con su fecha, leyenda y vendedor.
  */
 async function dibujarPdfCotizacion(
   c: Awaited<ReturnType<typeof obtener>>,
@@ -777,6 +875,7 @@ async function dibujarPdfCotizacion(
   negocio: string,
 ): Promise<Uint8Array> {
   const mayorista = c.tipo === TipoCotizacion.MAYORISTA;
+  const blue = mayorista ? c.tipoCambioBlue : null;
 
   const doc = await PDFDocument.create();
   doc.setTitle(`Cotización ${c.codigo}`);
@@ -876,12 +975,15 @@ async function dibujarPdfCotizacion(
 
   // Tabla
   const cols = mayorista
-    ? { cant: 50, esc: 64, precio: 84, sub: 92 }
-    : { cant: 56, esc: 0, precio: 96, sub: 104 };
-  const anchoProducto = util - cols.cant - cols.esc - cols.precio - cols.sub;
+    ? blue
+      ? { cant: 40, esc: 52, usd: 74, precio: 78, sub: 88 }
+      : { cant: 50, esc: 64, usd: 0, precio: 84, sub: 92 }
+    : { cant: 56, esc: 0, usd: 0, precio: 96, sub: 104 };
+  const anchoProducto = util - cols.cant - cols.esc - cols.usd - cols.precio - cols.sub;
   const xCant = M + anchoProducto + cols.cant;
   const xEsc = xCant + cols.esc;
-  const xPrecio = xEsc + cols.precio;
+  const xUsd = xEsc + cols.usd;
+  const xPrecio = xUsd + cols.precio;
   const xSub = xPrecio + cols.sub;
   const encabezado = () => {
     rectRedondeado(page, M, y - 7, util, 22, 4, fondo);
@@ -889,7 +991,8 @@ async function dibujarPdfCotizacion(
     texto("Producto", M + 10, y, o);
     texto("Cant.", xCant - 8, y, { ...o, derecha: true });
     if (mayorista) texto("Escalón", xEsc - 8, y, { ...o, derecha: true });
-    texto("Precio c/u", xPrecio - 8, y, { ...o, derecha: true });
+    if (blue) texto("U$D c/u", xUsd - 8, y, { ...o, derecha: true });
+    texto(blue ? "$ c/u" : "Precio c/u", xPrecio - 8, y, { ...o, derecha: true });
     texto("Subtotal", xSub - 10, y, { ...o, derecha: true });
     y -= 26;
   };
@@ -918,6 +1021,15 @@ async function dibujarPdfCotizacion(
         y,
         { derecha: true, color: gris, size: 9 },
       );
+    if (blue) {
+      const usd = precioEnUSD(i.precioUnitario, i.precioUnitarioUSD, blue.valor);
+      if (usd)
+        texto(formatearUSD(usd), xUsd - 8, y, {
+          derecha: true,
+          size: 9.5,
+          color: usd.aproximado ? gris : negro,
+        });
+    }
     texto(formatearPesos(i.precioUnitario), xPrecio - 8, y, { derecha: true, size: 9.5 });
     texto(formatearPesos(i.subtotal), xSub - 10, y, { derecha: true, size: 9.5, font: negrita });
     y -= 8;
@@ -926,7 +1038,7 @@ async function dibujarPdfCotizacion(
   }
 
   // Totales (alineados a la derecha, total en negrita con línea negra)
-  const bloqueTotales = (Number(c.descuento) > 0 ? 3 : 1) * 18 + 20;
+  const bloqueTotales = (Number(c.descuento) > 0 ? 3 : 1) * 18 + 20 + (c.totalUSD ? 16 : 0);
   if (y < M + PIE + bloqueTotales) nuevaPagina();
   y -= 4;
   const xEtiqueta = xPrecio - 8;
@@ -947,6 +1059,14 @@ async function dibujarPdfCotizacion(
   y -= 18;
   texto("Total", xEtiqueta, y, { font: negrita, size: 12, derecha: true });
   texto(formatearPesos(c.total), xSub - 10, y, { font: negrita, size: 14, derecha: true });
+  if (c.totalUSD) {
+    y -= 16;
+    texto("Total en dólares", xEtiqueta, y, { derecha: true, color: gris });
+    texto(formatearUSD({ usd: Number(c.totalUSD), aproximado: true }), xSub - 10, y, {
+      derecha: true,
+      font: negrita,
+    });
+  }
   y -= 34;
 
   const parrafo = (titulo: string | null, lineas: string[], color = negro) => {
@@ -965,16 +1085,19 @@ async function dibujarPdfCotizacion(
     y -= 10;
   };
 
+  if (blue) parrafo(null, [`${leyendaBlue(blue.valor, blue.obtenidoAt)}.`]);
   if (mayorista && c.resumenEscalones.length) {
     parrafo(
-      c.modo === "POR_TOTAL"
-        ? `Resumen de escalones (por total de unidades: ${c.unidades} u.)`
-        : "Resumen de escalones",
+      "Resumen de escalones (por producto: suman todos sus sabores)",
       c.resumenEscalones.map(
         (r) =>
           `${r.nombreCompleto}: ${r.unidades} u. — ${
             r.escalonAplicado
-              ? `escalón desde ${r.escalonAplicado} u. a ${formatearPesos(r.precioUnitario)} c/u`
+              ? `escalón desde ${r.escalonAplicado} u. a ${
+                  r.precioUnitarioUSD
+                    ? `${formatearUSD({ usd: Number(r.precioUnitarioUSD), aproximado: false })} (${formatearPesos(r.precioUnitario)})`
+                    : formatearPesos(r.precioUnitario)
+                } c/u`
               : "precio de lista"
           }`,
       ),
@@ -1040,6 +1163,14 @@ export interface PreparacionConversion {
   vencida: boolean;
   /** Solo si está vencida: los precios que cambiarían al recalcular a hoy. */
   cambios: { titulo: string; antes: string; despues: string }[];
+  /**
+   * Mayorista: el blue con que se cotizó y (si está vencida) el de hoy, con
+   * el que se recalcularían los precios en dólares.
+   */
+  blue: {
+    cotizado: { valor: string; obtenidoAt: string } | null;
+    hoy: { valor: string; obtenidoAt: string } | null;
+  } | null;
 }
 
 export async function prepararConversion(ctx: Ctx, id: string): Promise<PreparacionConversion> {
@@ -1055,6 +1186,7 @@ export async function prepararConversion(ctx: Ctx, id: string): Promise<Preparac
   });
   const stockDe = new Map(stocks.map((s) => [s.varianteId, s._sum.cantidad ?? 0]));
   const cambios: PreparacionConversion["cambios"] = [];
+  let blueHoy: { valor: string; obtenidoAt: string } | null = null;
   if (c.vencida) {
     const hoy = await calcularPrecios(
       ctx,
@@ -1064,6 +1196,9 @@ export async function prepararConversion(ctx: Ctx, id: string): Promise<Preparac
       },
       { puedeEditar: false },
     );
+    blueHoy = hoy.tipoCambioBlue
+      ? { valor: hoy.tipoCambioBlue.valor, obtenidoAt: hoy.tipoCambioBlue.obtenidoAt }
+      : null;
     for (const i of c.items) {
       const nuevo = hoy.items.find((x) => x.varianteId === i.varianteId);
       if (nuevo && nuevo.precioUnitario !== i.precioUnitario)
@@ -1096,6 +1231,7 @@ export async function prepararConversion(ctx: Ctx, id: string): Promise<Preparac
       : null,
     vencida: c.vencida,
     cambios,
+    blue: c.tipo === TipoCotizacion.MAYORISTA ? { cotizado: c.tipoCambioBlue, hoy: blueHoy } : null,
   };
 }
 
@@ -1155,6 +1291,7 @@ export async function convertirEnVenta(
         cantidad: i.cantidad,
         precio: D(i.precioUnitario),
       }));
+      let blueRecalculo: ResultadoPrecios["tipoCambioBlue"] = null;
       if (vencida && opciones.recalcular) {
         const hoy = await calcularPrecios(
           ctx,
@@ -1165,6 +1302,7 @@ export async function convertirEnVenta(
           { puedeEditar: false },
           tx,
         );
+        blueRecalculo = hoy.tipoCambioBlue;
         precios = hoy.items.map((i) => ({
           varianteId: i.varianteId,
           cantidad: i.cantidad,
@@ -1222,6 +1360,9 @@ export async function convertirEnVenta(
           ventaId: venta.id,
           venta: venta.codigo,
           recalculada: Boolean(vencida && opciones.recalcular),
+          ...(vencida && opciones.recalcular && blueRecalculo
+            ? { tipoCambioBlue: blueRecalculo.valor }
+            : {}),
         },
         meta: ctx.meta,
       });

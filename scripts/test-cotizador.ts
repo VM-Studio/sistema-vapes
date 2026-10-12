@@ -1,6 +1,9 @@
 /**
  * Cotizador a nivel servicios + DB (panel Vapes): escalones mezclando sabores,
- * defaults del panel, modo POR_TOTAL, conversión en venta de una mayorista
+ * defaults del panel, escalón SIEMPRE por producto (dos productos de 30 u. no
+ * suman 60), escalones en dólares con el blue venta y su snapshot (la
+ * cotización vigente no cambia sus pesos si cambia el blue; vencida se
+ * recalcula con el de hoy), conversión en venta de una mayorista
  * cuyo precio de lista subió (sin permiso de editar), falta de stock (todo o
  * nada), permisos de Trinidad (precio manual prohibido, vendedorId), Cosmetic
  * sin los defaults de Vapes (COS-Q-000001) y aislamiento entre paneles.
@@ -12,11 +15,13 @@ import { EstadoCotizacion, Prisma, RolUsuario, TipoVenta } from "@prisma/client"
 import { prisma } from "../src/lib/db";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { DomainError, ForbiddenError, NotFoundError, ValidationError } from "../src/server/errors";
+import { guardarOverride, quitarOverride } from "../src/server/services/cambio.service";
 import {
   guardarConfigCotizacion,
   obtenerConfigCotizacion,
 } from "../src/server/services/configuracion.service";
 import {
+  actualizarCotizacion,
   convertirEnVenta,
   crearCotizacion,
   duplicar,
@@ -115,25 +120,40 @@ async function main() {
       motivo: "Preparación test-cotizador",
     });
   }
-  await guardarEscalones(ctx, elf.id, [
-    { cantidadMinima: 10, precioUnitario: "9000", activo: true },
-    { cantidadMinima: 50, precioUnitario: "8200", activo: true },
-    { cantidadMinima: 100, precioUnitario: "7500", activo: true },
-  ]);
+  await guardarEscalones(
+    ctx,
+    elf.id,
+    [
+      { cantidadMinima: 10, precioUnitario: "9000", activo: true },
+      { cantidadMinima: 50, precioUnitario: "8200", activo: true },
+      { cantidadMinima: 100, precioUnitario: "7500", activo: true },
+    ],
+    "ARS",
+  );
   await guardarEscalonesDefault(ctx, [
     { cantidadMinima: 10, porcentajeDescuento: "5", activo: true },
     { cantidadMinima: 50, porcentajeDescuento: "12", activo: true },
   ]);
   const configOriginal = await obtenerConfigCotizacion(ctx);
-  await guardarConfigCotizacion(ctx, { ...configOriginal, modoEscalonMayorista: "POR_PRODUCTO" });
+  // Blue venta fijo para el test (override manual; se quita al final).
+  const actor = { id: owner.id, meta };
+  const overrideAntes = await prisma.configuracionGlobal.findUnique({
+    where: { clave: "cambio.overrideUSD_BLUE" },
+  });
+  await guardarOverride("USD_BLUE", 1300, actor);
 
   // ---------------------------------------------------------------------------
   console.log("\n1) Escalones: validación del set");
   const creciente = await error(() =>
-    guardarEscalones(ctx, elf.id, [
-      { cantidadMinima: 10, precioUnitario: "9000", activo: true },
-      { cantidadMinima: 50, precioUnitario: "9500", activo: true },
-    ]),
+    guardarEscalones(
+      ctx,
+      elf.id,
+      [
+        { cantidadMinima: 10, precioUnitario: "9000", activo: true },
+        { cantidadMinima: 50, precioUnitario: "9500", activo: true },
+      ],
+      "ARS",
+    ),
   );
   check(
     creciente instanceof ValidationError,
@@ -194,37 +214,183 @@ async function main() {
   check(unit.items[0]!.precioUnitario === "10000.00", "unitaria: siempre precio de lista");
 
   // ---------------------------------------------------------------------------
-  console.log("\n4) POR_TOTAL: 55 Elf + 10 Uva = 65 unidades");
-  await guardarConfigCotizacion(ctx, { ...configOriginal, modoEscalonMayorista: "POR_TOTAL" });
-  const total = await calcularPrecios(
+  console.log("\n4) Escalón SIEMPRE por producto: 30 Elf + 30 Otro (escalón 50 en los dos)");
+  await guardarEscalones(
+    ctx,
+    otro.id,
+    [{ cantidadMinima: 50, precioUnitario: "7000", activo: true }],
+    "ARS",
+  );
+  const dos = await calcularPrecios(
     ctx,
     {
       tipo: "MAYORISTA",
       items: [
-        { varianteId: mango.id, cantidad: 20 },
-        { varianteId: frutilla.id, cantidad: 35 },
-        { varianteId: uva.id, cantidad: 10 },
+        { varianteId: mango.id, cantidad: 30 },
+        { varianteId: uva.id, cantidad: 30 },
       ],
     },
     DUENO,
   );
-  const itUva = total.items.find((i) => i.varianteId === uva.id)!;
-  check(total.modo === "POR_TOTAL", "modo POR_TOTAL");
   check(
-    itUva.escalonAplicado === 50 && itUva.precioUnitario === "8800.00",
-    `Uva (10 u.) entra en el escalón de 50 por las 65 totales: ${itUva.precioUnitario}`,
+    dos.items.every((i) => i.escalonAplicado !== 50),
+    "60 unidades en la cotización pero 30 de cada producto: ninguno al escalón 50",
   );
   check(
-    total.resumenEscalones.every((r) => r.unidades === 65),
-    "resumen de escalones con 65 unidades",
+    dos.items[0]!.precioUnitario === "9000.00" && dos.items[1]!.precioUnitario === "10000.00",
+    `Elf 30 u. → escalón 10 ($9.000); Otro 30 u. → lista ($10.000)`,
   );
-  await guardarConfigCotizacion(ctx, { ...configOriginal, modoEscalonMayorista: "POR_PRODUCTO" });
-  const porProducto = await calcularPrecios(
+  check(
+    dos.resumenEscalones.map((r) => r.unidades).join() === "30,30",
+    "resumen de escalones por producto: 30 y 30",
+  );
+  await guardarEscalones(ctx, otro.id, [], "ARS");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n4b) Escalones en dólares (blue venta $1.300) y snapshot");
+  const usd = await crearProducto(ctx, "Dolar", ["Mango", "Frutilla"], suf);
+  const [usdFrutilla, usdMango] = usd.variantes as [
+    (typeof usd.variantes)[number],
+    (typeof usd.variantes)[number],
+  ];
+  for (const v of [usdFrutilla, usdMango])
+    await registrarAjuste(ctx, {
+      depositoId: g1.id,
+      varianteId: v.id,
+      cantidadReal: 100,
+      motivo: "Preparación test-cotizador",
+    });
+  const guardados = await guardarEscalones(ctx, usd.id, [
+    { cantidadMinima: 10, precioUnitario: "8", activo: true },
+    { cantidadMinima: 50, precioUnitario: "6.5", activo: true },
+  ]);
+  check(
+    guardados.every((e) => e.moneda === "USD"),
+    "escalones nuevos en USD por defecto",
+  );
+  const tablaUsd = await tablaPreciosProducto(ctx, usd.id);
+  check(
+    tablaUsd.moneda === "USD" &&
+      tablaUsd.escalones.map((e) => `${e.precioUnitarioUSD}/${e.precioUnitario}`).join() ===
+        "8.00/10400.00,6.50/8450.00",
+    "tabla de precios: USD con su equivalente en pesos (8 → $10.400, 6,50 → $8.450)",
+  );
+  const enUsd = await calcularPrecios(
     ctx,
-    { tipo: "MAYORISTA", items: [{ varianteId: uva.id, cantidad: 10 }] },
+    {
+      tipo: "MAYORISTA",
+      items: [
+        { varianteId: usdMango.id, cantidad: 20 },
+        { varianteId: usdFrutilla.id, cantidad: 35 },
+      ],
+    },
     DUENO,
   );
-  check(porProducto.items[0]!.precioUnitario === "9500.00", "POR_PRODUCTO: Uva 10 u. → $9.500");
+  check(
+    enUsd.items.every(
+      (i) =>
+        i.escalonAplicado === 50 &&
+        i.precioUnitarioUSD === "6.50" &&
+        i.precioUnitario === "8450.00",
+    ),
+    "20 Mango + 35 Frutilla → ambos al escalón 50: U$D 6,50 = $8.450",
+  );
+  check(
+    enUsd.tipoCambioBlue?.valor === "1300.00" && enUsd.subtotalUSD === "357.50",
+    `blue usado ${enUsd.tipoCambioBlue?.valor} · total U$D ${enUsd.subtotalUSD}`,
+  );
+  const qUsd = await crearCotizacion(
+    ctx,
+    {
+      tipo: "MAYORISTA",
+      items: [
+        { varianteId: usdMango.id, cantidad: 20 },
+        { varianteId: usdFrutilla.id, cantidad: 35 },
+      ],
+      cliente: { nombre: "Mayorista Dólar", telefono: `11${suf}7` },
+    },
+    DUENO,
+  );
+  const cUsd = await db.cotizacion.findUniqueOrThrow({
+    where: { id: qUsd.id },
+    include: { items: true },
+  });
+  check(
+    $(cUsd.tipoCambioBlue!) === "1300.00" &&
+      cUsd.tipoCambioObtenidoAt !== null &&
+      cUsd.items.every((i) => $(i.precioUnitarioUSD!) === "6.50"),
+    "la cotización guarda el snapshot del blue y el precio en USD por ítem",
+  );
+  // Sube el blue: la cotización vigente conserva sus pesos al editarla.
+  await guardarOverride("USD_BLUE", 1540, actor);
+  await actualizarCotizacion(
+    ctx,
+    qUsd.id,
+    {
+      tipo: "MAYORISTA",
+      items: [
+        { varianteId: usdMango.id, cantidad: 25 },
+        { varianteId: usdFrutilla.id, cantidad: 35 },
+      ],
+      cliente: { nombre: "Mayorista Dólar", telefono: `11${suf}7` },
+    },
+    DUENO,
+  );
+  const dUsd = await obtener(ctx, qUsd.id);
+  check(
+    dUsd.tipoCambioBlue?.valor === "1300.00" &&
+      dUsd.items.every((i) => i.precioUnitario === "8450.00"),
+    "vigente: editada con el blue en $1.540 sigue a $8.450 (blue del snapshot)",
+  );
+  const waUsd = await textoWhatsApp(ctx, qUsd.id);
+  waUsd.texto = waUsd.texto.replace(/\s/g, " ");
+  check(
+    waUsd.texto.includes("U$D 6,50 · $ 8.450") &&
+      waUsd.texto.includes("Precios en dólares convertidos a blue venta $ 1.300 del"),
+    "WhatsApp con USD y pesos y la leyenda del blue usado",
+  );
+  const pdfUsd = await pdfCotizacion(ctx, qUsd.id);
+  check(Buffer.from(pdfUsd.pdf).subarray(0, 5).toString() === "%PDF-", "PDF mayorista en USD");
+  // Vencida: al convertir se recalcula con el blue de hoy y se muestra el cambio.
+  await db.cotizacion.update({
+    where: { id: qUsd.id },
+    data: {
+      fecha: new Date(Date.now() - 20 * 86400000),
+      validaHasta: new Date(Date.now() - 86400000),
+    },
+  });
+  const prepUsd = await prepararConversion(ctx, qUsd.id);
+  check(
+    prepUsd.vencida &&
+      prepUsd.blue?.cotizado?.valor === "1300.00" &&
+      prepUsd.blue?.hoy?.valor === "1540.00" &&
+      prepUsd.cambios.every((c) => c.antes === "8450.00" && c.despues === "10010.00"),
+    "vencida: prepararConversion muestra blue $1.300 → $1.540 y $8.450 → $10.010",
+  );
+  const vUsd = await convertirEnVenta(ctx, qUsd.id, {
+    depositoId: g1.id,
+    pagos: [{ medioPago: "EFECTIVO", monto: 60 * 10010 }],
+    recalcular: true,
+  });
+  check(
+    vUsd.items.every((i) => i.precioUnitario === "10010.00"),
+    "convertida vencida con recalcular: precios con el blue de hoy ($10.010)",
+  );
+  // Precio manual en USD.
+  const manualUsd = await calcularPrecios(
+    ctx,
+    {
+      tipo: "MAYORISTA",
+      items: [{ varianteId: usdMango.id, cantidad: 5, precioManual: 7.25, monedaManual: "USD" }],
+    },
+    DUENO,
+  );
+  check(
+    manualUsd.items[0]!.precioUnitarioUSD === "7.25" &&
+      manualUsd.items[0]!.precioUnitario === "11170.00",
+    "precio manual U$D 7,25 con blue $1.540 → $11.170",
+  );
+  await guardarOverride("USD_BLUE", 1300, actor);
 
   // ---------------------------------------------------------------------------
   console.log("\n5) Crear, estados, duplicar y WhatsApp");
@@ -472,6 +638,14 @@ async function main() {
   );
 
   await guardarConfigCotizacion(ctx, configOriginal);
+  if (overrideAntes) {
+    await prisma.configuracionGlobal.update({
+      where: { clave: overrideAntes.clave },
+      data: { valor: overrideAntes.valor as Prisma.InputJsonValue },
+    });
+  } else {
+    await quitarOverride("USD_BLUE", actor);
+  }
   console.log(fallos ? `\n✘ ${fallos} verificaciones fallaron` : "\n✔ Todo OK");
   process.exitCode = fallos ? 1 : 0;
 }

@@ -422,7 +422,7 @@ async function seedClientes() {
 
 /**
  * Cotizador de ejemplo en Vapes: escalones propios de "Elf Bar BC 5000"
- * (10 → $9.000, 50 → $8.200, 100 → $7.500) y defaults del panel para el resto
+ * en pesos (10 → $9.000, 50 → $8.200, 100 → $7.500) y defaults del panel para el resto
  * (10 u. → 5 %, 50 u. → 12 %). Solo se crean si no existen.
  */
 async function seedCotizador() {
@@ -446,7 +446,7 @@ async function seedCotizador() {
           },
         },
         update: {},
-        create: { productoId: elf.id, cantidadMinima, precioUnitario },
+        create: { productoId: elf.id, cantidadMinima, precioUnitario, moneda: "ARS" },
       });
     }
   }

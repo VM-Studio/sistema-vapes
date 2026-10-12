@@ -7,10 +7,11 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Card } from "@/components/ui/card";
+import { fechaHoraCotizacion, formatearUSD, precioEnUSD } from "@/lib/cambio";
 import { formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
 import { puede } from "@/lib/permisos";
-import { formatearFecha, formatearFechaHora } from "@/lib/utils";
+import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { telefonoVisible } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
@@ -47,6 +48,9 @@ export default async function DetalleCotizacionPage({
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "crear");
 
   const ruta = (r: string) => rutaPanel(ctx.panel.slug, r);
+  const blue = mayorista ? c.tipoCambioBlue : null;
+  const usdDe = (precio: string, usd: string | null) =>
+    blue ? precioEnUSD(precio, usd, blue.valor) : null;
 
   return (
     <>
@@ -67,6 +71,13 @@ export default async function DetalleCotizacionPage({
           {formatearFechaHora(c.fecha)} · {c.vendedor.nombre} · válida hasta{" "}
           {formatearFecha(c.validaHasta)}
         </p>
+        {blue && (
+          <p className="text-muted text-small tabular-nums" data-testid="blue-cotizacion">
+            Dólar blue venta de la cotización:{" "}
+            <strong className="text-foreground font-medium">{formatearPesos(blue.valor)}</strong> (
+            {fechaHoraCotizacion(blue.obtenidoAt)})
+          </p>
+        )}
       </header>
 
       <AccionesCotizacion
@@ -127,7 +138,12 @@ export default async function DetalleCotizacionPage({
                     <span className="block leading-snug font-medium">{i.titulo}</span>
                     <span className="text-muted text-xs tabular-nums">
                       <span className="md:hidden">
-                        {i.cantidad} × {formatearPesos(i.precioUnitario)}
+                        {i.cantidad} ×{" "}
+                        {(() => {
+                          const u = usdDe(i.precioUnitario, i.precioUnitarioUSD);
+                          return u ? `${formatearUSD(u)} · ` : "";
+                        })()}
+                        {formatearPesos(i.precioUnitario)}
                       </span>
                       {i.precioUnitario !== i.precioLista && (
                         <s className="text-subtle ml-1 md:ml-0">
@@ -142,6 +158,20 @@ export default async function DetalleCotizacionPage({
                   </span>
                   <span className="hidden text-right tabular-nums md:block">{i.cantidad}</span>
                   <span className="hidden text-right tabular-nums md:block">
+                    {(() => {
+                      const u = usdDe(i.precioUnitario, i.precioUnitarioUSD);
+                      return u ? (
+                        <span
+                          className={cn(
+                            "block",
+                            u.aproximado ? "text-muted text-xs" : "font-medium",
+                          )}
+                          data-testid="precio-usd"
+                        >
+                          {formatearUSD(u)}
+                        </span>
+                      ) : null;
+                    })()}
                     {formatearPesos(i.precioUnitario)}
                   </span>
                   <span className="text-right font-semibold tabular-nums">
@@ -166,6 +196,14 @@ export default async function DetalleCotizacionPage({
               >
                 {formatearPesos(c.total)}
               </dd>
+              {c.totalUSD && (
+                <>
+                  <dt className="text-muted">Total en dólares</dt>
+                  <dd className="text-right font-semibold tabular-nums" data-testid="total-usd">
+                    {formatearUSD({ usd: Number(c.totalUSD), aproximado: true })}
+                  </dd>
+                </>
+              )}
             </dl>
           </section>
         </Card>
@@ -199,7 +237,10 @@ export default async function DetalleCotizacionPage({
 
           {mayorista && c.resumenEscalones.length > 0 && (
             <Card className="flex flex-col gap-3 p-5">
-              <h2 className="text-h3 font-semibold">Resumen de escalones</h2>
+              <div className="flex flex-col gap-0.5">
+                <h2 className="text-h3 font-semibold">Resumen de escalones</h2>
+                <p className="text-muted text-xs">Por producto: suman todos sus sabores.</p>
+              </div>
               <ul className="border-border bg-surface divide-border rounded-card flex flex-col divide-y border text-sm tabular-nums">
                 {c.resumenEscalones.map((r) => (
                   <li key={r.productoId} className="flex flex-col gap-0.5 px-4 py-3">
@@ -211,8 +252,18 @@ export default async function DetalleCotizacionPage({
                           ? ` · escalón ${r.escalonAplicado}+`
                           : " · lista"}
                       </span>
-                      <span className="font-semibold whitespace-nowrap">
-                        {formatearPesos(r.precioUnitario)} c/u
+                      <span className="flex flex-col items-end whitespace-nowrap">
+                        {r.precioUnitarioUSD && (
+                          <span className="font-semibold">
+                            {formatearUSD({ usd: Number(r.precioUnitarioUSD), aproximado: false })}{" "}
+                            c/u
+                          </span>
+                        )}
+                        <span
+                          className={r.precioUnitarioUSD ? "text-muted text-xs" : "font-semibold"}
+                        >
+                          {formatearPesos(r.precioUnitario)} c/u
+                        </span>
                       </span>
                     </span>
                   </li>

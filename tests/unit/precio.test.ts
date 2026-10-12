@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  pesosDesdeUSD,
   precioConDescuento,
   resolverPrecios,
+  totalEnUSD,
   type DatosResolverPrecios,
   type ItemAResolver,
 } from "@/server/services/precio.service";
@@ -40,7 +42,6 @@ const mayorista = (
 ): ReturnType<typeof resolverPrecios> =>
   resolverPrecios({
     tipo: "MAYORISTA",
-    modo: "POR_PRODUCTO",
     items,
     escalones: [],
     defaults: [],
@@ -51,7 +52,6 @@ describe("motor de precios del cotizador", () => {
   it("unitaria: precio de lista aunque haya escalones", () => {
     const r = resolverPrecios({
       tipo: "UNITARIA",
-      modo: "POR_PRODUCTO",
       items: [item("Mango", 60)],
       escalones: ESCALONES_ELF,
       defaults: DEFAULTS,
@@ -76,6 +76,7 @@ describe("motor de precios del cotizador", () => {
     expect(r.items[0]!.proximoEscalon).toEqual({
       cantidadMinima: 100,
       precioUnitario: "7500.00",
+      precioUnitarioUSD: null,
       faltan: 40,
     });
   });
@@ -86,6 +87,7 @@ describe("motor de precios del cotizador", () => {
     expect(r.items[0]!.proximoEscalon).toEqual({
       cantidadMinima: 10,
       precioUnitario: "9000.00",
+      precioUnitarioUSD: null,
       faltan: 6,
     });
   });
@@ -114,6 +116,7 @@ describe("motor de precios del cotizador", () => {
       expect(i.proximoEscalon).toEqual({
         cantidadMinima: 100,
         precioUnitario: "7500.00",
+        precioUnitarioUSD: null,
         faltan: 45,
       });
     }
@@ -124,6 +127,7 @@ describe("motor de precios del cotizador", () => {
         unidades: 55,
         escalonAplicado: 50,
         precioUnitario: "8200.00",
+        precioUnitarioUSD: null,
       },
     ]);
     expect(r.subtotal).toBe("451000.00");
@@ -138,6 +142,7 @@ describe("motor de precios del cotizador", () => {
     expect(r10.items[0]!.proximoEscalon).toEqual({
       cantidadMinima: 50,
       precioUnitario: "8800.00",
+      precioUnitarioUSD: null,
       faltan: 40,
     });
   });
@@ -160,29 +165,44 @@ describe("motor de precios del cotizador", () => {
     expect(r.items[1]!.precioUnitario).toBe("8800.00");
   });
 
-  it("POR_PRODUCTO vs POR_TOTAL", () => {
+  it("escalón SIEMPRE por producto: dos productos distintos de 30 u. con escalón 50 → ninguno entra", () => {
+    const ign: DatosResolverPrecios["escalones"] = [
+      { productoId: IGN, cantidadMinima: 50, precioUnitario: "7000.00" },
+    ];
+    const r = mayorista(
+      [item("Mango", 30), item("I1", 30, { productoId: IGN, nombreCompleto: "Ignite V80" })],
+      { escalones: [...ESCALONES_ELF, ...ign] },
+    );
+    // 60 unidades en la cotización, pero 30 de cada producto: ninguno llega a 50.
+    expect(r.items[0]!.escalonAplicado).toBe(10);
+    expect(r.items[0]!.precioUnitario).toBe("9000.00");
+    expect(r.items[0]!.proximoEscalon?.faltan).toBe(20);
+    expect(r.items[1]!.escalonAplicado).toBeNull();
+    expect(r.items[1]!.precioUnitario).toBe("10000.00");
+    expect(r.items[1]!.proximoEscalon).toEqual({
+      cantidadMinima: 50,
+      precioUnitario: "7000.00",
+      precioUnitarioUSD: null,
+      faltan: 20,
+    });
+    expect(r.resumenEscalones.map((x) => [x.productoId, x.unidades, x.escalonAplicado])).toEqual([
+      [ELF, 30, 10],
+      [IGN, 30, null],
+    ]);
+  });
+
+  it("escalón por producto con defaults: otro producto no suma unidades", () => {
     const items = [
       item("Mango", 20),
       item("Frutilla", 35),
       item("I1", 10, { productoId: IGN, nombreCompleto: "Ignite V80" }),
     ];
-    const porProducto = mayorista(items, { escalones: ESCALONES_ELF, defaults: DEFAULTS });
-    expect(porProducto.items[2]!.escalonAplicado).toBe(10);
-    expect(porProducto.items[2]!.precioUnitario).toBe("9500.00");
-
-    const porTotal = mayorista(items, {
-      modo: "POR_TOTAL",
-      escalones: ESCALONES_ELF,
-      defaults: DEFAULTS,
-    });
-    expect(porTotal.modo).toBe("POR_TOTAL");
-    // 65 unidades en total: escalón 50 para todos.
-    expect(porTotal.items[0]!.precioUnitario).toBe("8200.00");
-    expect(porTotal.items[2]!.escalonAplicado).toBe(50);
-    expect(porTotal.items[2]!.precioUnitario).toBe("8800.00");
-    expect(porTotal.items[2]!.proximoEscalon).toBeUndefined();
-    expect(porTotal.items[0]!.proximoEscalon?.faltan).toBe(35);
-    expect(porTotal.resumenEscalones.map((r) => r.unidades)).toEqual([65, 65]);
+    const r = mayorista(items, { escalones: ESCALONES_ELF, defaults: DEFAULTS });
+    expect(r.items[0]!.precioUnitario).toBe("8200.00");
+    expect(r.items[1]!.precioUnitario).toBe("8200.00");
+    expect(r.items[2]!.escalonAplicado).toBe(10);
+    expect(r.items[2]!.precioUnitario).toBe("9500.00");
+    expect(r.resumenEscalones.map((x) => x.unidades)).toEqual([55, 10]);
   });
 
   it("precio manual pisa todo", () => {
@@ -197,5 +217,109 @@ describe("motor de precios del cotizador", () => {
     expect(r.items[1]!.escalonAplicado).toBe(50);
     expect(r.resumenEscalones[0]!.escalonAplicado).toBe(50);
     expect(r.subtotal).toBe("461000.00");
+  });
+
+  describe("escalones en dólares (blue venta)", () => {
+    const USD: DatosResolverPrecios["escalones"] = [
+      { productoId: ELF, cantidadMinima: 10, precioUnitario: "8.00", moneda: "USD" },
+      { productoId: ELF, cantidadMinima: 50, precioUnitario: "6.50", moneda: "USD" },
+    ];
+
+    it("USD × blue, redondeado a 10 pesos", () => {
+      expect(pesosDesdeUSD("6.50", "1300").toFixed(2)).toBe("8450.00");
+      expect(pesosDesdeUSD("7.77", "1333.33").toFixed(2)).toBe("10360.00");
+      expect(pesosDesdeUSD("1", "1544").toFixed(2)).toBe("1540.00");
+      expect(pesosDesdeUSD("1", "1545").toFixed(2)).toBe("1550.00");
+    });
+
+    it("20 Mango + 35 Frutilla en USD: ambos al escalón 50, precio en USD y en pesos", () => {
+      const r = mayorista([item("Mango", 20), item("Frutilla", 35)], {
+        escalones: USD,
+        blue: "1300",
+      });
+      for (const i of r.items) {
+        expect(i.escalonAplicado).toBe(50);
+        expect(i.precioUnitarioUSD).toBe("6.50");
+        expect(i.precioUnitario).toBe("8450.00");
+      }
+      expect(r.subtotal).toBe("464750.00");
+      expect(r.subtotalUSD).toBe("357.50");
+      expect(r.resumenEscalones[0]).toMatchObject({ unidades: 55, precioUnitarioUSD: "6.50" });
+    });
+
+    it("próximo escalón informa USD y pesos", () => {
+      const r = mayorista([item("Mango", 30)], { escalones: USD, blue: "1300" });
+      expect(r.items[0]!.precioUnitario).toBe("10400.00");
+      expect(r.items[0]!.proximoEscalon).toEqual({
+        cantidadMinima: 50,
+        precioUnitario: "8450.00",
+        precioUnitarioUSD: "6.50",
+        faltan: 20,
+      });
+    });
+
+    it("el blue cambia los pesos, no los dólares", () => {
+      const a = mayorista([item("Mango", 60)], { escalones: USD, blue: "1300" });
+      const b = mayorista([item("Mango", 60)], { escalones: USD, blue: "1540" });
+      expect(a.items[0]!.precioUnitarioUSD).toBe(b.items[0]!.precioUnitarioUSD);
+      expect(a.items[0]!.precioUnitario).toBe("8450.00");
+      expect(b.items[0]!.precioUnitario).toBe("10010.00");
+    });
+
+    it("sin blue: error claro si aplica un escalón en USD; debajo del primero, lista", () => {
+      expect(() => mayorista([item("Mango", 60)], { escalones: USD })).toThrow(/dólar blue/);
+      const r = mayorista([item("Mango", 5)], { escalones: USD });
+      expect(r.items[0]!.precioUnitario).toBe("10000.00");
+      expect(r.items[0]!.proximoEscalon).toMatchObject({
+        precioUnitario: null,
+        precioUnitarioUSD: "8.00",
+      });
+      expect(r.subtotalUSD).toBeNull();
+    });
+
+    it("precio manual en USD (mayorista) se convierte con el blue; en unitaria no se permite", () => {
+      const r = mayorista(
+        [item("Mango", 10, { precioManual: "7.25", monedaManual: "USD" }), item("Frutilla", 5)],
+        { escalones: USD, blue: "1300" },
+      );
+      expect(r.items[0]!.esPrecioManual).toBe(true);
+      expect(r.items[0]!.precioUnitarioUSD).toBe("7.25");
+      expect(r.items[0]!.precioUnitario).toBe("9430.00");
+      expect(r.items[1]!.escalonAplicado).toBe(10);
+      expect(() =>
+        resolverPrecios({
+          tipo: "UNITARIA",
+          items: [item("Mango", 1, { precioManual: "7", monedaManual: "USD" })],
+          escalones: [],
+          defaults: [],
+          blue: "1300",
+        }),
+      ).toThrow(/pesos/);
+    });
+
+    it("total en USD: exactos + pesos ÷ blue", () => {
+      expect(
+        totalEnUSD(
+          [
+            { cantidad: 10, precioUnitario: "8450.00", precioUnitarioUSD: "6.50" },
+            { cantidad: 2, precioUnitario: "13000.00", precioUnitarioUSD: null },
+          ],
+          "1300",
+        ).toFixed(2),
+      ).toBe("85.00");
+    });
+
+    it("unitaria ignora el blue y los escalones en USD", () => {
+      const r = resolverPrecios({
+        tipo: "UNITARIA",
+        items: [item("Mango", 60)],
+        escalones: USD,
+        defaults: [],
+        blue: "1300",
+      });
+      expect(r.items[0]!.precioUnitario).toBe("10000.00");
+      expect(r.items[0]!.precioUnitarioUSD).toBeNull();
+      expect(r.subtotalUSD).toBeNull();
+    });
   });
 });

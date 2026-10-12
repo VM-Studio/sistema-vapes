@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -32,7 +31,6 @@ export function ConfigCotizadorForm({
   const router = useRouter();
   const toast = useToast();
   const [validez, setValidez] = useState(String(config.validezDias));
-  const [modo, setModo] = useState(config.modoEscalonMayorista);
   const [leyenda, setLeyenda] = useState(config.leyenda);
   const [mostrarStock, setMostrarStock] = useState(config.mostrarStock);
   const [filas, setFilas] = useState<FilaEscalon[]>(() =>
@@ -47,7 +45,6 @@ export function ConfigCotizadorForm({
     const [rc, re] = await Promise.all([
       guardarConfigCotizacionAction({
         validezDias: Number(validez),
-        modoEscalonMayorista: modo,
         leyenda,
         mostrarStock,
       }),
@@ -88,7 +85,8 @@ export function ConfigCotizadorForm({
             <CardTitle>Escalones por defecto</CardTitle>
             <CardDescription>
               Para productos sin precios mayoristas propios: % de descuento sobre la lista desde
-              cierta cantidad (redondeado a $10).
+              cierta cantidad (redondeado a $10). El escalón se define siempre por producto: suman
+              todos sus sabores.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -110,15 +108,6 @@ export function ConfigCotizadorForm({
               inputMode="numeric"
               value={validez}
               onChange={(e) => setValidez(e.target.value.replace(/\D/g, ""))}
-            />
-            <Select
-              label="Escalón mayorista"
-              options={[
-                { value: "POR_PRODUCTO", label: "Por producto (suman sus sabores)" },
-                { value: "POR_TOTAL", label: "Por total de unidades de la cotización" },
-              ]}
-              value={modo}
-              onChange={(e) => setModo(e.target.value as ConfigCotizacion["modoEscalonMayorista"])}
             />
             <Textarea
               label="Leyenda del PDF"

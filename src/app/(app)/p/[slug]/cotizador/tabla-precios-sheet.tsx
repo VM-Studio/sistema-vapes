@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 
 import { Sheet } from "@/components/ui/sheet";
+import { formatearUSD, horaCotizacion } from "@/lib/cambio";
 import { formatearPesos } from "@/lib/format";
 import type { TablaPreciosProducto } from "@/server/services/escalon.service";
 
 import { tablaPreciosAction } from "./actions";
 
 const ORIGEN: Record<TablaPreciosProducto["origen"], string> = {
-  PROPIOS: "Escalones propios del producto",
+  PROPIOS: "Escalones propios del producto (suman todos sus sabores)",
   DEFAULT: "Escalones por defecto del panel (% sobre la lista)",
   LISTA: "Sin escalones: siempre precio de lista",
 };
@@ -45,7 +46,17 @@ export function TablaPreciosSheet({
       open={productoId !== null}
       onOpenChange={(o) => !o && onCerrar()}
       title={tabla?.nombreCompleto ?? "Tabla de precios"}
-      description={tabla ? ORIGEN[tabla.origen] : undefined}
+      description={
+        tabla
+          ? `${ORIGEN[tabla.origen]}${
+              tabla.moneda === "USD"
+                ? tabla.blue
+                  ? ` · en dólares, a blue venta ${formatearPesos(tabla.blue.valor)} (${horaCotizacion(tabla.blue.obtenidoAt)})`
+                  : " · en dólares (sin cotización del blue)"
+                : ""
+            }`
+          : undefined
+      }
     >
       {error ? (
         <p role="alert" className="text-danger text-sm">
@@ -83,11 +94,26 @@ export function TablaPreciosSheet({
                 {tabla.escalones.map((e) => (
                   <tr key={e.cantidadMinima}>
                     <td className="h-12 px-4">{e.cantidadMinima} u.</td>
-                    <td className="h-12 px-4 text-right font-semibold">
-                      {formatearPesos(e.precioUnitario)}
+                    <td className="h-12 px-4 text-right">
+                      {e.precioUnitarioUSD ? (
+                        <span className="flex flex-col items-end leading-tight">
+                          <span className="font-semibold">
+                            {formatearUSD({ usd: Number(e.precioUnitarioUSD), aproximado: false })}
+                          </span>
+                          {e.precioUnitario && (
+                            <span className="text-muted text-xs">
+                              {formatearPesos(e.precioUnitario)}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="font-semibold">{formatearPesos(e.precioUnitario)}</span>
+                      )}
                     </td>
                     <td className="text-muted h-12 px-4 text-right">
-                      −{Number(e.descuento).toLocaleString("es-AR")} %
+                      {e.descuento === null
+                        ? "—"
+                        : `−${Number(e.descuento).toLocaleString("es-AR")} %`}
                     </td>
                   </tr>
                 ))}

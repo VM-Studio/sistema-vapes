@@ -12,8 +12,10 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { horaCotizacion } from "@/lib/cambio";
 import { formatearPesos } from "@/lib/format";
 import { rutaPdf } from "@/lib/pdfs";
+import type { PreparacionConversion } from "@/server/services/cotizacion.service";
 
 import {
   cambiarEstadoCotizacionAction,
@@ -52,6 +54,7 @@ export function AccionesCotizacion({
   const [rechazo, setRechazo] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [cambios, setCambios] = useState<Cambio[] | null>(null);
+  const [cambioBlue, setCambioBlue] = useState<PreparacionConversion["blue"]>(null);
   const iniciado = useRef(false);
 
   const abierta = estado === "BORRADOR" || estado === "ENVIADA";
@@ -87,6 +90,7 @@ export function AccionesCotizacion({
     const r = await prepararConversionAction({ id });
     setOcupado(null);
     if (!r.ok) return toast.error("No se puede convertir", r.error.message);
+    setCambioBlue(r.data.blue);
     setCambios(r.data.cambios);
   }
 
@@ -217,6 +221,20 @@ export function AccionesCotizacion({
           </>
         }
       >
+        {cambioBlue?.cotizado &&
+          cambioBlue.hoy &&
+          cambioBlue.cotizado.valor !== cambioBlue.hoy.valor && (
+            <p
+              className="bg-surface-3 rounded-control mb-3 px-4 py-3 text-sm tabular-nums"
+              data-testid="cambio-blue"
+            >
+              Dólar blue venta:{" "}
+              <s className="text-muted">{formatearPesos(cambioBlue.cotizado.valor)}</s>{" "}
+              <strong>{formatearPesos(cambioBlue.hoy.valor)}</strong> (hoy{" "}
+              {horaCotizacion(cambioBlue.hoy.obtenidoAt)}). Los precios en dólares se convierten con
+              el de hoy.
+            </p>
+          )}
         {cambios && cambios.length === 0 ? (
           <p className="text-sm">Los precios no cambiaron desde que se cotizó.</p>
         ) : (

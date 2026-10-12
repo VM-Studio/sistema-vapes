@@ -29,11 +29,14 @@ export function TablaEscalones({
   onCambiar,
   etiquetaValor,
   placeholderValor,
+  equivalente,
 }: {
   filas: FilaEscalon[];
   onCambiar: (filas: FilaEscalon[]) => void;
   etiquetaValor: string;
   placeholderValor: string;
+  /** Texto en gris debajo del valor (p. ej. el equivalente en pesos de un precio en USD). */
+  equivalente?: (valor: number) => string | null;
 }) {
   const cambiar = (clave: number, cambio: Partial<FilaEscalon>) =>
     onCambiar(filas.map((f) => (f.clave === clave ? { ...f, ...cambio } : f)));
@@ -66,14 +69,24 @@ export function TablaEscalones({
                     cambiar(f.clave, { cantidadMinima: e.target.value.replace(/\D/g, "") })
                   }
                 />
-                <input
-                  inputMode="decimal"
-                  aria-label={`${etiquetaValor} del escalón ${n + 1}`}
-                  className={cn(controlClass, "h-11 tabular-nums md:h-10")}
-                  value={f.valor}
-                  placeholder={placeholderValor}
-                  onChange={(e) => cambiar(f.clave, { valor: e.target.value })}
-                />
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <input
+                    inputMode="decimal"
+                    aria-label={`${etiquetaValor} del escalón ${n + 1}`}
+                    className={cn(controlClass, "h-11 tabular-nums md:h-10")}
+                    value={f.valor}
+                    placeholder={placeholderValor}
+                    onChange={(e) => cambiar(f.clave, { valor: e.target.value })}
+                  />
+                  {equivalente && Number.isFinite(numeroTipeado(f.valor)) && (
+                    <span
+                      className="text-muted px-1 text-xs tabular-nums"
+                      data-testid="equivalente-escalon"
+                    >
+                      {equivalente(numeroTipeado(f.valor))}
+                    </span>
+                  )}
+                </div>
                 <Switch
                   checked={f.activo}
                   onCheckedChange={(activo) => cambiar(f.clave, { activo })}

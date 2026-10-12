@@ -2,6 +2,7 @@
 
 import {
   ChevronDown,
+  DollarSign,
   FileText,
   Layers,
   MessageCircle,
@@ -40,6 +41,7 @@ import { resolverCodigo } from "@/features/scanner/resolver-codigo";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useBarcodeScanner } from "@/features/scanner/useBarcodeScanner";
 import { useScanFeedback } from "@/features/scanner/useScanFeedback";
+import { formatearUSD, horaCotizacion, precioEnUSD } from "@/lib/cambio";
 import { formatearPesos } from "@/lib/format";
 import { rutaPdf } from "@/lib/pdfs";
 import { cn } from "@/lib/utils";
@@ -67,6 +69,14 @@ export interface ItemEditor {
   cantidad: number;
   /** Solo con "editar" en COTIZADOR. */
   precioManual: string | null;
+  /** Moneda del precio manual (USD = blue venta, solo mayorista). */
+  monedaManual: "USD" | "ARS";
+}
+
+/** Blue venta (pesos por dólar) con que se calculan los precios en USD. */
+export interface BlueUI {
+  valor: string;
+  obtenidoAt: string;
 }
 
 export interface CotizacionInicial {
@@ -108,14 +118,16 @@ const clienteParaGuardar = (c: ClienteElegido | null) =>
  * Armado de una cotización en UNA pantalla (sin pasos): cliente opcional y
  * validez, ítems (pistola, cámara, buscador o más vendidos), descuento y
  * notas, y un pie fijo con el total y Guardar / WhatsApp / PDF / Convertir.
- * Cada acción guarda antes. En mayorista cada fila muestra el escalón que
- * aplica y cuánto falta para el siguiente.
+ * Cada acción guarda antes. En mayorista el escalón es POR PRODUCTO (suman
+ * todos sus sabores: cambiar la cantidad de un sabor recalcula las filas de
+ * todo el producto), cada fila muestra el precio en dólares y en pesos (blue
+ * venta de la cabecera), el escalón que aplica y cuánto falta para el siguiente.
  */
 export function EditorCotizacion({
   tipo,
   inicial,
   validezDefault,
-  modoEscalon,
+  blueInicial,
   mostrarStock,
   puedeEditar,
   esOwner,
@@ -125,7 +137,8 @@ export function EditorCotizacion({
   mostrarStock: boolean;
   inicial: CotizacionInicial | null;
   validezDefault: number;
-  modoEscalon: "POR_PRODUCTO" | "POR_TOTAL";
+  /** Mayorista: blue con que se va a cotizar (el de hoy o el snapshot de la cotización). */
+  blueInicial: BlueUI | null;
   puedeEditar: boolean;
   esOwner: boolean;
   puedeVender: boolean;
@@ -165,7 +178,12 @@ export function EditorCotizacion({
 
   // --- Precios: siempre del servidor, recalculados en cada cambio -----------------
   const firma = JSON.stringify(
-    items.map((i) => [i.varianteId, i.cantidad, puedeEditar ? i.precioManual : null]),
+    items.map((i) => [
+      i.varianteId,
+      i.cantidad,
+      puedeEditar ? i.precioManual : null,
+      puedeEditar && i.precioManual ? i.monedaManual : null,
+    ]),
   );
   useEffect(() => {
     const n = ++pedido.current;
@@ -178,10 +196,13 @@ export function EditorCotizacion({
     const t = setTimeout(() => {
       void calcularPreciosAction({
         tipo,
+        ...(guardada ? { cotizacionId: guardada.id } : {}),
         items: items.map((i) => ({
           varianteId: i.varianteId,
           cantidad: i.cantidad,
-          ...(puedeEditar && i.precioManual ? { precioManual: i.precioManual } : {}),
+          ...(puedeEditar && i.precioManual
+            ? { precioManual: i.precioManual, monedaManual: i.monedaManual }
+            : {}),
         })),
       })
         .catch(() => null)
@@ -196,7 +217,7 @@ export function EditorCotizacion({
     }, 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `firma` resume los ítems
-  }, [firma, tipo, puedeEditar]);
+  }, [firma, tipo, puedeEditar, guardada?.id]);
 
   const porVariante = useMemo(
     () => new Map((calculo?.items ?? []).map((c) => [c.varianteId, c])),
@@ -210,6 +231,13 @@ export function EditorCotizacion({
     : 0;
   const total = deCentavos(subtotal - descuentoCent);
   const unidades = items.reduce((a, i) => a + i.cantidad, 0);
+  // Blue de la cabecera: el que usó el último cálculo (o el inicial, sin ítems).
+  const blue: BlueUI | null = mayorista ? (calculo?.tipoCambioBlue ?? blueInicial) : null;
+  const totalUSD =
+    blue && calculo?.subtotalUSD
+      ? Math.round((Number(calculo.subtotalUSD) - descuentoCent / 100 / Number(blue.valor)) * 100) /
+        100
+      : null;
 
   // --- Ítems -------------------------------------------------------------------------
   const agregar = useCallback(
@@ -240,6 +268,7 @@ export function EditorCotizacion({
             titulo: v.titulo,
             cantidad: 1,
             precioManual: null,
+            monedaManual: mayorista ? "USD" : "ARS",
           },
         ];
       });
@@ -298,7 +327,9 @@ export function EditorCotizacion({
       items: items.map((i) => ({
         varianteId: i.varianteId,
         cantidad: i.cantidad,
-        ...(puedeEditar && i.precioManual ? { precioManual: i.precioManual } : {}),
+        ...(puedeEditar && i.precioManual
+          ? { precioManual: i.precioManual, monedaManual: i.monedaManual }
+          : {}),
       })),
       cliente: clienteParaGuardar(cliente),
       ...(desc && Number(desc) > 0 ? { descuento: desc } : {}),
@@ -353,7 +384,11 @@ export function EditorCotizacion({
   const yaAgregadas = new Set(items.map((i) => i.varianteId));
 
   const resumen = mayorista && calculo && calculo.resumenEscalones.length > 0 && (
-    <ResumenEscalones calculo={calculo} onTabla={(productoId) => setTablaDe(productoId)} />
+    <ResumenEscalones
+      calculo={calculo}
+      blue={blue}
+      onTabla={(productoId) => setTablaDe(productoId)}
+    />
   );
 
   const deshabilitado = ocupado !== null || items.length === 0;
@@ -398,9 +433,7 @@ export function EditorCotizacion({
                   <span>
                     Escalón{" "}
                     <strong className="text-foreground font-medium">
-                      {modoEscalon === "POR_PRODUCTO"
-                        ? "por producto (suman todos los sabores del producto)"
-                        : "por total de unidades de la cotización"}
+                      por producto (suman todos los sabores del producto)
                     </strong>
                   </span>
                   {esOwner && (
@@ -410,6 +443,30 @@ export function EditorCotizacion({
                     >
                       <Settings2 className="size-3.5" strokeWidth={1.75} aria-hidden /> Configurar
                     </Link>
+                  )}
+                </span>
+              )}
+              {mayorista && (
+                <span
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1"
+                  data-testid="blue-cotizador"
+                >
+                  <DollarSign className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+                  {blue ? (
+                    <span>
+                      Dólar blue venta:{" "}
+                      <strong className="text-foreground font-medium tabular-nums">
+                        {formatearPesos(blue.valor)}
+                      </strong>{" "}
+                      <span className="tabular-nums">({horaCotizacion(blue.obtenidoAt)})</span>
+                      {guardada && blueInicial && blue.obtenidoAt === blueInicial.obtenidoAt && (
+                        <span className="text-subtle"> · el de la cotización</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-warning">
+                      Sin cotización del dólar blue: los precios en dólares no se pueden calcular.
+                    </span>
                   )}
                 </span>
               )}
@@ -530,12 +587,14 @@ export function EditorCotizacion({
                     item={i}
                     calculado={porVariante.get(i.varianteId)}
                     mayorista={mayorista}
+                    blue={blue}
                     mostrarStock={mostrarStock}
                     puedeEditar={puedeEditar}
                     enfocar={enfocar === i.varianteId}
                     onEnfocado={() => setEnfocar(null)}
                     onCantidad={(cantidad) => cambiarItem(i.varianteId, { cantidad })}
                     onPrecio={(precioManual) => cambiarItem(i.varianteId, { precioManual })}
+                    onMoneda={(monedaManual) => cambiarItem(i.varianteId, { monedaManual })}
                     onQuitar={() => quitar(i.varianteId)}
                     onTabla={() => setTablaDe(i.productoId)}
                   />
@@ -660,6 +719,14 @@ export function EditorCotizacion({
             >
               {formatearPesos(total)}
             </p>
+            {totalUSD !== null && (
+              <p
+                className="text-muted text-sm font-medium tabular-nums"
+                data-testid="total-cotizacion-usd"
+              >
+                {formatearUSD({ usd: totalUSD, aproximado: true })}
+              </p>
+            )}
           </div>
           <div
             className={cn(
@@ -733,24 +800,28 @@ function FilaCotizacion({
   item,
   calculado,
   mayorista,
+  blue,
   mostrarStock,
   puedeEditar,
   enfocar,
   onEnfocado,
   onCantidad,
   onPrecio,
+  onMoneda,
   onQuitar,
   onTabla,
 }: {
   item: ItemEditor;
   calculado: ItemCalculado | undefined;
   mayorista: boolean;
+  blue: BlueUI | null;
   mostrarStock: boolean;
   puedeEditar: boolean;
   enfocar: boolean;
   onEnfocado: () => void;
   onCantidad: (n: number) => void;
   onPrecio: (p: string | null) => void;
+  onMoneda: (m: "USD" | "ARS") => void;
   onQuitar: () => void;
   onTabla: () => void;
 }) {
@@ -769,6 +840,8 @@ function FilaCotizacion({
   const conEscalon = c && c.escalonAplicado !== null && !c.esPrecioManual;
   const sinStock = c ? c.stockTotal < item.cantidad : false;
   const precioInvalido = precioTexto.trim() !== "" && montoTipeado(precioTexto) === null;
+  const usd =
+    mayorista && c ? precioEnUSD(c.precioUnitario, c.precioUnitarioUSD, blue?.valor) : null;
 
   return (
     <li data-testid="fila-cotizacion" className="flex flex-col gap-3 p-4">
@@ -882,6 +955,17 @@ function FilaCotizacion({
                 )}
                 <span className="text-muted text-xs">c/u</span>
               </p>
+              {usd && (
+                <p
+                  className={cn(
+                    "text-sm tabular-nums",
+                    usd.aproximado ? "text-muted" : "font-semibold",
+                  )}
+                  data-testid="precio-unitario-usd"
+                >
+                  {formatearUSD(usd)} c/u
+                </p>
+              )}
               <p className="text-muted text-sm">
                 Subtotal{" "}
                 <span className="text-foreground font-semibold" data-testid="subtotal-fila">
@@ -908,8 +992,15 @@ function FilaCotizacion({
               data-testid="hint-escalon"
             >
               <TrendingDown className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-              Agregá {c.proximoEscalon.faltan} más y baja a{" "}
-              {formatearPesos(c.proximoEscalon.precioUnitario)} c/u
+              Agregá {c.proximoEscalon.faltan} más del producto y baja a{" "}
+              {c.proximoEscalon.precioUnitarioUSD
+                ? `${formatearUSD({ usd: Number(c.proximoEscalon.precioUnitarioUSD), aproximado: false })}${
+                    c.proximoEscalon.precioUnitario
+                      ? ` (${formatearPesos(c.proximoEscalon.precioUnitario)})`
+                      : ""
+                  }`
+                : formatearPesos(c.proximoEscalon.precioUnitario)}{" "}
+              c/u
             </span>
           )}
           <Button variant="ghost" size="sm" className="-mr-2 ml-auto" onClick={onTabla}>
@@ -920,10 +1011,44 @@ function FilaCotizacion({
 
       {puedeEditar && (
         <div className="flex flex-wrap items-end gap-2">
+          {mayorista && (
+            <div
+              role="group"
+              aria-label="Moneda del precio manual"
+              className="border-input rounded-control flex h-11 overflow-hidden border md:h-10"
+            >
+              {(["USD", "ARS"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={item.monedaManual === m}
+                  onClick={() => onMoneda(m)}
+                  className={cn(
+                    "min-w-14 px-3 text-sm font-medium transition-colors",
+                    item.monedaManual === m
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-surface text-muted hover:text-foreground",
+                  )}
+                >
+                  {m === "USD" ? "U$D" : "$"}
+                </button>
+              ))}
+            </div>
+          )}
           <Input
-            label="Precio manual (c/u)"
+            label={
+              mayorista && item.monedaManual === "USD"
+                ? "Precio manual (U$D c/u)"
+                : "Precio manual ($ c/u)"
+            }
             inputMode="decimal"
-            placeholder={c ? String(Number(c.precioLista)) : ""}
+            placeholder={
+              c
+                ? mayorista && item.monedaManual === "USD"
+                  ? (usd?.usd.toString() ?? "")
+                  : String(Number(c.precioLista))
+                : ""
+            }
             value={precioTexto}
             onChange={(e) => setPrecioTexto(e.target.value)}
             onBlur={() => onPrecio(precioInvalido ? item.precioManual : montoTipeado(precioTexto))}
@@ -951,9 +1076,11 @@ function FilaCotizacion({
 
 function ResumenEscalones({
   calculo,
+  blue,
   onTabla,
 }: {
   calculo: Calculo;
+  blue: BlueUI | null;
   onTabla: (productoId: string) => void;
 }) {
   return (
@@ -962,9 +1089,12 @@ function ResumenEscalones({
       className="lg:bg-card lg:rounded-card flex flex-col gap-3 lg:p-5"
       data-testid="resumen-escalones"
     >
-      <h2 id="resumen-escalones" className="text-h3 hidden font-semibold lg:block">
-        Resumen de escalones
-      </h2>
+      <div className="hidden flex-col gap-0.5 lg:flex">
+        <h2 id="resumen-escalones" className="text-h3 font-semibold">
+          Resumen de escalones
+        </h2>
+        <p className="text-muted text-xs">Por producto: suman todos sus sabores.</p>
+      </div>
       <ul className="border-border bg-surface divide-border rounded-card flex flex-col divide-y border text-sm">
         {calculo.resumenEscalones.map((r) => (
           <li key={r.productoId} className="flex flex-col gap-1 px-4 py-3">
@@ -974,8 +1104,18 @@ function ResumenEscalones({
                 {r.unidades} u. ·{" "}
                 {r.escalonAplicado !== null ? `escalón ${r.escalonAplicado}+` : "precio de lista"}
               </span>
-              <span className="font-semibold whitespace-nowrap">
-                {formatearPesos(r.precioUnitario)} c/u
+              <span className="flex flex-col items-end whitespace-nowrap">
+                {(() => {
+                  const u = precioEnUSD(r.precioUnitario, r.precioUnitarioUSD, blue?.valor);
+                  return u ? (
+                    <span className={u.aproximado ? "text-muted text-xs" : "font-semibold"}>
+                      {formatearUSD(u)} c/u
+                    </span>
+                  ) : null;
+                })()}
+                <span className={r.precioUnitarioUSD ? "text-muted text-xs" : "font-semibold"}>
+                  {formatearPesos(r.precioUnitario)} c/u
+                </span>
               </span>
             </span>
             <button

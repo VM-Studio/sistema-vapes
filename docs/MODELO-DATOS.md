@@ -143,6 +143,11 @@ Enum TipoVenta {
   MAYORISTA
 }
 
+Enum MonedaEscalon {
+  USD
+  ARS
+}
+
 Enum TipoCotizacion {
   UNITARIA
   MAYORISTA
@@ -840,7 +845,8 @@ Table EscalonPrecio {
   panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   productoId text [not null]
   cantidadMinima int [not null]
-  precioUnitario decimal(12,2) [not null]
+  precioUnitario decimal(12,2) [not null, note: 'En `moneda`.']
+  moneda MonedaEscalon [not null, default: 'USD', note: 'USD = dólar blue venta; ARS = pesos. Todos los escalones de un producto en la misma moneda.']
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
@@ -886,6 +892,8 @@ Table Cotizacion {
   total decimal(12,2) [not null]
   notas text
   motivoRechazo text
+  tipoCambioBlue decimal(14,2) [note: 'Snapshot del blue venta usado para los precios en USD (mayorista).']
+  tipoCambioObtenidoAt timestamp [note: 'Cuándo se obtuvo ese blue (CHECK: los dos o ninguno).']
   ventaId text [unique, note: 'La venta generada al convertir.']
   pdfUrl text
   createdAt timestamp [not null, default: `now()`]
@@ -909,7 +917,8 @@ Table CotizacionItem {
   productoId text [not null, note: 'Desnormalizado (= variante.productoId, lo verifica un trigger).']
   cantidad int [not null]
   precioLista decimal(12,2) [not null]
-  precioUnitario decimal(12,2) [not null, note: 'El cotizado: lista, escalón o manual.']
+  precioUnitario decimal(12,2) [not null, note: 'El cotizado (en pesos): lista, escalón o manual.']
+  precioUnitarioUSD decimal(12,2) [note: 'En dólares si salió de un escalón o precio manual en USD.']
   escalonAplicado int [note: 'cantidadMinima del escalón usado (null = lista o manual).']
   esPrecioManual boolean [not null, default: false]
   subtotal decimal(12,2) [not null]
@@ -1091,11 +1100,11 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 
 ### Cotizador
 
-- **EscalonPrecio**: precio mayorista de un producto desde `cantidadMinima` unidades, para **todos** sus sabores (20 Mango + 35 Frutilla entran en el escalón de 50). Único por (panel, producto, cantidad mínima); `cantidadMinima > 0`, `precioUnitario > 0`. Se editan como set completo (`guardarEscalones()` en `escalon.service.ts`: mínimos distintos y precios que bajan al subir la cantidad).
+- **EscalonPrecio**: precio mayorista de un producto desde `cantidadMinima` unidades, para **todos** sus sabores (20 Mango + 35 Frutilla entran en el escalón de 50). Único por (panel, producto, cantidad mínima); `cantidadMinima > 0`, `precioUnitario > 0`. `moneda` `USD` (default: dólar blue venta, convertido a pesos al cotizar y redondeado a 10 pesos) o `ARS`; los escalones anteriores a v2.4 quedaron en `ARS`. Se editan como set completo (`guardarEscalones()` en `escalon.service.ts`: una sola moneda por producto, mínimos distintos y precios que bajan al subir la cantidad).
 - **EscalonPrecioDefault**: escalones del panel como % de descuento sobre la lista (0–100), para productos sin escalones propios activos. El precio resultante se redondea a 10 pesos.
 - **Cotizacion**: código `VAP-Q-000001` (secuencia `COTIZACION`, `formatearIdCotizacion()` en `src/lib/validations/cotizacion.ts`), `tipo` `UNITARIA` / `MAYORISTA`, `validaHasta`, cliente opcional (o nombre y teléfono de alguien que todavía no es cliente), `vendedorId`, totales (`total = subtotal − descuento`, CHECK) y estado `BORRADOR` → `ENVIADA` → `ACEPTADA` / `RECHAZADA`; las borrador/enviadas pasan a `VENCIDA` al pasar la validez; `CONVERTIDA` ⇔ tiene `ventaId` (CHECK) y desde ahí no se modifica (trigger `trg_cotizacion_convertida`). No se borra físicamente.
-- **CotizacionItem**: sabor, producto (verificado por trigger), cantidad, `precioLista`, `precioUnitario` cotizado (lista, escalón o manual), `escalonAplicado` y `esPrecioManual`; subtotal = cantidad × precio (CHECK).
-- Motor de precios (`precio.service.ts`): unitaria = lista; mayorista = escalón por unidades del producto (`POR_PRODUCTO`) o de toda la cotización (`POR_TOTAL`), según la configuración `cotizacion` del panel (`validezDias`, `modoEscalonMayorista`, `leyenda`, `mostrarStock`). El precio manual y el descuento exigen `editar` en `COTIZADOR`.
+- **CotizacionItem**: sabor, producto (verificado por trigger), cantidad, `precioLista`, `precioUnitario` cotizado en pesos (lista, escalón o manual), `precioUnitarioUSD` (si salió de un escalón o precio manual en dólares), `escalonAplicado` y `esPrecioManual`; subtotal = cantidad × precio (CHECK).
+- Motor de precios (`precio.service.ts`): unitaria = lista (en pesos); mayorista = escalón **siempre por producto** (marca + modelo + especificación): suman las unidades de todos sus sabores, nunca las del total de la cotización (dos productos de 30 u. no entran en el escalón de 50). Escalones en USD → pesos con el blue venta (`cambio.service`), redondeado a 10. La cotización guarda el **snapshot** del blue (`tipoCambioBlue`, `tipoCambioObtenidoAt`): mientras está vigente sus pesos no cambian aunque cambie el blue; creada, duplicada, editada después de vencer o convertida vencida con "recalcular" usa el blue de hoy. La configuración `cotizacion` del panel guarda `validezDias`, `leyenda` y `mostrarStock` (el modo `POR_TOTAL` se eliminó en v2.4). El precio manual (en pesos, o en USD en mayorista) y el descuento exigen `editar` en `COTIZADOR`.
 - Convertir (`convertirEnVenta()`) crea la venta (con `Venta.cotizacionId`, precios cotizados como precio especial, tipo de la cotización) y marca la cotización `CONVERTIDA` en una sola transacción: si falta stock no cambia nada.
 
 ## Invariantes garantizadas por la base

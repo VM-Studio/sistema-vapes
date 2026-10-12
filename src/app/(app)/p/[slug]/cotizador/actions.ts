@@ -27,6 +27,7 @@ import {
 import { guardarConfigCotizacion } from "@/server/services/configuracion.service";
 import {
   actualizarCotizacion,
+  blueDeCotizacion,
   convertirEnVenta,
   crearCotizacion,
   duplicar,
@@ -77,9 +78,11 @@ function exigirPermisoPrecios(
 export const calcularPreciosAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.COTIZADOR, "ver");
   const puedeEditar = puedeEditarPrecios(ctx);
-  const datos = calcularPreciosSchema.parse(input);
+  const { cotizacionId, ...datos } = calcularPreciosSchema.parse(input);
   exigirPermisoPrecios(datos, puedeEditar);
-  return calcularPrecios(ctx, datos, { puedeEditar });
+  // Editando una cotización vigente: sus pesos se calculan con SU blue (snapshot).
+  const blue = cotizacionId ? await blueDeCotizacion(ctx, cotizacionId, datos.tipo) : null;
+  return calcularPrecios(ctx, datos, { puedeEditar }, undefined, { tipoCambioBlue: blue });
 });
 
 /** Crea (sin `id`) o actualiza una cotización BORRADOR/ENVIADA. */
@@ -219,8 +222,8 @@ export const guardarEscalonesDefaultAction = actionHandler(async (input: unknown
 /** "Precios mayoristas" de la ficha del producto (dueños o editar en PRODUCTOS). */
 export const guardarEscalonesProductoAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.PRODUCTOS, "editar");
-  const { productoId, escalones } = guardarEscalonesSchema.parse(input);
-  const r = await guardarEscalones(ctx, productoId, escalones);
+  const { productoId, escalones, moneda } = guardarEscalonesSchema.parse(input);
+  const r = await guardarEscalones(ctx, productoId, escalones, moneda);
   revalidatePath("/p/[slug]/productos", "layout");
   revalidar();
   return r;

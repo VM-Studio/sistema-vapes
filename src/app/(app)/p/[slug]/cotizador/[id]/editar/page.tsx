@@ -6,6 +6,7 @@ import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
 import { obtenerConfigCotizacion } from "@/server/services/configuracion.service";
 import { obtener } from "@/server/services/cotizacion.service";
 
@@ -31,6 +32,19 @@ export default async function EditarCotizacionPage({
     obtenerConfigCotizacion(ctx),
   ]);
   if (!esEditable(c.estado)) redirect(rutaPanel(ctx.panel.slug, `/cotizador/${id}`));
+  // Vigente: su propio blue (snapshot); vencida o sin snapshot: el de hoy.
+  const blueHoy =
+    c.tipo === "MAYORISTA" && (c.vencida || !c.tipoCambioBlue)
+      ? await obtenerCotizacion("USD_BLUE", "VENTA")
+      : null;
+  const blueInicial =
+    c.tipo !== "MAYORISTA"
+      ? null
+      : !c.vencida && c.tipoCambioBlue
+        ? c.tipoCambioBlue
+        : blueHoy
+          ? { valor: blueHoy.valor.toFixed(2), obtenidoAt: blueHoy.obtenidoAt }
+          : null;
   const validezDias = Math.max(
     1,
     Math.round((new Date(c.validaHasta).getTime() - new Date(c.fecha).getTime()) / DIA),
@@ -46,7 +60,12 @@ export default async function EditarCotizacionPage({
           productoId: i.productoId,
           titulo: i.titulo,
           cantidad: i.cantidad,
-          precioManual: i.esPrecioManual ? i.precioUnitario : null,
+          precioManual: i.esPrecioManual
+            ? i.monedaManual === "USD" && i.precioUnitarioUSD
+              ? i.precioUnitarioUSD
+              : i.precioUnitario
+            : null,
+          monedaManual: i.monedaManual,
         })),
         cliente: !c.cliente
           ? null
@@ -63,7 +82,7 @@ export default async function EditarCotizacionPage({
         validezDias,
       }}
       validezDefault={config.validezDias}
-      modoEscalon={config.modoEscalonMayorista}
+      blueInicial={blueInicial}
       mostrarStock={config.mostrarStock}
       puedeEditar={puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "editar")}
       esOwner={esOwner(ctx.usuario)}

@@ -5,12 +5,18 @@ import { saborVisible } from "@/lib/ventas-ui";
 import { dbPara, transaccion, type Ctx } from "@/server/db/panel-scoped";
 import { NotFoundError, ValidationError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { precioConDescuento, tablaEfectiva } from "@/server/services/precio.service";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
+import {
+  precioConDescuento,
+  tablaEfectiva,
+  type MonedaPrecio,
+} from "@/server/services/precio.service";
 
 /**
  * ESCALONES DE PRECIO MAYORISTA (por panel)
  * - Propios de un producto (EscalonPrecio): precio por unidad desde cierta
- *   cantidad, para todos sus sabores.
+ *   cantidad, para todos sus sabores, en dólares (blue venta, el default) o
+ *   en pesos: todos los escalones de un producto en la MISMA moneda.
  * - Default del panel (EscalonPrecioDefault): % de descuento sobre la lista
  *   para los productos sin escalones propios activos.
  * Guardar REEMPLAZA el set completo. Mínimos distintos (crecientes) y, al
@@ -23,7 +29,9 @@ const dec = (d: Prisma.Decimal) => d.toFixed(2);
 export interface EscalonGuardado {
   id: string;
   cantidadMinima: number;
+  /** En `moneda`. */
   precioUnitario: string;
+  moneda: MonedaPrecio;
   activo: boolean;
 }
 
@@ -56,6 +64,7 @@ export async function listarEscalones(ctx: Ctx, productoId: string): Promise<Esc
     id: e.id,
     cantidadMinima: e.cantidadMinima,
     precioUnitario: dec(e.precioUnitario),
+    moneda: e.moneda,
     activo: e.activo,
   }));
 }
@@ -64,6 +73,7 @@ export async function guardarEscalones(
   ctx: Ctx,
   productoId: string,
   escalones: { cantidadMinima: number; precioUnitario: Prisma.Decimal.Value; activo: boolean }[],
+  moneda: MonedaPrecio = "USD",
 ): Promise<EscalonGuardado[]> {
   const orden = [...escalones]
     .map((e) => ({ ...e, precio: D(e.precioUnitario).toDecimalPlaces(2) }))
@@ -99,6 +109,7 @@ export async function guardarEscalones(
           productoId,
           cantidadMinima: e.cantidadMinima,
           precioUnitario: e.precio,
+          moneda,
           activo: e.activo,
         })),
       });
@@ -113,6 +124,7 @@ export async function guardarEscalones(
         escalones: antes.map((e) => ({
           cantidadMinima: e.cantidadMinima,
           precioUnitario: dec(e.precioUnitario),
+          moneda: e.moneda,
           activo: e.activo,
         })),
       },
@@ -121,6 +133,7 @@ export async function guardarEscalones(
         escalones: orden.map((e) => ({
           cantidadMinima: e.cantidadMinima,
           precioUnitario: dec(e.precio),
+          moneda,
           activo: e.activo,
         })),
       },
@@ -210,18 +223,24 @@ export interface TablaPreciosProducto {
   precioLista: string;
   /** De dónde salen los escalones: propios del producto, defaults del panel o solo lista. */
   origen: "PROPIOS" | "DEFAULT" | "LISTA";
+  /** Moneda de los escalones (USD: convertidos a pesos con el blue venta vigente). */
+  moneda: MonedaPrecio;
+  /** Blue venta vigente usado para los pesos (null si no hay cotización). */
+  blue: { valor: string; obtenidoAt: string } | null;
   escalones: {
     cantidadMinima: number;
-    precioUnitario: string;
-    /** Descuento respecto de la lista, en % con 2 decimales. */
-    descuento: string;
+    /** En pesos (null: escalón en USD sin cotización del blue). */
+    precioUnitario: string | null;
+    precioUnitarioUSD: string | null;
+    /** Descuento respecto de la lista, en % con 2 decimales (null sin pesos). */
+    descuento: string | null;
   }[];
   /** Sabores con precio propio: los defaults se aplican sobre su lista. */
   saboresConPrecioPropio: {
     varianteId: string;
     sabor: string | null;
     precioLista: string;
-    escalones: { cantidadMinima: number; precioUnitario: string }[];
+    escalones: { cantidadMinima: number; precioUnitario: string | null }[];
   }[];
 }
 
@@ -245,28 +264,34 @@ export async function tablaPreciosProducto(
     },
   });
   if (!producto) throw new NotFoundError("El producto no existe o fue dado de baja.");
-  const [escalones, defaults] = await Promise.all([
+  const [escalones, defaults, cotizacionBlue] = await Promise.all([
     db.escalonPrecio.findMany({
       where: { productoId, activo: true },
-      select: { productoId: true, cantidadMinima: true, precioUnitario: true },
+      select: { productoId: true, cantidadMinima: true, precioUnitario: true, moneda: true },
     }),
     db.escalonPrecioDefault.findMany({
       where: { activo: true },
       select: { cantidadMinima: true, porcentajeDescuento: true },
     }),
+    obtenerCotizacion("USD_BLUE", "VENTA"),
   ]);
+  const blue = cotizacionBlue ? D(cotizacionBlue.valor).toDecimalPlaces(2) : null;
   const lista = D(producto.precioVenta);
-  const tabla = tablaEfectiva(productoId, lista, escalones, defaults);
-  const descuento = (precio: Prisma.Decimal) =>
-    lista.isZero() ? "0.00" : dec(D(1).minus(precio.div(lista)).mul(100));
+  const tabla = tablaEfectiva(productoId, lista, escalones, defaults, blue);
+  const descuento = (precio: Prisma.Decimal | null) =>
+    precio === null ? null : lista.isZero() ? "0.00" : dec(D(1).minus(precio.div(lista)).mul(100));
   return {
     productoId,
     nombreCompleto: producto.nombreCompleto,
     precioLista: dec(lista),
     origen: tabla.origen,
+    moneda: tabla.moneda,
+    blue:
+      blue && cotizacionBlue ? { valor: dec(blue), obtenidoAt: cotizacionBlue.obtenidoAt } : null,
     escalones: tabla.escalones.map((e) => ({
       cantidadMinima: e.cantidadMinima,
-      precioUnitario: dec(e.precio),
+      precioUnitario: e.precio ? dec(e.precio) : null,
+      precioUnitarioUSD: e.precioUSD ? dec(e.precioUSD) : null,
       descuento: descuento(e.precio),
     })),
     saboresConPrecioPropio: producto.variantes.filter(tienePrecioPropio).map((v) => {
@@ -285,7 +310,7 @@ export async function tablaPreciosProducto(
                 .sort((a, b) => a.cantidadMinima - b.cantidadMinima)
             : tabla.escalones.map((e) => ({
                 cantidadMinima: e.cantidadMinima,
-                precioUnitario: dec(e.precio),
+                precioUnitario: e.precio ? dec(e.precio) : null,
               })),
       };
     }),

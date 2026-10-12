@@ -7,8 +7,10 @@ import { PASSWORD_TRINIDAD } from "./global-setup";
 import {
   codigoDe,
   db,
+  ELF_BAR_BC10000,
   ELF_BAR_BC5000,
   esperarPdf,
+  IGNITE_V80,
   linkPublicoPdf,
   login,
   loginDueno,
@@ -46,6 +48,7 @@ async function escalones10_50_100() {
       productoId: p.id,
       cantidadMinima: Number(cantidadMinima),
       precioUnitario: String(precioUnitario),
+      moneda: "ARS" as const,
     })),
   });
 }
@@ -79,7 +82,7 @@ test("mayorista: 20 + 35 de dos sabores → escalón 50 en ambas filas y hint al
     await expect(fila(page, sabor).getByTestId("precio-lista")).toContainText("14.500");
     await expect(fila(page, sabor).getByTestId("chip-escalon")).toHaveText("Escalón desde 50 u.");
     await expect(fila(page, sabor).getByTestId("hint-escalon")).toContainText(
-      "Agregá 45 más y baja a",
+      "Agregá 45 más del producto y baja a",
     );
     await expect(fila(page, sabor).getByTestId("hint-escalon")).toContainText("11.000");
   }
@@ -106,6 +109,114 @@ test("mayorista: 20 + 35 de dos sabores → escalón 50 en ambas filas y hint al
     c.items.every((i) => i.precioUnitario.toString() === "12000" && i.escalonAplicado === 50),
   ).toBe(true);
   expect(Number(c.total)).toBe(660000);
+});
+
+/** Escalones propios EN DÓLARES (blue venta del setup: $1.300). */
+async function escalonesUSD(producto: string, filas: [number, string][]) {
+  const p = await db.producto.findFirstOrThrow({
+    where: { panelId: PANEL_VAPES, nombreCompleto: producto },
+  });
+  await db.escalonPrecio.deleteMany({ where: { panelId: PANEL_VAPES, productoId: p.id } });
+  await db.escalonPrecio.createMany({
+    data: filas.map(([cantidadMinima, precioUnitario]) => ({
+      panelId: PANEL_VAPES,
+      productoId: p.id,
+      cantidadMinima,
+      precioUnitario,
+      moneda: "USD" as const,
+    })),
+  });
+  return p.id;
+}
+
+test("mayorista en dólares: escalón por modelo (30 + 30 de dos productos no suman), 20 + 35 del mismo sí; USD y pesos con snapshot del blue", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
+  const ignite = await escalonesUSD(IGNITE_V80, [
+    [10, "9"],
+    [50, "7"],
+  ]);
+  const elf10 = await escalonesUSD(ELF_BAR_BC10000, [[50, "8"]]);
+  const agregarDe = async (producto: string, sabor: string) => {
+    await soltarFoco(page);
+    await pistola(page, await codigoDe(producto, sabor));
+  };
+  const filaDe = (producto: string, sabor: string) =>
+    page.getByTestId("fila-cotizacion").filter({ hasText: `${producto} — ${sabor}` });
+
+  await loginDueno(page);
+  await page.goto("/p/vapes/cotizador/mayorista/nueva");
+  await expect(page.getByTestId("blue-cotizador")).toContainText("Dólar blue venta: $ 1.300");
+
+  // Dos productos distintos de 30 u. cada uno: 60 en la cotización, ninguno al escalón 50.
+  await agregarDe(IGNITE_V80, "Mango Ice");
+  await page.getByLabel(`Cantidad de ${IGNITE_V80} — Mango Ice`).fill("30");
+  await agregarDe(ELF_BAR_BC10000, "Watermelon Ice");
+  await page.getByLabel(`Cantidad de ${ELF_BAR_BC10000} — Watermelon Ice`).fill("30");
+  const mango = filaDe(IGNITE_V80, "Mango Ice");
+  const water = filaDe(ELF_BAR_BC10000, "Watermelon Ice");
+  await expect(mango.getByTestId("chip-escalon")).toHaveText("Escalón desde 10 u.");
+  await expect(mango.getByTestId("precio-unitario-usd")).toHaveText("U$D 9 c/u");
+  await expect(mango.getByTestId("precio-unitario")).toContainText("11.700");
+  await expect(water.getByTestId("chip-escalon")).toHaveCount(0);
+  await expect(water.getByTestId("precio-unitario")).toContainText("19.000");
+  await expect(water.getByTestId("hint-escalon")).toContainText("Agregá 20 más del producto");
+  const resumen = page.getByTestId("resumen-escalones").first();
+  await expect(resumen).toContainText("30 u. · escalón 10+");
+  await expect(resumen).toContainText("30 u. · precio de lista");
+  mkdirSync("verificacion/a2", { recursive: true });
+  await page.screenshot({ path: "verificacion/a2/bloque5-30-30-1440.png", fullPage: true });
+
+  // El mismo producto con 20 Mango + 35 Strawberry: los dos sabores al escalón 50.
+  await page.getByLabel(`Cantidad de ${IGNITE_V80} — Mango Ice`).fill("20");
+  await agregarDe(IGNITE_V80, "Strawberry Watermelon");
+  await page.getByLabel(`Cantidad de ${IGNITE_V80} — Strawberry Watermelon`).fill("35");
+  for (const sabor of ["Mango Ice", "Strawberry Watermelon"]) {
+    const f = filaDe(IGNITE_V80, sabor);
+    await expect(f.getByTestId("chip-escalon")).toHaveText("Escalón desde 50 u.");
+    await expect(f.getByTestId("precio-unitario-usd")).toHaveText("U$D 7 c/u");
+    await expect(f.getByTestId("precio-unitario")).toContainText("9.100");
+  }
+  await expect(resumen).toContainText("55 u. · escalón 50+");
+  // 55 × $9.100 + 30 × $19.000 = $1.070.500 · U$D 385 + 570.000 / 1.300 ≈ U$D 823,46
+  await expect(page.getByTestId("total-cotizacion")).toContainText("1.070.500");
+  await expect(page.getByTestId("total-cotizacion-usd")).toContainText("U$D 823,46");
+  await page.screenshot({ path: "verificacion/a2/bloque5-20-35-1440.png", fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "verificacion/a2/bloque5-20-35-375.png", fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.getByRole("button", { name: "Guardar" }).click();
+  await expect(page.getByTestId("codigo-cotizacion")).toHaveText(/^VAP-Q-\d{6}$/);
+  const codigo = (await page.getByTestId("codigo-cotizacion").textContent())!;
+  const c = await db.cotizacion.findFirstOrThrow({
+    where: { panelId: PANEL_VAPES, codigo },
+    include: { items: true },
+  });
+  expect(c.tipoCambioBlue?.toString()).toBe("1300");
+  expect(c.tipoCambioObtenidoAt).not.toBeNull();
+  const delIgnite = c.items.filter((i) => i.productoId === ignite);
+  expect(delIgnite).toHaveLength(2);
+  expect(delIgnite.every((i) => i.precioUnitarioUSD?.toString() === "7")).toBe(true);
+  expect(delIgnite.every((i) => i.precioUnitario.toString() === "9100")).toBe(true);
+  expect(c.items.find((i) => i.productoId === elf10)!.precioUnitarioUSD).toBeNull();
+
+  // Detalle, WhatsApp y PDF con dólares y pesos y el blue usado.
+  await page.goto(`/p/vapes/cotizador/${c.id}`);
+  await expect(page.getByTestId("blue-cotizacion")).toContainText("$ 1.300");
+  await expect(page.getByTestId("total-usd")).toContainText("U$D 823,46");
+  const wa = decodeURIComponent(
+    (await page.getByTestId("whatsapp-cotizacion").getAttribute("href"))!,
+  ).replace(/\s/g, " ");
+  expect(wa).toContain("U$D 7 · $ 9.100");
+  expect(wa).toContain("Precios en dólares convertidos a blue venta $ 1.300 del");
+  const pdf = await esperarPdf(page.request, `/api/p/vapes/cotizaciones/${c.id}/pdf`);
+  writeFileSync("verificacion/a2/bloque5-cotizacion-mayorista.pdf", pdf);
+  await page.screenshot({ path: "verificacion/a2/bloque5-detalle-1440.png", fullPage: true });
+
+  await db.escalonPrecio.deleteMany({ where: { productoId: { in: [ignite, elf10] } } });
 });
 
 test("unitaria de 3 sabores: PDF y link de WhatsApp", async ({ page }, info) => {
@@ -211,7 +322,7 @@ test("Trinidad cotiza sin edición de precios ni descuento, y no ve la configura
   await agregar(page, "Cool Mint");
   await expect(page.getByTestId("fila-cotizacion")).toHaveCount(1);
   await expect(page.getByTestId("precio-unitario")).toContainText("14.500");
-  await expect(page.getByLabel("Precio manual (c/u)")).toHaveCount(0);
+  await expect(page.getByLabel(/Precio manual/)).toHaveCount(0);
   await expect(page.getByLabel("Descuento ($)")).toHaveCount(0);
 
   await page.goto("/p/vapes/cotizador");

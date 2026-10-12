@@ -8,6 +8,7 @@ import { esOwner, puede } from "@/lib/permisos";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
 import { listarEscalones } from "@/server/services/escalon.service";
 import { listarMovimientos } from "@/server/services/movimiento.service";
 import { obtener } from "@/server/services/producto.service";
@@ -35,11 +36,12 @@ export default async function FichaProductoPage({ params }: { params: Promise<{ 
   });
   // Precios mayoristas (escalones del cotizador): dueños o "editar" en Productos.
   const editaEscalones = owner || puede(ctx.usuario, ctx.panelId, Modulo.PRODUCTOS, "editar");
-  const [depositos, movimientos, proveedores, escalones] = await Promise.all([
+  const [depositos, movimientos, proveedores, escalones, blue] = await Promise.all([
     listarDepositosActivos(ctx),
     listarMovimientos(ctx, { productoId: id, page: 1, pageSize: 20 }, { incluirCostos: owner }),
     veProveedores ? proveedoresDeProducto(ctx, id) : Promise.resolve(null),
     editaEscalones ? listarEscalones(ctx, id) : Promise.resolve(null),
+    editaEscalones ? obtenerCotizacion("USD_BLUE", "VENTA") : Promise.resolve(null),
   ]);
 
   return (
@@ -54,6 +56,7 @@ export default async function FichaProductoPage({ params }: { params: Promise<{ 
                 productoId={id}
                 precioLista={String(producto.precioVenta)}
                 escalones={escalones}
+                blue={blue ? { valor: blue.valor, obtenidoAt: blue.obtenidoAt } : null}
               />
             )}
             {proveedores && (

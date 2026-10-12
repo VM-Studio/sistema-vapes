@@ -113,3 +113,29 @@ export function horaCotizacion(iso: string | Date): string {
 export function fechaHoraCotizacion(iso: string | Date): string {
   return fechaHora.format(typeof iso === "string" ? new Date(iso) : iso).replace(",", "");
 }
+
+/**
+ * Precio en dólares de un renglón mayorista: el exacto (escalón o precio
+ * manual en USD) o, si se cotizó en pesos, su equivalente con el blue usado.
+ * `aproximado` = true cuando es el equivalente (se muestra con "≈").
+ */
+export function precioEnUSD(
+  precioARS: string | number,
+  precioUSD: string | number | null,
+  blue: string | number | null | undefined,
+): { usd: number; aproximado: boolean } | null {
+  if (precioUSD !== null && precioUSD !== undefined)
+    return { usd: Number(precioUSD), aproximado: false };
+  if (!blue || Number(blue) <= 0) return null;
+  return { usd: Math.round((Number(precioARS) / Number(blue)) * 100) / 100, aproximado: true };
+}
+
+/** "U$D 8" o "≈ U$D 7,69". */
+export function formatearUSD(p: { usd: number; aproximado: boolean }): string {
+  return `${p.aproximado ? "≈ " : ""}${formatearMonedaCambio(p.usd, "USD_BLUE")}`;
+}
+
+/** "Precios en dólares convertidos a blue venta $ 1.300 del 11/10 15:30". */
+export function leyendaBlue(valor: string | number, obtenidoAt: string | Date): string {
+  return `Precios en dólares convertidos a blue venta ${formatearPesos(valor)} del ${fechaHoraCotizacion(obtenidoAt)}`;
+}

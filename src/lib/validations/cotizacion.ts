@@ -20,9 +20,6 @@ export function formatearIdCotizacion(slug: string, numero: number): string {
 
 // --- Configuración del panel (clave "cotizacion") ------------------------------
 
-export const MODOS_ESCALON = ["POR_PRODUCTO", "POR_TOTAL"] as const;
-export type ModoEscalon = (typeof MODOS_ESCALON)[number];
-
 export const LEYENDA_COTIZACION_DEFAULT =
   "Precios sujetos a disponibilidad de stock. No incluye envío.";
 
@@ -33,11 +30,6 @@ export const configCotizacionSchema = z.object({
     .min(1, "Mínimo 1 día")
     .max(365, "Máximo 365 días")
     .default(7),
-  /**
-   * POR_PRODUCTO: las unidades de cada producto (todos sus sabores) definen su escalón.
-   * POR_TOTAL: las unidades de toda la cotización definen el escalón de todos los productos.
-   */
-  modoEscalonMayorista: z.enum(MODOS_ESCALON).default("POR_PRODUCTO"),
   leyenda: z.string().trim().max(500, "Máximo 500 caracteres").default(LEYENDA_COTIZACION_DEFAULT),
   mostrarStock: z.boolean().default(true),
 });
@@ -46,6 +38,13 @@ export type ConfigCotizacion = z.output<typeof configCotizacionSchema>;
 export type ConfigCotizacionInput = z.input<typeof configCotizacionSchema>;
 
 // --- Escalones -------------------------------------------------------------------
+// El escalón mayorista se determina SIEMPRE por producto (todos sus sabores
+// suman). Los escalones propios de un producto van en dólares (blue venta, el
+// default) o en pesos; todos los del producto en la misma moneda.
+
+export const MONEDAS_PRECIO = ["USD", "ARS"] as const;
+export type MonedaPrecio = (typeof MONEDAS_PRECIO)[number];
+export const monedaPrecioSchema = z.enum(MONEDAS_PRECIO, { error: "Elegí la moneda" });
 
 const porcentaje = z.preprocess(
   vacioAUndefined,
@@ -76,6 +75,7 @@ export const escalonDefaultSchema = z.object({
 
 export const guardarEscalonesSchema = z.object({
   productoId: id,
+  moneda: monedaPrecioSchema.default("USD"),
   escalones: z.array(escalonSchema).max(20, "Máximo 20 escalones"),
 });
 
@@ -95,6 +95,8 @@ export const itemCotizacionSchema = z.object({
   cantidad: enteroPositivo,
   /** Precio por unidad a mano (pisa lista y escalones; requiere "editar"). */
   precioManual: montoOpcional,
+  /** Moneda del precio manual: USD (blue venta) solo en mayorista. */
+  monedaManual: monedaPrecioSchema.default("ARS"),
 });
 
 export const clienteCotizacionSchema = z
@@ -109,6 +111,8 @@ export const clienteCotizacionSchema = z
 
 export const calcularPreciosSchema = z.object({
   tipo: tipoCotizacionSchema,
+  /** Al editar: si la cotización sigue vigente se usa SU blue (snapshot), no el de hoy. */
+  cotizacionId: z.preprocess(vacioAUndefined, id.optional()),
   items: z.array(itemCotizacionSchema).max(300, "Máximo 300 productos"),
 });
 

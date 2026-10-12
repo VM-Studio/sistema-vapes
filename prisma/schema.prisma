@@ -1157,17 +1157,27 @@ model AuditLog {
 // Cotizador (precios mayoristas por escalones y cotizaciones)
 // -----------------------------------------------------------------------------
 
+/// Moneda del precio de un escalón mayorista: USD = dólar blue (venta), ARS = pesos.
+enum MonedaEscalon {
+  USD
+  ARS
+}
+
 /// Precio mayorista de un producto desde cierta cantidad: aplica a TODOS sus
 /// sabores (30 unidades mezclando sabores entran en el escalón de 30).
+/// `precioUnitario` está en `moneda`: en USD se convierte a pesos con el blue
+/// venta del momento de cotizar (todos los escalones de un producto usan la
+/// misma moneda; lo valida escalon.service).
 model EscalonPrecio {
-  id             String   @id @default(cuid())
-  panelId        String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  id             String        @id @default(cuid())
+  panelId        String        @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   productoId     String
   cantidadMinima Int
-  precioUnitario Decimal  @db.Decimal(12, 2)
-  activo         Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  precioUnitario Decimal       @db.Decimal(12, 2)
+  moneda         MonedaEscalon @default(USD)
+  activo         Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   panel    Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
@@ -1192,34 +1202,38 @@ model EscalonPrecioDefault {
 }
 
 model Cotizacion {
-  id              String           @id @default(cuid())
-  panelId         String           @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  id                   String           @id @default(cuid())
+  panelId              String           @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   /// Correlativo por panel (Secuencia COTIZACION).
-  numero          Int
+  numero               Int
   /// ID visible: "VAP-Q-000001".
-  codigo          String
-  tipo            TipoCotizacion
-  fecha           DateTime         @default(now())
-  validaHasta     DateTime
+  codigo               String
+  tipo                 TipoCotizacion
+  fecha                DateTime         @default(now())
+  validaHasta          DateTime
   /// Opcional: puede ser para alguien que todavía no es cliente.
-  clienteId       String?
-  clienteNombre   String?
-  clienteTelefono String?
-  vendedorId      String
-  estado          EstadoCotizacion @default(BORRADOR)
-  subtotal        Decimal          @db.Decimal(12, 2)
-  descuento       Decimal          @default(0) @db.Decimal(12, 2)
-  total           Decimal          @db.Decimal(12, 2)
-  notas           String?
-  motivoRechazo   String?
+  clienteId            String?
+  clienteNombre        String?
+  clienteTelefono      String?
+  vendedorId           String
+  estado               EstadoCotizacion @default(BORRADOR)
+  subtotal             Decimal          @db.Decimal(12, 2)
+  descuento            Decimal          @default(0) @db.Decimal(12, 2)
+  total                Decimal          @db.Decimal(12, 2)
+  notas                String?
+  motivoRechazo        String?
+  /// Snapshot del dólar blue venta usado para los precios en USD (mayorista):
+  /// mientras la cotización esté vigente sus pesos no cambian aunque cambie el blue.
+  tipoCambioBlue       Decimal?         @db.Decimal(14, 2)
+  tipoCambioObtenidoAt DateTime?
   /// La venta generada al convertir.
-  ventaId         String?          @unique
+  ventaId              String?          @unique
   /// En desuso desde v2.4: los PDFs se generan y sirven por Route Handler
   /// (/api/p/{slug}/cotizaciones/{id}/pdf), cacheados en el storage.
-  pdfUrl          String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  deletedAt       DateTime?
+  pdfUrl               String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  deletedAt            DateTime?
 
   panel         Panel            @relation(fields: [panelId], references: [id], onDelete: Restrict)
   cliente       Cliente?         @relation(fields: [clienteId], references: [id], onDelete: Restrict)
@@ -1237,22 +1251,25 @@ model Cotizacion {
 }
 
 model CotizacionItem {
-  id              String   @id @default(cuid())
-  panelId         String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  cotizacionId    String
-  varianteId      String
+  id                String   @id @default(cuid())
+  panelId           String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  cotizacionId      String
+  varianteId        String
   /// Desnormalizado (= variante.productoId, lo verifica un trigger).
-  productoId      String
-  cantidad        Int
-  precioLista     Decimal  @db.Decimal(12, 2)
-  /// El cotizado: lista, escalón o manual.
-  precioUnitario  Decimal  @db.Decimal(12, 2)
+  productoId        String
+  cantidad          Int
+  precioLista       Decimal  @db.Decimal(12, 2)
+  /// El cotizado: lista, escalón o manual (siempre en pesos).
+  precioUnitario    Decimal  @db.Decimal(12, 2)
+  /// Precio en dólares si salió de un escalón en USD o de un precio manual en
+  /// USD (precioUnitario = USD × Cotizacion.tipoCambioBlue, redondeado a 10).
+  precioUnitarioUSD Decimal? @db.Decimal(12, 2)
   /// cantidadMinima del escalón usado (null = lista o manual).
-  escalonAplicado Int?
-  esPrecioManual  Boolean  @default(false)
-  subtotal        Decimal  @db.Decimal(12, 2)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  escalonAplicado   Int?
+  esPrecioManual    Boolean  @default(false)
+  subtotal          Decimal  @db.Decimal(12, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   panel      Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
   cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
