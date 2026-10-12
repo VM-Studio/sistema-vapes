@@ -379,13 +379,13 @@ test("venta en Cosmetic → ID COS-######", async ({ page }, info) => {
   await clienteNuevo(page, "Clienta Cosmetic", telefonoNico);
   await expect(continuar(page)).toBeEnabled();
   await continuar(page).click();
-  const codigo = await confirmar(page, "Binance");
+  const codigo = await confirmar(page, "Transferencia");
   expect(codigo).toMatch(/^COS-\d{6}$/);
   const venta = await db.venta.findFirstOrThrow({
     where: { panelId: PANEL_COSMETIC, codigo },
     include: { cliente: true },
   });
-  expect(venta.medioPago).toBe("BINANCE");
+  expect(venta.medioPago).toBe("TRANSFERENCIA");
   expect(venta.cliente.panelId).toBe(PANEL_COSMETIC);
   const s = await db.stock.findFirstOrThrow({
     where: { panelId: PANEL_COSMETIC, varianteId: variante.id },

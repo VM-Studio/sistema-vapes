@@ -7,7 +7,7 @@ import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { formatearIdCompra } from "@/lib/paneles";
 import { TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
-import { precioVentaEfectivo } from "@/lib/precios";
+import { precioVentaEfectivo, precioVentaMLEfectivo } from "@/lib/precios";
 import {
   ESTADO_VENTA_UI,
   ESTADO_PAGO_UI,
@@ -110,6 +110,7 @@ export function streamExportarTodo(meta: {
         { header: "Categoría", key: "c", width: 14 },
         { header: "Precio efectivo", key: "precio", width: 13, numFmt: MONEDA },
         { header: "Precio propio del sabor", key: "propio", width: 13, numFmt: MONEDA },
+        { header: "Precio Mercado Libre", key: "ml", width: 13, numFmt: MONEDA },
         { header: "Último costo", key: "costo", width: 12, numFmt: MONEDA },
         { header: "Stock mínimo", key: "min", width: 10 },
         { header: "Activo", key: "act", width: 8 },
@@ -136,6 +137,7 @@ export function streamExportarTodo(meta: {
         c: v.producto.categoria?.nombre ?? "",
         precio: num(precioVentaEfectivo(v, v.producto)),
         propio: num(v.precioVenta),
+        ml: num(precioVentaMLEfectivo(v, v.producto)),
         costo: num(v.ultimoCosto),
         min: v.stockMinimo,
         act: v.activo && v.producto.activo ? "Sí" : "No",

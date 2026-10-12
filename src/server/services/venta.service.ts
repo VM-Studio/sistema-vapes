@@ -4,6 +4,7 @@ import {
   EstadoPago,
   EstadoVenta,
   MedioPago,
+  OrigenPrecio,
   Prisma,
   RolUsuario,
   TipoMovimiento,
@@ -12,10 +13,11 @@ import {
 
 import { finDelDia, inicioDelDia } from "@/lib/fechas";
 import { formatearIdVenta, numeroDeIdVenta } from "@/lib/paneles";
-import { costoParaVenta, precioVentaEfectivo } from "@/lib/precios";
+import { esCobroMercadoLibre, listaDeMedios, tieneMercadoLibre } from "@/lib/medios-pago";
+import { costoParaVenta, precioVentaEfectivo, precioVentaMLEfectivo } from "@/lib/precios";
 import { ahora } from "@/lib/reloj";
 import type { FiltrosVentas, GenerarVenta } from "@/lib/validations/venta";
-import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
+import { ETIQUETA_MEDIO_PAGO, nombreConSabor, saborVisible } from "@/lib/ventas-ui";
 import { ventaVerificada } from "@/lib/verificacion-escaneo";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
@@ -23,6 +25,7 @@ import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { medir } from "@/server/log";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { crearCliente } from "@/server/services/cliente.service";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
   bloquearCliente,
   estadoPagoDe,
@@ -42,6 +45,11 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  * - Precio de lista y costo SIEMPRE del servidor: precioVentaEfectivo del sabor
  *   y snapshot de su último costo (costoParaVenta). El precio especial y el
  *   descuento global exigen "editar" en VENTAS.
+ * - Medios: solo los habilitados en el panel (configuración de ventas). Si la
+ *   venta se cobra por Mercado Libre (pago único o el de mayor monto) y el
+ *   panel lo tiene activado (usarPrecioMLEnVentasML), el precio de lista de
+ *   cada ítem es su precio Mercado Libre efectivo (los que no tienen quedan a
+ *   lista). El precio especial pisa todo. VentaItem.origenPrecio lo registra.
  * - `numero` es correlativo por panel (Secuencia VENTA) y se toma en la misma
  *   transacción; `codigo` = formatearIdVenta(slug, numero) ("VAP-000001").
  * - Costos y ganancia: solo los ve el OWNER (`verCostos`); a un empleado no le llegan.
@@ -98,6 +106,7 @@ export interface ItemVentaGenerada {
   precioLista: string;
   precioUnitario: string;
   esPrecioEspecial: boolean;
+  origenPrecio: OrigenPrecio;
   subtotal: string;
 }
 
@@ -136,7 +145,8 @@ const OPCIONES_GENERAR = {
 };
 
 const MEDIOS = new Set<string>(Object.values(MedioPago));
-const ELEGI_MEDIO = "Elegí el medio de pago: Efectivo, Transferencia o Binance.";
+const elegiMedio = (medios: readonly MedioPago[]) =>
+  `Elegí el medio de pago: ${listaDeMedios(medios, ETIQUETA_MEDIO_PAGO)}.`;
 
 /**
  * Genera una venta CONFIRMADA: valida galpón, cliente y pagos; crea el
@@ -166,13 +176,15 @@ async function generarEnTx(
 ): Promise<VentaGenerada> {
   // 1. Galpón, pagos, cliente e ítems presentes.
   if (!input.depositoId) throw new DomainError("Elegí el galpón de la venta.");
-  if (input.pagos.length === 0 && !input.fiar) throw new DomainError(ELEGI_MEDIO);
+  const config = await obtenerConfigVentas(ctx, tx);
+  if (input.pagos.length === 0 && !input.fiar) throw new DomainError(elegiMedio(config.mediosPago));
   // Pedir fiado (botón «Fiado» = sin pagos, o «Fiar el resto») exige FIADOS
   // "crear" de entrada, aunque el total termine cubierto: el permiso no depende
   // de lo que mande el cliente.
   if (input.fiar && !(await puedeFiados(ctx, "crear", tx)))
     throw new ForbiddenError("No tenés permiso para vender fiado.");
-  if (input.pagos.some((p) => !MEDIOS.has(p.medioPago))) throw new DomainError(ELEGI_MEDIO);
+  if (input.pagos.some((p) => !MEDIOS.has(p.medioPago) || !config.mediosPago.includes(p.medioPago)))
+    throw new DomainError(elegiMedio(config.mediosPago));
   if (new Set(input.pagos.map((p) => p.medioPago)).size !== input.pagos.length)
     throw new DomainError("Usá cada medio de pago una sola vez.");
   if (!input.cliente) throw new DomainError("Elegí el cliente de la venta.");
@@ -184,6 +196,14 @@ async function generarEnTx(
   if (desdeCotizacion && !permisos.cotizacionId)
     throw new DomainError("Falta la cotización de origen de la venta.");
   const puedeFijarPrecios = permisos.puedeEditar || desdeCotizacion;
+  // Cobro por Mercado Libre: lo decide el medio principal de lo que se manda a
+  // pagar (la UI ya calculó esos montos con los precios ML). Una cotización
+  // convertida conserva sus precios.
+  const aPrecioML =
+    !desdeCotizacion &&
+    tieneMercadoLibre(config) &&
+    config.usarPrecioMLEnVentasML &&
+    esCobroMercadoLibre(input.pagos);
 
   const deposito = await tx.deposito.findUnique({
     where: { id: input.depositoId },
@@ -201,9 +221,16 @@ async function generarEnTx(
       activo: true,
       productoId: true,
       precioVenta: true,
+      precioVentaML: true,
       ultimoCosto: true,
       producto: {
-        select: { nombreCompleto: true, precioVenta: true, activo: true, deletedAt: true },
+        select: {
+          nombreCompleto: true,
+          precioVenta: true,
+          precioVentaML: true,
+          activo: true,
+          deletedAt: true,
+        },
       },
     },
   });
@@ -217,13 +244,22 @@ async function generarEnTx(
       const titulo = nombreConSabor(v.producto.nombreCompleto, v.nombre);
       if (!v.activo || !v.producto.activo)
         throw new DomainError(`${titulo} está inactivo: no se puede vender.`);
-      const precioLista = D(precioVentaEfectivo(v, v.producto));
+      const precioML = aPrecioML ? precioVentaMLEfectivo(v, v.producto) : null;
+      const precioLista = D(precioML ?? precioVentaEfectivo(v, v.producto));
       let precioUnitario = precioLista;
       if (i.precioEspecial !== undefined) {
         if (!puedeFijarPrecios)
           throw new ForbiddenError("No tenés permiso para poner precios especiales.");
         precioUnitario = r2(D(i.precioEspecial));
       }
+      const esPrecioEspecial = !precioUnitario.equals(precioLista);
+      const origenPrecio: OrigenPrecio = desdeCotizacion
+        ? OrigenPrecio.COTIZACION
+        : esPrecioEspecial
+          ? OrigenPrecio.ESPECIAL
+          : precioML !== null
+            ? OrigenPrecio.ML
+            : OrigenPrecio.LISTA;
       return {
         varianteId: v.id,
         productoId: v.productoId,
@@ -231,7 +267,8 @@ async function generarEnTx(
         cantidad: i.cantidad,
         precioLista,
         precioUnitario,
-        esPrecioEspecial: !precioUnitario.equals(precioLista),
+        esPrecioEspecial,
+        origenPrecio,
         costoUnitario: D(costoParaVenta(v)),
         subtotal: precioUnitario.mul(i.cantidad),
       };
@@ -358,6 +395,7 @@ async function generarEnTx(
           precioLista: i.precioLista,
           precioUnitario: i.precioUnitario,
           esPrecioEspecial: i.esPrecioEspecial,
+          origenPrecio: i.origenPrecio,
           costoUnitario: i.costoUnitario,
           subtotal: i.subtotal,
         })),
@@ -434,6 +472,7 @@ async function generarEnTx(
         cantidad: i.cantidad,
         precioLista: dec(i.precioLista),
         precioUnitario: dec(i.precioUnitario),
+        origenPrecio: i.origenPrecio,
       })),
     },
     meta: ctx.meta,
@@ -467,6 +506,7 @@ async function generarEnTx(
       precioLista: dec(i.precioLista),
       precioUnitario: dec(i.precioUnitario),
       esPrecioEspecial: i.esPrecioEspecial,
+      origenPrecio: i.origenPrecio,
       subtotal: dec(i.subtotal),
     })),
     subtotal: dec(subtotal),
@@ -833,6 +873,7 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
       precioLista: dec(i.precioLista),
       precioUnitario: dec(i.precioUnitario),
       esPrecioEspecial: i.esPrecioEspecial,
+      origenPrecio: i.origenPrecio,
       costoUnitario: costos ? dec(i.costoUnitario) : null,
       subtotal: dec(i.subtotal),
     })),
@@ -911,6 +952,25 @@ export async function unidadesPorDeposito(ctx: Ctx): Promise<Record<string, numb
     _sum: { cantidad: true },
   });
   return Object.fromEntries(grupos.map((g) => [g.depositoId, g._sum.cantidad ?? 0]));
+}
+
+/**
+ * Precio Mercado Libre efectivo de unos sabores (null = no tienen): el modal lo
+ * pide al llegar al pago para mostrar el total si se cobra por Mercado Libre.
+ * El servidor lo vuelve a leer al confirmar.
+ */
+export async function preciosMercadoLibre(
+  ctx: Ctx,
+  varianteIds: string[],
+): Promise<Record<string, string | null>> {
+  if (varianteIds.length === 0) return {};
+  const filas = await dbPara(ctx.panelId).variante.findMany({
+    where: { id: { in: varianteIds } },
+    select: { id: true, precioVentaML: true, producto: { select: { precioVentaML: true } } },
+  });
+  const r: Record<string, string | null> = Object.fromEntries(varianteIds.map((id) => [id, null]));
+  for (const f of filas) r[f.id] = precioVentaMLEfectivo(f, f.producto);
+  return r;
 }
 
 /** Stock actual de unos sabores en un galpón (el modal lo refresca antes de avanzar). */

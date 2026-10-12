@@ -184,10 +184,18 @@ Enum Moneda {
   USDT
 }
 
+Enum OrigenPrecio {
+  LISTA
+  ML
+  ESPECIAL
+  COTIZACION
+}
+
 Enum MedioPago {
   EFECTIVO
   TRANSFERENCIA
   BINANCE
+  MERCADO_LIBRE
 }
 
 Enum AccionAuditoria {
@@ -458,6 +466,7 @@ Table Producto {
   nombreCompleto text [not null, default: '', note: 'Mantenido por trigger: "{Marca} {Modelo} {Especificación}" (búsquedas y toda la UI).']
   categoriaId text
   precioVenta decimal(12,2) [not null, note: 'Precio unitario de venta de todos sus sabores (salvo los que tienen precio propio).']
+  precioVentaML decimal(12,2) [note: 'Precio Mercado Libre de todos sus sabores (null = no tiene).']
   imagenUrl text
   activo boolean [not null, default: true]
   createdAt timestamp [not null, default: `now()`]
@@ -482,6 +491,7 @@ Table Variante {
   sku text [not null, note: 'Formato PRD-XXXXXX si no se provee. Único por panel.']
   codigoBarras text [note: 'Único por panel (junto con CodigoBarrasAlternativo.codigo) entre variantes no borradas.']
   precioVenta decimal(12,2) [note: 'null = usa Producto.precioVenta. Solo para un sabor con precio distinto.']
+  precioVentaML decimal(12,2) [note: 'null = usa Producto.precioVentaML.']
   ultimoCosto decimal(12,2) [note: 'Costo de la última compra recibida (snapshot que toma cada venta).']
   stockMinimo int [not null, default: 0]
   activo boolean [not null, default: true]
@@ -729,6 +739,7 @@ Table VentaItem {
   precioLista decimal(12,2) [not null, note: 'precioVentaEfectivo al momento de vender.']
   precioUnitario decimal(12,2) [not null, note: 'Lo cobrado por unidad: el de lista salvo precio especial.']
   esPrecioEspecial boolean [not null, default: false]
+  origenPrecio OrigenPrecio [not null, default: 'LISTA', note: 'LISTA, ML (cobrada por Mercado Libre), ESPECIAL o COTIZACION']
   costoUnitario decimal(12,2) [not null, note: 'Snapshot de Variante.ultimoCosto (0 si nunca se compró).']
   subtotal decimal(12,2) [not null, note: 'cantidad × precioUnitario (CHECK en DB).']
   createdAt timestamp [not null, default: `now()`]
@@ -924,6 +935,7 @@ Table Cotizacion {
   notas text
   motivoRechazo text
   tipoCambioBlue decimal(14,2) [note: 'Snapshot del blue venta usado para los precios en USD (mayorista).']
+  aPrecioML boolean [not null, default: false, note: 'Unitaria cotizada a precio Mercado Libre.']
   tipoCambioObtenidoAt timestamp [note: 'Cuándo se obtuvo ese blue (CHECK: los dos o ninguno).']
   ventaId text [unique, note: 'La venta generada al convertir.']
   pdfUrl text
@@ -1075,7 +1087,7 @@ Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [dele
 - **Panel**: cada sistema independiente de la app. `slug` (kebab-case) arma las rutas `/p/{slug}` y el prefijo de los IDs visibles (tres primeras letras: `vapes` → `VAP`); la app no deja crear un panel cuyo prefijo choque con otro. `colorAcento` tiñe la interfaz dentro del panel y `etiquetaEspecificacion` es cómo el panel llama al atributo principal de sus productos («Pitadas», «Contenido», «Detalle»). No se borra: se desactiva (`activo = false`) desde `/configuracion/sistemas` y sus datos se conservan. La migración crea **Vapes** (`pnl_vapes`), **Cosmetic** (`pnl_cosmetic`) y **Especiales** (`pnl_especiales`); los dueños agregan otros desde `/paneles`, y cada uno nace con un depósito «Principal» y sus secuencias en cero.
 - **Secuencia**: último número usado por (panel, entidad) para `VENTA`, `COMPRA`, `TRANSFERENCIA`, `DEVOLUCION` y `COTIZACION`. `siguienteNumero()` (`src/server/db/secuencia.ts`) la toma con `SELECT … FOR UPDATE` dentro de la transacción que inserta el documento: dos transacciones del mismo panel se serializan y nunca repiten número, y si la transacción falla el número no se consume.
 - **Panel.etiquetaUnidades**: cómo se llaman las unidades vendidas en el dashboard («Vapes vendidos» en Vapes, «Unidades vendidas» en el resto).
-- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas` (`redondeoVentas`), `cotizacion` (validez, modo de escalón, leyenda, mostrar stock), `alertaStockMinimo` y `prefijoSku`.
+- **Configuracion**: pares clave-valor JSON **por panel**: `escaner` (parámetros de la pistola), `ventas` (`redondeoVentas`, `mediosPago`: los medios que ofrece el panel en orden —default Efectivo, Transferencia, Binance; Cosmetic: Efectivo, Transferencia, Mercado Libre—, `usarPrecioMLEnVentasML`), `cotizacion` (validez, modo de escalón, leyenda, mostrar stock), `alertaStockMinimo` y `prefijoSku`.
 - **ConfiguracionGlobal**: pares clave-valor JSON que valen para toda la app: `nombreNegocio`, `iconoApp` y `timezone`.
 
 ### Usuarios, sesiones y seguridad
@@ -1127,8 +1139,8 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 
 ### Ventas y devoluciones
 
-- **Venta**: siempre `CONFIRMADA` al crearse (no hay borradores) o `ANULADA`. Tiene `codigo` visible único por panel (`VAP-000001` = `formatearIdVenta(slug, numero)`), galpón, **cliente** y **medio de pago** obligatorios (`EFECTIVO`, `TRANSFERENCIA` o `BINANCE`), `vendedorId`, `tipo` (`UNITARIA` / `MAYORISTA`), descuento global, costo congelado (`costoTotal`) y ganancia bruta. Se cobra completa con un único medio. No se edita: se anula (quién, cuándo, por qué) y el stock vuelve con `VENTA_ANULADA`.
-- **VentaItem**: un renglón por sabor con `productoId` desnormalizado (verificado por trigger), `precioLista` (el precio efectivo al vender), `precioUnitario` (lo cobrado), `esPrecioEspecial` y `costoUnitario` (snapshot de `Variante.ultimoCosto`, 0 si no hubo compras; `costoParaVenta()`). Subtotal = cantidad × precio cobrado. Costo y ganancia solo se muestran a los dueños.
+- **Venta**: siempre `CONFIRMADA` al crearse (no hay borradores) o `ANULADA`. Tiene `codigo` visible único por panel (`VAP-000001` = `formatearIdVenta(slug, numero)`), galpón, **cliente** y **medio de pago** (uno de los habilitados en el panel: `EFECTIVO`, `TRANSFERENCIA`, `BINANCE` o `MERCADO_LIBRE`; el principal es el de mayor monto), `vendedorId`, `tipo` (`UNITARIA` / `MAYORISTA`), descuento global, costo congelado (`costoTotal`) y ganancia bruta. Se cobra completa con un único medio. No se edita: se anula (quién, cuándo, por qué) y el stock vuelve con `VENTA_ANULADA`.
+- **VentaItem**: un renglón por sabor con `productoId` desnormalizado (verificado por trigger), `precioLista` (el precio efectivo al vender: el de lista o, si la venta se cobró por Mercado Libre, el precio ML efectivo del sabor), `precioUnitario` (lo cobrado), `esPrecioEspecial`, `origenPrecio` (`LISTA`, `ML`, `ESPECIAL` o `COTIZACION`) y `costoUnitario` (snapshot de `Variante.ultimoCosto`, 0 si no hubo compras; `costoParaVenta()`). Subtotal = cantidad × precio cobrado. Costo y ganancia solo se muestran a los dueños.
 - **Devolucion** (garantía): cliente obligatorio, venta opcional, galpón del que sale la **unidad nueva** que se entrega (`GARANTIA` por ítem), `observacion` de al menos 10 caracteres, código `VAP-D-000001` (secuencia `DEVOLUCION`). `REGISTRADA` → `ANULADA` (con motivo; el stock vuelve con `GARANTIA_ANULADA`); no se edita ni se borra.
 - **DevolucionItem**: sabor, producto (verificado por trigger) y cantidad > 0. Inmutable.
 
@@ -1138,7 +1150,7 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 - **EscalonPrecioDefault**: escalones del panel como % de descuento sobre la lista (0–100), para productos sin escalones propios activos. El precio resultante se redondea a 10 pesos.
 - **Cotizacion**: código `VAP-Q-000001` (secuencia `COTIZACION`, `formatearIdCotizacion()` en `src/lib/validations/cotizacion.ts`), `tipo` `UNITARIA` / `MAYORISTA`, `validaHasta`, cliente opcional (o nombre y teléfono de alguien que todavía no es cliente), `vendedorId`, totales (`total = subtotal − descuento`, CHECK) y estado `BORRADOR` → `ENVIADA` → `ACEPTADA` / `RECHAZADA`; las borrador/enviadas pasan a `VENCIDA` al pasar la validez; `CONVERTIDA` ⇔ tiene `ventaId` (CHECK) y desde ahí no se modifica (trigger `trg_cotizacion_convertida`). No se borra físicamente.
 - **CotizacionItem**: sabor, producto (verificado por trigger), cantidad, `precioLista`, `precioUnitario` cotizado en pesos (lista, escalón o manual), `precioUnitarioUSD` (si salió de un escalón o precio manual en dólares), `escalonAplicado` y `esPrecioManual`; subtotal = cantidad × precio (CHECK).
-- Motor de precios (`precio.service.ts`): unitaria = lista (en pesos); mayorista = escalón **siempre por producto** (marca + modelo + especificación): suman las unidades de todos sus sabores, nunca las del total de la cotización (dos productos de 30 u. no entran en el escalón de 50). Escalones en USD → pesos con el blue venta (`cambio.service`), redondeado a 10. La cotización guarda el **snapshot** del blue (`tipoCambioBlue`, `tipoCambioObtenidoAt`): mientras está vigente sus pesos no cambian aunque cambie el blue; creada, duplicada, editada después de vencer o convertida vencida con "recalcular" usa el blue de hoy. La configuración `cotizacion` del panel guarda `validezDias`, `leyenda` y `mostrarStock` (el modo `POR_TOTAL` se eliminó en v2.4). El precio manual (en pesos, o en USD en mayorista) y el descuento exigen `editar` en `COTIZADOR`.
+- Motor de precios (`precio.service.ts`): unitaria = lista (en pesos), o precio Mercado Libre si se cotiza "a precio Mercado Libre" (`aPrecioML`, solo en paneles que cobran por ML); mayorista = escalón **siempre por producto** (marca + modelo + especificación): suman las unidades de todos sus sabores, nunca las del total de la cotización (dos productos de 30 u. no entran en el escalón de 50). Escalones en USD → pesos con el blue venta (`cambio.service`), redondeado a 10. La cotización guarda el **snapshot** del blue (`tipoCambioBlue`, `tipoCambioObtenidoAt`): mientras está vigente sus pesos no cambian aunque cambie el blue; creada, duplicada, editada después de vencer o convertida vencida con "recalcular" usa el blue de hoy. La configuración `cotizacion` del panel guarda `validezDias`, `leyenda` y `mostrarStock` (el modo `POR_TOTAL` se eliminó en v2.4). El precio manual (en pesos, o en USD en mayorista) y el descuento exigen `editar` en `COTIZADOR`.
 - Convertir (`convertirEnVenta()`) crea la venta (con `Venta.cotizacionId`, precios cotizados como precio especial, tipo de la cotización) y marca la cotización `CONVERTIDA` en una sola transacción: si falta stock no cambia nada.
 
 ## Invariantes garantizadas por la base
@@ -1177,7 +1189,7 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Catálogo
 
 - Nombres no vacíos en usuarios, depósitos, categorías, marcas, productos y variantes.
-- Precios y stock mínimo ≥ 0: `Producto.precioVenta` (obligatorio), `Variante.precioVenta` y `Variante.ultimoCosto` (nulos o ≥ 0), `ProveedorProducto.precio`. Códigos de barras de 4 a 64 caracteres alfanuméricos o guiones.
+- Precios y stock mínimo ≥ 0: `Producto.precioVenta` (obligatorio), `Variante.precioVenta`, `Producto.precioVentaML`, `Variante.precioVentaML` y `Variante.ultimoCosto` (nulos o ≥ 0), `ProveedorProducto.precio`. Códigos de barras de 4 a 64 caracteres alfanuméricos o guiones.
 - Todo producto no borrado tiene al menos una variante (sabor) no borrada (trigger diferido `trg_producto_variantes`).
 - Todo producto tiene marca (`marcaId NOT NULL`); la categoría es opcional.
 - `nombreCompleto` y `especificacionNorm` los calcula la base en cada `INSERT`/`UPDATE` de `Producto` (trigger `trg_producto_derivados`, que además colapsa espacios en modelo y especificación) y se recalculan al renombrar la marca (`trg_marca_renombrada`); la marca «Sin marca» no aparece en el nombre. Lo que la app mande en esas columnas se pisa.

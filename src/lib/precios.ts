@@ -21,6 +21,17 @@ export function precioVentaEfectivo(
   return aTexto(variante.precioVenta) ?? aTexto(producto.precioVenta) ?? "0.00";
 }
 
+/**
+ * Precio Mercado Libre efectivo de un sabor: el propio o el del producto; null
+ * si ninguno lo tiene (en una venta por Mercado Libre queda a precio de lista).
+ */
+export function precioVentaMLEfectivo(
+  variante: { precioVentaML?: Monto },
+  producto: { precioVentaML?: Monto },
+): string | null {
+  return aTexto(variante.precioVentaML) ?? aTexto(producto.precioVentaML);
+}
+
 /** ¿El sabor tiene un precio distinto al del producto? */
 export function tienePrecioPropio(variante: { precioVenta: Monto }): boolean {
   return variante.precioVenta !== null && variante.precioVenta !== undefined;

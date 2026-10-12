@@ -5,6 +5,7 @@ import { esFechaISO } from "@/lib/fechas";
 import { puede } from "@/lib/permisos";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { obtenerClienteBasico } from "@/server/services/cliente.service";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { listarDevoluciones, ventaParaDevolucion } from "@/server/services/devolucion.service";
 import { obtenerVariantesPorId } from "@/server/services/producto.service";
@@ -24,7 +25,7 @@ export default async function DevolucionesPage({ searchParams }: { searchParams:
   ) as Record<string, string>;
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.DEVOLUCIONES, "crear");
 
-  const [resultado, depositos, inicial] = await Promise.all([
+  const [resultado, depositos, inicial, configVentas] = await Promise.all([
     listarDevoluciones(ctx, {
       desde: esFechaISO(plano.desde) ? plano.desde : undefined,
       hasta: esFechaISO(plano.hasta) ? plano.hasta : undefined,
@@ -34,6 +35,7 @@ export default async function DevolucionesPage({ searchParams }: { searchParams:
     }),
     puedeCrear ? listarDepositosActivos(ctx) : Promise.resolve([]),
     puedeCrear && plano.nueva === "1" ? inicialDesdeUrl(ctx, plano) : Promise.resolve(null),
+    obtenerConfigVentas(ctx),
   ]);
 
   return (
@@ -43,6 +45,7 @@ export default async function DevolucionesPage({ searchParams }: { searchParams:
       depositos={depositos}
       abrirNueva={puedeCrear && plano.nueva === "1"}
       inicial={inicial}
+      medios={configVentas.mediosPago}
     />
   );
 }

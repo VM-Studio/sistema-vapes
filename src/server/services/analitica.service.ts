@@ -11,6 +11,7 @@ import {
 import { getDaysInMonth, getISODay, parseISO } from "date-fns";
 import { z } from "zod";
 
+import { TODOS_LOS_MEDIOS } from "@/lib/medios-pago";
 import { esOwner, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import {
@@ -32,6 +33,7 @@ import {
 } from "@/lib/zona-horaria";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
 import { ForbiddenError, NotFoundError } from "@/server/errors";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { puedeFiados } from "@/server/services/fiado.service";
 
 /**
@@ -661,7 +663,14 @@ export async function ventasPorMedioPago(ctx: Ctx, p: Periodo): Promise<PorMedio
       WHERE pv."fecha" >= ${ts(inicio)} AND pv."fecha" < ${ts(fin)}
       GROUP BY 1`,
   );
-  return Object.values(MedioPago).map((medio) => {
+  // Los medios del panel (en su orden) y, además, cualquiera que tenga movimientos
+  // aunque ya no esté habilitado.
+  const { mediosPago } = await obtenerConfigVentas(ctx);
+  const medios = [
+    ...mediosPago,
+    ...TODOS_LOS_MEDIOS.filter((m) => !mediosPago.includes(m) && filas.some((f) => f.medio === m)),
+  ];
+  return medios.map((medio) => {
     const f = filas.find((x) => x.medio === medio);
     return {
       medio,

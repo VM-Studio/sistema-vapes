@@ -4,6 +4,7 @@ import type { MedioPago } from "@prisma/client";
 import { useEffect, useState } from "react";
 
 import type { ClienteElegido } from "@/components/clientes/selector-cliente";
+import { MEDIOS_PAGO_DEFAULT, medioPrincipal } from "@/lib/medios-pago";
 
 /** Pasos del modal "Generar venta" (el éxito se muestra aparte). */
 export const PASOS = ["galpon", "productos", "cliente", "pago"] as const;
@@ -199,18 +200,79 @@ export function resumirPago(
   };
 }
 
-/** Primer medio que todavía no usa ninguna fila. */
-export function medioLibre(filas: FilaPago[], preferido?: MedioPago | null): MedioPago | null {
+/** Primer medio (de los del panel, en su orden) que todavía no usa ninguna fila. */
+export function medioLibre(
+  filas: FilaPago[],
+  preferido?: MedioPago | null,
+  medios: readonly MedioPago[] = MEDIOS_PAGO_DEFAULT,
+): MedioPago | null {
   const usados = new Set(filas.map((f) => f.medioPago));
   if (preferido && !usados.has(preferido)) return preferido;
-  return MEDIOS_ORDEN.find((m) => !usados.has(m)) ?? null;
+  return medios.find((m) => !usados.has(m)) ?? null;
 }
 
-const MEDIOS_ORDEN: readonly MedioPago[] = ["EFECTIVO", "TRANSFERENCIA", "BINANCE"];
+/** Al abrir "Dividir pago": una fila con el medio elegido (o el primero del panel) por el total. */
+export function filasIniciales(
+  medio: MedioPago | null,
+  total: string,
+  medios: readonly MedioPago[] = MEDIOS_PAGO_DEFAULT,
+): FilaPago[] {
+  return [
+    {
+      medioPago: medio ?? medios[0] ?? "EFECTIVO",
+      monto: deCentavos(aCentavos(total)),
+      referencia: "",
+    },
+  ];
+}
 
-/** Al abrir "Dividir pago": una fila con el medio elegido (o efectivo) por el total. */
-export function filasIniciales(medio: MedioPago | null, total: string): FilaPago[] {
-  return [{ medioPago: medio ?? "EFECTIVO", monto: deCentavos(aCentavos(total)), referencia: "" }];
+/**
+ * Medio principal de lo que eligió el vendedor: el medio simple o, en "Dividir
+ * pago", la fila de mayor monto tipeado (igual que el servidor).
+ */
+export function medioPrincipalElegido(
+  v: Pick<VentaEnCurso, "medioPago" | "dividido" | "pagos">,
+): MedioPago | null {
+  if (!v.dividido) return v.medioPago;
+  return medioPrincipal(
+    v.pagos.map((f) => ({ medioPago: f.medioPago, monto: montoTipeado(f.monto) ?? 0 })),
+  );
+}
+
+/** Un ítem cuyo precio cambia (o no) por cobrarse por Mercado Libre. */
+export interface CambioPrecioML {
+  varianteId: string;
+  titulo: string;
+  precioLista: string;
+  /** null = no tiene precio Mercado Libre: queda a precio de lista. */
+  precioML: string | null;
+  /** Tiene precio especial: el especial pisa al de Mercado Libre. */
+  conPrecioEspecial: boolean;
+}
+
+/**
+ * Venta cobrada por Mercado Libre: cada ítem pasa a su precio ML (los que no
+ * tienen quedan a lista; el precio especial sigue mandando). Devuelve los
+ * ítems con el precio de lista ya cambiado y el detalle para mostrar.
+ */
+export function aplicarPreciosML(
+  items: ItemVenta[],
+  preciosML: Record<string, string | null>,
+): { items: ItemVenta[]; cambios: CambioPrecioML[] } {
+  const cambios: CambioPrecioML[] = items.map((i) => ({
+    varianteId: i.varianteId,
+    titulo: i.titulo,
+    precioLista: i.precioLista,
+    precioML: preciosML[i.varianteId] ?? null,
+    conPrecioEspecial: i.precioEspecial !== null,
+  }));
+  return {
+    items: items.map((i) => {
+      const ml = preciosML[i.varianteId];
+      return ml ? { ...i, precioLista: ml } : i;
+    }),
+    cambios,
+  };
 }
 
 /**
@@ -223,13 +285,14 @@ export function cambiarMontoFila(
   i: number,
   monto: string,
   total: string,
+  medios: readonly MedioPago[] = MEDIOS_PAGO_DEFAULT,
 ): FilaPago[] {
   const nuevas = filas.map((f, j) => (j === i ? { ...f, monto } : f));
   const valor = (f: FilaPago) => aCentavos(montoTipeado(f.monto) ?? 0);
   const totalC = aCentavos(total);
   if (i === nuevas.length - 1) {
     const restante = totalC - nuevas.reduce((a, f) => a + valor(f), 0);
-    const medio = medioLibre(nuevas);
+    const medio = medioLibre(nuevas, null, medios);
     if (restante > 0 && nuevas.length < MAX_FILAS_PAGO && medio && montoTipeado(monto) !== null) {
       nuevas.push({ medioPago: medio, monto: deCentavos(restante), referencia: "" });
     }

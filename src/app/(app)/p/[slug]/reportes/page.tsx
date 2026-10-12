@@ -10,6 +10,7 @@ import {
   Receipt,
   RotateCcw,
   Scale,
+  ShoppingBag,
   Truck,
   UserRound,
   Users,
@@ -22,11 +23,13 @@ import Link from "next/link";
 import { cardVariants } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatearNumero, formatearPesos } from "@/lib/format";
+import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
-import { REPORTES, type ClaveReporte } from "@/server/reportes/catalogo";
+import { REPORTES, reporteDisponible, type ClaveReporte } from "@/server/reportes/catalogo";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
   periodoDesdeParams,
   rendimientoVendedores,
@@ -46,6 +49,7 @@ const ICONOS: Record<ClaveReporte, LucideIcon> = {
   compras: Truck,
   clientes: Users,
   devoluciones: RotateCcw,
+  "mercado-libre": ShoppingBag,
   "resumen-mensual": CalendarDays,
 };
 
@@ -68,7 +72,10 @@ function resumenMes(r: RendimientoVendedor | undefined, etiquetaUnidades: string
 export default async function ReportesPage() {
   const ctx = await requirePaginaPanel(Modulo.REPORTES, "ver");
   const owner = esOwner(ctx.usuario);
-  const visibles = REPORTES.filter((r) => owner || !r.owner);
+  const conMercadoLibre = tieneMercadoLibre(await obtenerConfigVentas(ctx));
+  const visibles = REPORTES.filter(
+    (r) => (owner || !r.owner) && reporteDisponible(r, { conMercadoLibre }),
+  );
   const [vendedores, delMes] = owner
     ? await Promise.all([
         vendedoresDestacados(ctx),

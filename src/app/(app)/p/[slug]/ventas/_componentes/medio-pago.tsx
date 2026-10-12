@@ -1,5 +1,12 @@
 import type { EstadoPago, MedioPago } from "@prisma/client";
-import { ArrowLeftRight, Banknote, Bitcoin, HandCoins, type LucideIcon } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Banknote,
+  Bitcoin,
+  HandCoins,
+  ShoppingBag,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { formatearPesos } from "@/lib/format";
@@ -9,6 +16,8 @@ export const ICONO_MEDIO_PAGO: Record<MedioPago, LucideIcon> = {
   EFECTIVO: Banknote,
   TRANSFERENCIA: ArrowLeftRight,
   BINANCE: Bitcoin,
+  /** Ícono genérico de compra online (sin logo de la marca). */
+  MERCADO_LIBRE: ShoppingBag,
 };
 
 /**

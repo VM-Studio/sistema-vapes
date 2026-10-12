@@ -115,11 +115,14 @@ export function RegistrarDevolucion({
   onCerrar,
   depositos,
   inicial,
+  medios = MEDIOS_PAGO,
 }: {
   abierto: boolean;
   onCerrar: () => void;
   depositos: { id: string; nombre: string; esPrincipal: boolean }[];
   inicial: InicialDevolucion | null;
+  /** Medios de pago del panel (configuración de ventas). */
+  medios?: readonly MedioPago[];
 }) {
   const router = useRouter();
   const ruta = useRutaPanel();
@@ -579,9 +582,12 @@ export function RegistrarDevolucion({
                     <div
                       role="radiogroup"
                       aria-label="Medio de pago"
-                      className="grid gap-2 sm:grid-cols-3"
+                      className={cn(
+                        "grid gap-2",
+                        medios.length >= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3",
+                      )}
                     >
-                      {MEDIOS_PAGO.map((m) => {
+                      {medios.map((m) => {
                         const Icono = ICONO_MEDIO_PAGO[m];
                         const activo = medio === m;
                         return (

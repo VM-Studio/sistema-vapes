@@ -60,6 +60,14 @@ export const REPORTES = [
     owner: false,
   },
   {
+    clave: "mercado-libre",
+    titulo: "Ventas Mercado Libre",
+    descripcion: "Las ventas cobradas por Mercado Libre: cantidad, unidades, total y ganancia.",
+    owner: false,
+    /** Solo en paneles que cobran por Mercado Libre. */
+    soloMercadoLibre: true,
+  },
+  {
     clave: "resumen-mensual",
     titulo: "Resumen mensual",
     descripcion: "Una página con los números del mes: KPIs, top 5, compras vs. ventas y equipo.",
@@ -68,6 +76,12 @@ export const REPORTES = [
 ] as const;
 
 export type ClaveReporte = (typeof REPORTES)[number]["clave"];
+
+/** ¿El reporte existe en un panel? (los de Mercado Libre, solo si cobra por ML). */
+export const reporteDisponible = (
+  r: (typeof REPORTES)[number],
+  panel: { conMercadoLibre: boolean },
+) => !("soloMercadoLibre" in r) || panel.conMercadoLibre;
 
 export function reporte(clave: string) {
   return REPORTES.find((r) => r.clave === clave) ?? null;

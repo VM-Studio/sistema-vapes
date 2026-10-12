@@ -168,6 +168,18 @@ async function seedUsuarios(): Promise<{ ownerId: string }> {
 // Configuración (global y por panel)
 // -----------------------------------------------------------------------------
 
+/**
+ * Lo que cambia por panel: Cosmetic cobra por Mercado Libre (en vez de Binance)
+ * y registra sus facturas.
+ */
+const CONFIG_POR_SLUG: Record<string, Record<string, Prisma.InputJsonValue>> = {
+  cosmetic: {
+    ventas: configVentasSchema.parse({
+      mediosPago: ["EFECTIVO", "TRANSFERENCIA", "MERCADO_LIBRE"],
+    }) as Prisma.InputJsonValue,
+  },
+};
+
 async function seedConfiguracion() {
   const globales: Record<string, Prisma.InputJsonValue> = { nombreNegocio: "Mi Negocio" };
   for (const [clave, valor] of Object.entries(globales)) {
@@ -184,10 +196,13 @@ async function seedConfiguracion() {
     ventas: configVentasSchema.parse({}) as Prisma.InputJsonValue,
     cotizacion: configCotizacionSchema.parse({}) as Prisma.InputJsonValue,
   };
-  const paneles = await prisma.panel.findMany({ select: { id: true } });
-  for (const { id: panelId } of paneles) {
+  const paneles = await prisma.panel.findMany({ select: { id: true, slug: true } });
+  for (const { id: panelId, slug } of paneles) {
     const db = dbPara(panelId);
-    for (const [clave, valor] of Object.entries(porPanel)) {
+    for (const [clave, valor] of Object.entries({
+      ...porPanel,
+      ...(CONFIG_POR_SLUG[slug] ?? {}),
+    })) {
       await db.configuracion.upsert({
         where: { panelId_clave: { panelId, clave } },
         update: {},

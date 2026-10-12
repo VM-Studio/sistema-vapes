@@ -4,7 +4,8 @@
  * descuento (solo con "editar"), falta de stock (todo o nada), teléfono
  * repetido, pagos (PagoVenta por el total), listado y totales, anulación (solo
  * dueños, anula los pagos), ventas de un cliente,
- * más vendidos y aislamiento entre paneles (VAP-/COS-).
+ * más vendidos, aislamiento entre paneles (VAP-/COS-) y medios por panel con
+ * precio Mercado Libre (Cosmetic).
  * Uso: pnpm test:ventas — pensado para una DB recién sembrada (crea datos).
  */
 import {
@@ -552,6 +553,166 @@ async function main() {
   check(marca(verificada.id) === true, "todas las unidades escaneadas → verificadaPorEscaneo");
   check(marca(incompleta.id) === false, "detalle que no coincide con lo vendido → no verificada");
   check(marca(sinModo.id) === false, "sin el modo activo → no verificada");
+  console.log("\n10) Medios por panel y Mercado Libre (Cosmetic: Efectivo, Transferencia, ML)");
+  // Producto a $ 12.000 de lista y $ 15.000 en Mercado Libre; un sabor sin precio ML propio
+  // usa el del producto, otro tiene el suyo.
+  const ml = await transaccion(ctxCos, async (tx) => {
+    const marca = await tx.marca.upsert({
+      where: { panelId_nombre: { panelId: COSMETIC, nombre: "Test ML" } },
+      update: {},
+      create: { nombre: "Test ML" },
+    });
+    return tx.producto.create({
+      data: {
+        marcaId: marca.id,
+        nombre: `Serum ${suf}`,
+        especificacion: "30 ml",
+        precioVenta: "12000.00",
+        precioVentaML: "15000.00",
+        variantes: {
+          create: [
+            { nombre: "Rosa", sku: `TML-R-${suf}`, ultimoCosto: "7000.00" },
+            { nombre: "Coco", sku: `TML-C-${suf}`, precioVentaML: "16500.00" },
+          ],
+        },
+      },
+      include: { variantes: { orderBy: { nombre: "asc" } } },
+    });
+  });
+  const [coco, rosa] = ml.variantes as [
+    (typeof ml.variantes)[number],
+    (typeof ml.variantes)[number],
+  ];
+  const sinML = await transaccion(ctxCos, (tx) =>
+    tx.producto.create({
+      data: {
+        marcaId: ml.marcaId,
+        nombre: `Crema ${suf}`,
+        precioVenta: "8000.00",
+        variantes: { create: [{ nombre: "Único", sku: `TML-U-${suf}` }] },
+      },
+      include: { variantes: true },
+    }),
+  );
+  for (const v of [rosa, coco, sinML.variantes[0]!])
+    await registrarAjuste(ctxCos, {
+      depositoId: gCos.id,
+      varianteId: v.id,
+      cantidadReal: 10,
+      motivo: "Preparación test-ventas ML",
+    });
+  const ventaCos = (pagos: { medioPago: string; monto: number }[], items: object[]) =>
+    generarVentaSchema.parse({
+      depositoId: gCos.id,
+      pagos,
+      cliente: { id: vCos.cliente.id },
+      items,
+    });
+
+  const porML = await generarVenta(
+    ctxCos,
+    ventaCos(
+      [{ medioPago: "MERCADO_LIBRE", monto: 15000 + 16500 + 8000 }],
+      [
+        { varianteId: rosa.id, cantidad: 1 },
+        { varianteId: coco.id, cantidad: 1 },
+        { varianteId: sinML.variantes[0]!.id, cantidad: 1 },
+      ],
+    ),
+    DUENO,
+  );
+  const item = (venta: typeof porML, id: string) => venta.items.find((i) => i.varianteId === id)!;
+  check(
+    item(porML, rosa.id).precioUnitario === "15000.00" &&
+      item(porML, rosa.id).origenPrecio === "ML",
+    `vendido por ML: lista $ 12.000 → $ ${item(porML, rosa.id).precioUnitario} (origenPrecio ${item(porML, rosa.id).origenPrecio})`,
+  );
+  check(
+    item(porML, coco.id).precioUnitario === "16500.00",
+    "el precio ML propio del sabor pisa al del producto",
+  );
+  check(
+    item(porML, sinML.variantes[0]!.id).precioUnitario === "8000.00" &&
+      item(porML, sinML.variantes[0]!.id).origenPrecio === "LISTA",
+    "sin precio ML queda a lista (LISTA)",
+  );
+  check(
+    porML.total === "39500.00" && porML.medioPago === MedioPago.MERCADO_LIBRE,
+    `total ${porML.total}`,
+  );
+  const enDb = await dbPara(COSMETIC).ventaItem.findFirstOrThrow({
+    where: { ventaId: porML.id, varianteId: rosa.id },
+  });
+  check(
+    $(enDb.precioLista) === "15000.00" && enDb.origenPrecio === "ML",
+    "VentaItem guarda precioLista = precio ML y origenPrecio = ML",
+  );
+
+  const efectivo = await generarVenta(
+    ctxCos,
+    ventaCos([{ medioPago: "EFECTIVO", monto: 12000 }], [{ varianteId: rosa.id, cantidad: 1 }]),
+    DUENO,
+  );
+  check(
+    item(efectivo, rosa.id).precioUnitario === "12000.00" &&
+      item(efectivo, rosa.id).origenPrecio === "LISTA",
+    "en efectivo, el mismo producto va a lista",
+  );
+
+  // Mixto: el medio de mayor monto decide.
+  const mixto = await generarVenta(
+    ctxCos,
+    ventaCos(
+      [
+        { medioPago: "EFECTIVO", monto: 5000 },
+        { medioPago: "MERCADO_LIBRE", monto: 10000 },
+      ],
+      [{ varianteId: rosa.id, cantidad: 1 }],
+    ),
+    DUENO,
+  );
+  check(
+    item(mixto, rosa.id).precioUnitario === "15000.00",
+    "pago mixto con ML mayoritario → precio ML",
+  );
+
+  const especial = await generarVenta(
+    ctxCos,
+    ventaCos(
+      [{ medioPago: "MERCADO_LIBRE", monto: 13000 }],
+      [{ varianteId: rosa.id, cantidad: 1, precioEspecial: 13000 }],
+    ),
+    DUENO,
+  );
+  check(
+    item(especial, rosa.id).precioUnitario === "13000.00" &&
+      item(especial, rosa.id).origenPrecio === "ESPECIAL",
+    "el precio especial pisa al de Mercado Libre (ESPECIAL)",
+  );
+
+  const binance = await error(() =>
+    generarVenta(
+      ctxCos,
+      ventaCos([{ medioPago: "BINANCE", monto: 12000 }], [{ varianteId: rosa.id, cantidad: 1 }]),
+      DUENO,
+    ),
+  );
+  check(
+    binance instanceof DomainError && /Mercado Libre/.test(msg(binance)),
+    `Binance no está habilitado en Cosmetic → «${msg(binance)}»`,
+  );
+  const mlEnVapes = await error(() =>
+    generarVenta(
+      ctx,
+      entrada({
+        cliente: { id: v1.cliente.id },
+        items: [{ varianteId: mango.id, cantidad: 1 }],
+        medioPago: "MERCADO_LIBRE",
+      }),
+      DUENO,
+    ),
+  );
+  check(mlEnVapes instanceof DomainError, "Mercado Libre no está habilitado en Vapes");
 
   console.log(fallos ? `\n✘ ${fallos} verificaciones fallaron` : "\n✔ Todo OK");
   process.exitCode = fallos ? 1 : 0;

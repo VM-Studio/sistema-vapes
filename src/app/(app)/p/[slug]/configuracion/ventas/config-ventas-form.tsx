@@ -1,21 +1,27 @@
 "use client";
 
-import { Info } from "lucide-react";
+import type { MedioPago } from "@prisma/client";
+import { ArrowDown, ArrowUp, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { usePanel } from "@/components/layout/panel-context";
 import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { TODOS_LOS_MEDIOS } from "@/lib/medios-pago";
 import type { ConfigCatalogo, ConfigCompras } from "@/lib/validations/config-panel";
 import type { ConfigVentas } from "@/lib/validations/venta";
+import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 
+import { ICONO_MEDIO_PAGO } from "../../ventas/_componentes/medio-pago";
 import {
   guardarConfigCatalogoAction,
   guardarConfigComprasAction,
@@ -38,6 +44,8 @@ export function ConfigVentasForm({
   const toast = useToast();
   const panel = usePanel();
   const [redondeo, setRedondeo] = useState(String(ventas.redondeoVentas));
+  const [medios, setMedios] = useState<MedioPago[]>([...ventas.mediosPago]);
+  const [usarPrecioML, setUsarPrecioML] = useState(ventas.usarPrecioMLEnVentasML);
   const [prefijoSku, setPrefijoSku] = useState(catalogo.prefijoSku);
   const [alertaStockMinimo, setAlerta] = useState(catalogo.alertaStockMinimo);
   const [comisionPasista, setComisionPasista] = useState(
@@ -49,7 +57,11 @@ export function ConfigVentasForm({
   async function guardar() {
     setGuardando(true);
     const [rv, rc, rp] = await Promise.all([
-      guardarConfigVentasAction({ redondeoVentas: Number(redondeo) }),
+      guardarConfigVentasAction({
+        redondeoVentas: Number(redondeo),
+        mediosPago: medios,
+        usarPrecioMLEnVentasML: usarPrecioML,
+      }),
       guardarConfigCatalogoAction({ prefijoSku, alertaStockMinimo }),
       guardarConfigComprasAction({
         comisionPasistaPorcentajeDefault: comisionPasista.replace(",", "."),
@@ -104,6 +116,21 @@ export function ConfigVentasForm({
           </p>
         </SectionCard>
         <SectionCard
+          title="Medios de pago"
+          description="Los que se ofrecen al vender, al cobrar un fiado y en las devoluciones, en este orden."
+          contentClassName="flex flex-col gap-4"
+        >
+          <MediosPago medios={medios} onCambiar={setMedios} error={errores.mediosPago} />
+          {medios.includes("MERCADO_LIBRE") && (
+            <Switch
+              label="Las ventas cobradas por Mercado Libre van a precio Mercado Libre"
+              hint="Cada producto con precio Mercado Libre se cobra a ese precio; los que no tienen, a precio de lista."
+              checked={usarPrecioML}
+              onCheckedChange={setUsarPrecioML}
+            />
+          )}
+        </SectionCard>
+        <SectionCard
           title="Catálogo"
           description="Códigos internos y alertas de stock."
           contentClassName="flex flex-col gap-4"
@@ -145,5 +172,80 @@ export function ConfigVentasForm({
         </BarraAccion>
       </div>
     </>
+  );
+}
+
+/**
+ * Medios de pago del panel: tildar habilita, las flechas cambian el orden de
+ * los botones de «¿Cómo paga?». Al menos uno queda habilitado.
+ */
+function MediosPago({
+  medios,
+  onCambiar,
+  error,
+}: {
+  medios: MedioPago[];
+  onCambiar: (m: MedioPago[]) => void;
+  error?: string;
+}) {
+  const filas = [...medios, ...TODOS_LOS_MEDIOS.filter((m) => !medios.includes(m))];
+  const mover = (m: MedioPago, delta: -1 | 1) => {
+    const i = medios.indexOf(m);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= medios.length) return;
+    const nuevos = [...medios];
+    [nuevos[i], nuevos[j]] = [nuevos[j]!, nuevos[i]!];
+    onCambiar(nuevos);
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <ul
+        className="border-border divide-border rounded-control divide-y border"
+        data-testid="medios-pago"
+      >
+        {filas.map((m) => {
+          const habilitado = medios.includes(m);
+          const i = medios.indexOf(m);
+          const Icono = ICONO_MEDIO_PAGO[m];
+          return (
+            <li key={m} className="flex items-center gap-2 px-3">
+              <Icono className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+              <Checkbox
+                className="flex-1"
+                label={ETIQUETA_MEDIO_PAGO[m]}
+                checked={habilitado}
+                disabled={habilitado && medios.length === 1}
+                onChange={(e) =>
+                  onCambiar(e.target.checked ? [...medios, m] : medios.filter((x) => x !== m))
+                }
+              />
+              {habilitado && (
+                <>
+                  <IconButton
+                    aria-label={`Subir ${ETIQUETA_MEDIO_PAGO[m]}`}
+                    disabled={i === 0}
+                    onClick={() => mover(m, -1)}
+                  >
+                    <ArrowUp strokeWidth={1.75} />
+                  </IconButton>
+                  <IconButton
+                    aria-label={`Bajar ${ETIQUETA_MEDIO_PAGO[m]}`}
+                    disabled={i === medios.length - 1}
+                    onClick={() => mover(m, 1)}
+                  >
+                    <ArrowDown strokeWidth={1.75} />
+                  </IconButton>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {error && (
+        <p className="text-danger text-sm" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

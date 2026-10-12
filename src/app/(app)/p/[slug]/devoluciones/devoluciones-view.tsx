@@ -1,6 +1,6 @@
 "use client";
 
-import { Modulo } from "@prisma/client";
+import { Modulo, type MedioPago } from "@prisma/client";
 import { Plus, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -40,12 +40,15 @@ export function DevolucionesView({
   depositos,
   abrirNueva,
   inicial,
+  medios,
 }: {
   resultado: { devoluciones: DevolucionListada[]; total: number; page: number; pageSize: number };
   params: Record<string, string>;
   depositos: { id: string; nombre: string; esPrincipal: boolean }[];
   abrirNueva: boolean;
   inicial: InicialDevolucion | null;
+  /** Medios de pago del panel (diferencia a favor del negocio). */
+  medios: readonly MedioPago[];
 }) {
   const ruta = useRutaPanel();
   const { actualizar } = useUrlParams();
@@ -247,6 +250,7 @@ export function DevolucionesView({
           onCerrar={cerrar}
           depositos={depositos}
           inicial={inicialModal}
+          medios={medios}
         />
       )}
     </>

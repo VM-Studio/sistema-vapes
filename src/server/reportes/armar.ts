@@ -4,6 +4,7 @@ import { EstadoVenta, TipoVenta } from "@prisma/client";
 
 import { fechaHoraCotizacion } from "@/lib/cambio";
 import { ESTADO_STOCK_UI, TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
+import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { esOwner } from "@/lib/permisos";
 import { formatearFecha, formatearFechaHora } from "@/lib/utils";
 import {
@@ -47,11 +48,13 @@ import {
   matrizProveedores,
   productosConVariosProveedores,
 } from "@/server/services/proveedor.service";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
   comprasPorProveedor,
   opcionesFiltros,
   reporteClientes,
   reporteDevoluciones,
+  reporteMercadoLibre,
   reporteMovimientos,
   reporteStock,
   reporteVentas,
@@ -704,6 +707,61 @@ export async function armarExportacion(
               x.unidades,
             ]),
             totales: ["Total", "", d.total.devoluciones, d.total.unidades],
+          },
+        ],
+      };
+    }
+
+    case "mercado-libre": {
+      if (!tieneMercadoLibre(await obtenerConfigVentas(ctx)))
+        throw new NotFoundError("Este panel no cobra por Mercado Libre.");
+      const r = rangoReporte(params);
+      const d = await reporteMercadoLibre(ctx, r, { owner });
+      return {
+        titulo: "Ventas Mercado Libre",
+        archivo: archivo("mercado-libre"),
+        periodo: r.etiqueta,
+        filtros: [],
+        tablas: [
+          {
+            titulo: "Resumen",
+            columnas: [
+              { titulo: "Indicador", ancho: 2.5 },
+              { titulo: "Valor", tipo: "numero" },
+            ],
+            filas: [
+              ["Ventas", d.total.ventas],
+              ["Unidades", d.total.unidades],
+              ["Unidades a precio Mercado Libre", d.total.unidadesPrecioML],
+              ["Total facturado", Number(d.total.facturado)],
+              ...(d.total.ganancia !== null
+                ? [["Ganancia bruta", Number(d.total.ganancia)] as Celda[]]
+                : []),
+            ],
+          },
+          {
+            titulo: "Por producto y sabor",
+            columnas: [
+              { titulo: "Producto", ancho: 2.5 },
+              { titulo: "Sabor", ancho: 1.6 },
+              { titulo: "Unidades", tipo: "numero" },
+              { titulo: "Facturado", tipo: "moneda" },
+              ...(owner ? [{ titulo: "Ganancia", tipo: "moneda" as const }] : []),
+            ],
+            filas: d.filas.map((x) => [
+              x.producto,
+              saborVisible(x.sabor) ?? "—",
+              x.unidades,
+              Number(x.facturado),
+              ...(x.ganancia !== null ? [Number(x.ganancia)] : []),
+            ]),
+            totales: [
+              "Total",
+              "",
+              d.total.unidades,
+              Number(d.total.facturado),
+              ...(owner ? [""] : []),
+            ],
           },
         ],
       };

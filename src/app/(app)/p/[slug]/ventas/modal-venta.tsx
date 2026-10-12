@@ -1,5 +1,6 @@
 "use client";
 
+import type { MedioPago } from "@prisma/client";
 import { ArrowLeft, Lock, Warehouse, WifiOff, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -12,15 +13,23 @@ import { useDialogElement } from "@/components/ui/use-dialog-element";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { formatearPesos } from "@/lib/format";
+import { MEDIOS_PAGO_DEFAULT } from "@/lib/medios-pago";
 import { cn } from "@/lib/utils";
 import { ajustarVerificadas, faltanVerificar } from "@/lib/verificacion-escaneo";
 import type { VentaGenerada } from "@/server/services/venta.service";
 
 import { convertirCotizacionAction } from "../cotizador/actions";
-import { generarVentaAction, stockVentaAction, unidadesPorDepositoAction } from "./actions";
 import {
+  generarVentaAction,
+  preciosMercadoLibreAction,
+  stockVentaAction,
+  unidadesPorDepositoAction,
+} from "./actions";
+import {
+  aplicarPreciosML,
   ETIQUETA_PASO,
   guardarVentaEnCurso,
+  medioPrincipalElegido,
   MENSAJE_SIN_CONEXION,
   montoTipeado,
   PASOS,
@@ -80,6 +89,8 @@ export function ModalVenta({
   puedeAltaProductos,
   claveStorage,
   conversion = null,
+  medios = MEDIOS_PAGO_DEFAULT,
+  preciosMLActivos = false,
   onCerrado,
 }: {
   abierto: boolean;
@@ -92,6 +103,10 @@ export function ModalVenta({
   puedeAltaProductos: boolean;
   claveStorage: string;
   conversion?: ConversionVenta | null;
+  /** Medios del panel, en el orden de los botones (configuración de ventas). */
+  medios?: readonly MedioPago[];
+  /** El panel cobra por Mercado Libre y usa el precio ML en esas ventas. */
+  preciosMLActivos?: boolean;
   onCerrado: () => void;
 }) {
   const router = useRouter();
@@ -110,6 +125,8 @@ export function ModalVenta({
   const [subdialogo, setSubdialogo] = useState(false);
   /** "Continuar" con unidades sin verificar: se pide confirmación explícita. */
   const [faltanAlContinuar, setFaltanAlContinuar] = useState(0);
+  /** Precio Mercado Libre de los sabores de la venta (se pide al llegar al pago). */
+  const [preciosML, setPreciosML] = useState<Record<string, string | null>>({});
   const ventaRef = useRef(venta);
   ventaRef.current = venta;
 
@@ -130,9 +147,28 @@ export function ModalVenta({
     if (ventaTieneDatos(venta) || venta.paso !== "galpon") guardarVentaEnCurso(claveStorage, venta);
   }, [abierto, venta, exito, claveStorage, conversion]);
 
+  // Precios ML de lo que hay en la venta: se piden al llegar al pago (el servidor
+  // los vuelve a leer al confirmar). Una cotización convertida conserva sus precios.
+  const idsVenta = venta.items.map((i) => i.varianteId).join(",");
+  useEffect(() => {
+    if (!abierto || !preciosMLActivos || conversion || venta.paso !== "pago" || !idsVenta) return;
+    let vigente = true;
+    void preciosMercadoLibreAction({ ids: idsVenta.split(",") }).then((r) => {
+      if (vigente && r.ok) setPreciosML(r.data);
+    });
+    return () => {
+      vigente = false;
+    };
+  }, [abierto, preciosMLActivos, conversion, venta.paso, idsVenta]);
+
   const deposito = depositos.find((d) => d.id === venta.depositoId) ?? null;
+  // Cobro por Mercado Libre (medio único o el de mayor monto): cada ítem a su precio ML.
+  const cobroML =
+    preciosMLActivos && !conversion && medioPrincipalElegido(venta) === "MERCADO_LIBRE";
+  const conML = cobroML ? aplicarPreciosML(venta.items, preciosML) : null;
+  const itemsCobrados = conML ? conML.items : venta.items;
   const totales = totalesVenta(
-    venta.items,
+    itemsCobrados,
     conversion ? conversion.descuento : puedeEditar ? venta.descuento : "",
   );
 
@@ -615,9 +651,11 @@ export function ModalVenta({
                   <PasoPago
                     deposito={deposito.nombre}
                     cliente={venta.cliente}
-                    items={venta.items}
+                    items={itemsCobrados}
                     pago={venta}
                     resumenPago={resumenPago}
+                    medios={medios}
+                    cambiosML={conML?.cambios ?? null}
                     puedeFiar={puedeFiar}
                     descuento={venta.descuento}
                     notas={venta.notas}

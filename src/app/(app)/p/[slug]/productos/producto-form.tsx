@@ -39,6 +39,7 @@ const saborVacio = {
   sabor: "",
   codigoBarras: "",
   precioVenta: "",
+  precioVentaML: "",
   stockMinimo: "0",
   activo: true,
 };
@@ -53,6 +54,7 @@ function valoresIniciales(p: ProductoDetalle | null): ProductoInput {
       especificacion: "",
       categoriaId: "",
       precioVenta: "",
+      precioVentaML: "",
       imagenUrl: "",
       activo: true,
       sabores: [{ ...saborVacio }],
@@ -64,6 +66,7 @@ function valoresIniciales(p: ProductoDetalle | null): ProductoInput {
     especificacion: p.especificacion,
     categoriaId: p.categoriaId ?? "",
     precioVenta: aTextoMonto(p.precioVenta),
+    precioVentaML: aTextoMonto(p.precioVentaML),
     imagenUrl: p.imagenUrl ?? "",
     activo: p.activo,
     sabores: p.sabores.map((s) => ({
@@ -71,6 +74,7 @@ function valoresIniciales(p: ProductoDetalle | null): ProductoInput {
       sabor: s.sabor ?? "",
       codigoBarras: s.codigoBarras ?? "",
       precioVenta: aTextoMonto(s.precioPropio),
+      precioVentaML: aTextoMonto(s.precioPropioML),
       stockMinimo: String(s.stockMinimo),
       activo: s.activo,
     })),
@@ -180,6 +184,49 @@ function CeldaCodigo({ index, ocupados }: { index: number; ocupados: CodigosOcup
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * Precio Mercado Libre (solo en paneles que cobran por ML): el del producto
+ * para todos sus sabores y, si hace falta, uno propio por sabor. Vacío = no
+ * tiene: una venta por Mercado Libre lo cobra a precio de lista.
+ */
+function PrecioMercadoLibre({ form }: { form: FormProducto }) {
+  const { control } = form;
+  const precioML = useWatch({ control, name: "precioVentaML" }) as string | undefined;
+  const sabores = (useWatch({ control, name: "sabores" }) ?? []) as { sabor?: string }[];
+  return (
+    <SectionCard
+      title="Precio Mercado Libre"
+      description="Lo que se cobra cuando la venta se paga por Mercado Libre. Vacío = se cobra a precio de lista."
+      contentClassName="flex flex-col gap-4"
+    >
+      <FormInput
+        name="precioVentaML"
+        label="Precio Mercado Libre"
+        inputMode="decimal"
+        placeholder="Ej: 15000"
+        hint="Para todos los sabores (salvo los que tengan precio ML propio)."
+        containerClassName="md:max-w-xs"
+      />
+      {sabores.length > 1 && (
+        <div className="flex flex-col gap-2" data-testid="precios-ml-sabores">
+          <p className="text-small font-medium">Precio ML propio por sabor (opcional)</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {sabores.map((s, i) => (
+              <FormInput
+                key={i}
+                name={`sabores.${i}.precioVentaML`}
+                label={s.sabor || `Sabor ${i + 1}`}
+                inputMode="decimal"
+                placeholder={precioML ? String(precioML) : "Del producto"}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
@@ -302,10 +349,13 @@ export function ProductoForm({
   producto,
   categorias,
   marcas,
+  conMercadoLibre = false,
 }: {
   producto: ProductoDetalle | null;
   categorias: { value: string; label: string }[];
   marcas: string[];
+  /** El panel cobra por Mercado Libre: se carga el precio ML (si no, se conserva el que haya). */
+  conMercadoLibre?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -469,6 +519,8 @@ export function ProductoForm({
           />
           <FormSwitch name="activo" label="Activo" />
         </SectionCard>
+
+        {conMercadoLibre && <PrecioMercadoLibre form={form} />}
 
         <EditorSabores form={form} ocupados={ocupados} />
 

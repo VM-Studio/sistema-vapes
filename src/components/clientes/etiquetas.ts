@@ -20,4 +20,5 @@ export const MEDIO_PAGO_LABEL: Record<MedioPago, string> = {
   EFECTIVO: "Efectivo",
   TRANSFERENCIA: "Transferencia",
   BINANCE: "Binance",
+  MERCADO_LIBRE: "Mercado Libre",
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import type { MedioPago } from "@prisma/client";
-import { HandCoins, type LucideIcon, Plus, Split, X } from "lucide-react";
+import { HandCoins, type LucideIcon, Plus, ShoppingBag, Split, X } from "lucide-react";
 
 import type { ClienteElegido } from "@/components/clientes/selector-cliente";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
   medioLibre,
   montoTipeado,
   precioCobrado,
+  type CambioPrecioML,
   type FilaPago,
   type ItemVenta,
   type ResumenPago,
@@ -55,6 +56,7 @@ export function PasoPago({
   notas,
   puedeEditar,
   bloqueado = false,
+  cambiosML = null,
   totales,
   onPago,
   onDescuento,
@@ -75,6 +77,8 @@ export function PasoPago({
   puedeEditar: boolean;
   /** Venta desde una cotización: sin descuento ni notas editables (precios cotizados). */
   bloqueado?: boolean;
+  /** Se cobra por Mercado Libre: detalle de los precios ML aplicados (null = no aplica). */
+  cambiosML?: CambioPrecioML[] | null;
   totales: { unidades: number; subtotal: string; descuento: string; total: string };
   onPago: (p: Partial<EstadoPago>) => void;
   onDescuento: (d: string) => void;
@@ -133,7 +137,7 @@ export function PasoPago({
                 onPago({
                   dividido: true,
                   fiar: false,
-                  pagos: filasIniciales(pago.medioPago, totales.total),
+                  pagos: filasIniciales(pago.medioPago, totales.total, medios),
                 })
               }
             >
@@ -187,7 +191,13 @@ export function PasoPago({
                       value={f.monto}
                       onChange={(e) =>
                         onPago({
-                          pagos: cambiarMontoFila(pago.pagos, i, e.target.value, totales.total),
+                          pagos: cambiarMontoFila(
+                            pago.pagos,
+                            i,
+                            e.target.value,
+                            totales.total,
+                            medios,
+                          ),
                         })
                       }
                       error={montoInvalido ? "Monto inválido" : undefined}
@@ -222,7 +232,7 @@ export function PasoPago({
                 size="sm"
                 className="self-start"
                 onClick={() => {
-                  const medio = medioLibre(pago.pagos);
+                  const medio = medioLibre(pago.pagos, null, medios);
                   if (!medio) return;
                   onPago({
                     pagos: [
@@ -375,6 +385,7 @@ export function PasoPago({
             </li>
           ))}
         </ul>
+        {cambiosML && <PreciosMLAplicados cambios={cambiosML} />}
         <dl className="border-border grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t pt-3 text-sm">
           <dt className="text-muted">Subtotal</dt>
           <dd className="text-right tabular-nums">{formatearPesos(totales.subtotal)}</dd>
@@ -403,6 +414,46 @@ export function PasoPago({
           </p>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Venta cobrada por Mercado Libre: qué precios cambiaron. Los ítems sin precio
+ * ML quedan a lista (con aviso) y los de precio especial conservan el especial.
+ */
+function PreciosMLAplicados({ cambios }: { cambios: CambioPrecioML[] }) {
+  const cambian = cambios.filter((c) => c.precioML !== null && !c.conPrecioEspecial);
+  const sinPrecio = cambios.filter((c) => c.precioML === null && !c.conPrecioEspecial);
+  return (
+    <div
+      role="status"
+      className="bg-surface-3 text-foreground rounded-control flex flex-col gap-1.5 px-3 py-2.5 text-sm"
+      data-testid="precios-ml"
+    >
+      <p className="flex items-center gap-2 font-semibold">
+        <ShoppingBag className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+        Precios Mercado Libre aplicados
+      </p>
+      {cambian.length > 0 && (
+        <ul className="flex flex-col gap-0.5">
+          {cambian.map((c) => (
+            <li key={c.varianteId} className="flex justify-between gap-3">
+              <span className="min-w-0">{c.titulo}</span>
+              <span className="shrink-0 tabular-nums">
+                <span className="text-muted line-through">{formatearPesos(c.precioLista)}</span>{" "}
+                {formatearPesos(c.precioML!)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {sinPrecio.length > 0 && (
+        <p className="text-warning-soft-foreground text-small" data-testid="sin-precio-ml">
+          Sin precio Mercado Libre, quedan a precio de lista:{" "}
+          {sinPrecio.map((c) => c.titulo).join(", ")}.
+        </p>
+      )}
     </div>
   );
 }

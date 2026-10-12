@@ -33,6 +33,7 @@ import { Card } from "@/components/ui/card";
 import { controlClass } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { BotonCamara } from "@/features/scanner/BotonCamara";
@@ -87,6 +88,8 @@ export interface CotizacionInicial {
   descuento: string;
   notas: string;
   validezDias: number;
+  /** Unitaria cotizada a precio Mercado Libre. */
+  aPrecioML?: boolean;
 }
 
 export const ID_BUSCADOR_COTIZADOR = "buscar-producto-cotizador";
@@ -132,6 +135,7 @@ export function EditorCotizacion({
   puedeEditar,
   esOwner,
   puedeVender,
+  conMercadoLibre = false,
 }: {
   tipo: TipoCotizacionUI;
   mostrarStock: boolean;
@@ -142,6 +146,8 @@ export function EditorCotizacion({
   puedeEditar: boolean;
   esOwner: boolean;
   puedeVender: boolean;
+  /** Unitaria en un panel que cobra por Mercado Libre: ofrece cotizar a precio ML. */
+  conMercadoLibre?: boolean;
 }) {
   const panel = usePanel();
   const ruta = useRutaPanel();
@@ -159,6 +165,7 @@ export function EditorCotizacion({
   const [validez, setValidez] = useState(inicial?.validezDias ?? validezDefault);
   const [descuento, setDescuento] = useState(inicial?.descuento ?? "");
   const [notas, setNotas] = useState(inicial?.notas ?? "");
+  const [aPrecioML, setAPrecioML] = useState(conMercadoLibre && (inicial?.aPrecioML ?? false));
   const [calculo, setCalculo] = useState<Calculo | null>(null);
   const [calculando, setCalculando] = useState(false);
   const [errorCalculo, setErrorCalculo] = useState<string | null>(null);
@@ -196,6 +203,7 @@ export function EditorCotizacion({
     const t = setTimeout(() => {
       void calcularPreciosAction({
         tipo,
+        aPrecioML,
         ...(guardada ? { cotizacionId: guardada.id } : {}),
         items: items.map((i) => ({
           varianteId: i.varianteId,
@@ -217,7 +225,7 @@ export function EditorCotizacion({
     }, 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `firma` resume los ítems
-  }, [firma, tipo, puedeEditar, guardada?.id]);
+  }, [firma, tipo, puedeEditar, guardada?.id, aPrecioML]);
 
   const porVariante = useMemo(
     () => new Map((calculo?.items ?? []).map((c) => [c.varianteId, c])),
@@ -324,6 +332,7 @@ export function EditorCotizacion({
     const r = await guardarCotizacionAction({
       ...(guardada ? { id: guardada.id } : {}),
       tipo,
+      aPrecioML,
       items: items.map((i) => ({
         varianteId: i.varianteId,
         cantidad: i.cantidad,
@@ -474,6 +483,17 @@ export function EditorCotizacion({
           )
         }
       />
+
+      {conMercadoLibre && (
+        <Card className="p-4 md:px-6" data-testid="toggle-precio-ml">
+          <Switch
+            label="Cotizar a precio Mercado Libre"
+            hint="Cada producto a su precio Mercado Libre; los que no tienen, a precio de lista."
+            checked={aPrecioML}
+            onCheckedChange={setAPrecioML}
+          />
+        </Card>
+      )}
 
       {/* Cliente y validez ------------------------------------------------------ */}
       <Card className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_11rem] md:p-6">

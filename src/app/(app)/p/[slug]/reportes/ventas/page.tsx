@@ -17,10 +17,10 @@ import {
   ETIQUETA_MEDIO_PAGO,
   etiquetaMedioPrincipal,
   ETIQUETA_TIPO_VENTA,
-  MEDIOS_PAGO,
 } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { filtrosVentasSchema, rangoReporte } from "@/server/reportes/filtros";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
   opcionesFiltros,
   reporteVentas,
@@ -45,7 +45,11 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
   const owner = esOwner(ctx.usuario);
   const r = rangoReporte(plano);
   const f = filtrosVentasSchema.parse(plano);
-  const [v, o] = await Promise.all([reporteVentas(ctx, r, f, { owner }), opcionesFiltros(ctx)]);
+  const [v, o, { mediosPago }] = await Promise.all([
+    reporteVentas(ctx, r, f, { owner }),
+    opcionesFiltros(ctx),
+    obtenerConfigVentas(ctx),
+  ]);
   const PATH = rutaPanel(ctx.panel.slug, "/reportes/ventas");
 
   return (
@@ -79,7 +83,7 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
             valor={f.medioPago}
             etiqueta="Medio de pago"
             todos="Todos los medios"
-            opciones={MEDIOS_PAGO.map((m) => ({ value: m, label: ETIQUETA_MEDIO_PAGO[m] }))}
+            opciones={mediosPago.map((m) => ({ value: m, label: ETIQUETA_MEDIO_PAGO[m] }))}
           />
           <FiltroSelect
             param="tipo"

@@ -53,9 +53,16 @@ export function SaboresProducto({
     );
 
   const precio = (s: SaborDetalle) => (
-    <span className="inline-flex items-center gap-1.5 tabular-nums">
-      {formatearPesos(s.precioVenta)}
-      {s.tienePrecioPropio && <Badge variant="primary">propio</Badge>}
+    <span className="inline-flex flex-col items-end gap-0.5 tabular-nums">
+      <span className="inline-flex items-center gap-1.5">
+        {formatearPesos(s.precioVenta)}
+        {s.tienePrecioPropio && <Badge variant="primary">propio</Badge>}
+      </span>
+      {s.precioVentaML !== null && (
+        <span className="text-muted text-xs" title="Precio Mercado Libre">
+          ML {formatearPesos(s.precioVentaML)}
+        </span>
+      )}
     </span>
   );
 

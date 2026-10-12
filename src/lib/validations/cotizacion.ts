@@ -114,6 +114,8 @@ export const calcularPreciosSchema = z.object({
   /** Al editar: si la cotización sigue vigente se usa SU blue (snapshot), no el de hoy. */
   cotizacionId: z.preprocess(vacioAUndefined, id.optional()),
   items: z.array(itemCotizacionSchema).max(300, "Máximo 300 productos"),
+  /** Unitaria a precio Mercado Libre (solo paneles que cobran por ML). */
+  aPrecioML: z.boolean().default(false),
 });
 
 export const crearCotizacionSchema = z.object({
@@ -130,6 +132,7 @@ export const crearCotizacionSchema = z.object({
     vacioAUndefined,
     z.coerce.number().int().min(1, "Mínimo 1 día").max(365, "Máximo 365 días").optional(),
   ),
+  aPrecioML: z.boolean().default(false),
 });
 
 export const rechazarCotizacionSchema = z.object({

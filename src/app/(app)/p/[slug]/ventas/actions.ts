@@ -13,6 +13,7 @@ import { ClienteDuplicadoError, type ClienteBasico } from "@/server/services/cli
 import {
   anularVenta,
   generarVenta,
+  preciosMercadoLibre,
   productosMasVendidos,
   stockEnDeposito,
   unidadesPorDeposito,
@@ -75,6 +76,13 @@ export const anularVentaAction = actionHandler(async (input: unknown) => {
 export const unidadesPorDepositoAction = actionHandler(async () => {
   const ctx = await requireCtx(Modulo.VENTAS, "crear");
   return unidadesPorDeposito(ctx);
+});
+
+/** Precio Mercado Libre de los sabores de la venta (paso «¿Cómo paga?»). */
+export const preciosMercadoLibreAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.VENTAS, "crear");
+  const { ids } = z.object({ ids: z.array(id).max(300) }).parse(input);
+  return preciosMercadoLibre(ctx, ids);
 });
 
 /** Stock actual de los sabores de la venta en el galpón elegido. */

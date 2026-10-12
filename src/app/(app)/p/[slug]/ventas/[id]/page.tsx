@@ -143,6 +143,9 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                         ) : (
                           formatearPesos(i.precioUnitario)
                         )}
+                        {i.origenPrecio === "ML" && (
+                          <span data-testid="origen-ml"> (precio Mercado Libre)</span>
+                        )}
                         {i.costoUnitario !== null && (
                           <> · costo {formatearPesos(i.costoUnitario)}</>
                         )}

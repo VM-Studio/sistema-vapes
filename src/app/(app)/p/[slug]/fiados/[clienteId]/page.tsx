@@ -20,6 +20,7 @@ import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { ESTADO_PAGO_UI, ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { cuentaCorriente, type MovimientoCC } from "@/server/services/fiado.service";
 
 import { AnularCobro, RegistrarCobro } from "./acciones-fiado";
@@ -39,10 +40,13 @@ export default async function CuentaCorrientePage({
   const ctx = await requirePaginaPanel(Modulo.FIADOS, "ver");
   const { slug } = ctx.panel;
   const { clienteId } = await params;
-  const cc = await cuentaCorriente(ctx, clienteId).catch((e: unknown) => {
-    if (e instanceof NotFoundError) notFound();
-    throw e;
-  });
+  const [cc, configVentas] = await Promise.all([
+    cuentaCorriente(ctx, clienteId).catch((e: unknown) => {
+      if (e instanceof NotFoundError) notFound();
+      throw e;
+    }),
+    obtenerConfigVentas(ctx),
+  ]);
   const { cliente: c } = cc;
   const owner = esOwner(ctx.usuario);
   const puedeCobrar = puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "editar");
@@ -129,6 +133,7 @@ export default async function CuentaCorrientePage({
               cliente={{ id: c.id, nombre: c.nombre, telefono: c.telefono }}
               saldo={c.saldo}
               pendientes={cc.pendientes}
+              medios={configVentas.mediosPago}
             />
           )
         }

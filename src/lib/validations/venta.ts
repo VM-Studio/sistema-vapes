@@ -1,6 +1,7 @@
 import { EstadoVenta, MedioPago, TipoVenta } from "@prisma/client";
 import { z } from "zod";
 
+import { MEDIOS_PAGO_DEFAULT } from "../medios-pago";
 import {
   enteroPositivo,
   id,
@@ -118,6 +119,14 @@ export const configVentasSchema = z.object({
     .number()
     .refine((n) => [0, 10, 50, 100].includes(n), "Elegí 0, 10, 50 o 100")
     .default(0),
+  /** Medios que ofrece el panel, en el orden de los botones de «¿Cómo paga?». */
+  mediosPago: z
+    .array(z.enum(MedioPago))
+    .min(1, "Habilitá al menos un medio de pago")
+    .refine((m) => sinDuplicados(m, (x) => x), "Cada medio va una sola vez")
+    .default([...MEDIOS_PAGO_DEFAULT]),
+  /** Venta cobrada por Mercado Libre → cada ítem a su precio Mercado Libre (si lo tiene). */
+  usarPrecioMLEnVentasML: z.boolean().default(true),
 });
 
 /** Un pago tal como lo arma un servicio (convertir una cotización, scripts). */

@@ -11,13 +11,17 @@ export const ESTADO_VENTA_UI: Record<
   ANULADA: { label: "Anulada", variante: "neutral" },
 };
 
-/** Orden en que el modal ofrece los medios (el más usado primero). */
-export const MEDIOS_PAGO: readonly MedioPago[] = ["EFECTIVO", "TRANSFERENCIA", "BINANCE"];
+/**
+ * Medios por defecto (el más usado primero). Cada panel tiene los suyos en su
+ * configuración de ventas: las pantallas los reciben del servidor.
+ */
+export { MEDIOS_PAGO_DEFAULT as MEDIOS_PAGO } from "./medios-pago";
 
 export const ETIQUETA_MEDIO_PAGO: Record<MedioPago, string> = {
   EFECTIVO: "Efectivo",
   TRANSFERENCIA: "Transferencia",
   BINANCE: "Binance",
+  MERCADO_LIBRE: "Mercado Libre",
 };
 
 /** Medio principal de una venta: null = se fió todo (no hubo pago al vender). */
@@ -36,12 +40,13 @@ export const ESTADO_PAGO_UI: Record<
 
 /**
  * Clases del badge de medio de pago (si no se usa `MedioPagoBadge`): neutro del
- * sistema para los tres; se distinguen por etiqueta e ícono, nunca por color.
+ * sistema para todos; se distinguen por etiqueta e ícono, nunca por color.
  */
 export const CLASE_MEDIO_PAGO: Record<MedioPago, string> = {
   EFECTIVO: "bg-surface-3 text-foreground",
   TRANSFERENCIA: "bg-surface-3 text-foreground",
   BINANCE: "bg-surface-3 text-foreground",
+  MERCADO_LIBRE: "bg-surface-3 text-foreground",
 };
 
 export const ETIQUETA_TIPO_VENTA: Record<TipoVenta, string> = {

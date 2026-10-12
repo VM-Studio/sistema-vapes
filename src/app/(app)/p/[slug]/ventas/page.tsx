@@ -14,12 +14,14 @@ import { StatCard } from "@/components/ui/stat-card";
 import { esFechaISO, fechasDeRango, RANGOS, type Rango } from "@/lib/fechas";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
+import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import { listarVentasSchema } from "@/lib/validations/venta";
 import { ESTADO_VENTA_UI, ETIQUETA_TIPO_VENTA, telefonoVisible } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { obtenerClienteBasico } from "@/server/services/cliente.service";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { prepararConversion } from "@/server/services/cotizacion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import {
@@ -62,11 +64,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
   const filtros = listarVentasSchema.parse({ ...plano, desde: fechas.desde, hasta: fechas.hasta });
   const verGanancia = esOwner(ctx.usuario);
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear");
-  const [r, depositos, vendedores, unidades] = await Promise.all([
+  const [r, depositos, vendedores, unidades, configVentas] = await Promise.all([
     listarVentas(ctx, filtros, { verCostos: verGanancia }),
     listarDepositosActivos(ctx),
     vendedoresDelPanel(ctx),
     puedeCrear ? unidadesPorDeposito(ctx) : Promise.resolve({}),
+    obtenerConfigVentas(ctx),
   ]);
 
   // Links "vender a este cliente" / "vender desde este galpón" desde otros módulos.
@@ -104,6 +107,10 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
               puedeFiar={puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "crear")}
               abrirAlCargar={conversion ? null : abrirAlCargar}
               conversion={conversion}
+              medios={configVentas.mediosPago}
+              preciosMLActivos={
+                tieneMercadoLibre(configVentas) && configVentas.usarPrecioMLEnVentasML
+              }
             />
           )
         }
@@ -126,6 +133,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         )}
       </section>
       <FiltrosVentas
+        medios={configVentas.mediosPago}
         params={plano}
         rango={todo ? "todo" : rango}
         fechas={{

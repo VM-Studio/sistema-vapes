@@ -39,10 +39,13 @@ export function RegistrarCobro({
   cliente,
   saldo,
   pendientes,
+  medios = MEDIOS_PAGO,
 }: {
   cliente: { id: string; nombre: string; telefono: string };
   saldo: string;
   pendientes: VentaPendiente[];
+  /** Medios del panel (configuración de ventas). */
+  medios?: readonly MedioPago[];
 }) {
   const router = useRouter();
   const panel = usePanel();
@@ -238,8 +241,15 @@ export function RegistrarCobro({
             />
             <fieldset className="flex flex-col gap-2">
               <legend className="text-small mb-2 font-medium">Medio de pago</legend>
-              <div role="radiogroup" aria-label="Medio de pago" className="grid grid-cols-3 gap-2">
-                {MEDIOS_PAGO.map((m) => {
+              <div
+                role="radiogroup"
+                aria-label="Medio de pago"
+                className={cn(
+                  "grid gap-2",
+                  medios.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3",
+                )}
+              >
+                {medios.map((m) => {
                   const Icono = ICONO_MEDIO_PAGO[m];
                   const activo = medio === m;
                   return (

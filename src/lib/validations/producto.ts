@@ -55,6 +55,8 @@ export const saborFormSchema = z.object({
   codigoBarras: codigoBarrasOpcional,
   /** Precio propio del sabor (vacío = usa el del producto). */
   precioVenta: montoOpcional,
+  /** Precio Mercado Libre propio del sabor (vacío = usa el del producto). */
+  precioVentaML: montoOpcional,
   stockMinimo: enteroNoNegativo.default(0),
   activo: z.boolean().default(true),
 });
@@ -72,6 +74,8 @@ export const productoSchema = z
     especificacion,
     categoriaId: idOpcional,
     precioVenta: monto,
+    /** Precio de venta por Mercado Libre (vacío = no tiene; solo en paneles con ML). */
+    precioVentaML: montoOpcional,
     imagenUrl: z.preprocess(vacioAUndefined, z.url("URL inválida").optional()),
     activo: z.boolean().default(true),
     sabores: z.array(saborFormSchema).min(1, "Agregá al menos un sabor").max(200),

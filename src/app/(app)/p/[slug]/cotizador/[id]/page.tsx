@@ -66,6 +66,7 @@ export default async function DetalleCotizacionPage({
             {ui.label}
           </Badge>
           <Badge>{ETIQUETA_TIPO_COTIZACION[c.tipo]}</Badge>
+          {c.aPrecioML && <Badge>Precio Mercado Libre</Badge>}
         </div>
         <p className="text-muted text-small">
           {formatearFechaHora(c.fecha)} · {c.vendedor.nombre} · válida hasta{" "}

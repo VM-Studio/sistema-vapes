@@ -13,6 +13,7 @@ import { dbPara, transaccion, type Ctx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { obtenerVariantesPorId, type CtxCatalogo } from "@/server/services/producto.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
@@ -238,6 +239,11 @@ export async function registrarDevolucion(
           ? "Elegí con qué paga el cliente la diferencia"
           : "Elegí cómo se le devuelve la diferencia al cliente",
       );
+    if (
+      medioPagoDiferencia &&
+      !(await obtenerConfigVentas(ctx, tx)).mediosPago.includes(medioPagoDiferencia)
+    )
+      throw new DomainError("Ese medio de pago no está habilitado en este panel.");
 
     const numero = await siguienteNumero(tx, ctx.panelId, "DEVOLUCION");
     const codigo = formatearIdDevolucion(panel.slug, numero);

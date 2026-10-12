@@ -1,10 +1,12 @@
 import { Prisma } from "@prisma/client";
 
-import { precioVentaEfectivo } from "@/lib/precios";
+import { tieneMercadoLibre } from "@/lib/medios-pago";
+import { precioVentaEfectivo, precioVentaMLEfectivo } from "@/lib/precios";
 import { nombreConSabor } from "@/lib/ventas-ui";
 import { dbPara, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { obtenerCotizacion } from "@/server/services/cambio.service";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 
 /**
  * MOTOR DE PRECIOS DEL COTIZADOR
@@ -145,6 +147,8 @@ export interface ResultadoPrecios {
   resumenEscalones: ResumenEscalon[];
   /** Blue usado (solo mayorista). */
   tipoCambioBlue: TipoCambioUsado | null;
+  /** Unitaria cotizada a precio Mercado Libre. */
+  aPrecioML: boolean;
 }
 
 interface Escalon {
@@ -197,7 +201,7 @@ export function tablaEfectiva(
 
 export function resolverPrecios(
   datos: DatosResolverPrecios,
-): Omit<ResultadoPrecios, "tipoCambioBlue"> {
+): Omit<ResultadoPrecios, "tipoCambioBlue" | "aPrecioML"> {
   const mayorista = datos.tipo === "MAYORISTA";
   const blue =
     datos.blue !== undefined && datos.blue !== null && D(datos.blue).greaterThan(0)
@@ -325,6 +329,11 @@ export interface PedidoPrecios {
     precioManual?: number | string | null;
     monedaManual?: MonedaPrecio;
   }[];
+  /**
+   * Solo UNITARIA: cotizar a precio Mercado Libre (cada sabor a su precio ML;
+   * los que no tienen, a lista). El panel tiene que cobrar por Mercado Libre.
+   */
+  aPrecioML?: boolean;
 }
 
 export interface OpcionesPrecios {
@@ -364,6 +373,9 @@ export async function calcularPrecios(
   if (new Set(ids).size !== ids.length)
     throw new DomainError("Hay productos repetidos: sumá la cantidad en una sola fila.");
   const mayorista = pedido.tipo === "MAYORISTA";
+  const aPrecioML = pedido.aPrecioML === true && !mayorista;
+  if (aPrecioML && !tieneMercadoLibre(await obtenerConfigVentas(ctx, tx)))
+    throw new DomainError("Este panel no cobra por Mercado Libre: no hay precios Mercado Libre.");
   for (const i of pedido.items) {
     if (!Number.isInteger(i.cantidad) || i.cantidad <= 0)
       throw new DomainError("Las cantidades tienen que ser enteros mayores a 0.");
@@ -392,6 +404,7 @@ export async function calcularPrecios(
       subtotalUSD: mayorista && tipoCambioBlue ? "0.00" : null,
       resumenEscalones: [],
       tipoCambioBlue,
+      aPrecioML,
     };
   }
 
@@ -403,8 +416,15 @@ export async function calcularPrecios(
       activo: true,
       productoId: true,
       precioVenta: true,
+      precioVentaML: true,
       producto: {
-        select: { nombreCompleto: true, precioVenta: true, activo: true, deletedAt: true },
+        select: {
+          nombreCompleto: true,
+          precioVenta: true,
+          precioVentaML: true,
+          activo: true,
+          deletedAt: true,
+        },
       },
     },
   });
@@ -444,7 +464,9 @@ export async function calcularPrecios(
       titulo,
       nombreCompleto: v.producto.nombreCompleto,
       cantidad: i.cantidad,
-      precioLista: precioVentaEfectivo(v, v.producto),
+      precioLista:
+        (aPrecioML ? precioVentaMLEfectivo(v, v.producto) : null) ??
+        precioVentaEfectivo(v, v.producto),
       precioManual: i.precioManual ?? null,
       monedaManual: i.monedaManual ?? "ARS",
       stockTotal: stockDe.get(v.id) ?? 0,
@@ -460,5 +482,6 @@ export async function calcularPrecios(
       blue: tipoCambioBlue?.valor ?? null,
     }),
     tipoCambioBlue,
+    aPrecioML,
   };
 }

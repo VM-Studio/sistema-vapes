@@ -5,7 +5,7 @@ import { AccionAuditoria, Prisma, TipoMovimiento, type RolUsuario } from "@prism
 import type { StockEnDeposito, VarianteEncontrada } from "@/features/scanner/tipos";
 import { CODIGO_BARRAS_REGEX, digitoLuhn, normalizarCodigoBarras } from "@/lib/barcode";
 import { esOwner } from "@/lib/permisos";
-import { precioVentaEfectivo, tienePrecioPropio } from "@/lib/precios";
+import { precioVentaEfectivo, precioVentaMLEfectivo, tienePrecioPropio } from "@/lib/precios";
 import {
   colapsarEspacios,
   NOMBRE_VARIANTE_UNICA,
@@ -109,6 +109,10 @@ export interface CodigoAlternativoDTO {
 export interface SaborDetalle extends SaborListado {
   /** Precio propio (null = usa el del producto). */
   precioPropio: string | null;
+  /** Precio Mercado Libre propio (null = usa el del producto). */
+  precioPropioML: string | null;
+  /** Precio Mercado Libre efectivo (null = no tiene). */
+  precioVentaML: string | null;
   /** null si quien mira no es dueño. */
   ultimoCosto: string | null;
   codigosAlternativos: CodigoAlternativoDTO[];
@@ -116,6 +120,8 @@ export interface SaborDetalle extends SaborListado {
 
 export interface ProductoDetalle extends Omit<ProductoListado, "sabores"> {
   categoriaId: string | null;
+  /** Precio Mercado Libre de todos sus sabores (null = no tiene). */
+  precioVentaML: string | null;
   sabores: SaborDetalle[];
 }
 
@@ -144,6 +150,18 @@ function precioPropio(
   if (precioSabor === null || precioSabor === undefined) return null;
   const p = new Prisma.Decimal(precioSabor).toDecimalPlaces(2);
   return p.equals(precioProducto) ? null : p;
+}
+
+/** Precio Mercado Libre propio del sabor: null si no tiene o si es igual al del producto. */
+function precioPropioML(
+  precioSabor: number | null | undefined,
+  precioProducto: number | null | undefined,
+): Prisma.Decimal | null {
+  if (precioSabor === null || precioSabor === undefined) return null;
+  const p = new Prisma.Decimal(precioSabor).toDecimalPlaces(2);
+  return precioProducto !== null && precioProducto !== undefined && p.equals(precioProducto)
+    ? null
+    : p;
 }
 
 // --- SKU ---------------------------------------------------------------------
@@ -848,6 +866,7 @@ const selectSnapshot = {
   especificacion: true,
   categoriaId: true,
   precioVenta: true,
+  precioVentaML: true,
   imagenUrl: true,
   activo: true,
   variantes: {
@@ -858,6 +877,7 @@ const selectSnapshot = {
       sku: true,
       codigoBarras: true,
       precioVenta: true,
+      precioVentaML: true,
       stockMinimo: true,
       activo: true,
       deletedAt: true,
@@ -873,6 +893,7 @@ function snapshot(p: Prisma.ProductoGetPayload<{ select: typeof selectSnapshot }
     especificacion: p.especificacion,
     categoriaId: p.categoriaId,
     precioVenta: dec(p.precioVenta),
+    precioVentaML: p.precioVentaML === null ? null : dec(p.precioVentaML),
     imagenUrl: p.imagenUrl,
     activo: p.activo,
     sabores: p.variantes.map((v) => ({
@@ -881,6 +902,7 @@ function snapshot(p: Prisma.ProductoGetPayload<{ select: typeof selectSnapshot }
       sku: v.sku,
       codigoBarras: v.codigoBarras,
       precioVenta: v.precioVenta === null ? null : dec(v.precioVenta),
+      precioVentaML: v.precioVentaML === null ? null : dec(v.precioVentaML),
       stockMinimo: v.stockMinimo,
       activo: v.activo,
       eliminado: v.deletedAt !== null,
@@ -921,6 +943,7 @@ export async function crear(
         sku,
         codigoBarras: s.codigoBarras ?? null,
         precioVenta: precioPropio(s.precioVenta, input.precioVenta),
+        precioVentaML: precioPropioML(s.precioVentaML, input.precioVentaML),
         stockMinimo: s.stockMinimo,
         activo: s.activo,
       } as Prisma.VarianteCreateWithoutProductoInput);
@@ -932,6 +955,7 @@ export async function crear(
         especificacion: input.especificacion,
         categoriaId: input.categoriaId ?? null,
         precioVenta: input.precioVenta,
+        precioVentaML: input.precioVentaML ?? null,
         imagenUrl: input.imagenUrl ?? null,
         activo: input.activo,
         variantes: { create: variantes },
@@ -1021,6 +1045,7 @@ export async function actualizar(ctx: Ctx, id: string, input: Producto): Promise
           especificacion: input.especificacion,
           categoriaId: input.categoriaId ?? null,
           precioVenta: input.precioVenta,
+          precioVentaML: input.precioVentaML ?? null,
           imagenUrl: input.imagenUrl ?? null,
           activo: input.activo,
         },
@@ -1033,6 +1058,7 @@ export async function actualizar(ctx: Ctx, id: string, input: Producto): Promise
           nombre: s.nombre,
           codigoBarras: s.codigoBarras ?? null,
           precioVenta: precioPropio(s.precioVenta, input.precioVenta),
+          precioVentaML: precioPropioML(s.precioVentaML, input.precioVentaML),
           stockMinimo: s.stockMinimo,
           activo: s.activo,
         };
@@ -1327,11 +1353,13 @@ export async function obtener(ctx: CtxCatalogo, id: string): Promise<ProductoDet
     select: {
       ...selectProducto,
       categoriaId: true,
+      precioVentaML: true,
       variantes: {
         where: { deletedAt: null },
         orderBy: { nombre: "asc" },
         select: {
           ...selectSabor,
+          precioVentaML: true,
           ultimoCosto: true,
           codigosAlternativos: {
             select: { id: true, codigo: true, descripcion: true },
@@ -1345,10 +1373,20 @@ export async function obtener(ctx: CtxCatalogo, id: string): Promise<ProductoDet
   const sabores: SaborDetalle[] = p.variantes.map((v) => ({
     ...aSabor(v, p.precioVenta),
     precioPropio: v.precioVenta === null ? null : dec(v.precioVenta),
+    precioPropioML: v.precioVentaML === null ? null : dec(v.precioVentaML),
+    precioVentaML: (() => {
+      const ml = precioVentaMLEfectivo(v, p);
+      return ml === null ? null : dec(ml);
+    })(),
     ultimoCosto: conCosto && v.ultimoCosto !== null ? dec(v.ultimoCosto) : null,
     codigosAlternativos: v.codigosAlternativos,
   }));
-  return { ...resumir(p, sabores), categoriaId: p.categoriaId, sabores };
+  return {
+    ...resumir(p, sabores),
+    categoriaId: p.categoriaId,
+    precioVentaML: p.precioVentaML === null ? null : dec(p.precioVentaML),
+    sabores,
+  };
 }
 
 export { listar as listarProductos, obtener as obtenerProducto };

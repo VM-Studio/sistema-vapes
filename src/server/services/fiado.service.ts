@@ -11,12 +11,15 @@ import {
 } from "@prisma/client";
 
 import { hoyAR } from "@/lib/fechas";
+import { listaDeMedios } from "@/lib/medios-pago";
 import { puede, type Accion, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import type { FiltrosDeudores } from "@/lib/validations/fiado";
+import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 
 /**
  * FIADOS — cuenta corriente de clientes (por panel).
@@ -425,6 +428,11 @@ export async function registrarCobro(
     ctx,
     async (tx) => {
       await exigirFiados(ctx, "editar", "No tenés permiso para registrar cobros.", tx);
+      const { mediosPago } = await obtenerConfigVentas(ctx, tx);
+      if (!mediosPago.includes(input.medioPago))
+        throw new DomainError(
+          `Elegí el medio del cobro: ${listaDeMedios(mediosPago, ETIQUETA_MEDIO_PAGO)}.`,
+        );
       await bloquearCliente(tx, ctx, input.clienteId);
       const cliente = await tx.cliente.findUnique({
         where: { id: input.clienteId },

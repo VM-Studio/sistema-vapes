@@ -1,6 +1,6 @@
 "use client";
 
-import { Modulo } from "@prisma/client";
+import { Modulo, type MedioPago } from "@prisma/client";
 import { History, Plus } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -32,6 +32,8 @@ export function GenerarVenta({
   puedeFiar,
   abrirAlCargar,
   conversion,
+  medios,
+  preciosMLActivos,
 }: {
   depositos: DepositoVenta[];
   unidades: Record<string, number>;
@@ -43,6 +45,10 @@ export function GenerarVenta({
     cliente: { id: string; nombre: string; telefono: string } | null;
   } | null;
   conversion: ConversionVenta | null;
+  /** Medios de pago del panel (configuración de ventas). */
+  medios: readonly MedioPago[];
+  /** Cobrar por Mercado Libre pone cada ítem a su precio ML. */
+  preciosMLActivos: boolean;
 }) {
   const { slug } = usePanel();
   const usuario = useUsuario();
@@ -136,6 +142,8 @@ export function GenerarVenta({
         puedeAltaProductos={puedeAltaProductos}
         claveStorage={clave}
         conversion={convirtiendo}
+        medios={medios}
+        preciosMLActivos={preciosMLActivos}
         onCerrado={() => {
           setAbierto(false);
           setConvirtiendo(null);

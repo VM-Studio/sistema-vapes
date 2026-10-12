@@ -1,6 +1,6 @@
 "use client";
 
-import { TipoVenta } from "@prisma/client";
+import { TipoVenta, type MedioPago } from "@prisma/client";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
@@ -14,7 +14,7 @@ import { useUrlParams } from "@/hooks/use-url-params";
 import { RANGO_LABEL, RANGOS, type Rango } from "@/lib/fechas";
 import { formatearIdVenta } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
-import { ETIQUETA_MEDIO_PAGO, ETIQUETA_TIPO_VENTA, MEDIOS_PAGO } from "@/lib/ventas-ui";
+import { ETIQUETA_MEDIO_PAGO, ETIQUETA_TIPO_VENTA } from "@/lib/ventas-ui";
 
 export function FiltrosVentas({
   params,
@@ -22,12 +22,15 @@ export function FiltrosVentas({
   fechas,
   depositos,
   vendedores,
+  medios,
 }: {
   params: Record<string, string>;
   rango: Rango | "todo" | null;
   fechas: { desde: string; hasta: string };
   depositos: { id: string; nombre: string }[];
   vendedores: { id: string; nombre: string }[];
+  /** Medios del panel (configuración de ventas). */
+  medios: readonly MedioPago[];
 }) {
   const { actualizar } = useUrlParams();
   const ruta = useRutaPanel();
@@ -129,7 +132,7 @@ export function FiltrosVentas({
           containerClassName="self-end"
           options={[
             { value: "", label: "Todos los medios" },
-            ...MEDIOS_PAGO.map((m) => ({ value: m, label: ETIQUETA_MEDIO_PAGO[m] })),
+            ...medios.map((m) => ({ value: m, label: ETIQUETA_MEDIO_PAGO[m] })),
           ]}
           value={params.medioPago ?? ""}
           onChange={(e) => actualizar({ medioPago: e.target.value || null })}

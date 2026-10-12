@@ -108,6 +108,8 @@ export interface CotizacionInput {
   descuento?: number;
   notas?: string;
   validezDias?: number;
+  /** Unitaria a precio Mercado Libre (el panel tiene que cobrar por ML). */
+  aPrecioML?: boolean;
 }
 
 async function slugDelPanel(db: Tx, ctx: Ctx): Promise<string> {
@@ -235,7 +237,7 @@ export async function crearCotizacion(
     async (tx) => {
       const precios = await calcularPrecios(
         ctx,
-        { tipo: input.tipo, items: input.items },
+        { tipo: input.tipo, items: input.items, aPrecioML: input.aPrecioML },
         permisos,
         tx,
       );
@@ -260,6 +262,7 @@ export async function crearCotizacion(
           descuento,
           total: subtotal.minus(descuento),
           notas: input.notas?.trim() || null,
+          aPrecioML: precios.aPrecioML,
           ...snapshotBlue(precios),
           items: { create: itemsParaCrear(precios) },
         },
@@ -357,7 +360,7 @@ export async function actualizarCotizacion(
       const vencida = estaVencida(actual);
       const precios = await calcularPrecios(
         ctx,
-        { tipo: input.tipo, items: input.items },
+        { tipo: input.tipo, items: input.items, aPrecioML: input.aPrecioML },
         permisos,
         tx,
         { tipoCambioBlue: blueCongelado(actual, input.tipo) },
@@ -386,6 +389,7 @@ export async function actualizarCotizacion(
           descuento,
           total: subtotal.minus(descuento),
           notas: input.notas?.trim() || null,
+          aPrecioML: precios.aPrecioML,
           pdfUrl: null,
           ...snapshotBlue(precios),
           items: { create: itemsParaCrear(precios) },
@@ -455,7 +459,7 @@ export async function duplicar(ctx: Ctx, id: string): Promise<{ id: string; codi
       : null;
   return crearCotizacion(
     ctx,
-    { tipo: c.tipo, items, cliente, notas: c.notas ?? undefined },
+    { tipo: c.tipo, items, cliente, notas: c.notas ?? undefined, aPrecioML: c.aPrecioML },
     { puedeEditar: false },
   );
 }
@@ -599,6 +603,8 @@ export async function obtener(ctx: Ctx, id: string) {
     descuento: dec(c.descuento),
     total: dec(c.total),
     notas: c.notas,
+    /** Unitaria cotizada a precio Mercado Libre. */
+    aPrecioML: c.aPrecioML,
     motivoRechazo: c.motivoRechazo,
     venta: c.venta,
     unidades: totalUnidades,
@@ -807,7 +813,7 @@ export async function textoWhatsApp(
   };
   const lineas = [
     c.cliente ? `¡Hola ${c.cliente.nombre}!` : "¡Hola!",
-    `Te paso la cotización ${c.codigo} (${ETIQUETA_TIPO_COTIZACION[c.tipo].toLowerCase()}):`,
+    `Te paso la cotización ${c.codigo} (${ETIQUETA_TIPO_COTIZACION[c.tipo].toLowerCase()}${c.aPrecioML ? ", precios Mercado Libre" : ""}):`,
     "",
     ...c.items.map(
       (i) => `• ${i.cantidad} × ${i.titulo}: ${precioFila(i)} c/u = ${formatearPesos(i.subtotal)}`,
@@ -1086,6 +1092,7 @@ async function dibujarPdfCotizacion(
   };
 
   if (blue) parrafo(null, [`${leyendaBlue(blue.valor, blue.obtenidoAt)}.`]);
+  if (c.aPrecioML) parrafo(null, ["Precios Mercado Libre."]);
   if (mayorista && c.resumenEscalones.length) {
     parrafo(
       "Resumen de escalones (por producto: suman todos sus sabores)",
@@ -1193,6 +1200,7 @@ export async function prepararConversion(ctx: Ctx, id: string): Promise<Preparac
       {
         tipo: c.tipo,
         items: c.items.map((i) => ({ varianteId: i.varianteId, cantidad: i.cantidad })),
+        aPrecioML: c.aPrecioML,
       },
       { puedeEditar: false },
     );
@@ -1302,6 +1310,7 @@ export async function convertirEnVenta(
           {
             tipo: c.tipo,
             items: c.items.map((i) => ({ varianteId: i.varianteId, cantidad: i.cantidad })),
+            aPrecioML: c.aPrecioML,
           },
           { puedeEditar: false },
           tx,

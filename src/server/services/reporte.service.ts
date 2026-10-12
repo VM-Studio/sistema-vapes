@@ -4,7 +4,7 @@ import {
   EstadoCompra,
   Prisma,
   type EstadoVenta,
-  type MedioPago,
+  MedioPago,
   type TipoMovimiento,
   type TipoVenta,
 } from "@prisma/client";
@@ -100,7 +100,7 @@ const filaVentaSchema = z.array(
     vendedor: z.string(),
     deposito: z.string(),
     tipo: z.enum(["UNITARIA", "MAYORISTA"]),
-    medio_pago: z.enum(["EFECTIVO", "TRANSFERENCIA", "BINANCE"]).nullable(),
+    medio_pago: z.enum(MedioPago).nullable(),
     estado: z.enum(["CONFIRMADA", "ANULADA"]),
     unidades: entero,
     total: monto,
@@ -635,6 +635,104 @@ export async function reporteDevoluciones(
       .map(([producto, unidades]) => ({ producto, unidades }))
       .sort((a, b) => b.unidades - a.unidades),
     total: z.array(z.object({ devoluciones: entero, unidades: entero })).parse(total)[0]!,
+  };
+}
+
+// =============================================================================
+// Ventas Mercado Libre (paneles que cobran por ML)
+// =============================================================================
+
+export interface ReporteMercadoLibre {
+  /** Ventas confirmadas cuyo medio principal es Mercado Libre. */
+  total: {
+    ventas: number;
+    unidades: number;
+    facturado: string;
+    /** null si quien mira no es dueño. */
+    ganancia: string | null;
+    /** Unidades cobradas a precio Mercado Libre (el resto, a lista o precio especial). */
+    unidadesPrecioML: number;
+  };
+  porDia: { dia: string; ventas: number; facturado: string }[];
+  filas: {
+    productoId: string;
+    producto: string;
+    sabor: string;
+    unidades: number;
+    facturado: string;
+    /** Ganancia bruta de esos ítems (sin prorratear descuentos globales); null si no es dueño. */
+    ganancia: string | null;
+  }[];
+}
+
+export async function reporteMercadoLibre(
+  ctx: Ctx,
+  r: RangoReporte,
+  opciones: { owner: boolean },
+): Promise<ReporteMercadoLibre> {
+  const db = dbPara(ctx.panelId);
+  const where = Prisma.sql`v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
+    AND v."medioPago" = 'MERCADO_LIBRE'
+    AND v."fecha" >= ${ts(r.inicio)} AND v."fecha" < ${ts(r.fin)}`;
+  const [totales, unidades, dias, crudas] = await Promise.all([
+    db.$queryRaw`
+      SELECT COUNT(*) AS ventas, COALESCE(SUM(v."total"), 0) AS facturado,
+             COALESCE(SUM(v."gananciaBruta"), 0) AS ganancia
+      FROM "Venta" v WHERE ${where}`,
+    db.$queryRaw`
+      SELECT COALESCE(SUM(vi."cantidad"), 0) AS unidades,
+             COALESCE(SUM(vi."cantidad") FILTER (WHERE vi."origenPrecio" = 'ML'), 0) AS unidades_ml
+      FROM "VentaItem" vi JOIN "Venta" v ON v."id" = vi."ventaId" WHERE ${where}`,
+    db.$queryRaw`
+      SELECT to_char((v."fecha" AT TIME ZONE 'UTC') AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS dia,
+             COUNT(*) AS ventas, COALESCE(SUM(v."total"), 0) AS facturado
+      FROM "Venta" v WHERE ${where}
+      GROUP BY 1 ORDER BY 1`,
+    db.$queryRaw`
+      SELECT p."id" AS producto_id, p."nombreCompleto" AS producto, va."nombre" AS sabor,
+             SUM(vi."cantidad") AS unidades, SUM(vi."subtotal") AS facturado,
+             SUM(vi."subtotal" - vi."costoUnitario" * vi."cantidad") AS ganancia
+      FROM "VentaItem" vi
+      JOIN "Venta" v ON v."id" = vi."ventaId"
+      JOIN "Variante" va ON va."id" = vi."varianteId"
+      JOIN "Producto" p ON p."id" = vi."productoId"
+      WHERE ${where}
+      GROUP BY 1, 2, 3
+      ORDER BY facturado DESC, producto, sabor`,
+  ]);
+  const t = z
+    .array(z.object({ ventas: entero, facturado: monto, ganancia: monto }))
+    .parse(totales)[0]!;
+  const u = z.array(z.object({ unidades: entero, unidades_ml: entero })).parse(unidades)[0]!;
+  return {
+    total: {
+      ventas: t.ventas,
+      unidades: u.unidades,
+      facturado: t.facturado,
+      ganancia: opciones.owner ? t.ganancia : null,
+      unidadesPrecioML: u.unidades_ml,
+    },
+    porDia: z.array(z.object({ dia: z.string(), ventas: entero, facturado: monto })).parse(dias),
+    filas: z
+      .array(
+        z.object({
+          producto_id: z.string(),
+          producto: z.string(),
+          sabor: z.string(),
+          unidades: entero,
+          facturado: monto,
+          ganancia: monto,
+        }),
+      )
+      .parse(crudas)
+      .map((x) => ({
+        productoId: x.producto_id,
+        producto: x.producto,
+        sabor: x.sabor,
+        unidades: x.unidades,
+        facturado: x.facturado,
+        ganancia: opciones.owner ? x.ganancia : null,
+      })),
   };
 }
 
