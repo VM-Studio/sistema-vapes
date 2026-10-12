@@ -5,6 +5,44 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.4.0] - 2026-10-12 — Retoques de los dueños (A2)
+
+### Agregado
+
+- **Cotizaciones de moneda** (dólar blue y USDT) desde fuentes públicas, solo en el servidor, con
+  fallback, validación de rango, historial, actualización perezosa y cron (`/api/cron/cambio`), valor
+  manual que pisa al automático y widget «Blue · USDT» en la barra. Pantalla `/configuracion/cambio`.
+- **Fiado** como cuarto botón en «¿Cómo paga?» (solo con permiso FIADOS crear; el servidor lo exige).
+- **Proveedores en USDT** con equivalente en pesos en vivo; compras con snapshot de la cotización.
+- **Cotizador mayorista en dólar blue**: escalones en USD (o ARS), snapshot del blue en la cotización,
+  USD y pesos en pantalla, PDF y WhatsApp.
+- **Costos finales de compra**: comisión del pasista (tick con %), gastos extras (Valija, Envío…)
+  prorrateados por unidad, costo unitario final que pasa a `ultimoCosto` con historial.
+- **Módulo Pasista** (`/pasista`): comisión por compra, acumulado mensual, marcar pagado, ajustes.
+- **Medios de pago por panel** y **Mercado Libre** (Cosmetic) con precio de venta ML por producto o
+  sabor; `origenPrecio` en cada ítem; reporte «Ventas Mercado Libre».
+- **Facturas** (Cosmetic): A/B/C y comprobante interno, desde una venta o sueltas, PDF, archivo
+  subido, anulación y Excel para el contador. Punto de extensión AFIP documentado.
+- **Ventas de cada vendedor** («Ventas de Trinidad») con clientes nuevos (`creadoPorId`,
+  `clienteNuevo`) y «Mi rendimiento» con las mismas cifras.
+- **Verificación por escaneo** en la venta: identidad completa en cada escaneo, «Verificar con
+  pistola» con contador por fila y aviso bloqueante si el vape no corresponde; badge «Verificada».
+- Recibo PDF de cada cobro de fiado.
+
+### Cambiado
+
+- Fondo de página celeste `#EEF6FC`; módulo activo en naranja del logo (`#FE7A3E`, fondo `#CA4E16`
+  para contraste AA con texto blanco).
+- El escalón mayorista se calcula siempre por producto (se eliminó el modo «por total»).
+
+### Corregido
+
+- **PDFs**: se generaban guardándolos primero en el storage local, de solo lectura en Vercel
+  (`EROFS`); ahora salen de Route Handlers Node con el storage solo como caché. Aplica a
+  cotizaciones, remitos, reportes, resumen mensual y recibos.
+- Navegación de listado a detalle que a veces no confirmaba (boundary de carga por sección).
+- Un solo ítem activo en la barra lateral (el más específico).
+
 ## [2.3.0] - 2026-09-30 — Colores del logo, devoluciones con cambio y navegación
 
 ### Agregado
