@@ -1,5 +1,5 @@
 import { Modulo } from "@prisma/client";
-import { History, Info, RotateCcw } from "lucide-react";
+import { History, Info, ReceiptText, RotateCcw } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,6 +23,8 @@ import {
 } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
+import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
+import { facturasDeVenta } from "@/server/services/factura.service";
 import { obtenerVenta } from "@/server/services/venta.service";
 
 import { ICONO_MEDIO_PAGO, MedioPagoBadge } from "../_componentes/medio-pago";
@@ -49,6 +51,14 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
   const puedeHacer = (modulo: Modulo, accion: "ver" | "crear" = "ver") =>
     puede(ctx.usuario, ctx.panelId, modulo, accion);
   const confirmada = v.estado === "CONFIRMADA";
+  // Facturas (paneles con facturación): link a la emitida o «Facturar».
+  const facturacion = puedeHacer(Modulo.FACTURAS)
+    ? (await obtenerConfigFacturacion(ctx)).habilitada
+    : false;
+  const facturas = facturacion ? await facturasDeVenta(ctx, v.id) : [];
+  const facturaEmitida = facturas.find((f) => f.estado === "EMITIDA") ?? null;
+  const puedeFacturar =
+    facturacion && confirmada && !facturaEmitida && puedeHacer(Modulo.FACTURAS, "crear");
   const unidades = v.items.reduce((a, i) => a + i.cantidad, 0);
 
   const devolucionesBloquean = confirmada && owner && v.tieneDevolucionesRegistradas;
@@ -73,10 +83,28 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
           </span>
         }
         actions={
-          confirmada &&
-          (puedeHacer(Modulo.DEVOLUCIONES, "crear") || owner) && (
+          ((confirmada && (puedeHacer(Modulo.DEVOLUCIONES, "crear") || owner)) ||
+            facturaEmitida ||
+            puedeFacturar) && (
             <>
-              {puedeHacer(Modulo.DEVOLUCIONES, "crear") && (
+              {facturaEmitida && (
+                <Link
+                  href={rutaPanel(slug, `/facturas/${facturaEmitida.id}`)}
+                  className={buttonVariants({ variant: "secondary" })}
+                  data-testid="link-factura"
+                >
+                  <ReceiptText strokeWidth={1.75} /> Factura {facturaEmitida.codigo}
+                </Link>
+              )}
+              {puedeFacturar && (
+                <Link
+                  href={rutaPanel(slug, `/facturas/nueva?venta=${v.codigo}`)}
+                  className={buttonVariants({ variant: "secondary" })}
+                >
+                  <ReceiptText strokeWidth={1.75} /> Facturar
+                </Link>
+              )}
+              {confirmada && puedeHacer(Modulo.DEVOLUCIONES, "crear") && (
                 <Link
                   href={rutaPanel(slug, `/devoluciones?nueva=1&ventaId=${v.id}`)}
                   className={buttonVariants({ variant: "secondary" })}
@@ -84,7 +112,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                   <RotateCcw strokeWidth={1.75} /> Devolución
                 </Link>
               )}
-              {owner && (
+              {confirmada && owner && (
                 <AnularVenta
                   venta={{
                     id: v.id,

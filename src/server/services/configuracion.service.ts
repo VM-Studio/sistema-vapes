@@ -16,11 +16,16 @@ import {
   type ConfigCotizacion,
   type ConfigCotizacionInput,
 } from "@/lib/validations/cotizacion";
+import {
+  configFacturacionSchema,
+  type ConfigFacturacion,
+  type ConfigFacturacionInput,
+} from "@/lib/validations/factura";
 import { configVentasSchema, type ConfigVentas } from "@/lib/validations/venta";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { registrarAuditoria } from "@/server/services/audit.service";
 
-export type { ConfigCatalogo, ConfigCompras, ConfigCotizacion, ConfigVentas };
+export type { ConfigCatalogo, ConfigCompras, ConfigCotizacion, ConfigFacturacion, ConfigVentas };
 
 /**
  * Configuración POR PANEL (clave/valor en Configuracion): cada panel tiene su
@@ -164,5 +169,32 @@ export async function obtenerConfigCompras(
 export async function guardarConfigCompras(ctx: Ctx, cfg: unknown): Promise<ConfigCompras> {
   const config = configComprasSchema.parse(cfg);
   await guardar(ctx, "compras", { compras: { ...config } });
+  return config;
+}
+
+// =============================================================================
+// Facturación (clave "facturacion"): si el panel registra facturas y los datos
+// fiscales del negocio (razón social, CUIT, condición IVA, domicilio, punto de venta)
+// =============================================================================
+
+export async function obtenerConfigFacturacion(
+  ctx: Pick<Ctx, "panelId">,
+  tx: Tx = dbPara(ctx.panelId),
+): Promise<ConfigFacturacion> {
+  const valor = await leer(tx, "facturacion");
+  const r = configFacturacionSchema.safeParse(
+    valor && typeof valor === "object" && !Array.isArray(valor) ? valor : {},
+  );
+  return r.success ? r.data : configFacturacionSchema.parse({});
+}
+
+export async function guardarConfigFacturacion(
+  ctx: Ctx,
+  cfg: ConfigFacturacionInput,
+): Promise<ConfigFacturacion> {
+  const config = configFacturacionSchema.parse(cfg);
+  await guardar(ctx, "facturacion", {
+    facturacion: JSON.parse(JSON.stringify(config)) as Prisma.InputJsonObject,
+  });
   return config;
 }

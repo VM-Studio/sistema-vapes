@@ -184,6 +184,25 @@ Enum Moneda {
   USDT
 }
 
+Enum TipoFactura {
+  A
+  B
+  C
+  COMPROBANTE_INTERNO
+}
+
+Enum EstadoFactura {
+  EMITIDA
+  ANULADA
+}
+
+Enum CondicionIva {
+  RESPONSABLE_INSCRIPTO
+  MONOTRIBUTO
+  EXENTO
+  CONSUMIDOR_FINAL
+}
+
 Enum OrigenPrecio {
   LISTA
   ML
@@ -1143,6 +1162,12 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 - **VentaItem**: un renglón por sabor con `productoId` desnormalizado (verificado por trigger), `precioLista` (el precio efectivo al vender: el de lista o, si la venta se cobró por Mercado Libre, el precio ML efectivo del sabor), `precioUnitario` (lo cobrado), `esPrecioEspecial`, `origenPrecio` (`LISTA`, `ML`, `ESPECIAL` o `COTIZACION`) y `costoUnitario` (snapshot de `Variante.ultimoCosto`, 0 si no hubo compras; `costoParaVenta()`). Subtotal = cantidad × precio cobrado. Costo y ganancia solo se muestran a los dueños.
 - **Devolucion** (garantía): cliente obligatorio, venta opcional, galpón del que sale la **unidad nueva** que se entrega (`GARANTIA` por ítem), `observacion` de al menos 10 caracteres, código `VAP-D-000001` (secuencia `DEVOLUCION`). `REGISTRADA` → `ANULADA` (con motivo; el stock vuelve con `GARANTIA_ANULADA`); no se edita ni se borra.
 - **DevolucionItem**: sabor, producto (verificado por trigger) y cantidad > 0. Inmutable.
+
+### Facturas
+
+- **Factura** (por panel, si la configuración `facturacion.habilitada` está activa; Cosmetic sí): registra las facturas **A, B y C** que el negocio emite por fuera (AFIP, con su `numeroExterno` y, opcional, el PDF real en `archivoUrl`) y los **comprobantes internos** que genera el sistema ("Comprobante no válido como factura"). `codigo` visible `COS-F-000001` (Secuencia `FACTURA`), `puntoVenta`, `fecha`, cliente (obligatorio) y venta (opcional: facturas sueltas), datos fiscales del receptor (`razonSocial`, `cuit` de 11 dígitos con dígito verificador, `condicionIva`, `domicilio`). Importes: los renglones van a precio final; `total` = Σ − `descuento`; en la A se discrimina el IVA (`subtotal` neto + `iva` con `alicuotaIva` del panel), en B, C e interno `subtotal` = `total` e `iva` = 0 (CHECK `total = subtotal + iva`). Una venta tiene a lo sumo una factura `EMITIDA` (índice único parcial); anulada (dueños, con quién/cuándo/por qué) se puede volver a facturar. Inmutable por trigger: solo cambian el estado a `ANULADA`, el PDF y el número externo; nunca se borra. El punto de extensión para AFIP/ARCA está en `src/server/facturacion/emisor.ts`.
+- **FacturaItem**: renglón (descripción, cantidad, precio final, subtotal, variante opcional); inmutable.
+- La configuración `facturacion` del panel guarda `habilitada`, razón social, CUIT, condición frente al IVA (define qué tipos emite: inscripto A/B, monotributo o exento C), domicilio, punto de venta y alícuota de IVA.
 
 ### Cotizador
 

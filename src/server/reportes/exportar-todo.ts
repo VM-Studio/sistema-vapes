@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db";
 import { formatearIdCompra } from "@/lib/paneles";
 import { TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { precioVentaEfectivo, precioVentaMLEfectivo } from "@/lib/precios";
+import { formatearCuit, TIPO_FACTURA_LABEL } from "@/lib/validations/factura";
 import {
   ESTADO_VENTA_UI,
   ESTADO_PAGO_UI,
@@ -16,7 +17,7 @@ import {
   ETIQUETA_TIPO_VENTA,
   saborVisible,
 } from "@/lib/ventas-ui";
-import { formatearFechaHora } from "@/lib/utils";
+import { formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { ESTADO_COTIZACION_UI, ETIQUETA_TIPO_COTIZACION } from "@/lib/validations/cotizacion";
 
 /**
@@ -679,6 +680,46 @@ export function streamExportarTodo(meta: {
         mo: x.moneda,
         f: formatearFechaHora(x.actualizadoAt),
         u: x.usuario.nombre,
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Facturas",
+      [
+        SISTEMA,
+        { header: "Número", key: "n", width: 14 },
+        { header: "Tipo", key: "t", width: 18 },
+        { header: "Número fiscal", key: "ne", width: 16 },
+        { header: "Fecha", key: "f", width: 12 },
+        { header: "Cliente / razón social", key: "c", width: 26 },
+        { header: "CUIT", key: "cuit", width: 15 },
+        { header: "Venta", key: "v", width: 12 },
+        { header: "Neto", key: "neto", width: 12, numFmt: MONEDA },
+        { header: "IVA", key: "iva", width: 12, numFmt: MONEDA },
+        { header: "Total", key: "tot", width: 12, numFmt: MONEDA },
+        { header: "Estado", key: "e", width: 10 },
+        { header: "Motivo de anulación", key: "an", width: 30 },
+      ],
+      (c) =>
+        prisma.factura.findMany({
+          ...pag(c),
+          include: { cliente: { select: { nombre: true } }, venta: { select: { codigo: true } } },
+        }),
+      (x) => ({
+        sis: sistema(x.panelId),
+        n: x.codigo,
+        t: TIPO_FACTURA_LABEL[x.tipo],
+        ne: x.numeroExterno ?? "",
+        f: formatearFecha(x.fecha),
+        c: x.razonSocial ?? x.cliente.nombre,
+        cuit: x.cuit ? formatearCuit(x.cuit) : "",
+        v: x.venta?.codigo ?? "",
+        neto: num(x.subtotal),
+        iva: num(x.iva),
+        tot: num(x.total),
+        e: x.estado === "EMITIDA" ? "Emitida" : "Anulada",
+        an: x.motivoAnulacion ?? "",
       }),
     );
 

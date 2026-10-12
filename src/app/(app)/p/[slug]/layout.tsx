@@ -10,7 +10,10 @@ import { ScannerProvider } from "@/features/scanner/scanner-provider";
 import { esOwner, puede } from "@/lib/permisos";
 import { requirePaginaPanelUsuario } from "@/server/auth/permissions";
 import { obtenerCotizacionesSeguro } from "@/server/services/cambio.service";
-import { obtenerConfigEscaner } from "@/server/services/configuracion.service";
+import {
+  obtenerConfigEscaner,
+  obtenerConfigFacturacion,
+} from "@/server/services/configuracion.service";
 
 /**
  * Layout de un panel (/p/[slug]): el middleware ya verificó que existe, está
@@ -22,10 +25,11 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const ctx = await requirePaginaPanelUsuario();
   // Widget de cotizaciones: dueños y quien ve el Cotizador (lectura local; nunca espera a las APIs).
   const veCambio = puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "ver");
-  const [jar, configEscaner, cotizaciones] = await Promise.all([
+  const [jar, configEscaner, cotizaciones, facturacion] = await Promise.all([
     cookies(),
     obtenerConfigEscaner(ctx),
     veCambio ? obtenerCotizacionesSeguro() : Promise.resolve(null),
+    obtenerConfigFacturacion(ctx),
   ]);
   const colapsado = jar.get(COOKIE_SIDEBAR)?.value === "colapsado";
 
@@ -39,6 +43,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             sidebarColapsadoInicial={colapsado}
             restringido={ctx.usuario.debeCambiarPassword}
             cambio={cotizaciones ? { cotizaciones, enlace: esOwner(ctx.usuario) } : null}
+            funciones={{ facturacion: facturacion.habilitada }}
           >
             {children}
           </AppShell>

@@ -22,7 +22,13 @@ export const SECCIONES_AJUSTES_PANEL = [
   {
     ruta: "/configuracion/ventas",
     label: "Ventas y catálogo",
-    descripcion: "Redondeo del cobro, prefijo de SKU, alertas de stock y comisión del pasista",
+    descripcion:
+      "Medios de pago, redondeo del cobro, prefijo de SKU, alertas de stock y comisión del pasista",
+  },
+  {
+    ruta: "/configuracion/facturacion",
+    label: "Facturación",
+    descripcion: "Registrar facturas y los datos fiscales del negocio",
   },
 ] as const;
 

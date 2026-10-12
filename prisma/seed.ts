@@ -177,6 +177,7 @@ const CONFIG_POR_SLUG: Record<string, Record<string, Prisma.InputJsonValue>> = {
     ventas: configVentasSchema.parse({
       mediosPago: ["EFECTIVO", "TRANSFERENCIA", "MERCADO_LIBRE"],
     }) as Prisma.InputJsonValue,
+    facturacion: { habilitada: true, puntoVenta: 1, alicuotaIva: 21 },
   },
 };
 
@@ -262,7 +263,14 @@ const PANELES: PanelSeed[] = [
 ];
 
 /** Numeración correlativa por panel: arranca en 0 (el primer documento es el 1). */
-const ENTIDADES_SECUENCIA = ["VENTA", "COMPRA", "TRANSFERENCIA", "DEVOLUCION", "COTIZACION"];
+const ENTIDADES_SECUENCIA = [
+  "VENTA",
+  "COMPRA",
+  "TRANSFERENCIA",
+  "DEVOLUCION",
+  "COTIZACION",
+  "FACTURA",
+];
 
 /** Logos estáticos de /public: un logo subido desde la app (storage) no se pisa. */
 const esLogoEstatico = (url: string | null) => url == null || /^\/logo[\w-]*\.png$/.test(url);

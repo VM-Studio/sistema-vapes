@@ -16,6 +16,7 @@ import {
   crearDepositoSchema,
 } from "@/lib/validations/deposito";
 import { configVentasSchema } from "@/lib/validations/venta";
+import { configFacturacionSchema } from "@/lib/validations/factura";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtxOwner } from "@/server/auth/permissions";
 import {
@@ -27,6 +28,7 @@ import {
   guardarConfigCatalogo,
   guardarConfigCompras,
   guardarConfigEscaner,
+  guardarConfigFacturacion,
   guardarConfigVentas,
 } from "@/server/services/configuracion.service";
 import {
@@ -118,6 +120,12 @@ export const guardarConfigEscanerAction = actionHandler(async (input: unknown) =
 export const guardarConfigVentasAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtxOwner();
   const r = await guardarConfigVentas(ctx, configVentasSchema.parse(input));
+  revalidar();
+  return r;
+});
+export const guardarConfigFacturacionAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtxOwner();
+  const r = await guardarConfigFacturacion(ctx, configFacturacionSchema.parse(input));
   revalidar();
   return r;
 });

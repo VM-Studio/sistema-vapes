@@ -52,6 +52,8 @@ enum Modulo {
   FIADOS
   /// Comisiones del pasista por compra (ver = ver el acumulado; marcar pagadas: solo dueños).
   PASISTA
+  /// Facturas (paneles con facturación): ver, crear (emitir/registrar), editar (PDF y número externo).
+  FACTURAS
   USUARIOS
   CONFIGURACION
 }
@@ -156,6 +158,27 @@ enum OrigenPrecio {
   COTIZACION
 }
 
+/// A, B y C: facturas AFIP emitidas por fuera del sistema (se registran con su
+/// número externo). COMPROBANTE_INTERNO: lo genera el sistema, no es válido como factura.
+enum TipoFactura {
+  A
+  B
+  C
+  COMPROBANTE_INTERNO
+}
+
+enum EstadoFactura {
+  EMITIDA
+  ANULADA
+}
+
+enum CondicionIva {
+  RESPONSABLE_INSCRIPTO
+  MONOTRIBUTO
+  EXENTO
+  CONSUMIDOR_FINAL
+}
+
 /// PAGADA: montoPagado = total. PARCIAL: pagó algo y debe el resto. PENDIENTE: fiado total.
 enum EstadoPago {
   PAGADA
@@ -209,6 +232,8 @@ model Usuario {
   devolucionesAnuladas Devolucion[]             @relation("DevolucionAnuladaPor")
   pagosVenta           PagoVenta[]              @relation("PagoVentaUsuario")
   pagosVentaAnulados   PagoVenta[]              @relation("PagoVentaAnuladoPor")
+  facturas             Factura[]                @relation("FacturaUsuario")
+  facturasAnuladas     Factura[]                @relation("FacturaAnuladaPor")
   cotizaciones         Cotizacion[]             @relation("CotizacionVendedor")
   preciosProveedor     ProveedorProducto[]
   gastosCompra         GastoCompra[]            @relation("GastoCompraUsuario")
@@ -369,6 +394,8 @@ model Panel {
   escalonesDefault          EscalonPrecioDefault[]
   historialPreciosProveedor ProveedorProductoHistorial[]
   cotizaciones              Cotizacion[]
+  facturas                  Factura[]
+  facturaItems              FacturaItem[]
   cotizacionItems           CotizacionItem[]
   transferencias            Transferencia[]
   transferenciaItems        TransferenciaItem[]
@@ -528,6 +555,7 @@ model Cliente {
   ventas        Venta[]
   devoluciones  Devolucion[]
   cotizaciones  Cotizacion[]
+  facturas      Factura[]
 
   @@index([panelId, nombre])
   @@index([panelId, saldoDeudor])
@@ -624,6 +652,7 @@ model Variante {
   cotizacionItems           CotizacionItem[]
   transferenciaItems        TransferenciaItem[]
   historialCostos           CostoVarianteHistorial[]
+  facturaItems              FacturaItem[]
 
   @@unique([panelId, sku])
   @@unique([panelId, productoId, nombre])
@@ -952,6 +981,8 @@ model Venta {
   devoluciones     Devolucion[]
   cotizacionOrigen Cotizacion?  @relation("CotizacionVenta")
   pagos            PagoVenta[]
+  /// Facturas de la venta: a lo sumo una EMITIDA (índice único parcial); las anuladas quedan.
+  facturas         Factura[]
   clienteCreado    Cliente?     @relation("ClienteCreadoEnVenta")
 
   @@unique([panelId, numero])
@@ -1390,4 +1421,83 @@ model ProveedorProductoHistorial {
 
   @@index([panelId, proveedorProductoId, createdAt])
   @@index([panelId, proveedorId, productoId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Facturas (por panel): registro de las facturas emitidas por fuera (AFIP) y
+// comprobantes internos, vinculadas a ventas. Sin integración AFIP (ver
+// src/server/facturacion/emisor.ts).
+// -----------------------------------------------------------------------------
+
+/// Factura o comprobante interno. `codigo` = COS-F-000001 (Secuencia FACTURA).
+/// Importes: los precios de los ítems son finales (IVA incluido); `total` =
+/// Σ ítems − descuento; en la A se discrimina el IVA (`subtotal` neto + `iva`),
+/// en B, C e interno `subtotal` = `total` e `iva` = 0. EMITIDA solo cambia a
+/// ANULADA (con quién/cuándo/por qué), el PDF subido y el número externo (trigger).
+model Factura {
+  id              String        @id @default(cuid())
+  panelId         String        @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  numero          Int
+  codigo          String
+  tipo            TipoFactura
+  puntoVenta      Int           @default(1)
+  /// Número real de AFIP si se emitió por fuera ("0001-00001234").
+  numeroExterno   String?
+  fecha           DateTime
+  ventaId         String?
+  clienteId       String
+  razonSocial     String?
+  /// Solo dígitos (11), con dígito verificador válido.
+  cuit            String?
+  condicionIva    CondicionIva?
+  domicilio       String?
+  descuento       Decimal       @default(0) @db.Decimal(12, 2)
+  /// Neto (A) o igual al total (B, C, interno).
+  subtotal        Decimal       @db.Decimal(12, 2)
+  alicuotaIva     Decimal       @default(0) @db.Decimal(5, 2)
+  iva             Decimal       @default(0) @db.Decimal(12, 2)
+  total           Decimal       @db.Decimal(12, 2)
+  estado          EstadoFactura @default(EMITIDA)
+  /// PDF subido (factura real emitida por fuera); null = se genera el comprobante.
+  archivoUrl      String?
+  observacion     String?
+  usuarioId       String
+  anuladaPorId    String?
+  anuladaAt       DateTime?
+  motivoAnulacion String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  panel      Panel         @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  venta      Venta?        @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  cliente    Cliente       @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  usuario    Usuario       @relation("FacturaUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  anuladaPor Usuario?      @relation("FacturaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+  items      FacturaItem[]
+
+  @@unique([panelId, numero])
+  @@unique([panelId, codigo])
+  @@index([panelId, fecha])
+  @@index([panelId, clienteId])
+  @@index([ventaId])
+}
+
+/// Renglón de una factura (precio final por unidad). Inmutable.
+model FacturaItem {
+  id             String   @id @default(cuid())
+  panelId        String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  facturaId      String
+  varianteId     String?
+  descripcion    String
+  cantidad       Int
+  precioUnitario Decimal  @db.Decimal(12, 2)
+  subtotal       Decimal  @db.Decimal(12, 2)
+  orden          Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  panel    Panel     @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  factura  Factura   @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  variante Variante? @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@index([facturaId])
 }

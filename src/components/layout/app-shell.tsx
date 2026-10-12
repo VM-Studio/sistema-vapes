@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
-import { navegacionPermitida } from "@/config/navigation";
+import { navegacionPermitida, type FuncionesPanel } from "@/config/navigation";
 import { COOKIE_SIDEBAR } from "@/config/ui";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,8 @@ interface AppShellProps {
   fueraDelPanel?: boolean;
   /** Widget de cotizaciones de la barra (null: el usuario no las ve). */
   cambio?: { cotizaciones: CotizacionesBarra; enlace: boolean } | null;
+  /** Funciones activas del panel (ítems condicionales de la navegación). */
+  funciones?: FuncionesPanel;
 }
 
 /**
@@ -39,11 +41,12 @@ export function AppShell({
   restringido,
   fueraDelPanel = false,
   cambio = null,
+  funciones,
 }: AppShellProps) {
   const usuario = useUsuario();
   const panel = usePanel();
   const [colapsado, setColapsado] = useState(sidebarColapsadoInicial);
-  const items = navegacionPermitida(usuario, panel);
+  const items = navegacionPermitida(usuario, panel, funciones);
 
   function toggleSidebar() {
     const nuevo = !colapsado;

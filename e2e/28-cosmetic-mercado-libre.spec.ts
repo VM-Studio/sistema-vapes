@@ -6,7 +6,8 @@ import { db, llamarAccion, loginDueno, PANEL_COSMETIC, pistola, soltarFoco } fro
 /**
  * Cosmetic cobra por Mercado Libre: sus medios son Efectivo, Transferencia y
  * Mercado Libre (sin Binance); un producto con precio de lista $ 12.000 y
- * precio Mercado Libre $ 15.000 vendido por ML va a $ 15.000 (origenPrecio ML).
+ * precio Mercado Libre $ 15.000 vendido por ML va a $ 15.000 (origenPrecio ML),
+ * y esa venta se factura (factura B con su PDF).
  */
 test.describe.configure({ mode: "serial" });
 
@@ -109,16 +110,45 @@ test("Cosmetic: precio Mercado Libre en el producto y venta por ML a $ 15.000", 
   expect(venta.items[0]!.precioUnitario.toFixed(2)).toBe("15000.00");
   expect(venta.items[0]!.origenPrecio).toBe("ML");
 
-  // Detalle de la venta y el reporte "Ventas Mercado Libre".
+  // Detalle de la venta → «Facturar» → factura B con el total de la venta → PDF.
   await page.goto(`/p/cosmetic/ventas/${venta.id}`);
   await expect(page.getByTestId("origen-ml")).toBeVisible();
+  await page.getByRole("link", { name: "Facturar" }).click();
+  await expect(page.getByTestId("venta-a-facturar")).toContainText(codigo);
+  await expect(page.getByLabel("Tipo")).toHaveValue("B");
+  await expect(page.getByTestId("total-factura")).toHaveText("$ 15.000");
+  await page.getByRole("button", { name: "Registrar factura" }).click();
+  await page.waitForURL(/\/facturas\/(?!nueva)[^/]+$/);
+  await expect(page.getByRole("heading", { name: /^Factura B COS-F-\d{6}$/ })).toBeVisible();
+  await expect(page.getByTestId("total-factura")).toHaveText("$ 15.000");
+  const factura = await db.factura.findFirstOrThrow({
+    where: { panelId: PANEL_COSMETIC, ventaId: venta.id, estado: "EMITIDA" },
+  });
+  expect(factura.tipo).toBe("B");
+  expect(factura.total.toFixed(2)).toBe("15000.00");
+  const pdf = await page.request.get(`/api/p/cosmetic/facturas/${factura.id}/pdf`);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()["content-type"]).toBe("application/pdf");
+  expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
+  const excel = await page.request.get("/api/p/cosmetic/facturas/exportar");
+  expect(excel.status()).toBe(200);
+  expect(excel.headers()["content-type"]).toContain("spreadsheetml");
+  // La venta ahora enlaza su factura y el listado la muestra.
+  await page.goto(`/p/cosmetic/ventas/${venta.id}`);
+  await expect(page.getByTestId("link-factura")).toContainText(factura.codigo);
+  await page.goto("/p/cosmetic/facturas");
+  await expect(page.getByRole("link", { name: factura.codigo }).first()).toBeVisible();
+
+  // El reporte "Ventas Mercado Libre".
   await page.goto("/p/cosmetic/reportes");
   await page.getByTestId("reporte-mercado-libre").click();
   await expect(page.getByRole("heading", { name: "Ventas Mercado Libre" })).toBeVisible();
   await expect(page.getByText("$ 15.000").first()).toBeVisible();
 });
 
-test("Vapes no cobra por Mercado Libre: sin precio ML ni reporte", async ({ page }, info) => {
+test("Vapes no cobra por Mercado Libre ni factura: sin precio ML, reporte ni Facturas", async ({
+  page,
+}, info) => {
   test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
   await loginDueno(page);
   await page.goto("/p/vapes/productos/nuevo");
@@ -126,6 +156,7 @@ test("Vapes no cobra por Mercado Libre: sin precio ML ni reporte", async ({ page
   await expect(page.getByLabel("Precio Mercado Libre")).toHaveCount(0);
   await page.goto("/p/vapes/reportes");
   await expect(page.getByTestId("reporte-mercado-libre")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Facturas", exact: true })).toHaveCount(0);
 });
 
 test("medios de pago del panel: se editan en Ajustes → Ventas", async ({ page }, info) => {

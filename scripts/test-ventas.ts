@@ -20,10 +20,23 @@ import {
 
 import { prisma } from "../src/lib/db";
 import { formatearIdVenta } from "../src/lib/paneles";
+import {
+  facturarVentaSchema,
+  facturaSueltaSchema,
+  listarFacturasSchema,
+} from "../src/lib/validations/factura";
 import { generarVentaSchema, listarVentasSchema } from "../src/lib/validations/venta";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { DomainError, ForbiddenError, NotFoundError } from "../src/server/errors";
 import { ClienteDuplicadoError } from "../src/server/services/cliente.service";
+import {
+  anular as anularFactura,
+  crearDesdeVenta,
+  crearSuelta,
+  listar as listarFacturas,
+  obtener as obtenerFactura,
+  pdfFactura,
+} from "../src/server/services/factura.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
 import {
   anularVenta,
@@ -713,6 +726,66 @@ async function main() {
     ),
   );
   check(mlEnVapes instanceof DomainError, "Mercado Libre no está habilitado en Vapes");
+
+  console.log("\n11) Facturas (Cosmetic factura; Vapes no)");
+  const facturaB = await crearDesdeVenta(
+    ctxCos,
+    facturarVentaSchema.parse({ ventaId: porML.id, tipo: "B" }),
+  );
+  check(/^COS-F-\d{6}$/.test(facturaB.codigo), `factura B desde la venta: ${facturaB.codigo}`);
+  const fb = await obtenerFactura(ctxCos, facturaB.id);
+  check(
+    fb.total === "39500.00" && fb.iva === "0.00" && fb.items.length === 3,
+    `toma ítems y total de la venta (${fb.total}, ${fb.items.length} renglones)`,
+  );
+  const repetida = await error(() =>
+    crearDesdeVenta(ctxCos, facturarVentaSchema.parse({ ventaId: porML.id, tipo: "B" })),
+  );
+  check(repetida instanceof DomainError, `una sola factura emitida por venta → «${msg(repetida)}»`);
+  const pdf = await pdfFactura(ctxCos, facturaB.id);
+  check(
+    Buffer.from(pdf.pdf.subarray(0, 5)).toString() === "%PDF-",
+    "el comprobante se genera en PDF",
+  );
+  const inmutable = await error(
+    () => prisma.$executeRaw`UPDATE "Factura" SET "total" = 1 WHERE "id" = ${facturaB.id}`,
+  );
+  check(/no se modifica/.test(msg(inmutable)), "una factura emitida no se modifica (trigger)");
+  await anularFactura(ctxCos, facturaB.id, "Error en el tipo");
+  const facturaA = await crearDesdeVenta(
+    ctxCos,
+    facturarVentaSchema.parse({
+      ventaId: porML.id,
+      tipo: "A",
+      datosFiscales: { razonSocial: "Clienta SRL", cuit: "20-12345678-6" },
+    }),
+  );
+  const fa = await obtenerFactura(ctxCos, facturaA.id);
+  check(
+    fa.total === "39500.00" && fa.subtotal === "32644.63" && fa.iva === "6855.37",
+    `anulada la B, se vuelve a facturar como A con IVA discriminado (${fa.subtotal} + ${fa.iva})`,
+  );
+  const suelta = await crearSuelta(
+    ctxCos,
+    facturaSueltaSchema.parse({
+      clienteId: vCos.cliente.id,
+      tipo: "COMPROBANTE_INTERNO",
+      items: [{ descripcion: "Envío", cantidad: 1, precioUnitario: 2500 }],
+    }),
+  );
+  check(
+    (await obtenerFactura(ctxCos, suelta.id)).total === "2500.00",
+    "factura suelta (comprobante interno)",
+  );
+  const listado = await listarFacturas(ctxCos, listarFacturasSchema.parse({}));
+  check(listado.resumen.cantidad >= 2, `listado: ${listado.resumen.cantidad} emitidas`);
+  const enVapes = await error(() =>
+    crearDesdeVenta(ctx, facturarVentaSchema.parse({ ventaId: v1.id, tipo: "B" })),
+  );
+  check(
+    enVapes instanceof DomainError && /facturación/.test(msg(enVapes)),
+    `Vapes no tiene la facturación habilitada → «${msg(enVapes)}»`,
+  );
 
   console.log(fallos ? `\n✘ ${fallos} verificaciones fallaron` : "\n✔ Todo OK");
   process.exitCode = fallos ? 1 : 0;

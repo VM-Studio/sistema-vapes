@@ -9,6 +9,7 @@ import {
   HandCoins,
   Home,
   Package,
+  ReceiptText,
   PackageOpen,
   Settings,
   ShoppingCart,
@@ -69,6 +70,13 @@ export interface ItemNavegacion {
   global?: boolean;
   /** Prefijo de ruta absoluto para marcar el ítem activo (lo completa navegacionPermitida). */
   base?: string;
+  /** Solo en paneles con la facturación habilitada (Ajustes → Facturación). */
+  requiereFacturacion?: boolean;
+}
+
+/** Funciones que cada panel activa en su configuración (afectan qué ítems se muestran). */
+export interface FuncionesPanel {
+  facturacion: boolean;
 }
 
 export const NAVEGACION: readonly ItemNavegacion[] = [
@@ -142,6 +150,17 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     enBottomBar: false,
     ordenMobile: 9,
     descripcion: "Cuenta corriente: quién debe y cobros",
+  },
+  {
+    modulo: Modulo.FACTURAS,
+    label: "Facturas",
+    href: "/facturas",
+    icon: ReceiptText,
+    grupo: "Operación",
+    enBottomBar: false,
+    ordenMobile: 11.5,
+    descripcion: "Facturas y comprobantes de las ventas",
+    requiereFacturacion: true,
   },
   {
     modulo: Modulo.PROVEEDORES,
@@ -276,10 +295,14 @@ export function puedeVerItem(
 export function navegacionPermitida(
   usuario: SujetoPermisos,
   panel: { id: string; slug: string },
+  funciones: FuncionesPanel = { facturacion: false },
 ): ItemNavegacion[] {
   const abs = (item: ItemNavegacion, href: string) =>
     item.global ? href : rutaPanel(panel.slug, href);
-  return NAVEGACION.filter((item) => puedeVerItem(usuario, panel.id, item)).map((item) => {
+  return NAVEGACION.filter(
+    (item) =>
+      (!item.requiereFacturacion || funciones.facturacion) && puedeVerItem(usuario, panel.id, item),
+  ).map((item) => {
     const href = abs(item, item.href);
     return { ...item, href, base: href };
   });

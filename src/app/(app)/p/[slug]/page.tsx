@@ -21,6 +21,7 @@ import {
 } from "@/components/analitica/secciones";
 import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
 import { cardVariants } from "@/components/ui/card";
+import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
 import { navegacionPermitida, type ItemNavegacion } from "@/config/navigation";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,10 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
   const { usuario, panel, panelId } = ctx;
   const owner = esOwner(usuario);
   const verDashboard = puede(usuario, panelId, Modulo.DASHBOARD, "ver");
-  const accesos = navegacionPermitida(usuario, panel).filter((i) => i.modulo !== null);
+  const facturacion = await obtenerConfigFacturacion(ctx);
+  const accesos = navegacionPermitida(usuario, panel, {
+    facturacion: facturacion.habilitada,
+  }).filter((i) => i.modulo !== null);
 
   if (!verDashboard) {
     return (

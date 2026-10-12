@@ -53,6 +53,7 @@ test("Juan Cruz: selector con los 3 sistemas y «Agregar sistema»; crea «Prueb
     "COMPRA",
     "COTIZACION",
     "DEVOLUCION",
+    "FACTURA",
     "TRANSFERENCIA",
     "VENTA",
   ]);

@@ -68,6 +68,7 @@ export const MODULOS_DE_PANEL: readonly Modulo[] = [
   Modulo.PASISTA,
   Modulo.COTIZADOR,
   Modulo.REPORTES,
+  Modulo.FACTURAS,
 ];
 
 export const MODULO_LABEL: Record<Modulo, string> = {
@@ -83,6 +84,7 @@ export const MODULO_LABEL: Record<Modulo, string> = {
   REPORTES: "Reportes",
   FIADOS: "Fiados",
   PASISTA: "Pasista",
+  FACTURAS: "Facturas",
   USUARIOS: "Usuarios",
   CONFIGURACION: "Configuración",
 };
@@ -94,6 +96,8 @@ export function accionesDe(modulo: Modulo): readonly Accion[] {
     return ["ver"];
   // Fiados no tiene "eliminar": anular un cobro es solo de dueños.
   if (modulo === Modulo.FIADOS) return ["ver", "crear", "editar"];
+  // Facturas no se borran: se anulan (solo dueños).
+  if (modulo === Modulo.FACTURAS) return ["ver", "crear", "editar"];
   return ACCIONES;
 }
 
@@ -106,6 +110,8 @@ export const MODULO_AYUDA: Partial<Record<Modulo, string>> = {
     "Cuenta corriente. Ver: deudas de los clientes · Crear: vender fiado · Editar: registrar cobros.",
   PASISTA:
     "Solo «Ver»: comisiones del pasista por compra y su acumulado mensual. Marcarlas pagadas es de los dueños.",
+  FACTURAS:
+    "Solo en paneles con facturación. Ver: listado y PDF · Crear: facturar · Editar: subir el PDF y el número fiscal. Anular: solo dueños.",
 };
 
 export const ACCION_LABEL: Record<Accion, string> = {

@@ -1054,7 +1054,7 @@ async function main() {
   );
   await rechaza(
     "entidad de secuencia desconocida",
-    () => prisma.secuencia.create({ data: { panelId: ESPECIALES, entidad: "FACTURA" } }),
+    () => prisma.secuencia.create({ data: { panelId: ESPECIALES, entidad: "REMITO" } }),
     "Secuencia_entidad_chk",
   );
   await rechaza(

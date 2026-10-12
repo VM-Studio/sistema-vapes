@@ -7,6 +7,7 @@ import { COOKIE_SIDEBAR, COOKIE_ULTIMO_PANEL } from "@/config/ui";
 import { accedeAPanel } from "@/lib/permisos";
 import { requirePaginaUsuario } from "@/server/auth/permissions";
 import { panelesActivos } from "@/server/auth/paneles-acceso";
+import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
 
 /**
  * Pantallas fuera de los paneles: usuarios, configuración, cuenta, ayuda.
@@ -30,12 +31,14 @@ export default async function GlobalLayout({ children }: { children: React.React
     return <GlobalShell restringido={false}>{children}</GlobalShell>;
   }
 
+  const facturacion = await obtenerConfigFacturacion({ panelId: panel.id });
   return (
     <PanelProvider panel={panel}>
       <AppShell
         sidebarColapsadoInicial={jar.get(COOKIE_SIDEBAR)?.value === "colapsado"}
         restringido={false}
         fueraDelPanel
+        funciones={{ facturacion: facturacion.habilitada }}
       >
         {children}
       </AppShell>
