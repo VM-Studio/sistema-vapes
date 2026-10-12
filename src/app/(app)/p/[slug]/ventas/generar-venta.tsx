@@ -70,6 +70,8 @@ export function GenerarVenta({
         items: conversion.items,
         cliente: conversion.cliente,
         descuento: conversion.descuento,
+        // Los ítems vienen fijos: lo natural es verificarlos con la pistola.
+        verificar: true,
       });
       setAbierto(true);
       const params = new URLSearchParams(searchParams.toString());

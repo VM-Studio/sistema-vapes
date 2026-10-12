@@ -57,6 +57,12 @@ export const itemVentaSchema = z.object({
   precioEspecial: montoOpcional,
 });
 
+/** Detalle de "Verificar con pistola" que manda el modal; el servidor decide si alcanza. */
+export const verificacionEscaneoSchema = z
+  .array(z.object({ varianteId: id, unidades: z.number().int().min(0).max(100_000) }))
+  .max(300)
+  .optional();
+
 export const generarVentaSchema = z.object({
   depositoId: idOpcional,
   cliente: clienteVentaSchema.optional(),
@@ -69,6 +75,8 @@ export const generarVentaSchema = z.object({
   descuento: montoOpcional,
   notas: textoOpcional(2000),
   tipo: z.preprocess(vacioAUndefined, z.enum(TipoVenta).default(TipoVenta.UNITARIA)),
+  /** "Verificar con pistola": unidades escaneadas por ítem (ver verificacion-escaneo.ts). */
+  verificacion: verificacionEscaneoSchema,
 });
 
 export const anularVentaSchema = z.object({

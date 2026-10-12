@@ -30,6 +30,7 @@ import {
 } from "@/server/services/venta.service";
 
 import { EstadoPagoBadge, MedioPagoBadge } from "./_componentes/medio-pago";
+import { VerificadaBadge } from "./_componentes/verificada-badge";
 import { FiltrosVentas } from "./filtros-ventas";
 import { GenerarVenta } from "./generar-venta";
 import type { ConversionVenta } from "./modal-venta";
@@ -223,9 +224,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             key: "tipo",
             header: "Tipo",
             cell: (v) => (
-              <Badge variant={v.tipo === "MAYORISTA" ? "primary" : "neutral"}>
-                {ETIQUETA_TIPO_VENTA[v.tipo]}
-              </Badge>
+              <span className="flex flex-wrap items-center gap-1">
+                <Badge variant={v.tipo === "MAYORISTA" ? "primary" : "neutral"}>
+                  {ETIQUETA_TIPO_VENTA[v.tipo]}
+                </Badge>
+                {v.verificadaPorEscaneo && <VerificadaBadge />}
+              </span>
             ),
           },
           {
@@ -280,7 +284,10 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
                 {formatearFechaHora(v.fecha)} · {v.vendedor} · {v.deposito} · {v.unidades} u.
                 {v.tipo === "MAYORISTA" && " · Mayorista"}
               </p>
-              {estado(v)}
+              <span className="flex shrink-0 items-center gap-1">
+                {v.verificadaPorEscaneo && <VerificadaBadge />}
+                {estado(v)}
+              </span>
             </div>
           </Link>
         )}

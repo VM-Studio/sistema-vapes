@@ -286,6 +286,22 @@ test("convertir en venta desde el detalle: ítems y cliente bloqueados, Mercedes
   ).toBeVisible();
   await modal.getByRole("radio", { name: /Mercedes/ }).click();
   await modal.getByRole("button", { name: "Continuar con Mercedes" }).click();
+  // Productos: los ítems vienen fijos y "Verificar con pistola" arranca activo.
+  const verificar = modal.getByRole("switch", { name: "Verificar con pistola" });
+  await expect(verificar).toHaveAttribute("aria-checked", "true");
+  await expect(modal.getByPlaceholder(/Escaneá o buscá/)).toHaveCount(0);
+  await expect(modal.getByRole("button", { name: /^Quitar / })).toHaveCount(0);
+  await soltarFoco(page);
+  const cotizados = await db.cotizacionItem.findMany({
+    where: { cotizacionId: cotizacionUnitaria },
+    select: { cantidad: true, variante: { select: { codigoBarras: true } } },
+  });
+  for (const i of cotizados)
+    for (let n = 0; n < i.cantidad; n++) await pistola(page, i.variante.codigoBarras!);
+  await expect(modal.getByTestId("resumen-verificacion")).toHaveText(
+    "Todas las unidades verificadas.",
+  );
+  await modal.getByRole("button", { name: "Continuar", exact: true }).click();
   await expect(modal.getByTestId("conversion-bloqueada")).toContainText("y cliente");
   // Sin buscador de productos ni selector de cliente: solo el medio de pago.
   await expect(modal.getByPlaceholder(/Escaneá o buscá/)).toHaveCount(0);
@@ -307,6 +323,7 @@ test("convertir en venta desde el detalle: ítems y cliente bloqueados, Mercedes
   expect(venta.cliente.nombre).toBe("Lucía Cotiza");
   expect(venta.cotizacionId).toBe(cotizacionUnitaria);
   expect(venta.items).toHaveLength(3);
+  expect(venta.verificadaPorEscaneo).toBe(true);
   const c = await db.cotizacion.findUniqueOrThrow({ where: { id: cotizacionUnitaria } });
   expect(c.estado).toBe("CONVERTIDA");
   expect(c.ventaId).toBe(venta.id);

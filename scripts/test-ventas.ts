@@ -519,6 +519,40 @@ async function main() {
   check(/^COS-\d{6}$/.test(vCos.codigo), `venta en Cosmetic: ${vCos.codigo}`);
   check(vCos.clienteNuevo, "el mismo teléfono es un cliente distinto en otro panel");
 
+  // ---------------------------------------------------------------------------
+  console.log(`\nV) Verificar con pistola: la marca la decide el servidor`);
+  const verificada = await generarVenta(
+    ctx,
+    entrada({
+      cliente: { id: v1.cliente.id },
+      items: [{ varianteId: mango.id, cantidad: 1 }],
+      verificacion: [{ varianteId: mango.id, unidades: 1 }],
+    }),
+    DUENO,
+  );
+  const incompleta = await generarVenta(
+    ctx,
+    entrada({
+      cliente: { id: v1.cliente.id },
+      items: [{ varianteId: mango.id, cantidad: 1 }],
+      verificacion: [{ varianteId: frutilla.id, unidades: 1 }],
+    }),
+    DUENO,
+  );
+  const sinModo = await generarVenta(
+    ctx,
+    entrada({ cliente: { id: v1.cliente.id }, items: [{ varianteId: mango.id, cantidad: 1 }] }),
+    DUENO,
+  );
+  const marcas = await db.venta.findMany({
+    where: { id: { in: [verificada.id, incompleta.id, sinModo.id] } },
+    select: { id: true, verificadaPorEscaneo: true },
+  });
+  const marca = (id: string) => marcas.find((m) => m.id === id)?.verificadaPorEscaneo;
+  check(marca(verificada.id) === true, "todas las unidades escaneadas → verificadaPorEscaneo");
+  check(marca(incompleta.id) === false, "detalle que no coincide con lo vendido → no verificada");
+  check(marca(sinModo.id) === false, "sin el modo activo → no verificada");
+
   console.log(fallos ? `\n✘ ${fallos} verificaciones fallaron` : "\n✔ Todo OK");
   process.exitCode = fallos ? 1 : 0;
 }

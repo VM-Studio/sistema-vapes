@@ -270,6 +270,9 @@ test("Vapes: cargar stock en un galpón → venta con cliente nuevo → garantí
   await expect(modal).toBeVisible();
   await modal.getByRole("radio", { name: /Ayres Plaza/ }).click();
   await modal.getByRole("button", { name: "Continuar con Ayres Plaza" }).click();
+  // Sin la pistola a mano: se apaga "Verificar con pistola" y se sigue.
+  await modal.getByRole("switch", { name: "Verificar con pistola" }).click();
+  await modal.getByRole("button", { name: "Continuar", exact: true }).click();
   await expect(modal).toContainText(CLIENTE_MAYORISTA.nombre);
   await modal.getByRole("radio", { name: "Transferencia" }).click();
   await modal.getByRole("button", { name: "Confirmar venta" }).click();

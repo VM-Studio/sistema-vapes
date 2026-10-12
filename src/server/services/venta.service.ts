@@ -16,6 +16,7 @@ import { costoParaVenta, precioVentaEfectivo } from "@/lib/precios";
 import { ahora } from "@/lib/reloj";
 import type { FiltrosVentas, GenerarVenta } from "@/lib/validations/venta";
 import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
+import { ventaVerificada } from "@/lib/verificacion-escaneo";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
@@ -347,6 +348,7 @@ async function generarEnTx(
       gananciaBruta: total.minus(costoTotal),
       notas: input.notas ?? null,
       clienteNuevo,
+      verificadaPorEscaneo: ventaVerificada(input.items, input.verificacion),
       cotizacionId: desdeCotizacion ? permisos.cotizacionId : null,
       items: {
         create: items.map((i) => ({
@@ -645,6 +647,8 @@ export interface VentaListada {
   saldoPendiente: string;
   /** null si el usuario no es OWNER. */
   gananciaBruta: string | null;
+  /** Todas las unidades se escanearon contra el carrito ("Verificar con pistola"). */
+  verificadaPorEscaneo: boolean;
 }
 
 export interface ListadoVentas {
@@ -700,6 +704,7 @@ export async function listarVentas(
       estadoPago: v.estadoPago,
       saldoPendiente: dec(v.saldoPendiente),
       gananciaBruta: opciones.verCostos ? dec(v.gananciaBruta) : null,
+      verificadaPorEscaneo: v.verificadaPorEscaneo,
     })),
     total,
     page: f.page,
@@ -785,6 +790,7 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
     tipo: v.tipo,
     medioPago: v.medioPago,
     estadoPago: v.estadoPago,
+    verificadaPorEscaneo: v.verificadaPorEscaneo,
     montoPagado: dec(v.montoPagado),
     saldoPendiente: dec(v.saldoPendiente),
     pagos: v.pagos.map((p) => ({

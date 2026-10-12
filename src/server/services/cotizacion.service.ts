@@ -1256,6 +1256,8 @@ export async function convertirEnVenta(
     fiar?: boolean;
     clienteId?: string;
     recalcular?: boolean;
+    /** "Verificar con pistola" sobre los ítems de la cotización. */
+    verificacion?: { varianteId: string; unidades: number }[];
   },
 ): Promise<VentaGenerada> {
   return transaccion(
@@ -1333,6 +1335,7 @@ export async function convertirEnVenta(
           tipo: c.tipo === TipoCotizacion.MAYORISTA ? TipoVenta.MAYORISTA : TipoVenta.UNITARIA,
           descuento: descuento.greaterThan(0) ? descuento.toNumber() : undefined,
           notas: `Cotización ${c.codigo}`,
+          verificacion: opciones.verificacion,
           items: precios.map((p) => {
             const lista = listaDe.get(p.varianteId);
             return {

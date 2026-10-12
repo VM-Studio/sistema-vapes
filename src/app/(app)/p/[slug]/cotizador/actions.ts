@@ -175,6 +175,7 @@ export const convertirCotizacionAction = actionHandler(async (input: unknown) =>
     fiar: datos.fiar,
     ...(clienteId ? { clienteId } : {}),
     ...(datos.recalcular ? { recalcular: true } : {}),
+    ...(datos.verificacion ? { verificacion: datos.verificacion } : {}),
   });
   revalidar();
   revalidatePath("/p/[slug]/ventas", "layout");

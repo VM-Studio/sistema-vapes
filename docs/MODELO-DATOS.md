@@ -698,6 +698,7 @@ Table Venta {
   gananciaBruta decimal(12,2) [not null, note: 'total − costoTotal (CHECK en DB).']
   clienteNuevo boolean [not null, default: false, note: 'El cliente se dio de alta con esta venta (inmutable).']
   notas text
+  verificadaPorEscaneo boolean [not null, default: false, note: '"Verificar con pistola": todas las unidades se escanearon contra el carrito (lo decide el servidor).']
   cotizacionId text [unique, note: 'La cotización de la que salió (trazabilidad).']
   anuladaPorId text
   motivoAnulacion text

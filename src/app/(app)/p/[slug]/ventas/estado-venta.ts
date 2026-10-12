@@ -55,6 +55,10 @@ export interface VentaEnCurso {
   /** Descuento global en pesos, tal como se tipeó ("" = sin descuento). */
   descuento: string;
   notas: string;
+  /** "Verificar con pistola": los escaneos verifican el carrito en vez de sumar. */
+  verificar: boolean;
+  /** Unidades verificadas por varianteId (ver verificacion-escaneo.ts). */
+  verificadas: Record<string, number>;
 }
 
 export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
@@ -68,6 +72,8 @@ export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
   fiar: false,
   descuento: "",
   notas: "",
+  verificar: false,
+  verificadas: {},
 });
 
 /** ¿Hay algo que se perdería al cerrar? */

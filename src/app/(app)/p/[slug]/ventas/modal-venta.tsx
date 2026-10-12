@@ -13,6 +13,7 @@ import { useRutaPanel } from "@/components/layout/panel-context";
 import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ajustarVerificadas, faltanVerificar } from "@/lib/verificacion-escaneo";
 import type { VentaGenerada } from "@/server/services/venta.service";
 
 import { convertirCotizacionAction } from "../cotizador/actions";
@@ -57,8 +58,11 @@ export interface ConversionVenta {
   cliente: ClienteElegido | null;
 }
 
-/** Pasos del modal cuando se convierte una cotización. */
-const PASOS_CONVERSION = ["galpon", "pago"] as const satisfies readonly Paso[];
+/**
+ * Pasos del modal cuando se convierte una cotización: Productos queda para
+ * verificar con la pistola los ítems fijos (no se pueden cambiar).
+ */
+const PASOS_CONVERSION = ["galpon", "productos", "pago"] as const satisfies readonly Paso[];
 
 /**
  * "Generar venta": modal a pantalla completa en el celular y centrado grande
@@ -104,6 +108,8 @@ export function ModalVenta({
   const [avisoCliente, setAvisoCliente] = useState<string | null>(null);
   const [confirmarCierre, setConfirmarCierre] = useState(false);
   const [subdialogo, setSubdialogo] = useState(false);
+  /** "Continuar" con unidades sin verificar: se pide confirmación explícita. */
+  const [faltanAlContinuar, setFaltanAlContinuar] = useState(0);
   const ventaRef = useRef(venta);
   ventaRef.current = venta;
 
@@ -202,7 +208,18 @@ export function ModalVenta({
     (i) => stock[i.varianteId] === undefined || i.cantidad > stock[i.varianteId]!,
   );
 
+  /** Con "Verificar con pistola", avisa si quedan unidades sin escanear (no bloquea). */
+  function pedirContinuar() {
+    const faltan = venta.verificar ? faltanVerificar(venta.items, venta.verificadas) : 0;
+    if (faltan > 0) {
+      setFaltanAlContinuar(faltan);
+      return;
+    }
+    void continuarDesdeProductos();
+  }
+
   async function continuarDesdeProductos() {
+    setFaltanAlContinuar(0);
     if (!venta.depositoId || venta.items.length === 0) return;
     const r = await refrescarStock(
       venta.depositoId,
@@ -217,7 +234,7 @@ export function ModalVenta({
       setError(`No hay stock suficiente de ${falta.titulo} en ${deposito?.nombre ?? "el galpón"}.`);
       return;
     }
-    irA("cliente");
+    irA(conversion ? "pago" : "cliente");
   }
 
   /** Conversión: al elegir el galpón se verifica que alcance el stock de toda la cotización. */
@@ -240,7 +257,7 @@ export function ModalVenta({
       );
       return;
     }
-    cambiar({ depositoId, paso: "pago" });
+    cambiar({ depositoId, paso: "productos" });
   }
 
   // --- Confirmar ------------------------------------------------------------------
@@ -266,6 +283,12 @@ export function ModalVenta({
 
   async function confirmar() {
     if (!puedeConfirmar || !venta.cliente || !venta.depositoId) return;
+    // El servidor decide si la venta queda "verificada por escaneo" con este detalle.
+    const verificacion = venta.verificar
+      ? Object.entries(ajustarVerificadas(venta.items, venta.verificadas)).map(
+          ([varianteId, unidades]) => ({ varianteId, unidades }),
+        )
+      : undefined;
     setEnviando(true);
     setError(null);
     const cliente: ClienteElegido = venta.cliente;
@@ -275,6 +298,7 @@ export function ModalVenta({
         depositoId: venta.depositoId,
         pagos: resumenPago.pagos,
         fiar,
+        ...(verificacion ? { verificacion } : {}),
         ...(conversion.recalcular ? { recalcular: true } : {}),
         // El cliente de la cotización lo resuelve el servidor; solo viaja el elegido acá.
         ...(conversion.cliente === null
@@ -315,6 +339,7 @@ export function ModalVenta({
       })),
       pagos: resumenPago.pagos,
       fiar,
+      ...(verificacion ? { verificacion } : {}),
       ...(descuento && Number(descuento) > 0 ? { descuento } : {}),
       notas: venta.notas,
     }).catch(() => null);
@@ -499,24 +524,38 @@ export function ModalVenta({
                     stock={stock}
                     puedeEditar={puedeEditar}
                     puedeAltaProductos={puedeAltaProductos}
-                    escanerActivo={enLinea && !confirmarCierre}
+                    escanerActivo={enLinea && !confirmarCierre && faltanAlContinuar === 0}
+                    bloqueado={conversion !== null}
+                    verificar={venta.verificar}
+                    verificadas={venta.verificadas}
+                    onVerificar={(verificar) => cambiar({ verificar })}
+                    onVerificadas={(verificadas) => setVenta((v) => ({ ...v, verificadas }))}
                     onAgregar={agregar}
                     onSubdialogo={setSubdialogo}
                     onCantidad={(varianteId, cantidad) =>
-                      setVenta((v) => ({
-                        ...v,
-                        items: v.items.map((i) =>
+                      setVenta((v) => {
+                        const items = v.items.map((i) =>
                           i.varianteId === varianteId
                             ? { ...i, cantidad: Math.max(1, cantidad) }
                             : i,
-                        ),
-                      }))
+                        );
+                        // Si baja la cantidad, el contador no puede quedar por encima.
+                        return {
+                          ...v,
+                          items,
+                          verificadas: ajustarVerificadas(items, v.verificadas),
+                        };
+                      })
                     }
                     onQuitar={(varianteId) =>
-                      setVenta((v) => ({
-                        ...v,
-                        items: v.items.filter((i) => i.varianteId !== varianteId),
-                      }))
+                      setVenta((v) => {
+                        const items = v.items.filter((i) => i.varianteId !== varianteId);
+                        return {
+                          ...v,
+                          items,
+                          verificadas: ajustarVerificadas(items, v.verificadas),
+                        };
+                      })
                     }
                     onPrecioEspecial={(varianteId, precio) =>
                       setVenta((v) => ({
@@ -643,7 +682,7 @@ export function ModalVenta({
                       disabled={
                         !enLinea || venta.items.length === 0 || excedidos.length > 0 || subdialogo
                       }
-                      onClick={() => void continuarDesdeProductos()}
+                      onClick={pedirContinuar}
                     >
                       Continuar
                     </Button>
@@ -676,6 +715,20 @@ export function ModalVenta({
         </div>
       )}
 
+      <Dialog
+        open={faltanAlContinuar > 0}
+        onOpenChange={(o) => !o && setFaltanAlContinuar(0)}
+        title={`Faltan verificar ${faltanAlContinuar} ${faltanAlContinuar === 1 ? "unidad" : "unidades"}`}
+        description="No todas las unidades se escanearon contra la venta. Podés seguir verificando o continuar igual (la venta queda sin la marca de verificada)."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setFaltanAlContinuar(0)}>
+              Seguir verificando
+            </Button>
+            <Button onClick={() => void continuarDesdeProductos()}>Continuar igual</Button>
+          </>
+        }
+      />
       <Dialog
         open={confirmarCierre}
         onOpenChange={setConfirmarCierre}

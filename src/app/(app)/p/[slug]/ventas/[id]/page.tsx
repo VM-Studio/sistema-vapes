@@ -26,6 +26,7 @@ import { NotFoundError } from "@/server/errors";
 import { obtenerVenta } from "@/server/services/venta.service";
 
 import { ICONO_MEDIO_PAGO, MedioPagoBadge } from "../_componentes/medio-pago";
+import { VerificadaBadge } from "../_componentes/verificada-badge";
 import { AnularVenta } from "./acciones-venta";
 
 export const metadata: Metadata = { title: "Venta" };
@@ -67,6 +68,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
             <Badge variant={ESTADO_VENTA_UI[v.estado].variante}>
               {ESTADO_VENTA_UI[v.estado].label}
             </Badge>
+            {v.verificadaPorEscaneo && <VerificadaBadge />}
             <span>{formatearFechaHora(v.fecha)}</span>
           </span>
         }

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prefijoPanel } from "@/lib/paneles";
 
 import { enteroPositivo, id, montoOpcional, texto, textoOpcional, vacioAUndefined } from "./common";
-import { pagosSchema } from "./venta";
+import { pagosSchema, verificacionEscaneoSchema } from "./venta";
 
 /**
  * Cotizador (unitario y mayorista). El cliente manda sabores y cantidades:
@@ -146,6 +146,8 @@ export const convertirCotizacionSchema = z.object({
   clienteId: z.preprocess(vacioAUndefined, id.optional()),
   /** Solo para cotizaciones vencidas: usar los precios de hoy en vez de los cotizados. */
   recalcular: z.boolean().optional(),
+  /** "Verificar con pistola" sobre los ítems fijos de la cotización. */
+  verificacion: verificacionEscaneoSchema,
 });
 
 const fechaISO = z
