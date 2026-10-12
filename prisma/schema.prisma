@@ -88,6 +88,19 @@ enum TipoCotizacion {
   MAYORISTA
 }
 
+/// Monedas con cotización automática (pesos por unidad): USDT (proveedores) y dólar blue (mayorista).
+enum MonedaCambio {
+  USDT
+  USD_BLUE
+}
+
+/// Punta de la cotización de cambio. VENTA = lo que cuesta comprar la moneda (la que se usa para convertir).
+/// (No es TipoCotizacion: ese nombre ya lo usa el cotizador para UNITARIA/MAYORISTA.)
+enum TipoCotizacionCambio {
+  COMPRA
+  VENTA
+}
+
 enum EstadoCotizacion {
   BORRADOR
   ENVIADA
@@ -995,12 +1008,31 @@ model Configuracion {
   @@unique([panelId, clave])
 }
 
-/// Key-value GLOBAL (fuera de los paneles). Claves: nombreNegocio, iconoApp, timezone.
+/// Key-value GLOBAL (fuera de los paneles). Claves: nombreNegocio, iconoApp, timezone,
+/// cambio.actualizacionMinutos, cambio.overrideUSDT, cambio.overrideUSD_BLUE, cambio.lease.
 model ConfiguracionGlobal {
   id        String   @id @default(cuid())
   clave     String   @unique
   valor     Json
   updatedAt DateTime @updatedAt
+}
+
+/// Historial GLOBAL de cotizaciones de moneda (una fila por punta y actualización;
+/// nunca se edita). La vigente es la última por (moneda, tipo), salvo que haya un
+/// override manual en ConfiguracionGlobal ("cambio.overrideUSDT" / "cambio.overrideUSD_BLUE").
+model TipoCambio {
+  id         String               @id @default(cuid())
+  moneda     MonedaCambio
+  tipo       TipoCotizacionCambio
+  /// Pesos por unidad de la moneda.
+  valor      Decimal              @db.Decimal(14, 2)
+  /// Fuente pública de donde salió (ej: "dolarapi.com/blue").
+  fuente     String
+  /// Hora del dato según la fuente (o la de la consulta si la fuente no la informa).
+  obtenidoAt DateTime
+  createdAt  DateTime             @default(now())
+
+  @@index([moneda, tipo, obtenidoAt(sort: Desc)])
 }
 
 /// INMUTABLE (trigger bloquea UPDATE/DELETE). panelId null = acción global

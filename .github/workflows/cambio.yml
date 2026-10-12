@@ -1,0 +1,28 @@
+# Cotizaciones de moneda (dólar blue y USDT) cada 15 minutos.
+# El plan Hobby de Vercel solo permite crons diarios (vercel.json tiene uno a
+# las 09:00 AR como red de seguridad); este job golpea el endpoint protegido
+# por CRON_SECRET. Además, la app las refresca sola en segundo plano cuando
+# alguien las lee y tienen más de "cambio.actualizacionMinutos".
+name: Cotizaciones
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  cambio:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 2
+    steps:
+      - name: Actualizar cotizaciones
+        env:
+          APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Falta NEXT_PUBLIC_APP_URL o CRON_SECRET en el environment production: no se actualiza."
+            exit 0
+          fi
+          curl -fsS --max-time 60 -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/cambio"

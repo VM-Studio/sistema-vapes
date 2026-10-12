@@ -48,6 +48,8 @@ export default defineConfig({
       STORAGE_DIR: ".storage-e2e",
       RATE_LIMIT_POR_MINUTO: "5000",
       LOG_LEVEL: "warn",
+      // Cotizaciones fijas sembradas por el setup: sin consultas a dolarapi/criptoya.
+      CAMBIO_SIN_RED: "1",
     },
   },
 });

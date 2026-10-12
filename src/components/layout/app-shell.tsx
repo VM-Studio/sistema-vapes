@@ -10,6 +10,7 @@ import { BottomNav, TopBar } from "./mobile-nav";
 import { usePanel } from "./panel-context";
 import { Sidebar } from "./sidebar";
 import { useUsuario } from "./usuario-context";
+import type { CotizacionesBarra } from "./widget-cambio";
 
 interface AppShellProps {
   children: ReactNode;
@@ -22,6 +23,8 @@ interface AppShellProps {
    * panel: sin el indicador de red, que vive en la sincronización del panel.
    */
   fueraDelPanel?: boolean;
+  /** Widget de cotizaciones de la barra (null: el usuario no las ve). */
+  cambio?: { cotizaciones: CotizacionesBarra; enlace: boolean } | null;
 }
 
 /**
@@ -35,6 +38,7 @@ export function AppShell({
   sidebarColapsadoInicial,
   restringido,
   fueraDelPanel = false,
+  cambio = null,
 }: AppShellProps) {
   const usuario = useUsuario();
   const panel = usePanel();
@@ -60,7 +64,7 @@ export function AppShell({
 
   return (
     <div className="fondo-marca min-h-dvh">
-      <TopBar conRed={!fueraDelPanel} />
+      <TopBar conRed={!fueraDelPanel} cambio={cambio} />
       <Sidebar items={items} colapsado={colapsado} onToggle={toggleSidebar} />
       <main
         className={cn(

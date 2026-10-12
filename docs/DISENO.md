@@ -122,6 +122,7 @@ Montos siempre con `formatearPesos()` → `$ 12.345` (`Intl.NumberFormat("es-AR"
 - Grilla de 8px. Márgenes de página 16px mobile / 32px desktop.
 - Separación entre tarjetas 16px (`gap-4`). Contenido máximo 1280px centrado.
 - Barra superior blanca de 56px en mobile y 64px en desktop, con línea inferior fina; logo del panel de 44 / 52px. Las pantallas globales (usuarios, configuración, cuenta, ayuda) van dentro de la barra y el menú del último panel abierto (cookie `panel_ultimo`); solo el selector de sistemas usa la barra global.
+- Widget de cotizaciones en la barra del panel (dueños y quien ve el Cotizador): pastilla `bg-surface-2` de texto 11–12px, «Blue $ X · USDT $ Y» (apilado en mobile, en una línea desde `sm`, con la hora desde `lg`); si alguna lleva más de 2 h sin actualizarse, fondo `bg-warning-soft` y triángulo `text-warning`. Para dueños es un link a `/configuracion/cambio`.
 - Sidebar desktop 240px (colapsable a 64px), fondo blanco, grupos con etiqueta
   gris chica; activo sobre `bg-azul-velo-2` con ícono azul y línea azul de 2px a la izquierda;
   osito en azul tenue al pie.

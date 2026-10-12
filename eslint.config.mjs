@@ -62,6 +62,8 @@ const eslintConfig = [
       "src/server/services/health.service.ts",
       "src/server/services/auditoria.service.ts",
       "src/server/services/identidad.service.ts",
+      // Global (no por panel): cotizaciones de moneda.
+      "src/server/services/cambio.service.ts",
       "src/server/reportes/exportar-todo.ts",
     ],
     rules: { "no-restricted-imports": ["error", PRISMA_CRUDO] },

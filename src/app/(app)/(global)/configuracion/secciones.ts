@@ -16,6 +16,11 @@ export const SECCIONES_CONFIGURACION = [
     descripcion: "Paneles activos y baja de paneles",
   },
   {
+    href: "/configuracion/cambio",
+    label: "Cotizaciones",
+    descripcion: "Dólar blue y USDT: automáticas o a mano",
+  },
+  {
     href: "/configuracion/backups",
     label: "Backups",
     descripcion: "Copias de seguridad automáticas y descarga",

@@ -44,6 +44,16 @@ export async function prepararBaseDeTest(url: string = URL_TEST) {
     where: { nombre: "Trinidad" },
     data: { passwordHash: await bcrypt.hash(PASSWORD_TRINIDAD, 12), debeCambiarPassword: false },
   });
+  // Cotizaciones fijas (la suite corre con CAMBIO_SIN_RED=1: sin APIs externas).
+  const obtenidoAt = new Date();
+  await db.tipoCambio.createMany({
+    data: [
+      { moneda: "USD_BLUE", tipo: "VENTA", valor: 1300, fuente: "e2e", obtenidoAt },
+      { moneda: "USD_BLUE", tipo: "COMPRA", valor: 1280, fuente: "e2e", obtenidoAt },
+      { moneda: "USDT", tipo: "VENTA", valor: 1350, fuente: "e2e", obtenidoAt },
+      { moneda: "USDT", tipo: "COMPRA", valor: 1340, fuente: "e2e", obtenidoAt },
+    ],
+  });
   await db.$disconnect();
   execSync("rm -rf .storage-e2e");
 }

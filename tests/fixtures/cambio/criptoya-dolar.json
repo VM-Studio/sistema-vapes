@@ -1,0 +1,35 @@
+{
+  "oficial": {
+    "price": 1535,
+    "ask": 1535,
+    "bid": 1485,
+    "variation": -0.32,
+    "timestamp": 1791766728
+  },
+  "blue": {
+    "ask": 1540,
+    "bid": 1520,
+    "variation": 0,
+    "timestamp": 1791766722
+  },
+  "cripto": {
+    "ccb": {
+      "ask": 1614.346,
+      "bid": 1601.576,
+      "variation": -0.12,
+      "timestamp": 1791768304
+    },
+    "usdt": {
+      "ask": 1611.208,
+      "bid": 1611.81,
+      "variation": -0.2,
+      "timestamp": 1791768304
+    },
+    "usdc": {
+      "ask": 1603.62,
+      "bid": 1601.6,
+      "variation": 0.02,
+      "timestamp": 1791768304
+    }
+  }
+}

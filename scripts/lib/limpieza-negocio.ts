@@ -57,6 +57,7 @@ export const TABLAS_PRESERVADAS = [
   "Sesion",
   "Configuracion",
   "ConfiguracionGlobal",
+  "TipoCambio",
   "Secuencia",
   "AuditLog",
   "Backup",

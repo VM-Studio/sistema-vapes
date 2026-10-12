@@ -87,7 +87,7 @@ Las `SEED_*` solo las lee `prisma/seed.ts`. Con `NODE_ENV=production` son **obli
    - [ ] Variables de Production (las de la tabla de arriba, sin las `SEED_*`), con `STORAGE_PROVIDER=s3` y `NEXT_PUBLIC_APP_URL=https://tu-dominio`.
    - [ ] Dominio propio con HTTPS. Después de verificarlo, enviar el dominio a [hstspreload.org](https://hstspreload.org) (el header ya incluye `preload`).
    - [ ] Desactivar el deploy automático de Git para `main` (lo hace el job `deploy`, después del release). Los Preview pueden seguir automáticos.
-   - [ ] No hay crons en Vercel (`vercel.json` no define ninguno): el único job programado es el backup, que corre en GitHub Actions.
+   - [ ] Cron de Vercel: solo `/api/cron/cambio` una vez por día (09:00 AR), que es lo que permite el plan Hobby. Las cotizaciones cada 15 min las dispara `.github/workflows/cambio.yml` (ver [Cotizaciones](#cotizaciones-dólar-blue-y-usdt)). El backup corre en GitHub Actions.
 5. **GitHub**
    - [ ] Environment `production` con los secrets: `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `CRON_SECRET`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_BACKUP_BUCKET`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; y la variable `NEXT_PUBLIC_APP_URL`.
    - [ ] Protección de `main`: requiere el check **CI** en verde.
@@ -209,6 +209,18 @@ Es el paso 1 y 2 de [Deploy de la v2](#deploy-de-la-v2-reforma-multipanel-paso-a
   DATABASE_URL=<directa, prod o copia> pnpm test:restore
   ```
   Hace un backup, lo restaura en una base vacía y compara `COUNT(*)` de **todas** las tablas, `SUM(Stock.cantidad)`, triggers y vistas. Tiene que terminar en `RESTAURACIÓN VERIFICADA`.
+
+## Cotizaciones (dólar blue y USDT)
+
+- **Dónde**: tabla `TipoCambio` (historial, una fila por punta y actualización) + overrides manuales en `ConfiguracionGlobal` (`cambio.overrideUSDT`, `cambio.overrideUSD_BLUE`). Pantalla: `/configuracion/cambio` (solo dueños).
+- **Fuentes** (solo desde el servidor, timeout 5 s, en orden): blue → `dolarapi.com/v1/dolares/blue`, `criptoya.com/api/dolar` (`blue`); USDT → `criptoya.com/api/dolar` (`cripto.usdt`), `criptoya.com/api/usdt/ars/1` (promedio de `totalAsk` de los exchanges principales), `dolarapi.com/v1/dolares/cripto`. Un valor fuera de rango (≤ 0 o 10× distinto del anterior) se descarta y se prueba la fuente siguiente; si ninguna responde queda la última válida (log `cambio: ninguna fuente respondió`).
+- **Programación**:
+  - `.github/workflows/cambio.yml` cada 15 min → `GET /api/cron/cambio` con `Authorization: Bearer $CRON_SECRET` (usa la variable `NEXT_PUBLIC_APP_URL` y el secret `CRON_SECRET` del environment `production`; GitHub puede demorar algunos minutos los schedules).
+  - `vercel.json`: el mismo endpoint una vez por día (el plan Hobby no admite más; en Pro se puede pasar a `*/15 * * * *`). Vercel manda el `CRON_SECRET` solo.
+  - Railway: cron `*/15 * * * *` → `curl -H "Authorization: Bearer $CRON_SECRET" $APP_URL/api/cron/cambio`.
+  - **Perezosa**: cualquier lectura con la cotización más vieja que `cambio.actualizacionMinutos` (15 por defecto, editable) la refresca en segundo plano (`after()`), sin demorar la respuesta; un lease en `ConfiguracionGlobal` (`cambio.lease`) evita que varias instancias consulten a la vez.
+- **Desactualizada**: más de 2 h sin una actualización correcta → ícono de alerta en el widget de la barra y en `/configuracion/cambio`. Si una fuente cambió de formato, el log dice cuál y qué campo faltó (`Formato inesperado de …`).
+- `CAMBIO_SIN_RED=1` (E2E) apaga la actualización perezosa.
 
 ## Rollback
 

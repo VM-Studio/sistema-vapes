@@ -16,6 +16,7 @@ import { LogoPanel } from "./logo-panel";
 import { LogoutButton } from "./logout-button";
 import { MenuUsuario } from "./menu-usuario";
 import { usePanelOpcional, useRutaPanel } from "./panel-context";
+import { WidgetCambio, type CotizacionesBarra } from "./widget-cambio";
 
 function LinkInicioPanel() {
   const panel = usePanelOpcional();
@@ -40,10 +41,13 @@ function LinkInicioPanel() {
 export function TopBar({
   restringido = false,
   conRed = true,
+  cambio,
 }: {
   restringido?: boolean;
   /** Indicador de red (necesita la sincronización offline del panel). */
   conRed?: boolean;
+  /** Cotizaciones del widget (solo si el usuario puede verlas). */
+  cambio?: { cotizaciones: CotizacionesBarra; enlace: boolean } | null;
 }) {
   const panel = usePanelOpcional();
 
@@ -52,6 +56,9 @@ export function TopBar({
       <div className="flex h-14 items-center justify-between gap-3 px-4 md:h-16 md:px-6">
         {panel ? <LinkInicioPanel /> : <span />}
         <div className="flex items-center gap-1 md:gap-2">
+          {!restringido && cambio && (
+            <WidgetCambio cotizaciones={cambio.cotizaciones} enlace={cambio.enlace} />
+          )}
           {!restringido && panel && conRed && <IndicadorRed />}
           {!restringido && (
             <Link

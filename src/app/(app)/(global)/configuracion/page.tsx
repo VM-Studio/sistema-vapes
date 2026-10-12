@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  CircleDollarSign,
   DatabaseBackup,
   FileSpreadsheet,
   History,
@@ -18,7 +19,7 @@ import { SECCIONES_CONFIGURACION } from "./secciones";
 
 export const metadata: Metadata = { title: "Configuración" };
 
-const ICONOS = [Smartphone, LayoutGrid, DatabaseBackup, History, FileSpreadsheet];
+const ICONOS = [Smartphone, LayoutGrid, CircleDollarSign, DatabaseBackup, History, FileSpreadsheet];
 
 export default async function ConfiguracionPage() {
   await requirePaginaOwner();

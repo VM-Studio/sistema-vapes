@@ -1,0 +1,79 @@
+{
+  "binancep2p": {
+    "ask": 1605.98,
+    "totalAsk": 1605.98,
+    "bid": 1599.11,
+    "totalBid": 1599.11,
+    "time": 1791768344
+  },
+  "binance": {
+    "ask": 1610,
+    "totalAsk": 1611.2075,
+    "bid": 1609.9,
+    "totalBid": 1592.6056,
+    "time": 1791768350
+  },
+  "lemoncash": {
+    "ask": 1612.5587,
+    "totalAsk": 1620.6215,
+    "bid": 1547.6167,
+    "totalBid": 1539.8787,
+    "time": 1791768354
+  },
+  "belo": {
+    "ask": 1617,
+    "totalAsk": 1617,
+    "bid": 1597,
+    "totalBid": 1597,
+    "time": 1791768349
+  },
+  "fiwind": {
+    "ask": 1614,
+    "totalAsk": 1614,
+    "bid": 1600,
+    "totalBid": 1600,
+    "time": 1791768353
+  },
+  "letsbit": {
+    "ask": 1613.0743,
+    "totalAsk": 1613.0743,
+    "bid": 1576.9506,
+    "totalBid": 1576.9506,
+    "time": 1791768357
+  },
+  "ripio": {
+    "ask": 1623.74,
+    "totalAsk": 1623.74,
+    "bid": 1586.29,
+    "totalBid": 1578.3585,
+    "time": 1791768305
+  },
+  "bybitp2p": {
+    "ask": 1604.94,
+    "totalAsk": 1604.94,
+    "bid": 1604,
+    "totalBid": 1604,
+    "time": 1791768304
+  },
+  "okexp2p": {
+    "ask": 1604.99,
+    "totalAsk": 1604.99,
+    "bid": 1602,
+    "totalBid": 1602,
+    "time": 1791768348
+  },
+  "huobip2p": {
+    "ask": 0,
+    "totalAsk": 0,
+    "bid": 1122.09,
+    "totalBid": 1122.09,
+    "time": 1791768315
+  },
+  "universalcoins": {
+    "ask": 1670,
+    "totalAsk": 1674.175,
+    "bid": 1590,
+    "totalBid": 1586.025,
+    "time": 1791768302
+  }
+}

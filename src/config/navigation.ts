@@ -243,7 +243,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     enBottomBar: false,
     ordenMobile: 22,
     global: true,
-    descripcion: "Negocio, backups, auditoría",
+    descripcion: "Negocio, cotizaciones, backups, auditoría",
   },
 ];
 
