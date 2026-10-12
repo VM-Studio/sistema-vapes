@@ -3,7 +3,8 @@
  * nombre de tienda, precios por producto), compras por sabor (proveedor y
  * galpón obligatorios, costo sugerido, recibir con último costo y precio del
  * proveedor, anular con devolución), recuento "Contar" (50 → 48), códigos
- * internos, PDF de etiquetas y aislamiento entre paneles.
+ * internos, PDF de etiquetas, aislamiento entre paneles, proveedores en USDT
+ * y costo final (comisión del pasista + gastos extras por unidad).
  * Uso: pnpm test:compras — pensado para una DB recién sembrada (crea datos).
  */
 import { EstadoCompra, Moneda, RolUsuario, TipoMovimiento } from "@prisma/client";
@@ -19,7 +20,10 @@ import { crearProveedorSchema } from "../src/lib/validations/proveedor";
 import { ConflictError, DomainError, NotFoundError } from "../src/server/errors";
 import {
   actualizarCompra,
+  agregarGastosCompra,
   anularCompra,
+  anularGastoCompra,
+  cambiarComisionPasista,
   costoSugerido,
   crearCompra,
   obtenerCompra,
@@ -699,6 +703,142 @@ async function main() {
         data: { valor: overridePrevio.valor ?? {} },
       });
     else await prisma.configuracionGlobal.delete({ where: { clave: CLAVE } });
+  }
+
+  // ---------------------------------------------------------------------------
+  console.log("\n10) Costo final: comisión del pasista + gastos extras prorrateados por unidad");
+  {
+    const cf = await crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: prov.id,
+        depositoId: g1.id,
+        comisionPasistaPorcentaje: "10",
+        items: [{ varianteId: limon.id, cantidad: 100, costoUnitario: "10000" }],
+      }),
+    );
+    let c = await obtenerCompra(actor, cf.id);
+    check(
+      c.comisionPasistaMonto === "100000.00" && c.costoFinalTotal === "1100000.00",
+      `100 u. × $10.000 con 10% → comisión ${c.comisionPasistaMonto}, costo final ${c.costoFinalTotal}`,
+    );
+    await recibirCompra(actor, cf.id, { actualizarPrecioProveedor: false });
+    const limonRecibido = await db.variante.findUniqueOrThrow({ where: { id: limon.id } });
+    check(
+      limonRecibido.ultimoCosto?.toFixed(2) === "11000.00",
+      `recibir pasa el costo FINAL a ultimoCosto: ${limonRecibido.ultimoCosto?.toFixed(2)}`,
+    );
+    await agregarGastosCompra(actor, cf.id, [
+      { motivo: "Valija", monto: 50_000 },
+      { motivo: "Envío", monto: 30_000 },
+    ]);
+    c = await obtenerCompra(actor, cf.id);
+    check(
+      c.gastosExtrasTotal === "80000.00" &&
+        c.costoFinalTotal === "1180000.00" &&
+        c.costoUnitarioFinalPromedio === "11800.00" &&
+        c.items[0]?.costoUnitarioFinal === "11800.00",
+      `gastos Valija 50.000 + Envío 30.000 → total ${c.costoFinalTotal}, por unidad ${c.costoUnitarioFinalPromedio}`,
+    );
+    const limonFinal = await db.variante.findUniqueOrThrow({ where: { id: limon.id } });
+    check(
+      limonFinal.ultimoCosto?.toFixed(2) === "11800.00",
+      `compra recibida → ultimoCosto actualizado a ${limonFinal.ultimoCosto?.toFixed(2)}`,
+    );
+    const historial = await db.costoVarianteHistorial.findMany({
+      where: { varianteId: limon.id, compraId: cf.id },
+      orderBy: { createdAt: "asc" },
+    });
+    check(
+      historial.length === 2 &&
+        historial[0]?.origen === "COMPRA_RECIBIDA" &&
+        historial[1]?.origen === "COSTOS_FINALES_COMPRA" &&
+        historial[1]?.costoAnterior?.toFixed(2) === "11000.00" &&
+        historial[1]?.costoNuevo.toFixed(2) === "11800.00",
+      `historial de costos: ${historial.map((h) => `${h.origen} ${h.costoAnterior?.toFixed(0)}→${h.costoNuevo.toFixed(0)}`).join(" · ")}`,
+    );
+
+    // Una compra posterior del mismo sabor manda: cambiar la vieja no toca ultimoCosto.
+    const cNueva = await crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: prov.id,
+        depositoId: g1.id,
+        items: [{ varianteId: limon.id, cantidad: 1, costoUnitario: "9000" }],
+      }),
+    );
+    await recibirCompra(actor, cNueva.id, { actualizarPrecioProveedor: false });
+    await cambiarComisionPasista(actor, cf.id, 5);
+    c = await obtenerCompra(actor, cf.id);
+    const limonDespues = await db.variante.findUniqueOrThrow({ where: { id: limon.id } });
+    check(
+      c.comisionPasistaMonto === "50000.00" &&
+        c.costoFinalTotal === "1130000.00" &&
+        limonDespues.ultimoCosto?.toFixed(2) === "9000.00",
+      `bajar la comisión a 5% de la compra vieja: costo final ${c.costoFinalTotal}, ultimoCosto sigue ${limonDespues.ultimoCosto?.toFixed(2)} (manda la compra nueva)`,
+    );
+    await cambiarComisionPasista(actor, cf.id, null);
+    c = await obtenerCompra(actor, cf.id);
+    check(
+      c.comisionPasistaPorcentaje === null &&
+        c.comisionPasistaMonto === "0.00" &&
+        c.costoFinalTotal === "1080000.00",
+      `destildar la comisión → ${c.costoFinalTotal}`,
+    );
+
+    const gasto = c.gastos.find((g) => g.motivo === "Envío")!;
+    await anularGastoCompra(actor, gasto.id, "Se cargó de más");
+    c = await obtenerCompra(actor, cf.id);
+    check(
+      c.gastosExtrasTotal === "50000.00" && c.costoFinalTotal === "1050000.00",
+      `anular el gasto de envío → gastos ${c.gastosExtrasTotal}, costo final ${c.costoFinalTotal}`,
+    );
+    check(
+      (await error(() => anularGastoCompra(actor, gasto.id, "otra vez"))) instanceof DomainError,
+      "un gasto anulado no se vuelve a anular",
+    );
+    const mensajeDb = async (fn: () => Promise<unknown>) => {
+      const e = await error(fn);
+      return e instanceof Error ? e.message : "";
+    };
+    check(
+      /no se borran/.test(
+        await mensajeDb(
+          () => prisma.$executeRaw`DELETE FROM "GastoCompra" WHERE "id" = ${gasto.id}`,
+        ),
+      ) &&
+        /no se modifican/.test(
+          await mensajeDb(
+            () => prisma.$executeRaw`UPDATE "GastoCompra" SET "monto" = 1 WHERE "id" = ${gasto.id}`,
+          ),
+        ),
+      "la DB no deja borrar ni editar un gasto (solo anular)",
+    );
+    check(
+      /no se pueden modificar/.test(
+        await mensajeDb(
+          () =>
+            prisma.$executeRaw`UPDATE "CompraItem" SET "cantidad" = 1 WHERE "compraId" = ${cf.id}`,
+        ),
+      ),
+      "los ítems de la compra recibida siguen congelados (salvo el costo final)",
+    );
+    check(
+      /check|violates|coincide/i.test(
+        await mensajeDb(
+          () =>
+            prisma.$executeRaw`UPDATE "Compra" SET "gastosExtrasTotal" = 1, "costoFinalTotal" = "total" + 1 WHERE "id" = ${cf.id}`,
+        ),
+      ),
+      "la DB verifica que los gastos de la compra sean la suma de sus gastos vigentes",
+    );
+    await anularCompra(actor, cNueva.id, "Prueba de costos finales");
+    check(
+      (await error(() =>
+        agregarGastosCompra(actor, cNueva.id, [{ motivo: "Flete", monto: 1 }]),
+      )) instanceof DomainError,
+      "una compra anulada no acepta gastos",
+    );
   }
 
   console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);

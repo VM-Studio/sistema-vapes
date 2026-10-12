@@ -377,7 +377,7 @@ export async function SeccionComprasVentas({
   const filas: { label: string; c: Comparado<string> }[] = [
     { label: "Ventas", c: c.ventas },
     { label: "Costo de lo vendido", c: c.costoVendido },
-    { label: `Compras recibidas (${c.cantidadCompras.actual})`, c: c.compras },
+    { label: `Compras recibidas, costo final (${c.cantidadCompras.actual})`, c: c.compras },
   ];
   // Proporción de lo vendido: cuánto fue costo y cuánto ganancia bruta (escala fija: 1.ª y 2.ª categoría).
   const ventas = Number(c.ventas.actual);

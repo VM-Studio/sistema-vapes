@@ -9,6 +9,7 @@ import { AltaRapidaSheet } from "@/components/catalogo/alta-rapida-sheet";
 import { SelectorGalpon } from "@/components/catalogo/selector-galpon";
 import { BuscadorRemoto } from "@/components/compras/buscador-remoto";
 import { DialogoRecibir } from "@/components/compras/dialogo-recibir";
+import { CheckComisionPasista } from "@/components/compras/comision-pasista";
 import { ProveedorForm, soloDecimal } from "@/components/compras/proveedor-form";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
@@ -30,6 +31,7 @@ import { invalidarResoluciones, resolverCodigo } from "@/features/scanner/resolv
 import { ScanInput } from "@/features/scanner/ScanInput";
 import { useBarcodeScanner } from "@/features/scanner/useBarcodeScanner";
 import { useScanFeedback } from "@/features/scanner/useScanFeedback";
+import { calcularCostosFinales } from "@/lib/costos-compra";
 import { hoyAR } from "@/lib/fechas";
 import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -72,6 +74,10 @@ export interface CompraInicial {
   depositoId: string;
   fecha: string;
   notas: string;
+  /** null = sin comisión del pasista. */
+  comisionPasistaPorcentaje: string | null;
+  /** Montos de los gastos extras vigentes (solo al editar un borrador que ya tiene). */
+  gastos: string[];
   items: ItemCompraForm[];
 }
 
@@ -95,10 +101,13 @@ export function CompraForm({
   inicial,
   proveedores: proveedoresIniciales,
   depositos,
+  comisionDefault,
 }: {
   inicial: CompraInicial;
   proveedores: ProveedorOpcion[];
   depositos: { id: string; nombre: string; esPrincipal: boolean }[];
+  /** % del pasista que propone el tick (configuración del panel). */
+  comisionDefault: number;
 }) {
   const router = useRouter();
   const ruta = useRutaPanel();
@@ -120,6 +129,14 @@ export function CompraForm({
   const [fecha, setFecha] = useState(inicial.fecha);
   const [notas, setNotas] = useState(inicial.notas);
   const [items, setItems] = useState<ItemCompraForm[]>(inicial.items);
+  const [comisionActiva, setComisionActiva] = useState(inicial.comisionPasistaPorcentaje !== null);
+  const [comisionPct, setComisionPct] = useState(
+    String(
+      inicial.comisionPasistaPorcentaje !== null
+        ? Number(inicial.comisionPasistaPorcentaje)
+        : comisionDefault,
+    ).replace(".", ","),
+  );
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [enviando, setEnviando] = useState<"borrador" | "recibir" | null>(null);
   const [nuevoProveedor, setNuevoProveedor] = useState(false);
@@ -240,8 +257,13 @@ export function CompraForm({
     enabled: paso === 3 && desconocido === null && recibir === null && !nuevoProveedor,
   });
 
-  const total = items.reduce((a, i) => a + num(i.cantidad) * num(i.costo), 0);
   const unidades = items.reduce((a, i) => a + num(i.cantidad), 0);
+  // Resumen en vivo; el servidor recalcula y guarda los números definitivos.
+  const costos = calcularCostosFinales({
+    items: items.map((i) => ({ cantidad: num(i.cantidad), costoUnitario: i.costo })),
+    comisionPorcentaje: comisionActiva ? comisionPct : null,
+    gastos: inicial.gastos,
+  });
   const actualizar = (id: string, cambios: Partial<ItemCompraForm>) =>
     setItems((its) => its.map((i) => (i.varianteId === id ? { ...i, ...cambios } : i)));
 
@@ -255,6 +277,7 @@ export function CompraForm({
         depositoId,
         fecha,
         notas,
+        comisionPasistaPorcentaje: comisionActiva ? comisionPct : null,
         items: items.map((i) => ({
           varianteId: i.varianteId,
           cantidad: i.cantidad,
@@ -709,7 +732,7 @@ export function CompraForm({
         {errores.items && <p className="text-danger text-small">{errores.items}</p>}
 
         <Card>
-          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_14rem]">
+          <CardContent>
             <Textarea
               label="Notas"
               rows={2}
@@ -717,20 +740,65 @@ export function CompraForm({
               onChange={(e) => setNotas(e.target.value)}
               placeholder="N.º de remito o factura, observaciones…"
             />
-            <div className="flex flex-col justify-end gap-1">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-h3 font-semibold">Total</span>
-                <span
-                  className="text-h2 font-semibold tabular-nums"
-                  aria-label="Total de la compra"
-                >
-                  {formatearPesos(total)}
-                </span>
-              </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="flex flex-col gap-3">
+              <h2 className="text-h3 font-semibold">Costos finales</h2>
+              <CheckComisionPasista
+                activa={comisionActiva}
+                porcentaje={comisionPct}
+                onActiva={setComisionActiva}
+                onPorcentaje={setComisionPct}
+                error={errores.comisionPasistaPorcentaje}
+              />
               <p className="text-muted text-small">
-                {formatearNumero(unidades)} unidades · el total final lo calcula el sistema
+                La comisión y los gastos extras (valija, envío…) se reparten por unidad: el costo
+                final es el que toman las ventas para calcular la ganancia. Los gastos se cargan
+                desde el listado de compras.
               </p>
             </div>
+            <dl
+              className="flex flex-col justify-end gap-1.5 text-sm"
+              aria-label="Resumen de costos"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-muted">Subtotal</dt>
+                <dd className="tabular-nums">{formatearPesos(costos.subtotal)}</dd>
+              </div>
+              {costos.comisionPorcentaje !== null && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-muted">
+                    Comisión pasista ({formatearNumero(costos.comisionPorcentaje)}%)
+                  </dt>
+                  <dd className="tabular-nums" aria-label="Comisión del pasista">
+                    {formatearPesos(costos.comision)}
+                  </dd>
+                </div>
+              )}
+              {costos.gastos > 0 && (
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-muted">Gastos extras</dt>
+                  <dd className="tabular-nums">{formatearPesos(costos.gastos)}</dd>
+                </div>
+              )}
+              <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
+                <dt className="text-h3 font-semibold">Total</dt>
+                <dd className="text-h2 font-semibold tabular-nums" aria-label="Total de la compra">
+                  {formatearPesos(costos.costoFinalTotal)}
+                </dd>
+              </div>
+              <p className="flex items-baseline justify-between gap-3">
+                <span className="text-muted">
+                  Costo final por unidad ({formatearNumero(unidades)} u.)
+                </span>
+                <strong className="tabular-nums" aria-label="Costo final por unidad">
+                  {formatearPesos(costos.costoUnitarioFinalPromedio)}
+                </strong>
+              </p>
+            </dl>
           </CardContent>
         </Card>
 

@@ -362,6 +362,12 @@ export interface CompraPorProveedor {
    * cotización USDT.
    */
   totalUSDT: string | null;
+  /** Comisión del pasista + gastos extras + costo final (total + ambos). */
+  comision: string;
+  gastos: string;
+  costoFinalTotal: string;
+  /** costoFinalTotal ÷ unidades (a centavos); null sin unidades. */
+  costoFinalUnidad: string | null;
   ultima: Date | null;
 }
 
@@ -375,6 +381,9 @@ const filaCompraProvSchema = z.array(
     total: monto,
     usdt_snapshot: monto,
     sin_snapshot: monto,
+    comision: monto,
+    gastos: monto,
+    costo_final: monto,
     ultima: z.date().nullable(),
   }),
 );
@@ -404,6 +413,9 @@ export async function comprasPorProveedor(
            COALESCE(SUM(c."total"), 0) AS total,
            COALESCE(SUM(c."total" / c."tipoCambioUSDT") FILTER (WHERE c."tipoCambioUSDT" IS NOT NULL), 0) AS usdt_snapshot,
            COALESCE(SUM(c."total") FILTER (WHERE c."tipoCambioUSDT" IS NULL), 0) AS sin_snapshot,
+           COALESCE(SUM(c."comisionPasistaMonto"), 0) AS comision,
+           COALESCE(SUM(c."gastosExtrasTotal"), 0) AS gastos,
+           COALESCE(SUM(c."costoFinalTotal"), 0) AS costo_final,
            MAX(c."fecha") AS ultima
     FROM "Compra" c
     LEFT JOIN "Proveedor" pr ON pr."id" = c."proveedorId"
@@ -420,6 +432,13 @@ export async function comprasPorProveedor(
     unidades: x.unidades,
     total: x.total,
     totalUSDT: totalEnUsdt(x.usdt_snapshot, x.sin_snapshot, cotizacion),
+    comision: x.comision,
+    gastos: x.gastos,
+    costoFinalTotal: x.costo_final,
+    costoFinalUnidad:
+      x.unidades > 0
+        ? new Prisma.Decimal(x.costo_final).div(x.unidades).toDecimalPlaces(2).toFixed(2)
+        : null,
     ultima: x.ultima,
   }));
 }

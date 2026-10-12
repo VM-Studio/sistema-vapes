@@ -6,6 +6,7 @@ import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { obtenerCompra } from "@/server/services/compra.service";
+import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { listarProveedoresActivos } from "@/server/services/proveedor.service";
 
@@ -30,13 +31,17 @@ export default async function EditarCompraPage({ params }: { params: Promise<{ i
     listarDepositosActivos(ctx),
     listarProveedoresActivos(ctx),
   ]);
+  const configCompras = await obtenerConfigCompras(ctx);
 
   return (
     <CompraForm
       proveedores={proveedores}
       depositos={depositos}
+      comisionDefault={configCompras.comisionPasistaPorcentajeDefault}
       inicial={{
         id: c.id,
+        comisionPasistaPorcentaje: c.comisionPasistaPorcentaje,
+        gastos: c.gastos.filter((g) => !g.anulado).map((g) => g.monto),
         idVisible: formatearIdCompra(ctx.panel.slug, c.numero),
         // Si el proveedor o el galpón se desactivaron, hay que elegir otro.
         proveedorId: proveedores.some((p) => p.id === c.proveedorId) ? (c.proveedorId ?? "") : "",

@@ -25,6 +25,7 @@ import {
 } from "@/server/services/categoria.service";
 import {
   guardarConfigCatalogo,
+  guardarConfigCompras,
   guardarConfigEscaner,
   guardarConfigVentas,
 } from "@/server/services/configuracion.service";
@@ -123,6 +124,14 @@ export const guardarConfigVentasAction = actionHandler(async (input: unknown) =>
 export const guardarConfigCatalogoAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtxOwner();
   const r = await guardarConfigCatalogo(ctx, configCatalogoSchema.parse(input));
+  revalidar();
+  return r;
+});
+
+// --- Compras: comisión del pasista por defecto ---
+export const guardarConfigComprasAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtxOwner();
+  const r = await guardarConfigCompras(ctx, input);
   revalidar();
   return r;
 });

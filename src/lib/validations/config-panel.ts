@@ -1,9 +1,11 @@
 import { z } from "zod";
 
+import { COMISION_PASISTA_DEFAULT } from "@/lib/costos-compra";
+
 /**
  * Configuración POR PANEL (tabla Configuracion). Claves: "escaner" (ver
  * features/scanner/config), "ventas" (ver validations/venta: configVentasSchema),
- * "alertaStockMinimo" y "prefijoSku" (acá). Lo global (nombre del negocio,
+ * "alertaStockMinimo", "prefijoSku" y "compras" (acá). Lo global (nombre del negocio,
  * ícono, zona horaria) está en ConfiguracionGlobal.
  */
 
@@ -19,3 +21,15 @@ export const configCatalogoSchema = z.object({
 });
 
 export type ConfigCatalogo = z.output<typeof configCatalogoSchema>;
+
+/** Clave "compras": % de comisión del pasista que propone cada compra nueva. */
+export const configComprasSchema = z.object({
+  comisionPasistaPorcentajeDefault: z.coerce
+    .number({ error: "Ingresá un porcentaje" })
+    .gt(0, "Tiene que ser mayor a 0")
+    .max(100, "Como máximo 100%")
+    .multipleOf(0.01, "Hasta 2 decimales")
+    .default(COMISION_PASISTA_DEFAULT),
+});
+
+export type ConfigCompras = z.output<typeof configComprasSchema>;

@@ -437,6 +437,12 @@ export function streamExportarTodo(meta: {
         { header: "Depósito", key: "d", width: 14 },
         { header: "Total", key: "t", width: 13, numFmt: MONEDA },
         { header: "Cotización USDT", key: "tc", width: 14, numFmt: MONEDA },
+        { header: "Comisión pasista %", key: "cp", width: 12, numFmt: "0.00" },
+        { header: "Comisión pasista", key: "cm", width: 13, numFmt: MONEDA },
+        { header: "Gastos extras", key: "g", width: 13, numFmt: MONEDA },
+        { header: "Costo final", key: "cf", width: 13, numFmt: MONEDA },
+        { header: "Unidades", key: "u", width: 9 },
+        { header: "Costo final / u.", key: "cfu", width: 13, numFmt: MONEDA },
       ],
       (c) => prisma.compra.findMany({ ...pag(c), include: { proveedor: true, deposito: true } }),
       (x) => ({
@@ -448,6 +454,12 @@ export function streamExportarTodo(meta: {
         d: x.deposito.nombre,
         t: num(x.total),
         tc: x.tipoCambioUSDT ? num(x.tipoCambioUSDT) : null,
+        cp: x.comisionPasistaPorcentaje ? num(x.comisionPasistaPorcentaje) : null,
+        cm: num(x.comisionPasistaMonto),
+        g: num(x.gastosExtrasTotal),
+        cf: num(x.costoFinalTotal),
+        u: x.unidadesTotal,
+        cfu: num(x.costoUnitarioFinalPromedio),
       }),
     );
 
@@ -463,6 +475,7 @@ export function streamExportarTodo(meta: {
         { header: "Costo unitario", key: "co", width: 12, numFmt: MONEDA },
         { header: "Costo USDT", key: "cu", width: 11, numFmt: "#,##0.00" },
         { header: "Subtotal", key: "s", width: 12, numFmt: MONEDA },
+        { header: "Costo final unitario", key: "cf", width: 13, numFmt: MONEDA },
       ],
       (c) =>
         prisma.compraItem.findMany({
@@ -481,6 +494,7 @@ export function streamExportarTodo(meta: {
         co: num(i.costoUnitario),
         cu: i.costoUnitarioUSDT ? num(i.costoUnitarioUSDT) : null,
         s: num(i.subtotal),
+        cf: num(i.costoUnitarioFinal),
       }),
     );
 

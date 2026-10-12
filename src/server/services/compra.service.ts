@@ -1,5 +1,13 @@
-import { AccionAuditoria, EstadoCompra, Moneda, Prisma, TipoMovimiento } from "@prisma/client";
+import {
+  AccionAuditoria,
+  EstadoCompra,
+  Moneda,
+  OrigenCostoVariante,
+  Prisma,
+  TipoMovimiento,
+} from "@prisma/client";
 
+import { calcularCostosFinales, type CostosFinales } from "@/lib/costos-compra";
 import { finDelDia, hoyAR, inicioDelDia } from "@/lib/fechas";
 import { formatearIdCompra } from "@/lib/paneles";
 import type { Compra, FiltrosCompras } from "@/lib/validations/compra";
@@ -8,6 +16,7 @@ import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { obtenerCotizacion } from "@/server/services/cambio.service";
+import { actualizarUltimoCosto } from "@/server/services/costo-variante.service";
 import { asignarProducto } from "@/server/services/proveedor.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
@@ -35,7 +44,16 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  *   crearla y conservado al editar el borrador) y, para los productos que el
  *   proveedor cotiza en USDT, el costo en USDT (CompraItem.costoUnitarioUSDT =
  *   costo en pesos ÷ snapshot) para trazabilidad. Todo se calcula acá.
- * - Una compra recibida no se edita (lo garantiza la DB): se anula.
+ * - COSTO FINAL (Bloque 6): comisión del pasista (% sobre el total, tick en la
+ *   compra) + gastos extras (GastoCompra: valija, envío…) se prorratean POR
+ *   UNIDAD (calcularCostosFinales en src/lib/costos-compra.ts, ahí está el
+ *   porqué) → CompraItem.costoUnitarioFinal. `recalcularCostosFinales` corre
+ *   al crear/editar, al cambiar el tick y al agregar/anular gastos; en una
+ *   compra RECIBIDA además pasa el costo final a `Variante.ultimoCosto` de los
+ *   sabores cuya última compra recibida es esta (historial en
+ *   CostoVarianteHistorial). Recibir usa el costo final, no el base.
+ * - Una compra recibida no se edita (lo garantiza la DB): se anula. Lo único
+ *   que cambia después es la comisión, los gastos y lo que se calcula de ellos.
  * - Costos y totales: solo dueños o `ver` en COMPRAS (el módulo entero ya lo exige).
  */
 
@@ -61,6 +79,8 @@ export interface TotalesCompra {
   subtotal: Prisma.Decimal;
   total: Prisma.Decimal;
 }
+
+export { calcularCostosFinales };
 
 /** subtotal ítem = cantidad × costo · total = Σ ítems. */
 export function calcularTotalesCompra(datos: Pick<Compra, "items">): TotalesCompra {
@@ -129,13 +149,44 @@ function snapshot(datos: Compra, t: TotalesCompra): Prisma.InputJsonObject {
  * createdAt escalonado (1 ms por ítem): conserva el orden de carga, que
  * define qué costo gana como precio del proveedor (el del último ítem).
  */
-function itemsParaCrear(t: TotalesCompra, productoDe: Map<string, string>) {
+function itemsParaCrear(t: TotalesCompra, productoDe: Map<string, string>, costos: CostosFinales) {
   const base = Date.now();
   return t.items.map((i, n) => ({
     ...i,
     productoId: productoDe.get(i.varianteId)!,
+    costoUnitarioFinal: decimal(costos.items[n]!.costoUnitarioFinal),
     createdAt: new Date(base + n),
   }));
+}
+
+const decimal = (n: number) => new Prisma.Decimal(n.toFixed(2));
+
+/** Costos finales de los ítems ya calculados (`t`), con el % y los gastos vigentes. */
+function costosDe(
+  t: TotalesCompra,
+  comisionPorcentaje: number | Prisma.Decimal | null,
+  gastos: Prisma.Decimal[],
+): CostosFinales {
+  return calcularCostosFinales({
+    items: t.items.map((i) => ({
+      cantidad: i.cantidad,
+      costoUnitario: i.costoUnitario.toFixed(2),
+    })),
+    comisionPorcentaje: comisionPorcentaje === null ? null : Number(comisionPorcentaje),
+    gastos: gastos.map((g) => g.toFixed(2)),
+  });
+}
+
+/** Columnas de costo final de la compra (todas calculadas acá). */
+function columnasCostos(c: CostosFinales) {
+  return {
+    comisionPasistaPorcentaje: c.comisionPorcentaje === null ? null : decimal(c.comisionPorcentaje),
+    comisionPasistaMonto: decimal(c.comision),
+    gastosExtrasTotal: decimal(c.gastos),
+    costoFinalTotal: decimal(c.costoFinalTotal),
+    unidadesTotal: c.unidades,
+    costoUnitarioFinalPromedio: decimal(c.costoUnitarioFinalPromedio),
+  };
 }
 
 /** Pesos por USDT con 2 decimales, o null sin cotización. */
@@ -192,6 +243,7 @@ export async function crearCompra(
     const productoDe = await validarReferencias(tx, datos);
     const t = calcularTotalesCompra(datos);
     const usdt = await snapshotUsdt(tx, datos.proveedorId, t.items, productoDe, null);
+    const costos = costosDe(t, datos.comisionPasistaPorcentaje, []);
     const numero = await siguienteNumero(tx, ctx.panelId, "COMPRA");
     const compra = await tx.compra.create({
       data: {
@@ -205,8 +257,9 @@ export async function crearCompra(
         total: t.total,
         notas: datos.notas ?? null,
         tipoCambioUSDT: usdt.tipoCambio,
+        ...columnasCostos(costos),
         usuarioId: ctx.usuarioId,
-        items: { create: conUsdt(itemsParaCrear(t, productoDe), usdt.usdtDe) },
+        items: { create: conUsdt(itemsParaCrear(t, productoDe, costos), usdt.usdtDe) },
       },
     });
     await registrarAuditoria(tx, {
@@ -214,7 +267,11 @@ export async function crearCompra(
       accion: AccionAuditoria.CREATE,
       entidad: "Compra",
       entidadId: compra.id,
-      datosDespues: { numero: compra.numero, ...snapshot(datos, t) },
+      datosDespues: {
+        numero: compra.numero,
+        ...snapshot(datos, t),
+        comisionPasistaPorcentaje: datos.comisionPasistaPorcentaje,
+      },
       meta: ctx.meta,
     });
     return { id: compra.id, numero: compra.numero };
@@ -229,7 +286,10 @@ export async function actualizarCompra(
 ): Promise<{ id: string; numero: number }> {
   return transaccion(ctx, async (tx) => {
     await bloquearCompra(tx, ctx, id);
-    const antes = await tx.compra.findUnique({ where: { id }, include: { items: true } });
+    const antes = await tx.compra.findUnique({
+      where: { id },
+      include: { items: true, gastos: { where: { anulado: false }, select: { monto: true } } },
+    });
     if (!antes) throw new NotFoundError("La compra no existe");
     if (antes.estado !== EstadoCompra.BORRADOR) {
       const idVisible = formatearIdCompra(await slugDelPanel(tx, ctx.panelId), antes.numero);
@@ -247,6 +307,11 @@ export async function actualizarCompra(
       productoDe,
       antes.proveedorId === datos.proveedorId ? antes.tipoCambioUSDT : null,
     );
+    const costos = costosDe(
+      t,
+      datos.comisionPasistaPorcentaje,
+      antes.gastos.map((g) => g.monto),
+    );
     await tx.compraItem.deleteMany({ where: { compraId: id } });
     await tx.compra.update({
       where: { id },
@@ -260,7 +325,8 @@ export async function actualizarCompra(
         total: t.total,
         notas: datos.notas ?? null,
         tipoCambioUSDT: usdt.tipoCambio,
-        items: { create: conUsdt(itemsParaCrear(t, productoDe), usdt.usdtDe) },
+        ...columnasCostos(costos),
+        items: { create: conUsdt(itemsParaCrear(t, productoDe, costos), usdt.usdtDe) },
       },
     });
     await registrarAuditoria(tx, {
@@ -270,13 +336,19 @@ export async function actualizarCompra(
       entidadId: id,
       datosAntes: {
         total: dec(antes.total),
+        comisionPasistaPorcentaje: antes.comisionPasistaPorcentaje
+          ? dec(antes.comisionPasistaPorcentaje)
+          : null,
         items: antes.items.map((i) => ({
           varianteId: i.varianteId,
           cantidad: i.cantidad,
           costoUnitario: dec(i.costoUnitario),
         })),
       },
-      datosDespues: snapshot(datos, t),
+      datosDespues: {
+        ...snapshot(datos, t),
+        comisionPasistaPorcentaje: datos.comisionPasistaPorcentaje,
+      },
       meta: ctx.meta,
     });
     return { id, numero: antes.numero };
@@ -492,9 +564,23 @@ export async function recibirCompra(
           referenciaId: compra.id,
           usuarioId: ctx.usuarioId,
         });
-        await tx.variante.update({
-          where: { id: item.varianteId },
-          data: { ultimoCosto: item.costoUnitario },
+      }
+      // Costo final (con comisión y gastos prorrateados): el de las próximas ventas.
+      const anteriores = await tx.variante.findMany({
+        where: { id: { in: compra.items.map((i) => i.varianteId) } },
+        select: { id: true, ultimoCosto: true },
+      });
+      const anteriorDe = new Map(anteriores.map((v) => [v.id, v.ultimoCosto]));
+      for (const item of [...compra.items].sort((a, b) =>
+        a.varianteId.localeCompare(b.varianteId),
+      )) {
+        await actualizarUltimoCosto(tx, {
+          varianteId: item.varianteId,
+          anterior: anteriorDe.get(item.varianteId) ?? null,
+          nuevo: item.costoUnitarioFinal,
+          origen: OrigenCostoVariante.COMPRA_RECIBIDA,
+          compraId: compra.id,
+          usuarioId: ctx.usuarioId,
         });
       }
 
@@ -636,6 +722,313 @@ export async function anularCompra(
   );
 }
 
+// =============================================================================
+// Costos finales: comisión del pasista y gastos extras
+// =============================================================================
+
+/**
+ * Recalcula y guarda los costos finales de la compra (columnas de Compra y
+ * CompraItem.costoUnitarioFinal) con su comisión y sus gastos vigentes. Si
+ * está RECIBIDA, el costo final pasa a `ultimoCosto` de los sabores cuya
+ * última compra recibida es esta (si después entró otra compra de ese sabor,
+ * manda la otra). Las ventas ya hechas conservan su snapshot de costo.
+ * Se llama dentro de la transacción del cambio, con la compra bloqueada.
+ */
+export async function recalcularCostosFinales(
+  tx: Tx,
+  ctx: Ctx,
+  compraId: string,
+  /** Nuevo % del pasista (null = sin comisión); sin pasar, el que ya tiene. */
+  opciones: { comisionPorcentaje?: number | null } = {},
+): Promise<CostosFinales> {
+  const compra = await tx.compra.findUnique({
+    where: { id: compraId },
+    select: {
+      id: true,
+      estado: true,
+      descuento: true,
+      comisionPasistaPorcentaje: true,
+      items: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          varianteId: true,
+          cantidad: true,
+          costoUnitario: true,
+          costoUnitarioFinal: true,
+        },
+      },
+      gastos: { where: { anulado: false }, select: { monto: true } },
+    },
+  });
+  if (!compra) throw new NotFoundError("La compra no existe");
+  const costos = calcularCostosFinales({
+    items: compra.items.map((i) => ({
+      cantidad: i.cantidad,
+      costoUnitario: i.costoUnitario.toFixed(2),
+    })),
+    descuento: compra.descuento.toFixed(2),
+    comisionPorcentaje:
+      opciones.comisionPorcentaje !== undefined
+        ? opciones.comisionPorcentaje
+        : (compra.comisionPasistaPorcentaje?.toFixed(2) ?? null),
+    gastos: compra.gastos.map((g) => g.monto.toFixed(2)),
+  });
+  await tx.compra.update({ where: { id: compraId }, data: columnasCostos(costos) });
+  const finalDe = new Map<string, Prisma.Decimal>();
+  for (const [n, item] of compra.items.entries()) {
+    const final = decimal(costos.items[n]!.costoUnitarioFinal);
+    finalDe.set(item.varianteId, final);
+    if (!item.costoUnitarioFinal.equals(final))
+      await tx.compraItem.update({ where: { id: item.id }, data: { costoUnitarioFinal: final } });
+  }
+
+  if (compra.estado === EstadoCompra.RECIBIDA && compra.items.length > 0) {
+    const ultimas = await tx.$queryRaw<{ varianteId: string; compraId: string }[]>`
+      SELECT DISTINCT ON (m."varianteId") m."varianteId" AS "varianteId", m."referenciaId" AS "compraId"
+      FROM "MovimientoStock" m
+      JOIN "Compra" c ON c."id" = m."referenciaId" AND c."estado" = 'RECIBIDA'
+      WHERE m."panelId" = ${ctx.panelId} AND c."panelId" = ${ctx.panelId}
+        AND m."tipo" = 'INGRESO_COMPRA' AND m."referenciaTipo" = 'COMPRA'
+        AND m."varianteId" IN (${Prisma.join([...finalDe.keys()])})
+      ORDER BY m."varianteId", m."createdAt" DESC, m."id" DESC`;
+    const propias = ultimas.filter((u) => u.compraId === compraId).map((u) => u.varianteId);
+    if (propias.length > 0) {
+      const variantes = await tx.variante.findMany({
+        where: { id: { in: propias } },
+        select: { id: true, ultimoCosto: true },
+        orderBy: { id: "asc" },
+      });
+      for (const v of variantes) {
+        await actualizarUltimoCosto(tx, {
+          varianteId: v.id,
+          anterior: v.ultimoCosto,
+          nuevo: finalDe.get(v.id)!,
+          origen: OrigenCostoVariante.COSTOS_FINALES_COMPRA,
+          compraId,
+          usuarioId: ctx.usuarioId,
+        });
+      }
+    }
+  }
+  return costos;
+}
+
+async function compraParaCostos(tx: Tx, ctx: Ctx, id: string) {
+  await bloquearCompra(tx, ctx, id);
+  const compra = await tx.compra.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      numero: true,
+      estado: true,
+      comisionPasistaPorcentaje: true,
+      comisionPasistaMonto: true,
+      gastosExtrasTotal: true,
+      costoFinalTotal: true,
+    },
+  });
+  if (!compra) throw new NotFoundError("La compra no existe");
+  const idVisible = formatearIdCompra(await slugDelPanel(tx, ctx.panelId), compra.numero);
+  if (compra.estado === EstadoCompra.ANULADA)
+    throw new DomainError(`La compra ${idVisible} está anulada: sus costos no cambian.`);
+  return { ...compra, idVisible };
+}
+
+const resumenCostos = (c: {
+  comisionPasistaPorcentaje: Prisma.Decimal | null;
+  comisionPasistaMonto: Prisma.Decimal;
+  gastosExtrasTotal: Prisma.Decimal;
+  costoFinalTotal: Prisma.Decimal;
+}) => ({
+  comisionPasistaPorcentaje: c.comisionPasistaPorcentaje ? dec(c.comisionPasistaPorcentaje) : null,
+  comisionPasistaMonto: dec(c.comisionPasistaMonto),
+  gastosExtrasTotal: dec(c.gastosExtrasTotal),
+  costoFinalTotal: dec(c.costoFinalTotal),
+});
+
+/** Tilda/destilda (o cambia el %) de la comisión del pasista de una compra borrador o recibida. */
+export async function cambiarComisionPasista(
+  ctx: Ctx,
+  compraId: string,
+  porcentaje: number | null,
+): Promise<{ idVisible: string; costos: CostosFinales }> {
+  return transaccion(ctx, async (tx) => {
+    const antes = await compraParaCostos(tx, ctx, compraId);
+    const costos = await recalcularCostosFinales(tx, ctx, compraId, {
+      comisionPorcentaje: porcentaje,
+    });
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.UPDATE,
+      entidad: "Compra",
+      entidadId: compraId,
+      datosAntes: resumenCostos(antes),
+      datosDespues: {
+        comisionPasistaPorcentaje: porcentaje === null ? null : porcentaje.toFixed(2),
+        comisionPasistaMonto: costos.comision.toFixed(2),
+        costoFinalTotal: costos.costoFinalTotal.toFixed(2),
+      },
+      meta: ctx.meta,
+    });
+    return { idVisible: antes.idVisible, costos };
+  });
+}
+
+/** Suma gastos extras (valija, envío…) a una compra borrador o recibida y recalcula. */
+export async function agregarGastosCompra(
+  ctx: Ctx,
+  compraId: string,
+  gastos: { motivo: string; monto: number }[],
+): Promise<{ idVisible: string; costos: CostosFinales }> {
+  if (gastos.length === 0) throw new DomainError("Cargá al menos un gasto");
+  return transaccion(ctx, async (tx) => {
+    const antes = await compraParaCostos(tx, ctx, compraId);
+    const ahora = new Date();
+    for (const g of gastos) {
+      await tx.gastoCompra.create({
+        data: {
+          compraId,
+          motivo: g.motivo.trim(),
+          monto: decimal(g.monto),
+          fecha: ahora,
+          usuarioId: ctx.usuarioId,
+        },
+      });
+    }
+    const costos = await recalcularCostosFinales(tx, ctx, compraId);
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.CREATE,
+      entidad: "GastoCompra",
+      entidadId: compraId,
+      datosAntes: resumenCostos(antes),
+      datosDespues: {
+        gastos: gastos.map((g) => ({ motivo: g.motivo, monto: g.monto.toFixed(2) })),
+        gastosExtrasTotal: costos.gastos.toFixed(2),
+        costoFinalTotal: costos.costoFinalTotal.toFixed(2),
+      },
+      meta: ctx.meta,
+    });
+    return { idVisible: antes.idVisible, costos };
+  });
+}
+
+/** Anula un gasto extra (solo dueños: lo exige la acción) y recalcula la compra. */
+export async function anularGastoCompra(
+  ctx: Ctx,
+  gastoId: string,
+  motivo: string,
+): Promise<{ idVisible: string; costos: CostosFinales }> {
+  return transaccion(ctx, async (tx) => {
+    const gasto = await tx.gastoCompra.findUnique({
+      where: { id: gastoId },
+      select: { id: true, compraId: true, anulado: true, motivo: true, monto: true },
+    });
+    if (!gasto) throw new NotFoundError("El gasto no existe");
+    const antes = await compraParaCostos(tx, ctx, gasto.compraId);
+    if (gasto.anulado) throw new DomainError("El gasto ya está anulado");
+    await tx.gastoCompra.update({
+      where: { id: gastoId },
+      data: {
+        anulado: true,
+        anuladoPorId: ctx.usuarioId,
+        anuladoAt: new Date(),
+        motivoAnulacion: motivo,
+      },
+    });
+    const costos = await recalcularCostosFinales(tx, ctx, gasto.compraId);
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.UPDATE,
+      entidad: "GastoCompra",
+      entidadId: gastoId,
+      datosAntes: {
+        anulado: false,
+        motivo: gasto.motivo,
+        monto: dec(gasto.monto),
+        ...resumenCostos(antes),
+      },
+      datosDespues: {
+        anulado: true,
+        motivoAnulacion: motivo,
+        costoFinalTotal: costos.costoFinalTotal.toFixed(2),
+      },
+      meta: ctx.meta,
+    });
+    return { idVisible: antes.idVisible, costos };
+  });
+}
+
+export interface GastoCompraDetalle {
+  id: string;
+  motivo: string;
+  monto: string;
+  fecha: Date;
+  usuario: string;
+  anulado: boolean;
+  motivoAnulacion: string | null;
+}
+
+/** Lo que necesita el Sheet de gastos: los gastos y los números para el recálculo en vivo. */
+export interface CostosCompra {
+  compraId: string;
+  estado: EstadoCompra;
+  /** subtotal − descuento. */
+  total: string;
+  descuento: string;
+  comisionPasistaPorcentaje: string | null;
+  comisionPasistaMonto: string;
+  gastosExtrasTotal: string;
+  costoFinalTotal: string;
+  unidades: number;
+  costoUnitarioFinalPromedio: string;
+  /** Para recalcular en vivo con calcularCostosFinales. */
+  items: { cantidad: number; costoUnitario: string }[];
+  gastos: GastoCompraDetalle[];
+}
+
+export async function obtenerCostosCompra(ctx: Ctx, compraId: string): Promise<CostosCompra> {
+  const c = await dbPara(ctx.panelId).compra.findUnique({
+    where: { id: compraId },
+    include: {
+      items: {
+        select: { cantidad: true, costoUnitario: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      },
+      gastos: {
+        orderBy: [{ fecha: "asc" }, { id: "asc" }],
+        include: { usuario: { select: { nombre: true } } },
+      },
+    },
+  });
+  if (!c) throw new NotFoundError("La compra no existe");
+  return {
+    compraId: c.id,
+    estado: c.estado,
+    total: dec(c.total),
+    descuento: dec(c.descuento),
+    comisionPasistaPorcentaje: c.comisionPasistaPorcentaje
+      ? dec(c.comisionPasistaPorcentaje)
+      : null,
+    comisionPasistaMonto: dec(c.comisionPasistaMonto),
+    gastosExtrasTotal: dec(c.gastosExtrasTotal),
+    costoFinalTotal: dec(c.costoFinalTotal),
+    unidades: c.unidadesTotal,
+    costoUnitarioFinalPromedio: dec(c.costoUnitarioFinalPromedio),
+    items: c.items.map((i) => ({ cantidad: i.cantidad, costoUnitario: dec(i.costoUnitario) })),
+    gastos: c.gastos.map((g) => ({
+      id: g.id,
+      motivo: g.motivo,
+      monto: dec(g.monto),
+      fecha: g.fecha,
+      usuario: g.usuario.nombre,
+      anulado: g.anulado,
+      motivoAnulacion: g.motivoAnulacion,
+    })),
+  };
+}
+
 /** "Elf Bar BC 5000 — Mango Ice"; el sabor "Único" no se muestra. */
 function nombreItem(v: { nombre: string; producto: { nombreCompleto: string } }): string {
   return esSaborUnico(v.nombre)
@@ -661,6 +1054,12 @@ export interface CompraListada {
   unidades: number;
   total: string;
   usuario: string;
+  /** Costos finales (las columnas solo las ven los dueños). */
+  comisionPasistaPorcentaje: string | null;
+  comisionPasistaMonto: string;
+  gastosExtrasTotal: string;
+  costoFinalTotal: string;
+  costoUnitarioFinalPromedio: string;
 }
 
 export async function listarCompras(
@@ -705,6 +1104,13 @@ export async function listarCompras(
       unidades: c.items.reduce((a, i) => a + i.cantidad, 0),
       total: dec(c.total),
       usuario: c.usuario.nombre,
+      comisionPasistaPorcentaje: c.comisionPasistaPorcentaje
+        ? dec(c.comisionPasistaPorcentaje)
+        : null,
+      comisionPasistaMonto: dec(c.comisionPasistaMonto),
+      gastosExtrasTotal: dec(c.gastosExtrasTotal),
+      costoFinalTotal: dec(c.costoFinalTotal),
+      costoUnitarioFinalPromedio: dec(c.costoUnitarioFinalPromedio),
     })),
     total,
     page: f.page,
@@ -725,6 +1131,8 @@ export interface ItemCompraDetalle {
   /** Solo si el proveedor cotiza ese producto en USDT (ver snapshotUsdt). */
   costoUnitarioUSDT: string | null;
   subtotal: string;
+  /** Costo con la comisión y los gastos prorrateados por unidad. */
+  costoUnitarioFinal: string;
 }
 
 export interface CompraDetalle extends Omit<CompraListada, "items"> {
@@ -735,7 +1143,9 @@ export interface CompraDetalle extends Omit<CompraListada, "items"> {
   notas: string | null;
   /** Pesos por USDT usados al cargar la compra (null = sin precios en USDT). */
   tipoCambioUSDT: string | null;
+  descuento: string;
   items: ItemCompraDetalle[];
+  gastos: GastoCompraDetalle[];
   movimientos: number;
 }
 
@@ -747,6 +1157,10 @@ export async function obtenerCompra(ctx: Ctx, id: string): Promise<CompraDetalle
       proveedor: { select: { nombre: true, nombreTienda: true } },
       deposito: { select: { nombre: true } },
       usuario: { select: { nombre: true } },
+      gastos: {
+        orderBy: [{ fecha: "asc" }, { id: "asc" }],
+        include: { usuario: { select: { nombre: true } } },
+      },
       items: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         include: {
@@ -780,7 +1194,24 @@ export async function obtenerCompra(ctx: Ctx, id: string): Promise<CompraDetalle
     usuario: c.usuario.nombre,
     unidades: c.items.reduce((a, i) => a + i.cantidad, 0),
     subtotal: dec(c.subtotal),
+    descuento: dec(c.descuento),
     total: dec(c.total),
+    comisionPasistaPorcentaje: c.comisionPasistaPorcentaje
+      ? dec(c.comisionPasistaPorcentaje)
+      : null,
+    comisionPasistaMonto: dec(c.comisionPasistaMonto),
+    gastosExtrasTotal: dec(c.gastosExtrasTotal),
+    costoFinalTotal: dec(c.costoFinalTotal),
+    costoUnitarioFinalPromedio: dec(c.costoUnitarioFinalPromedio),
+    gastos: c.gastos.map((g) => ({
+      id: g.id,
+      motivo: g.motivo,
+      monto: dec(g.monto),
+      fecha: g.fecha,
+      usuario: g.usuario.nombre,
+      anulado: g.anulado,
+      motivoAnulacion: g.motivoAnulacion,
+    })),
     notas: c.notas,
     tipoCambioUSDT: c.tipoCambioUSDT ? dec(c.tipoCambioUSDT) : null,
     movimientos,
@@ -795,6 +1226,7 @@ export async function obtenerCompra(ctx: Ctx, id: string): Promise<CompraDetalle
       costoUnitario: dec(i.costoUnitario),
       costoUnitarioUSDT: i.costoUnitarioUSDT ? dec(i.costoUnitarioUSDT) : null,
       subtotal: dec(i.subtotal),
+      costoUnitarioFinal: dec(i.costoUnitarioFinal),
     })),
   };
 }

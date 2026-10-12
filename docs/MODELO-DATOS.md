@@ -563,6 +563,12 @@ Table Compra {
   total decimal(12,2) [not null]
   notas text
   tipoCambioUSDT decimal(14,2) [note: 'Snapshot de la cotización USDT (pesos por USDT) al cargar la compra.']
+  comisionPasistaPorcentaje decimal(5,2) [note: '% del pasista sobre el total; null = sin comisión.']
+  comisionPasistaMonto decimal(12,2) [not null, default: 0, note: '= ROUND(total × % / 100, 2) (CHECK).']
+  gastosExtrasTotal decimal(12,2) [not null, default: 0, note: 'Σ GastoCompra vigentes (trigger diferido).']
+  costoFinalTotal decimal(12,2) [not null, default: 0, note: '= total + comisión + gastos (CHECK).']
+  unidadesTotal int [not null, default: 0, note: 'Σ CompraItem.cantidad (trigger diferido).']
+  costoUnitarioFinalPromedio decimal(12,2) [not null, default: 0, note: 'costoFinalTotal ÷ unidadesTotal (CHECK).']
   usuarioId text [not null]
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
@@ -586,6 +592,7 @@ Table CompraItem {
   costoUnitario decimal(12,2) [not null, note: 'En pesos: es lo que contabiliza el sistema.']
   costoUnitarioUSDT decimal(12,2) [note: 'Trazabilidad: costoUnitario ÷ Compra.tipoCambioUSDT si el proveedor cotiza el producto en USDT.']
   subtotal decimal(12,2) [not null]
+  costoUnitarioFinal decimal(12,2) [not null, note: 'costoUnitario + (comisión + gastos) ÷ unidades: pasa a Variante.ultimoCosto.']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
 
@@ -596,6 +603,46 @@ Table CompraItem {
   }
 
   Note: 'Se compra por sabor (el stock es por sabor); productoId desnormalizado (= variante.productoId, lo verifica un trigger) para precios por proveedor.'
+}
+
+Table GastoCompra {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  compraId text [not null]
+  motivo text [not null, note: 'Valija, Envío…']
+  monto decimal(12,2) [not null, note: '> 0 (CHECK).']
+  fecha timestamp [not null, default: `now()`]
+  usuarioId text [not null]
+  createdAt timestamp [not null, default: `now()`]
+  anulado boolean [not null, default: false]
+  anuladoPorId text
+  anuladoAt timestamp
+  motivoAnulacion text
+
+  indexes {
+    (panelId, compraId)
+  }
+
+  Note: 'Solo se anula (trigger): nunca se edita ni se borra.'
+}
+
+Table CostoVarianteHistorial {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  varianteId text [not null]
+  costoAnterior decimal(12,2)
+  costoNuevo decimal(12,2) [not null]
+  origen OrigenCostoVariante [not null, note: 'COMPRA_RECIBIDA | COSTOS_FINALES_COMPRA | INGRESO_MANUAL']
+  compraId text
+  usuarioId text
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (panelId, varianteId, createdAt)
+    compraId
+  }
+
+  Note: 'INMUTABLE: una fila por cada cambio de Variante.ultimoCosto.'
 }
 
 Table Venta {
@@ -928,6 +975,12 @@ Ref: CompraItem.panelId > Panel.id [delete: restrict]
 Ref: CompraItem.compraId > Compra.id [delete: cascade]
 Ref: CompraItem.varianteId > Variante.id [delete: restrict]
 Ref: CompraItem.productoId > Producto.id [delete: restrict]
+Ref: GastoCompra.compraId > Compra.id [delete: restrict]
+Ref: GastoCompra.usuarioId > Usuario.id [delete: restrict]
+Ref: GastoCompra.anuladoPorId > Usuario.id [delete: restrict]
+Ref: CostoVarianteHistorial.varianteId > Variante.id [delete: restrict]
+Ref: CostoVarianteHistorial.compraId > Compra.id [delete: restrict]
+Ref: CostoVarianteHistorial.usuarioId > Usuario.id [delete: restrict]
 Ref: Venta.panelId > Panel.id [delete: restrict]
 Ref: Venta.cotizacionId > Cotizacion.id [delete: restrict]
 Ref: Venta.clienteId > Cliente.id [delete: restrict]
@@ -1006,7 +1059,7 @@ Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [dele
 ### Catálogo
 
 - **Producto**: **marca** (obligatoria) + **modelo** (`nombre`) + **especificación** (el atributo principal del panel, con la etiqueta `Panel.etiquetaEspecificacion`: «Pitadas» en Vapes). `nombreCompleto` («Elf Bar BC 5000») y `especificacionNorm` («5000», en minúsculas y sin espacios) los mantiene la base con el trigger `trg_producto_derivados`: la app nunca los escribe. La clave (panel, marca, modelo, `especificacionNorm`) es única. Tiene un **precio de venta único** para todos sus sabores, categoría opcional e imagen. Todo producto tiene al menos una variante; uno sin sabores tiene una sola variante «Único» que la interfaz no muestra como sabor.
-- **Variante**: el **sabor**, que es lo que realmente se vende, se compra y se cuenta (el stock es por sabor y depósito). Tiene SKU único por panel (`{prefijoSku}-XXXXXX` si no se indica), código de barras principal, stock mínimo, un **precio propio** opcional (`precioVenta`: `null` = usa el del producto; `precioVentaEfectivo()` en `src/lib/precios.ts`) y `ultimoCosto`, el costo de la última compra recibida (lo actualiza `recibirCompra()`; `null` si todavía no hubo compras). El último costo solo lo ven los dueños. Repite el `panelId` de su producto (verificado por trigger) para buscar por código dentro de un panel sin join.
+- **Variante**: el **sabor**, que es lo que realmente se vende, se compra y se cuenta (el stock es por sabor y depósito). Tiene SKU único por panel (`{prefijoSku}-XXXXXX` si no se indica), código de barras principal, stock mínimo, un **precio propio** opcional (`precioVenta`: `null` = usa el del producto; `precioVentaEfectivo()` en `src/lib/precios.ts`) y `ultimoCosto`, el costo **final** de la última compra recibida (con la comisión del pasista y los gastos extras prorrateados; lo actualizan `recibirCompra()` y `recalcularCostosFinales()`, y cada cambio queda en `CostoVarianteHistorial`; `null` si todavía no hubo compras). El último costo solo lo ven los dueños. Repite el `panelId` de su producto (verificado por trigger) para buscar por código dentro de un panel sin join.
 - **CodigoBarrasAlternativo**: otros códigos que identifican a la misma variante (distintos lotes o importadores). Dentro de un panel, un código no puede repetirse entre esta tabla y `Variante.codigoBarras`; en paneles distintos sí.
 
 ### Inventario
@@ -1024,6 +1077,9 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 ### Compras
 
 - **Compra**: mercadería de un proveedor que entra en un galpón. Proveedor y galpón son obligatorios en la app (`proveedorId` sigue siendo nulo en la base solo para compras anteriores a R2). ID visible `VAP-C-000001`. `BORRADOR` (editable, no mueve stock) → `RECIBIDA` (un `INGRESO_COMPRA` por ítem con su costo, `Variante.ultimoCosto` = costo de la compra y, si se elige, el precio del proveedor = costo pagado) → `ANULADA` (si estaba recibida, un `DEVOLUCION_PROVEEDOR` por ítem; falla completa si ya no hay stock en el galpón; no revierte costos ni precios). Los totales se calculan en el servidor y la base verifica que cierren con los ítems. Costos y totales solo los ven los dueños o quien tiene `ver` en `COMPRAS`.
+  - **Costo final**: tick «Comisión del {10}% para el pasista» (`comisionPasistaPorcentaje`, el default sale de la clave de configuración `compras`) y gastos extras (`GastoCompra`). `calcularCostosFinales()` (`src/lib/costos-compra.ts`, pura y testeada) prorratea comisión + gastos **por unidad** —el pasista y el envío cobran por bulto, no por precio—: `costoUnitarioFinal = costoUnitario + (comisión + gastos) ÷ unidades`. `recalcularCostosFinales()` corre al crear/editar, al cambiar el tick y al agregar/anular gastos (anular: solo dueños); en una compra recibida pasa el costo final a `ultimoCosto` de los sabores cuya última compra recibida es esta. Las ventas ya hechas conservan su snapshot de costo. En una compra recibida lo único que cambia de los ítems es `costoUnitarioFinal` (el trigger de ítems congelados ignora esa columna).
+- **GastoCompra**: gasto extra de una compra (motivo y monto > 0). Se anula, nunca se edita ni se borra (trigger).
+- **CostoVarianteHistorial**: historial inmutable de `Variante.ultimoCosto` (anterior, nuevo, origen, compra).
 - **CompraItem**: un renglón por **sabor** (`varianteId`) con cantidad y costo unitario. Lleva `productoId` desnormalizado (igual a `variante.productoId`, verificado por trigger) para comparar con los precios de `ProveedorProducto`, que son por producto: si una compra trae varios sabores del mismo producto con costos distintos, el precio del proveedor queda con el del último ítem cargado. El costo sugerido al cargar es el precio en pesos del proveedor para el producto o, si no tiene, el `ultimoCosto` del sabor (`costoSugerido()` en `compra.service.ts`).
 
 ### Ventas y devoluciones
@@ -1095,6 +1151,7 @@ Estas reglas las hace cumplir PostgreSQL (CHECKs, índices y triggers en las mig
 ### Compras y ventas
 
 - Totales: `total = subtotal − descuento` en compras y ventas (`Venta_total_chk`), con `gananciaBruta = total − costoTotal`; subtotal de cada ítem igual a cantidad × precio (`VentaItem_subtotal_chk`: cantidad × precio cobrado). Al COMMIT se verifica que los totales de la cabecera coincidan con la suma de ítems y que el documento tenga ítems.
+- Compras: `comisionPasistaMonto = ROUND(total × % / 100, 2)` (0 sin %), `costoFinalTotal = total + comisión + gastos`, `costoUnitarioFinalPromedio = ROUND(costoFinalTotal ÷ unidadesTotal, 2)`, `costoUnitarioFinal ≥ costoUnitario`; al COMMIT, `unidadesTotal = Σ cantidades` y `gastosExtrasTotal = Σ gastos vigentes` (`fn_verificar_costos_compra`).
 - `productoId` de `CompraItem`, `VentaItem` y `DevolucionItem` es siempre el producto de su variante (`trg_fn_item_producto_coherente`).
 - Venta: cliente, galpón y medio de pago `NOT NULL`; código único por panel; confirmada solo pasa a anulada y no se modifica; anulada ⇔ tiene `anuladaAt` y `anuladaPorId`.
 - Devolución: `observacion` ≥ 10 caracteres (`Devolucion_observacion_chk`); anulada ⇔ `anuladaAt` y `anuladaPorId`; cliente, venta y galpón del mismo panel.

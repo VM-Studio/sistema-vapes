@@ -13,10 +13,14 @@ import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import type { ConfigCatalogo } from "@/lib/validations/config-panel";
+import type { ConfigCatalogo, ConfigCompras } from "@/lib/validations/config-panel";
 import type { ConfigVentas } from "@/lib/validations/venta";
 
-import { guardarConfigCatalogoAction, guardarConfigVentasAction } from "../actions";
+import {
+  guardarConfigCatalogoAction,
+  guardarConfigComprasAction,
+  guardarConfigVentasAction,
+} from "../actions";
 
 const campos = (fields: Record<string, string[]> | undefined) =>
   Object.fromEntries(Object.entries(fields ?? {}).map(([k, m]) => [k, m[0] ?? ""]));
@@ -24,9 +28,11 @@ const campos = (fields: Record<string, string[]> | undefined) =>
 export function ConfigVentasForm({
   ventas,
   catalogo,
+  compras,
 }: {
   ventas: ConfigVentas;
   catalogo: ConfigCatalogo;
+  compras: ConfigCompras;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -34,21 +40,28 @@ export function ConfigVentasForm({
   const [redondeo, setRedondeo] = useState(String(ventas.redondeoVentas));
   const [prefijoSku, setPrefijoSku] = useState(catalogo.prefijoSku);
   const [alertaStockMinimo, setAlerta] = useState(catalogo.alertaStockMinimo);
+  const [comisionPasista, setComisionPasista] = useState(
+    String(compras.comisionPasistaPorcentajeDefault).replace(".", ","),
+  );
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
 
   async function guardar() {
     setGuardando(true);
-    const [rv, rc] = await Promise.all([
+    const [rv, rc, rp] = await Promise.all([
       guardarConfigVentasAction({ redondeoVentas: Number(redondeo) }),
       guardarConfigCatalogoAction({ prefijoSku, alertaStockMinimo }),
+      guardarConfigComprasAction({
+        comisionPasistaPorcentajeDefault: comisionPasista.replace(",", "."),
+      }),
     ]);
     setGuardando(false);
-    const error = !rv.ok ? rv.error : !rc.ok ? rc.error : null;
+    const error = !rv.ok ? rv.error : !rc.ok ? rc.error : !rp.ok ? rp.error : null;
     if (error) {
       setErrores({
         ...(!rv.ok ? campos(rv.error.fields) : {}),
         ...(!rc.ok ? campos(rc.error.fields) : {}),
+        ...(!rp.ok ? campos(rp.error.fields) : {}),
       });
       return toast.error("No se pudo guardar", error.message);
     }
@@ -107,6 +120,20 @@ export function ConfigVentasForm({
             label="Avisar cuando un producto queda por debajo del stock mínimo"
             checked={alertaStockMinimo}
             onCheckedChange={setAlerta}
+          />
+        </SectionCard>
+        <SectionCard
+          title="Compras"
+          description="Lo que propone cada compra nueva."
+          contentClassName="flex flex-col gap-4"
+        >
+          <Input
+            label="Comisión del pasista (%)"
+            inputMode="decimal"
+            value={comisionPasista}
+            onChange={(e) => setComisionPasista(e.target.value.replace(/[^\d.,]/g, ""))}
+            error={errores.comisionPasistaPorcentajeDefault}
+            hint="El porcentaje que aparece al tildar la comisión en una compra (se puede cambiar en cada una)."
           />
         </SectionCard>
       </div>

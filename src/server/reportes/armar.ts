@@ -547,6 +547,10 @@ export async function armarExportacion(
               { titulo: "Unidades", tipo: "numero" },
               { titulo: "Total", tipo: "moneda" },
               { titulo: "Total USDT", ancho: 1.2 },
+              { titulo: "Comisión pasista", tipo: "moneda" },
+              { titulo: "Gastos extras", tipo: "moneda" },
+              { titulo: "Costo final", tipo: "moneda" },
+              { titulo: "Costo final / u.", tipo: "moneda" },
               { titulo: "Última", ancho: 1 },
             ],
             filas: porProv.map((x) => [
@@ -556,6 +560,10 @@ export async function armarExportacion(
               x.unidades,
               x.total,
               x.totalUSDT === null ? "—" : conMoneda(x.totalUSDT, "USDT"),
+              x.comision,
+              x.gastos,
+              x.costoFinalTotal,
+              x.costoFinalUnidad ?? "—",
               formatearFecha(x.ultima),
             ]),
             totales: [
@@ -570,6 +578,15 @@ export async function armarExportacion(
                     "USDT",
                   )
                 : "—",
+              porProv.reduce((a, x) => a + Number(x.comision), 0).toFixed(2),
+              porProv.reduce((a, x) => a + Number(x.gastos), 0).toFixed(2),
+              porProv.reduce((a, x) => a + Number(x.costoFinalTotal), 0).toFixed(2),
+              (() => {
+                const u = porProv.reduce((a, x) => a + x.unidades, 0);
+                return u > 0
+                  ? (porProv.reduce((a, x) => a + Number(x.costoFinalTotal), 0) / u).toFixed(2)
+                  : "—";
+              })(),
               "",
             ],
           },

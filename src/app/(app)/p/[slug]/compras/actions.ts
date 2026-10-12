@@ -6,19 +6,28 @@ import { z } from "zod";
 
 import { formatearIdCompra } from "@/lib/paneles";
 import { id } from "@/lib/validations/common";
+import { esOwner } from "@/lib/permisos";
 import {
+  agregarGastosCompraSchema,
   anularCompraSchema,
+  anularGastoCompraSchema,
+  comisionPasistaSchema,
   costoSugeridoSchema,
   guardarCompraSchema,
   recibirCompraSchema,
 } from "@/lib/validations/compra";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx } from "@/server/auth/permissions";
+import { ForbiddenError } from "@/server/errors";
 import {
   actualizarCompra,
+  agregarGastosCompra,
   anularCompra,
+  anularGastoCompra,
+  cambiarComisionPasista,
   costoSugerido,
   crearCompra,
+  obtenerCostosCompra,
   preciosQueCambian,
   recibirCompra,
 } from "@/server/services/compra.service";
@@ -27,7 +36,8 @@ import { buscarVariantes } from "@/server/services/producto.service";
 /**
  * Permisos de COMPRAS: crear → nueva (borrador) · editar → modificar el
  * borrador y recibir la mercadería (mueve stock y, si se elige, actualiza el
- * precio del proveedor) · eliminar → anular.
+ * precio del proveedor), cambiar la comisión del pasista y cargar gastos
+ * extras · eliminar → anular. Anular un gasto extra: solo dueños.
  */
 
 function revalidar() {
@@ -100,3 +110,39 @@ export const buscarSaboresCompraAction = actionHandler(
     }));
   },
 );
+
+// --- Costos finales (Bloque 6): comisión del pasista y gastos extras ---
+
+export const obtenerCostosCompraAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const { id: compraId } = z.object({ id }).parse(input);
+  return obtenerCostosCompra(ctx, compraId);
+});
+
+/** Tick (y %) de la comisión del pasista en una compra ya guardada. */
+export const cambiarComisionPasistaAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "editar");
+  const { id: compraId, comisionPasistaPorcentaje } = comisionPasistaSchema.parse(input);
+  const r = await cambiarComisionPasista(ctx, compraId, comisionPasistaPorcentaje);
+  revalidar();
+  return { idVisible: r.idVisible };
+});
+
+export const agregarGastosCompraAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "editar");
+  const { compraId, gastos } = agregarGastosCompraSchema.parse(input);
+  const r = await agregarGastosCompra(ctx, compraId, gastos);
+  revalidar();
+  return { idVisible: r.idVisible, costoFinalTotal: r.costos.costoFinalTotal };
+});
+
+/** Anular un gasto: solo dueños. */
+export const anularGastoCompraAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "editar");
+  if (!esOwner(ctx.usuario))
+    throw new ForbiddenError("Solo los dueños anulan gastos de una compra");
+  const { id: gastoId, motivo } = anularGastoCompraSchema.parse(input);
+  const r = await anularGastoCompra(ctx, gastoId, motivo);
+  revalidar();
+  return { idVisible: r.idVisible };
+});

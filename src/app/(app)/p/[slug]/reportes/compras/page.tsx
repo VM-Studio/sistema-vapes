@@ -102,7 +102,7 @@ export default async function ReporteComprasPage({
         </div>
       </BarraFiltros>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4">
         <SectionCard title="Compras recibidas por proveedor">
           <GraficoBarras
             horizontal
@@ -147,6 +147,30 @@ export default async function ReporteComprasPage({
                 cell: (x) => <TotalDual pesos={x.total} usdt={x.totalUSDT} ayuda={ayudaUsdt} />,
               },
               {
+                key: "com",
+                header: "Comisión",
+                className: "text-right tabular-nums",
+                cell: (x) => formatearPesos(x.comision),
+              },
+              {
+                key: "gas",
+                header: "Gastos",
+                className: "text-right tabular-nums",
+                cell: (x) => formatearPesos(x.gastos),
+              },
+              {
+                key: "cf",
+                header: "Costo final",
+                className: "text-right tabular-nums font-medium",
+                cell: (x) => formatearPesos(x.costoFinalTotal),
+              },
+              {
+                key: "cfu",
+                header: "Final / u.",
+                className: "text-right tabular-nums",
+                cell: (x) => formatearPesos(x.costoFinalUnidad),
+              },
+              {
                 key: "f",
                 header: "Última",
                 cell: (x) => <span className="text-muted">{formatearFecha(x.ultima)}</span>,
@@ -158,6 +182,10 @@ export default async function ReporteComprasPage({
                   <span className="font-semibold">{x.proveedor}</span>
                   <span className="text-muted text-small block">
                     {x.compras} compras · {x.unidades} u.
+                  </span>
+                  <span className="text-muted text-small block">
+                    Costo final {formatearPesos(x.costoFinalTotal)} ·{" "}
+                    {formatearPesos(x.costoFinalUnidad)} / u.
                   </span>
                 </span>
                 <span className="font-semibold tabular-nums">

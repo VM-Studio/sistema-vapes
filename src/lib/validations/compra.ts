@@ -12,6 +12,19 @@ export const compraItemSchema = z.object({
   costoUnitario: monto,
 });
 
+/** % del pasista: vacío/null = sin comisión; si no, (0, 100] con 2 decimales. */
+export const porcentajePasista = z.preprocess(
+  (v) =>
+    v === null ? undefined : vacioAUndefined(typeof v === "string" ? v.replace(",", ".") : v),
+  z.coerce
+    .number({ error: "Porcentaje inválido" })
+    .gt(0, "El porcentaje tiene que ser mayor a 0")
+    .max(100, "Como máximo 100%")
+    .multipleOf(0.01, "Hasta 2 decimales")
+    .optional()
+    .transform((v) => v ?? null),
+);
+
 /** Id obligatorio con mensaje propio ("" → falta). */
 const obligatorio = (mensaje: string) =>
   z.preprocess(vacioAUndefined, z.string({ error: mensaje }).trim().min(1, mensaje));
@@ -35,6 +48,8 @@ export const compraSchema = z.object({
       .optional(),
   ),
   notas: textoOpcional(2000),
+  /** % de comisión del pasista sobre el total (null/vacío = sin comisión). */
+  comisionPasistaPorcentaje: porcentajePasista,
   items: z
     .array(compraItemSchema)
     .min(1, "La compra tiene que tener al menos un producto")
@@ -57,6 +72,35 @@ export const recibirCompraSchema = z.object({
 });
 
 export const anularCompraSchema = z.object({ id, motivo: motivoAjuste });
+
+/** Cambiar (o quitar) la comisión del pasista de una compra ya guardada. */
+export const comisionPasistaSchema = z.object({
+  id,
+  comisionPasistaPorcentaje: porcentajePasista,
+});
+
+const montoGasto = z.preprocess(
+  (v) => vacioAUndefined(typeof v === "string" ? v.replace(",", ".") : v),
+  z.coerce
+    .number({ error: (iss) => (iss.input === undefined ? "Ingresá el monto" : "Monto inválido") })
+    .finite("Monto inválido")
+    .gt(0, "El monto tiene que ser mayor a 0")
+    .max(9_999_999_999.99, "Monto demasiado grande")
+    .multipleOf(0.01, "Hasta 2 decimales"),
+);
+
+export const gastoCompraSchema = z.object({
+  motivo: z.string().trim().min(2, "Contá de qué es el gasto (ej. Valija, Envío)").max(120),
+  monto: montoGasto,
+});
+
+/** Agregar uno o más gastos extras a una compra. */
+export const agregarGastosCompraSchema = z.object({
+  compraId: id,
+  gastos: z.array(gastoCompraSchema).min(1, "Cargá al menos un gasto").max(50),
+});
+
+export const anularGastoCompraSchema = z.object({ id, motivo: motivoAjuste });
 
 export const costoSugeridoSchema = z.object({
   proveedorId: id,

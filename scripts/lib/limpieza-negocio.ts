@@ -14,7 +14,7 @@ import type { PrismaClient } from "@prisma/client";
  * - Secuencia: vuelve a 0 (sin ventas/compras/… la numeración arranca de nuevo).
  *
  * Los triggers de inmutabilidad (MovimientoStock, Stock, AuditLog,
- * historial de precios, secuencias que solo avanzan) se desactivan DENTRO de
+ * historial de precios y de costos, gastos de compras, secuencias que solo avanzan) se desactivan DENTRO de
  * la transacción y se reactivan antes del COMMIT: si algo falla, el ROLLBACK
  * deshace también el ALTER TABLE.
  */
@@ -26,6 +26,8 @@ export const TABLAS_NEGOCIO = [
   "VentaItem",
   "DevolucionItem",
   "CompraItem",
+  "GastoCompra",
+  "CostoVarianteHistorial",
   "TransferenciaItem",
   "Devolucion",
   "Venta",

@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { AccionAuditoria, Prisma, RolUsuario, TipoMovimiento } from "@prisma/client";
+import {
+  AccionAuditoria,
+  OrigenCostoVariante,
+  Prisma,
+  RolUsuario,
+  TipoMovimiento,
+} from "@prisma/client";
 
 import type {
   AjusteMasivo,
@@ -12,6 +18,7 @@ import { nombreConSabor } from "@/lib/ventas-ui";
 import { enTransaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, NotFoundError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { actualizarUltimoCosto } from "@/server/services/costo-variante.service";
 import {
   bloquearStock,
   movimientos,
@@ -140,9 +147,12 @@ export async function registrarIngresoManual(
           costoInformado !== undefined &&
           (v.ultimoCosto === null || !new Prisma.Decimal(costoInformado).equals(v.ultimoCosto))
         ) {
-          await tx.variante.update({
-            where: { id: item.varianteId },
-            data: { ultimoCosto: costoInformado },
+          await actualizarUltimoCosto(tx, {
+            varianteId: item.varianteId,
+            anterior: v.ultimoCosto,
+            nuevo: costoInformado,
+            origen: OrigenCostoVariante.INGRESO_MANUAL,
+            usuarioId: ctx.usuarioId,
           });
           await registrarAuditoria(tx, {
             usuarioId: ctx.usuarioId,

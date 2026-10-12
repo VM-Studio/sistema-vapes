@@ -5,7 +5,12 @@ import {
   parsearConfigEscaner,
   type ConfigEscaner,
 } from "@/features/scanner/config";
-import { configCatalogoSchema, type ConfigCatalogo } from "@/lib/validations/config-panel";
+import {
+  configCatalogoSchema,
+  configComprasSchema,
+  type ConfigCatalogo,
+  type ConfigCompras,
+} from "@/lib/validations/config-panel";
 import {
   configCotizacionSchema,
   type ConfigCotizacion,
@@ -15,7 +20,7 @@ import { configVentasSchema, type ConfigVentas } from "@/lib/validations/venta";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { registrarAuditoria } from "@/server/services/audit.service";
 
-export type { ConfigCatalogo, ConfigCotizacion, ConfigVentas };
+export type { ConfigCatalogo, ConfigCompras, ConfigCotizacion, ConfigVentas };
 
 /**
  * Configuración POR PANEL (clave/valor en Configuracion): cada panel tiene su
@@ -138,5 +143,26 @@ export async function guardarConfigCotizacion(
 ): Promise<ConfigCotizacion> {
   const config = configCotizacionSchema.parse(cfg);
   await guardar(ctx, "cotizacion", { cotizacion: { ...config } });
+  return config;
+}
+
+// =============================================================================
+// Compras (clave "compras"): comisión del pasista por defecto
+// =============================================================================
+
+export async function obtenerConfigCompras(
+  ctx: Pick<Ctx, "panelId">,
+  tx: Tx = dbPara(ctx.panelId),
+): Promise<ConfigCompras> {
+  const valor = await leer(tx, "compras");
+  const r = configComprasSchema.safeParse(
+    valor && typeof valor === "object" && !Array.isArray(valor) ? valor : {},
+  );
+  return r.success ? r.data : configComprasSchema.parse({});
+}
+
+export async function guardarConfigCompras(ctx: Ctx, cfg: unknown): Promise<ConfigCompras> {
+  const config = configComprasSchema.parse(cfg);
+  await guardar(ctx, "compras", { compras: { ...config } });
   return config;
 }

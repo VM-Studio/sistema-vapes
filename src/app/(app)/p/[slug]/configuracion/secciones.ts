@@ -22,7 +22,7 @@ export const SECCIONES_AJUSTES_PANEL = [
   {
     ruta: "/configuracion/ventas",
     label: "Ventas y catálogo",
-    descripcion: "Redondeo del cobro, prefijo de SKU y alertas de stock",
+    descripcion: "Redondeo del cobro, prefijo de SKU, alertas de stock y comisión del pasista",
   },
 ] as const;
 

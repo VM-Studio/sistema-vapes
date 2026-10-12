@@ -3,6 +3,7 @@ import { Plus, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { BotonGastosCompra } from "@/components/compras/gastos-compra-sheet";
 import { Badge } from "@/components/ui/badge";
 import { BarraAccion } from "@/components/ui/barra-accion";
 import { buttonVariants } from "@/components/ui/button";
@@ -13,10 +14,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { MenuFila } from "@/components/ui/menu-fila";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
-import { formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearPesos } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
-import { puede } from "@/lib/permisos";
+import { esOwner, puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
 import { listarComprasSchema } from "@/lib/validations/compra";
 import { requirePaginaPanel } from "@/server/auth/permissions";
@@ -50,6 +51,16 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
   );
 
   const puedeEditar = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "editar");
+  const owner = esOwner(ctx.usuario);
+  const conGastos = (c: CompraListada) => puedeEditar && c.estado !== "ANULADA";
+  const botonGastos = (c: CompraListada, className?: string) => (
+    <BotonGastosCompra
+      compraId={c.id}
+      idVisible={idDe(c)}
+      puedeAnular={owner}
+      className={className}
+    />
+  );
   const botonNueva = (
     <Link href={`${PATH}/nueva`} className={buttonVariants()}>
       <Plus strokeWidth={1.75} /> Nueva compra
@@ -159,44 +170,105 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                 },
               ]
             : []),
+          ...(owner
+            ? [
+                {
+                  key: "comision",
+                  header: "Comisión",
+                  className: "text-right",
+                  cell: (c: CompraListada) =>
+                    c.comisionPasistaPorcentaje ? (
+                      <span className="flex flex-col items-end">
+                        <span>{formatearPesos(c.comisionPasistaMonto)}</span>
+                        <span className="text-subtle text-xs">
+                          {formatearNumero(Number(c.comisionPasistaPorcentaje))}%
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-subtle">—</span>
+                    ),
+                },
+                {
+                  key: "gastos",
+                  header: "Gastos",
+                  className: "text-right",
+                  cell: (c: CompraListada) =>
+                    Number(c.gastosExtrasTotal) > 0 ? (
+                      formatearPesos(c.gastosExtrasTotal)
+                    ) : (
+                      <span className="text-subtle">—</span>
+                    ),
+                },
+                {
+                  key: "costoFinal",
+                  header: "Costo final",
+                  className: "text-right font-medium",
+                  cell: (c: CompraListada) => formatearPesos(c.costoFinalTotal),
+                },
+                {
+                  key: "costoUnidad",
+                  header: "Final / unidad",
+                  className: "text-right",
+                  cell: (c: CompraListada) => formatearPesos(c.costoUnitarioFinalPromedio),
+                },
+              ]
+            : []),
           { key: "estado", header: "Estado", cell: estadoBadge },
           {
             key: "acciones",
             header: <span className="sr-only">Acciones</span>,
-            className: "w-12 text-right",
+            className: "text-right",
             ocultarEnMobile: true,
             cell: (c: CompraListada) => (
-              <MenuFila
-                label={`Acciones de la compra ${idDe(c)}`}
-                acciones={[
-                  { label: "Ver detalle", href: `${PATH}/${c.id}` },
-                  ...(c.estado === "BORRADOR" && puedeEditar
-                    ? [{ label: "Editar borrador", href: `${PATH}/${c.id}/editar` }]
-                    : []),
-                ]}
-              />
+              <span className="flex items-center justify-end gap-1">
+                {conGastos(c) && botonGastos(c)}
+                <MenuFila
+                  label={`Acciones de la compra ${idDe(c)}`}
+                  acciones={[
+                    { label: "Ver detalle", href: `${PATH}/${c.id}` },
+                    ...(c.estado === "BORRADOR" && puedeEditar
+                      ? [{ label: "Editar borrador", href: `${PATH}/${c.id}/editar` }]
+                      : []),
+                  ]}
+                />
+              </span>
             ),
           },
         ]}
         renderMobile={(c) => (
-          <Link
-            href={`${PATH}/${c.id}`}
-            className={cardVariants({ variant: "clickable", className: "flex flex-col gap-2 p-4" })}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono font-semibold">{idDe(c)}</span>
-              {estadoBadge(c)}
-            </div>
-            <p className="truncate font-medium">{c.proveedor ?? "Sin proveedor"}</p>
-            <div className="flex items-end justify-between gap-2">
-              <p className="text-muted text-small">
-                {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
-              </p>
-              {verCostos && (
-                <p className="shrink-0 font-semibold tabular-nums">{formatearPesos(c.total)}</p>
+          <div className="flex flex-col gap-2">
+            <Link
+              href={`${PATH}/${c.id}`}
+              className={cardVariants({
+                variant: "clickable",
+                className: "flex flex-col gap-2 p-4",
+              })}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-semibold">{idDe(c)}</span>
+                {estadoBadge(c)}
+              </div>
+              <p className="truncate font-medium">{c.proveedor ?? "Sin proveedor"}</p>
+              <div className="flex items-end justify-between gap-2">
+                <p className="text-muted text-small">
+                  {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
+                </p>
+                {verCostos && (
+                  <p className="shrink-0 font-semibold tabular-nums">{formatearPesos(c.total)}</p>
+                )}
+              </div>
+              {owner && (
+                <p className="text-muted text-small flex flex-wrap justify-between gap-x-3">
+                  <span>
+                    Costo final{" "}
+                    <strong className="text-foreground">{formatearPesos(c.costoFinalTotal)}</strong>
+                  </span>
+                  <span>{formatearPesos(c.costoUnitarioFinalPromedio)} / u.</span>
+                </p>
               )}
-            </div>
-          </Link>
+            </Link>
+            {conGastos(c) && botonGastos(c, "self-end")}
+          </div>
         )}
       />
       <Pagination

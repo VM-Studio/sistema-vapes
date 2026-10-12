@@ -1187,6 +1187,7 @@ export async function exportarVentasVendedorExcel(
 // =============================================================================
 
 export interface ComprasPeriodo {
+  /** Costo final de las compras recibidas (con comisión del pasista y gastos extras). */
   compras: Comparado<string>;
   cantidadCompras: Comparado<number>;
   ventas: Comparado<string>;
@@ -1203,7 +1204,7 @@ export async function comprasDelPeriodo(ctx: Ctx, p: Periodo): Promise<ComprasPe
       z.object({ actual: z.boolean(), cantidad: z.number().int(), total: montoTexto }),
       Prisma.sql`
         SELECT (c."fecha" >= ${ts(a.inicio)}) AS "actual", COUNT(*)::int AS "cantidad",
-               COALESCE(SUM(c."total"), 0)::text AS "total"
+               COALESCE(SUM(c."costoFinalTotal"), 0)::text AS "total"
         FROM "Compra" c
         WHERE c."panelId" = ${ctx.panelId} AND c."estado" = 'RECIBIDA'
           AND c."fecha" >= ${ts(b.inicio)} AND c."fecha" < ${ts(a.fin)}

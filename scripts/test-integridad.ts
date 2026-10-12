@@ -1390,6 +1390,9 @@ async function main() {
         usuarioId: owner.id,
         subtotal: "10.00",
         total: "10.00",
+        costoFinalTotal: "10.00",
+        unidadesTotal: 1,
+        costoUnitarioFinalPromedio: "10.00",
       },
     });
     return tx.compraItem.create({
@@ -1399,6 +1402,7 @@ async function main() {
         productoId,
         cantidad: 1,
         costoUnitario: "10.00",
+        costoUnitarioFinal: "10.00",
         subtotal: "10.00",
       },
     });

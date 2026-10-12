@@ -4,6 +4,7 @@ import { TabsNav } from "@/components/ui/tabs-nav";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import {
   obtenerConfigCatalogo,
+  obtenerConfigCompras,
   obtenerConfigVentas,
 } from "@/server/services/configuracion.service";
 
@@ -14,9 +15,10 @@ export const metadata: Metadata = { title: "Ventas y catálogo" };
 
 export default async function ConfigVentasPage() {
   const ctx = await requirePaginaPanelOwner();
-  const [ventas, catalogo] = await Promise.all([
+  const [ventas, catalogo, compras] = await Promise.all([
     obtenerConfigVentas(ctx),
     obtenerConfigCatalogo(ctx),
+    obtenerConfigCompras(ctx),
   ]);
   return (
     <>
@@ -25,7 +27,7 @@ export default async function ConfigVentasPage() {
         className="mb-6"
         ariaLabel="Ajustes del panel"
       />
-      <ConfigVentasForm ventas={ventas} catalogo={catalogo} />
+      <ConfigVentasForm ventas={ventas} catalogo={catalogo} compras={compras} />
     </>
   );
 }
