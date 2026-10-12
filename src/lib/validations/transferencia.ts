@@ -39,7 +39,5 @@ export const completarTransferenciaSchema = z.object({ id });
 
 export const anularTransferenciaSchema = z.object({ id, motivo: motivoAjuste });
 
-export const remitoTransferenciaSchema = z.object({ id });
-
 export type CrearTransferenciaInput = z.input<typeof crearTransferenciaSchema>;
 export type CrearTransferencia = z.output<typeof crearTransferenciaSchema>;

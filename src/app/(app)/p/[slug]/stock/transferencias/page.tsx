@@ -15,6 +15,7 @@ import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { formatearNumero } from "@/lib/format";
 import { ESTADO_TRANSFERENCIA_UI } from "@/lib/movimientos-ui";
 import { rutaPanel } from "@/lib/paneles";
+import { rutaPdf } from "@/lib/pdfs";
 import { puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
@@ -58,20 +59,17 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
       {t.destino}
     </span>
   );
-  const remito = (t: TransferenciaListada) =>
-    t.remitoUrl ? (
-      <a
-        href={t.remitoUrl}
-        target="_blank"
-        rel="noreferrer"
-        className={buttonVariants({ variant: "ghost", size: "sm" })}
-        aria-label={`Remito de ${t.codigo} (PDF)`}
-      >
-        <FileText strokeWidth={1.75} /> PDF
-      </a>
-    ) : (
-      <span className="text-subtle">—</span>
-    );
+  const remito = (t: TransferenciaListada) => (
+    <a
+      href={rutaPdf.remito(ctx.panel.slug, t.id)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={buttonVariants({ variant: "ghost", size: "sm" })}
+      aria-label={`Remito de ${t.codigo} (PDF)`}
+    >
+      <FileText strokeWidth={1.75} /> PDF
+    </a>
+  );
   const nueva = (
     <Link href={`${PATH}/nueva`} className={buttonVariants()}>
       <Plus strokeWidth={1.75} /> Nueva transferencia

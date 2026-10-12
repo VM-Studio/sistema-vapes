@@ -958,7 +958,8 @@ model Transferencia {
   estado            EstadoTransferencia @default(PENDIENTE)
   fecha             DateTime            @default(now())
   observacion       String?
-  /// Remito PDF en el storage (referencia de StorageProvider).
+  /// En desuso desde v2.4: el remito se genera y sirve por Route Handler
+  /// (/api/p/{slug}/transferencias/{id}/remito), cacheado en el storage.
   remitoUrl         String?
   usuarioId         String
   completadaAt      DateTime?
@@ -1130,6 +1131,8 @@ model Cotizacion {
   motivoRechazo   String?
   /// La venta generada al convertir.
   ventaId         String?          @unique
+  /// En desuso desde v2.4: los PDFs se generan y sirven por Route Handler
+  /// (/api/p/{slug}/cotizaciones/{id}/pdf), cacheados en el storage.
   pdfUrl          String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt

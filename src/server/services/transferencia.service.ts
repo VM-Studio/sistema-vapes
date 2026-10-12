@@ -15,7 +15,6 @@ import { nombreConSabor, saborVisible } from "@/lib/ventas-ui";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { dbPara, enTransaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
-import { logger } from "@/server/log";
 import {
   aWinAnsi,
   cargarLogoPdf,
@@ -32,7 +31,8 @@ import {
   transferirStock,
   type MovimientoListado,
 } from "@/server/services/stock.service";
-import { claveAleatoria, obtenerStorage, urlCompartible } from "@/server/storage";
+import { clavePdf, pdfCacheado, rutaPublicaPdf } from "@/server/pdf-http";
+import { urlAbsoluta } from "@/server/storage";
 
 /**
  * TRANSFERENCIAS entre galpones (depósitos) de UN panel.
@@ -43,7 +43,7 @@ import { claveAleatoria, obtenerStorage, urlCompartible } from "@/server/storage
  *   alcanza, falla entera con el detalle y no queda nada.
  * - "Registrar envío, confirmar al recibir" → crearTransferencia (PENDIENTE,
  *   no mueve nada) + completarTransferencia cuando llega la mercadería.
- * - Remito PDF (generarRemito): se genera al crear y queda en `remitoUrl`.
+ * - Remito PDF (pdfRemito): se genera al abrirlo, cacheado en el storage.
  *
  * Regla de oro: el stock SOLO cambia vía transferirStock (motor de stock).
  * Todo recibe `ctx` primero: lecturas con dbPara(ctx.panelId), escrituras en
@@ -292,15 +292,12 @@ export async function completarTransferencia(
 
 export interface TransferenciaMovida extends TransferenciaCreada {
   unidades: number;
-  /** Referencia del remito en el storage; null si no se pudo generar (se puede reintentar). */
-  remitoUrl: string | null;
 }
 
 /**
  * "Mover ahora": crea la transferencia y la completa en el acto, todo en UNA
  * transacción Serializable (si un sabor no alcanza, no queda ni el documento
- * ni un movimiento). Después genera el remito PDF; si el remito falla, la
- * transferencia igual queda hecha y el remito se puede generar después.
+ * ni un movimiento). El remito PDF se genera al abrirlo (`pdfRemito`).
  */
 export async function crearYCompletarTransferencia(
   ctx: Ctx,
@@ -316,7 +313,7 @@ export async function crearYCompletarTransferencia(
     },
     { timeout: 60_000, maxRetries: 2 },
   );
-  return { ...r, remitoUrl: await remitoSinFallar(ctx, r.id) };
+  return r;
 }
 
 /**
@@ -329,16 +326,7 @@ export async function registrarEnvioTransferencia(
 ): Promise<TransferenciaMovida> {
   const creada = await crearTransferencia(ctx, input);
   const unidades = input.items.reduce((a, i) => a + i.cantidad, 0);
-  return { ...creada, unidades, remitoUrl: await remitoSinFallar(ctx, creada.id) };
-}
-
-async function remitoSinFallar(ctx: Ctx, id: string): Promise<string | null> {
-  try {
-    return (await generarRemito(ctx, id)).url;
-  } catch (e) {
-    logger().warn({ err: e, transferenciaId: id }, "no se pudo generar el remito");
-    return null;
-  }
+  return { ...creada, unidades };
 }
 
 /** Anula una transferencia PENDIENTE (no movió stock, no hay nada que revertir). */
@@ -391,7 +379,6 @@ export interface TransferenciaListada {
   unidades: number;
   usuario: string;
   completadaAt: Date | null;
-  remitoUrl: string | null;
 }
 
 /** Transferencias del panel; con `depositoId`, las que salen o entran a ese depósito. */
@@ -446,7 +433,6 @@ export async function listarTransferencias(
       unidades: t.items.reduce((a, i) => a + i.cantidad, 0),
       usuario: t.usuario.nombre,
       completadaAt: t.completadaAt,
-      remitoUrl: t.remitoUrl,
     })),
     total,
     page: filtros.page,
@@ -535,7 +521,6 @@ export async function obtenerTransferencia(ctx: Ctx, id: string): Promise<Transf
     usuario: t.usuario.nombre,
     completadaAt: t.completadaAt,
     observacion: t.observacion,
-    remitoUrl: t.remitoUrl,
     unidades: items.reduce((a, i) => a + i.cantidad, 0),
     items,
   };
@@ -560,7 +545,8 @@ export async function movimientosDeTransferencia(
  */
 export async function mensajeWhatsAppTransferencia(ctx: Ctx, id: string): Promise<string> {
   const t = await obtenerTransferencia(ctx, id);
-  const remito = t.remitoUrl ? await urlCompartible(t.remitoUrl) : null;
+  // Link firmado sin sesión: el remito se genera al abrirlo (nunca queda roto).
+  const remito = urlAbsoluta(rutaPublicaPdf("remito", ctx.panelId, id));
   return [
     `Transferencia ${t.codigo}: ${t.origen} → ${t.destino}`,
     t.estado === EstadoTransferencia.PENDIENTE ? "En camino (falta confirmar la recepción)." : "",
@@ -584,10 +570,15 @@ export async function mensajeWhatsAppTransferencia(ctx: Ctx, id: string): Promis
  * Remito de la transferencia (A4): logo del panel, código, fecha, origen →
  * destino, usuario, tabla con marca, modelo, especificación (pitadas), sabor
  * y cantidad, total de unidades, observación y dos líneas de firma (Entrega /
- * Recibe). Se guarda en el storage y queda en `remitoUrl`.
+ * Recibe). Lo sirve `GET /api/p/{slug}/transferencias/{id}/remito` (y el link
+ * público de WhatsApp): se genera en el momento y se cachea en el storage con
+ * una firma de lo que dibuja (si la transferencia cambia de estado, se regenera).
  * Todo texto pasa por aWinAnsi antes de medirlo o dibujarlo.
  */
-export async function generarRemito(ctx: Ctx, id: string): Promise<{ url: string }> {
+export async function pdfRemito(
+  ctx: Ctx,
+  id: string,
+): Promise<{ pdf: Uint8Array; archivo: string }> {
   const db = dbPara(ctx.panelId);
   const [t, panel, negocio] = await Promise.all([
     obtenerTransferencia(ctx, id),
@@ -597,15 +588,9 @@ export async function generarRemito(ctx: Ctx, id: string): Promise<{ url: string
     }),
     nombreNegocio(),
   ]);
-  const bytes = await dibujarRemito(t, panel, negocio);
-  const url = await obtenerStorage().guardar(
-    claveAleatoria("remitos", t.codigo, "pdf"),
-    bytes,
-    "application/pdf",
-  );
-  // remitoUrl no está congelado por el trigger de estado: se puede guardar en cualquier estado.
-  await db.transferencia.update({ where: { id }, data: { remitoUrl: url } });
-  return { url };
+  const clave = clavePdf("remito", ctx.panelId, id, { v: 1, t, panel, negocio });
+  const pdf = await pdfCacheado(clave, () => dibujarRemito(t, panel, negocio));
+  return { pdf, archivo: `remito-${t.codigo}.pdf` };
 }
 
 async function dibujarRemito(

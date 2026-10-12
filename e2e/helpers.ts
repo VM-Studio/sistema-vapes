@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { expect, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { Modulo, RolUsuario } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -176,3 +176,25 @@ export async function esperarCatalogoOffline(page: Page, panelId = PANEL_VAPES) 
 }
 
 export const esMobile = (page: Page) => (page.viewportSize()?.width ?? 1440) < 768;
+
+/**
+ * GET a un PDF del sistema: 200, `application/pdf`, inline y empieza con
+ * "%PDF-". Devuelve los bytes. `pedido`: page.request (con la sesión) o un
+ * contexto sin cookies (links públicos de WhatsApp).
+ */
+export async function esperarPdf(pedido: APIRequestContext, url: string): Promise<Buffer> {
+  const r = await pedido.get(url);
+  expect(r.status(), `GET ${url}`).toBe(200);
+  expect(r.headers()["content-type"]).toBe("application/pdf");
+  expect(r.headers()["content-disposition"]).toMatch(/^inline; filename=".+\.pdf"$/);
+  const pdf = await r.body();
+  expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+  return pdf;
+}
+
+/** El link "PDF: https://…" / "Remito: https://…" de un texto de WhatsApp, como ruta. */
+export function linkPublicoPdf(textoWhatsApp: string): string {
+  const m = /https?:\/\/[^\s/]+(\/api\/publico\/pdf\/[^\s]+)/.exec(textoWhatsApp);
+  if (!m) throw new Error(`El texto no tiene link al PDF: ${textoWhatsApp}`);
+  return m[1]!;
+}

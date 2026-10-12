@@ -1,10 +1,11 @@
 "use client";
 
 import type { MedioPago } from "@prisma/client";
-import { Ban, CircleCheck, HandCoins, MessageCircle } from "lucide-react";
+import { Ban, CircleCheck, FileText, HandCoins, MessageCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { usePanel } from "@/components/layout/panel-context";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog } from "@/components/ui/dialog";
@@ -15,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { hoyAR } from "@/lib/fechas";
 import { formatearPesos } from "@/lib/format";
+import { rutaPdf } from "@/lib/pdfs";
 import { cn, formatearFecha } from "@/lib/utils";
 import {
   ETIQUETA_MEDIO_PAGO,
@@ -43,6 +45,7 @@ export function RegistrarCobro({
   pendientes: VentaPendiente[];
 }) {
   const router = useRouter();
+  const panel = usePanel();
   const [abierto, setAbierto] = useState(false);
   const [monto, setMonto] = useState(saldo);
   const [medio, setMedio] = useState<MedioPago | null>(null);
@@ -199,6 +202,15 @@ export function RegistrarCobro({
                 <strong>La cuenta quedó al día</strong>
               )}
             </p>
+            <a
+              href={rutaPdf.recibo(panel.slug, hecho.cobroId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-4"
+              data-testid="recibo-pdf"
+            >
+              <FileText className="size-4" strokeWidth={1.75} aria-hidden /> Ver recibo (PDF)
+            </a>
           </div>
         ) : (
           <div className="flex flex-col gap-5">

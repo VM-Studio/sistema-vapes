@@ -20,7 +20,7 @@ import {
   convertirEnVenta,
   crearCotizacion,
   duplicar,
-  generarPDF,
+  pdfCotizacion,
   listar,
   marcarAceptada,
   marcarEnviada,
@@ -252,10 +252,13 @@ async function main() {
     wa.texto.includes(q1.codigo) && wa.telefono === `+5411${suf}1`,
     "texto de WhatsApp con código y teléfono",
   );
-  const pdf = await generarPDF(ctx, q1.id);
+  const pdf = await pdfCotizacion(ctx, q1.id);
+  const pdf2 = await pdfCotizacion(ctx, q1.id);
   check(
-    pdf.url.endsWith(".pdf") && (await obtener(ctx, q1.id)).pdfUrl === pdf.url,
-    "PDF generado y guardado en pdfUrl",
+    Buffer.from(pdf.pdf).subarray(0, 5).toString() === "%PDF-" &&
+      pdf.archivo === `cotizacion-${q1.codigo}.pdf` &&
+      Buffer.from(pdf2.pdf).equals(Buffer.from(pdf.pdf)),
+    "PDF generado en el momento y servido del caché la segunda vez",
   );
   await marcarEnviada(ctx, q1.id);
   await marcarAceptada(ctx, q1.id);

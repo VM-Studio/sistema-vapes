@@ -1,9 +1,12 @@
-import { expect, test } from "./base";
+import { request } from "@playwright/test";
 
+import { expect, test } from "./base";
 import {
   codigoDe,
   depositoId,
   esMobile,
+  esperarPdf,
+  linkPublicoPdf,
   loginDueno,
   pistola,
   soltarFoco,
@@ -57,13 +60,16 @@ test("Transferir desde la fila del stock → flujo nuevo con el sabor precargado
   await expect(page.getByTestId("codigo-transferencia")).toHaveText(/^VAP-T-\d{6}$/);
   const remito = page.getByTestId("remito-transferencia");
   await expect(remito).toBeVisible();
-  const pdf = await page.request.get((await remito.getAttribute("href"))!);
-  expect(pdf.ok()).toBe(true);
-  expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
-  await expect(page.getByRole("link", { name: "WhatsApp" })).toHaveAttribute(
-    "href",
-    /^https:\/\/wa\.me\/\?text=/,
-  );
+  await expect(remito).toHaveAttribute("target", "_blank");
+  const href = (await remito.getAttribute("href"))!;
+  expect(href).toMatch(/^\/api\/p\/vapes\/transferencias\/[^/]+\/remito$/);
+  await esperarPdf(page.request, href);
+  const wa = page.getByRole("link", { name: "WhatsApp" });
+  await expect(wa).toHaveAttribute("href", /^https:\/\/wa\.me\/\?text=/);
+  // El link del remito en el WhatsApp abre sin sesión (firmado).
+  const anonimo = await request.newContext({ baseURL: new URL(page.url()).origin });
+  await esperarPdf(anonimo, linkPublicoPdf(decodeURIComponent((await wa.getAttribute("href"))!)));
+  await anonimo.dispose();
 
   await expect.poll(() => stock(IGNITE_V80, SABOR, "Ayres Plaza")).toBe(g1 - 2);
   expect(await stock(IGNITE_V80, SABOR, "Mercedes")).toBe(g2 + 2);

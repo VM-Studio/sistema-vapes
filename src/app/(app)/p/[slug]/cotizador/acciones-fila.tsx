@@ -4,11 +4,12 @@ import { Copy, Eye, FileText, Loader2, MessageCircle, ShoppingCart } from "lucid
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { useRutaPanel } from "@/components/layout/panel-context";
+import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { MenuFila, type AccionFila } from "@/components/ui/menu-fila";
 import { useToast } from "@/components/ui/toast";
+import { rutaPdf } from "@/lib/pdfs";
 
-import { duplicarCotizacionAction, pdfCotizacionAction, whatsappCotizacionAction } from "./actions";
+import { duplicarCotizacionAction, whatsappCotizacionAction } from "./actions";
 import { abrirEnPestana } from "./compartir";
 
 /** Acciones rápidas de una fila del listado. */
@@ -26,15 +27,14 @@ export function AccionesFila({
   puedeVender: boolean;
 }) {
   const ruta = useRutaPanel();
+  const panel = usePanel();
   const router = useRouter();
   const toast = useToast();
   const [ocupado, setOcupado] = useState<string | null>(null);
 
-  async function compartir(tipo: "pdf" | "whatsapp") {
-    setOcupado(tipo);
-    const error = await abrirEnPestana(() =>
-      tipo === "pdf" ? pdfCotizacionAction({ id }) : whatsappCotizacionAction({ id }),
-    );
+  async function compartir() {
+    setOcupado("whatsapp");
+    const error = await abrirEnPestana(() => whatsappCotizacionAction({ id }));
     setOcupado(null);
     if (error) toast.error("No se pudo abrir", error);
   }
@@ -63,8 +63,8 @@ export function AccionesFila({
   const acciones: AccionFila[] = [
     { label: "Ver", icon: Eye, href: ruta(`/cotizador/${id}`) },
     ...(puedeCrear ? [{ label: "Duplicar", icon: Copy, onSelect: () => void duplicarla() }] : []),
-    { label: "WhatsApp", icon: MessageCircle, onSelect: () => void compartir("whatsapp") },
-    { label: "PDF", icon: FileText, onSelect: () => void compartir("pdf") },
+    { label: "WhatsApp", icon: MessageCircle, onSelect: () => void compartir() },
+    { label: "PDF", icon: FileText, href: rutaPdf.cotizacion(panel.slug, id), externo: true },
     ...(convertible && puedeVender
       ? [
           {

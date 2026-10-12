@@ -1,5 +1,5 @@
 import { Modulo } from "@prisma/client";
-import { HandCoins, Receipt } from "lucide-react";
+import { FileText, HandCoins, Receipt } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -14,6 +14,7 @@ import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
+import { rutaPdf } from "@/lib/pdfs";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { ESTADO_PAGO_UI, ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
@@ -85,6 +86,15 @@ export default async function CuentaCorrientePage({
           {` · ${m.usuario}`}
           {m.anulado && m.motivoAnulacion && ` · ${m.motivoAnulacion}`}
         </span>
+        <a
+          href={rutaPdf.recibo(slug, m.cobroId)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-foreground inline-flex items-center gap-1 self-start text-xs font-medium underline-offset-4 hover:underline"
+          data-testid="recibo-cobro"
+        >
+          <FileText className="size-3.5" strokeWidth={1.75} aria-hidden /> Recibo (PDF)
+        </a>
       </span>
     );
 

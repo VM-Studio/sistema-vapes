@@ -7,7 +7,6 @@ import {
   anularTransferenciaSchema,
   completarTransferenciaSchema,
   crearTransferenciaSchema,
-  remitoTransferenciaSchema,
 } from "@/lib/validations/transferencia";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx } from "@/server/auth/permissions";
@@ -15,15 +14,13 @@ import {
   anularTransferencia,
   completarTransferencia,
   crearYCompletarTransferencia,
-  generarRemito,
   mensajeWhatsAppTransferencia,
-  obtenerTransferencia,
   registrarEnvioTransferencia,
 } from "@/server/services/transferencia.service";
 
 /**
  * Permisos del módulo STOCK (en el panel actual):
- *   ver      → listado, detalle y remito
+ *   ver      → listado, detalle y remito (GET /api/p/{slug}/transferencias/{id}/remito)
  *   crear    → nueva transferencia ("Mover ahora" o "Registrar envío")
  *   editar   → confirmar la recepción de una pendiente
  *   eliminar → anular una pendiente
@@ -64,16 +61,5 @@ export const anularTransferenciaAction = actionHandler(async (input: unknown) =>
   const { id, motivo } = anularTransferenciaSchema.parse(input);
   const r = await anularTransferencia(ctx, id, motivo);
   revalidarStock();
-  return r;
-});
-
-/** Link al remito PDF; si todavía no existe (falló al crear), lo genera. */
-export const remitoTransferenciaAction = actionHandler(async (input: unknown) => {
-  const ctx = await requireCtx(Modulo.STOCK, "ver");
-  const { id } = remitoTransferenciaSchema.parse(input);
-  const t = await obtenerTransferencia(ctx, id);
-  if (t.remitoUrl) return { url: t.remitoUrl };
-  const r = await generarRemito(ctx, id);
-  revalidatePath("/p/[slug]/stock/transferencias", "layout");
   return r;
 });

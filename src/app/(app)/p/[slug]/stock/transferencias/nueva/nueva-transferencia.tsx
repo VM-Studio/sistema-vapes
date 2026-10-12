@@ -21,7 +21,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { abrirEnPestana } from "@/app/(app)/p/[slug]/cotizador/compartir";
 import { VariantePicker } from "@/components/catalogo/variante-picker";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { Badge } from "@/components/ui/badge";
@@ -39,9 +38,10 @@ import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
 import { formatearNumero } from "@/lib/format";
 import { linkWhatsAppTexto } from "@/lib/movimientos-ui";
+import { rutaPdf } from "@/lib/pdfs";
 import { cn } from "@/lib/utils";
 
-import { moverAhoraAction, registrarEnvioAction, remitoTransferenciaAction } from "../actions";
+import { moverAhoraAction, registrarEnvioAction } from "../actions";
 
 interface Deposito {
   id: string;
@@ -58,7 +58,6 @@ interface Resultado {
   id: string;
   codigo: string;
   unidades: number;
-  remitoUrl: string | null;
   whatsapp: string;
   /** true = "Mover ahora" (ya se movió); false = envío pendiente de recepción. */
   movida: boolean;
@@ -106,7 +105,6 @@ export function NuevaTransferencia({
   const [enviando, setEnviando] = useState<"ahora" | "envio" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
-  const [generandoRemito, setGenerandoRemito] = useState(false);
 
   const origen = depositos.find((d) => d.id === origenId) ?? null;
   const destino = depositos.find((d) => d.id === destinoId) ?? null;
@@ -171,7 +169,6 @@ export function NuevaTransferencia({
       id: r.data.id,
       codigo: r.data.codigo,
       unidades: r.data.unidades,
-      remitoUrl: r.data.remitoUrl,
       whatsapp: r.data.whatsapp,
       movida: modo === "ahora",
       origen: origen.nombre,
@@ -180,18 +177,6 @@ export function NuevaTransferencia({
     });
     setPaso("exito");
     router.refresh();
-  }
-
-  async function verRemito() {
-    if (!resultado) return;
-    setGenerandoRemito(true);
-    const e = await abrirEnPestana(async () => {
-      const r = await remitoTransferenciaAction({ id: resultado.id });
-      if (r.ok) setResultado((x) => (x ? { ...x, remitoUrl: r.data.url } : x));
-      return r;
-    });
-    setGenerandoRemito(false);
-    if (e) toast.error("No se pudo generar el remito", e);
   }
 
   function nueva() {
@@ -322,26 +307,15 @@ export function NuevaTransferencia({
             </p>
           </div>
           <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3">
-            {resultado.remitoUrl ? (
-              <a
-                href={resultado.remitoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={buttonVariants({ variant: "secondary", size: "lg" })}
-                data-testid="remito-transferencia"
-              >
-                <FileText strokeWidth={1.75} /> Ver remito (PDF)
-              </a>
-            ) : (
-              <Button
-                variant="secondary"
-                size="lg"
-                onClick={() => void verRemito()}
-                loading={generandoRemito}
-              >
-                {!generandoRemito && <FileText strokeWidth={1.75} />} Ver remito (PDF)
-              </Button>
-            )}
+            <a
+              href={rutaPdf.remito(panel.slug, resultado.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({ variant: "secondary", size: "lg" })}
+              data-testid="remito-transferencia"
+            >
+              <FileText strokeWidth={1.75} /> Ver remito (PDF)
+            </a>
             <a
               href={linkWhatsAppTexto(resultado.whatsapp)}
               target="_blank"

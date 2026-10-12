@@ -7,6 +7,7 @@ import { PASSWORD_TRINIDAD } from "./global-setup";
 import {
   codigoDe,
   db,
+  esperarPdf,
   IGNITE_V80,
   login,
   loginDueno,
@@ -27,6 +28,7 @@ usarCatalogoEjemplo();
  */
 test.describe.configure({ mode: "serial" });
 
+let urlRecibo = "";
 const sufijo = () => `${Date.now()}`.slice(-4) + `${Math.floor(Math.random() * 9000) + 1000}`;
 const modal = (page: Page) => page.getByTestId("modal-venta");
 const continuar = (page: Page) =>
@@ -115,6 +117,13 @@ test("venta con pago dividido y fiado → /fiados → cobro con recibo por Whats
   const recibo = hecho.getByTestId("recibo-whatsapp");
   await expect(recibo).toHaveAttribute("href", /^https:\/\/wa\.me\/54\d+\?text=/);
   expect(decodeURIComponent((await recibo.getAttribute("href"))!)).toContain(`Venta ${codigo}`);
+  // Recibo PDF del cobro: ruta propia, en una pestaña nueva.
+  const reciboPdf = hecho.getByTestId("recibo-pdf");
+  await expect(reciboPdf).toHaveAttribute("target", "_blank");
+  const hrefRecibo = (await reciboPdf.getAttribute("href"))!;
+  expect(hrefRecibo).toMatch(/^\/api\/p\/vapes\/fiados\/cobros\/[^/]+\/recibo$/);
+  await esperarPdf(page.request, hrefRecibo);
+  urlRecibo = hrefRecibo;
 
   const pagada = await db.venta.findUniqueOrThrow({
     where: { id: venta.id },
@@ -224,6 +233,14 @@ test("botón «Fiado»: venta fiada entera → /fiados → cobro parcial → cob
     ["EFECTIVO", true],
     ["TRANSFERENCIA", true],
   ]);
+
+  // Cada cobro de la cuenta corriente tiene su recibo PDF.
+  await hecho.getByRole("button", { name: "Cerrar", exact: true }).first().click();
+  // (la tabla de escritorio y las cards de celular están en el DOM: solo las visibles)
+  const recibos = page.locator('[data-testid="recibo-cobro"]:visible');
+  await expect(recibos).toHaveCount(2);
+  for (const r of await recibos.all())
+    await esperarPdf(page.request, (await r.getAttribute("href"))!);
 });
 
 test("Trinidad divide pagos pero no puede fiar ni entrar a /fiados", async ({ page }, info) => {
@@ -241,4 +258,6 @@ test("Trinidad divide pagos pero no puede fiar ni entrar a /fiados", async ({ pa
 
   await page.goto("/p/vapes/fiados");
   await expect(page).toHaveURL(/sin-acceso/);
+  // Sin FIADOS tampoco abre recibos.
+  if (urlRecibo) expect((await page.request.get(urlRecibo)).status()).toBe(403);
 });

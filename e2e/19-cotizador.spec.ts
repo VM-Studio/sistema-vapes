@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 
-import type { Page } from "@playwright/test";
+import { request, type Page } from "@playwright/test";
 
 import { expect, test } from "./base";
 import { PASSWORD_TRINIDAD } from "./global-setup";
@@ -8,6 +8,8 @@ import {
   codigoDe,
   db,
   ELF_BAR_BC5000,
+  esperarPdf,
+  linkPublicoPdf,
   login,
   loginDueno,
   PANEL_VAPES,
@@ -130,18 +132,32 @@ test("unitaria de 3 sabores: PDF y link de WhatsApp", async ({ page }, info) => 
   expect(wa).toMatch(/^https:\/\/wa\.me\/54\d{10}\?text=/);
   expect(decodeURIComponent(wa!)).toContain("VAP-Q-");
 
-  const popup = page.waitForEvent("popup").catch(() => null);
-  await page.getByRole("button", { name: "PDF" }).click();
+  // El botón PDF es un link a la ruta que genera el PDF, en una pestaña nueva.
   const link = page.getByTestId("pdf-cotizacion");
-  await expect(link).toBeVisible({ timeout: 30_000 });
-  await (await popup)?.close();
-  const r = await page.request.get((await link.getAttribute("href"))!);
-  expect(r.ok()).toBe(true);
-  expect(r.headers()["content-type"]).toContain("application/pdf");
-  const pdf = await r.body();
-  expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("href", `/api/p/vapes/cotizaciones/${cotizacionUnitaria}/pdf`);
+  const [popup] = await Promise.all([page.waitForEvent("popup"), link.click()]);
+  await popup.waitForLoadState();
+  expect(popup.url()).toContain(`/api/p/vapes/cotizaciones/${cotizacionUnitaria}/pdf`);
+  await popup.close();
+  const pdf = await esperarPdf(page.request, (await link.getAttribute("href"))!);
+  // Segunda vez: del caché del storage, mismo PDF.
+  expect((await esperarPdf(page.request, (await link.getAttribute("href"))!)).equals(pdf)).toBe(
+    true,
+  );
   mkdirSync(CARPETA, { recursive: true });
   writeFileSync(`${CARPETA}/cotizacion-unitaria.pdf`, pdf);
+
+  // El link del PDF que va en el WhatsApp abre sin sesión (firmado); con otra firma, 404.
+  const publico = linkPublicoPdf(decodeURIComponent(wa!));
+  expect(publico).toMatch(/^\/api\/publico\/pdf\/cotizacion\//);
+  const anonimo = await request.newContext({ baseURL: new URL(page.url()).origin });
+  await esperarPdf(anonimo, publico);
+  expect((await anonimo.get(publico.replace(/[^/]+$/, "x".repeat(32)))).status()).toBe(404);
+  expect((await anonimo.get(`/api/p/vapes/cotizaciones/${cotizacionUnitaria}/pdf`)).status()).toBe(
+    401,
+  );
+  await anonimo.dispose();
 });
 
 test("convertir en venta desde el detalle: ítems y cliente bloqueados, Mercedes + Efectivo", async ({

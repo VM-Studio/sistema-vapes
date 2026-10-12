@@ -29,10 +29,11 @@ import { stockGlobal } from "../src/server/services/stock.service";
 import {
   completarTransferencia,
   crearYCompletarTransferencia,
+  mensajeWhatsAppTransferencia,
   obtenerTransferencia,
+  pdfRemito,
   registrarEnvioTransferencia,
 } from "../src/server/services/transferencia.service";
-import { claveDeUrl, obtenerStorage } from "../src/server/storage";
 import { sembrarCatalogoEjemplo } from "../e2e/fixtures/catalogo-ejemplo";
 
 const VAPES = "pnl_vapes";
@@ -317,13 +318,17 @@ async function main() {
   );
 
   // Remito
-  check(t.remitoUrl !== null && doc.remitoUrl === t.remitoUrl, `remito guardado: ${t.remitoUrl}`);
-  const archivo = t.remitoUrl ? await obtenerStorage().leer(claveDeUrl(t.remitoUrl) ?? "") : null;
+  const remito = await pdfRemito(ctx, t.id);
   check(
-    archivo !== null && Buffer.from(archivo.datos).subarray(0, 5).toString() === "%PDF-",
-    `el remito es un PDF (${archivo?.datos.length ?? 0} bytes)`,
+    Buffer.from(remito.pdf).subarray(0, 5).toString() === "%PDF-" &&
+      remito.archivo === `remito-${doc.codigo}.pdf`,
+    `el remito es un PDF (${remito.pdf.length} bytes)`,
   );
-  const texto = archivo ? textoDePdf(archivo.datos) : "";
+  check(
+    (await mensajeWhatsAppTransferencia(ctx, t.id)).includes(`/api/publico/pdf/remito/`),
+    "el WhatsApp lleva el link público (firmado) al remito",
+  );
+  const texto = textoDePdf(remito.pdf);
   const lineas = new Set(texto.split("\n").map((l) => l.trim()));
   const faltan = [
     t.codigo,
@@ -388,7 +393,9 @@ async function main() {
   check(
     (await obtenerTransferencia(ctx, envio.id)).estado === "PENDIENTE" &&
       gEnvio.mercedes === g.mercedes &&
-      envio.remitoUrl !== null,
+      Buffer.from((await pdfRemito(ctx, envio.id)).pdf)
+        .subarray(0, 5)
+        .toString() === "%PDF-",
     `"Registrar envío" ${envio.codigo}: PENDIENTE, con remito y sin mover stock`,
   );
   await completarTransferencia(ctx, envio.id);

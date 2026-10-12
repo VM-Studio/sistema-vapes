@@ -4,7 +4,6 @@ import { Ban, FileText, MessageCircle, PackageCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { abrirEnPestana } from "@/app/(app)/p/[slug]/cotizador/compartir";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,17 +11,13 @@ import { useToast } from "@/components/ui/toast";
 import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { linkWhatsAppTexto } from "@/lib/movimientos-ui";
 
-import {
-  anularTransferenciaAction,
-  completarTransferenciaAction,
-  remitoTransferenciaAction,
-} from "../actions";
+import { anularTransferenciaAction, completarTransferenciaAction } from "../actions";
 
 export function AccionesTransferencia({
   id,
   codigo,
   pendiente,
-  remitoUrl,
+  remitoHref,
   whatsapp,
   puedeCompletar,
   puedeAnular,
@@ -30,7 +25,8 @@ export function AccionesTransferencia({
   id: string;
   codigo: string;
   pendiente: boolean;
-  remitoUrl: string | null;
+  /** GET /api/p/{slug}/transferencias/{id}/remito (se genera al abrirlo). */
+  remitoHref: string;
   whatsapp: string;
   puedeCompletar: boolean;
   puedeAnular: boolean;
@@ -42,7 +38,6 @@ export function AccionesTransferencia({
   const [motivo, setMotivo] = useState("");
   const [errorMotivo, setErrorMotivo] = useState<string>();
   const [enviando, setEnviando] = useState(false);
-  const [generando, setGenerando] = useState(false);
 
   async function completar() {
     const r = await completarTransferenciaAction({ id });
@@ -67,14 +62,6 @@ export function AccionesTransferencia({
     router.refresh();
   }
 
-  async function verRemito() {
-    setGenerando(true);
-    const error = await abrirEnPestana(() => remitoTransferenciaAction({ id }));
-    setGenerando(false);
-    if (error) toast.error("No se pudo generar el remito", error);
-    else router.refresh();
-  }
-
   return (
     <div className="flex w-full flex-col-reverse gap-2 md:w-auto md:flex-row md:justify-end">
       {puedeAnular && (
@@ -90,21 +77,15 @@ export function AccionesTransferencia({
       >
         <MessageCircle strokeWidth={1.75} /> WhatsApp
       </a>
-      {remitoUrl ? (
-        <a
-          href={remitoUrl}
-          target="_blank"
-          rel="noreferrer"
-          data-testid="remito-transferencia"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          <FileText strokeWidth={1.75} /> Ver remito (PDF)
-        </a>
-      ) : (
-        <Button variant="secondary" onClick={() => void verRemito()} loading={generando}>
-          {!generando && <FileText strokeWidth={1.75} />} Generar remito (PDF)
-        </Button>
-      )}
+      <a
+        href={remitoHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="remito-transferencia"
+        className={buttonVariants({ variant: "secondary" })}
+      >
+        <FileText strokeWidth={1.75} /> Ver remito (PDF)
+      </a>
       {puedeCompletar && (
         <Button onClick={() => setCompletando(true)}>
           <PackageCheck strokeWidth={1.75} /> Confirmar recepción

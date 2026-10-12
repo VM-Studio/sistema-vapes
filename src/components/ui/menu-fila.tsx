@@ -10,6 +10,8 @@ export interface AccionFila {
   label: string;
   icon?: LucideIcon;
   href?: string;
+  /** Con `href`: abre en una pestaña nueva con un <a> común (PDFs, descargas). */
+  externo?: boolean;
   onSelect?: () => void;
   peligro?: boolean;
 }
@@ -72,6 +74,20 @@ export function MenuFila({
                 {a.label}
               </>
             );
+            if (a.href && a.externo)
+              return (
+                <a
+                  key={a.label}
+                  role="menuitem"
+                  href={a.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={claseItem(a.peligro)}
+                  onClick={() => setAbierto(false)}
+                >
+                  {cuerpo}
+                </a>
+              );
             return a.href ? (
               <Link
                 key={a.label}

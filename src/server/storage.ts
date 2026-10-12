@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
@@ -259,6 +260,19 @@ function clienteS3(): S3Client {
   });
 }
 
+/**
+ * Carpeta del storage local: STORAGE_DIR o `.storage/`. En una función
+ * serverless (Vercel, Lambda) el código vive en un disco de solo lectura
+ * (`/var/task`): ahí la única carpeta escribible es la temporal, efímera y
+ * propia de cada instancia (sirve de caché; para persistir, STORAGE_PROVIDER=s3).
+ */
+function raizLocal(dir: string | undefined): string {
+  if (dir) return path.resolve(dir);
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
+    return path.join(tmpdir(), "storage");
+  return path.resolve(".storage");
+}
+
 let archivos: StorageProvider | null = null;
 let backups: StorageProvider | null = null;
 
@@ -269,7 +283,7 @@ export function obtenerStorage(): StorageProvider {
   archivos =
     e.STORAGE_PROVIDER === "s3"
       ? new StorageS3(clienteS3(), e.S3_BUCKET!, e.S3_PUBLIC_URL)
-      : new StorageLocal(path.resolve(e.STORAGE_DIR ?? ".storage"));
+      : new StorageLocal(raizLocal(e.STORAGE_DIR));
   return archivos;
 }
 
@@ -280,7 +294,7 @@ export function obtenerStorageBackups(): StorageProvider {
   backups =
     e.STORAGE_PROVIDER === "s3"
       ? new StorageS3(clienteS3(), e.S3_BACKUP_BUCKET ?? e.S3_BUCKET!, undefined)
-      : new StorageLocal(path.resolve(e.STORAGE_DIR ?? ".storage", "backups-db"));
+      : new StorageLocal(path.join(raizLocal(e.STORAGE_DIR), "backups-db"));
   return backups;
 }
 

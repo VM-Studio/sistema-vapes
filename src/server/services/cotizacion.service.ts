@@ -7,14 +7,7 @@ import {
   TipoCotizacion,
   TipoVenta,
 } from "@prisma/client";
-import {
-  PDFDocument,
-  StandardFonts,
-  rgb,
-  type PDFFont,
-  type PDFImage,
-  type PDFPage,
-} from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 import { obtenerEnv } from "@/env";
 import { finDelDia, hoyAR, inicioDelDia } from "@/lib/fechas";
@@ -40,12 +33,13 @@ import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
 import {
   aWinAnsi,
+  cargarLogoPdf,
   COLOR_PDF,
   envolver,
-  leerArchivoPublico,
   recortar,
   rectRedondeado,
 } from "@/server/pdf";
+import { clavePdf, pdfCacheado, rutaPublicaPdf } from "@/server/pdf-http";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { ClienteDuplicadoError, crearCliente } from "@/server/services/cliente.service";
 import { obtenerConfigCotizacion } from "@/server/services/configuracion.service";
@@ -53,7 +47,6 @@ import { nombreNegocio } from "@/server/services/identidad.service";
 import { calcularPrecios, type ResultadoPrecios } from "@/server/services/precio.service";
 import type { CtxFiados } from "@/server/services/fiado.service";
 import { generarVenta, type VentaGenerada } from "@/server/services/venta.service";
-import { claveAleatoria, obtenerStorage } from "@/server/storage";
 
 /**
  * COTIZACIONES (por panel)
@@ -531,7 +524,6 @@ export async function obtener(ctx: Ctx, id: string) {
     notas: c.notas,
     motivoRechazo: c.motivoRechazo,
     venta: c.venta,
-    pdfUrl: c.pdfUrl,
     modo: config.modoEscalonMayorista,
     unidades: totalUnidades,
     resumenEscalones,
@@ -739,42 +731,25 @@ export async function textoWhatsApp(
     `Total: ${formatearPesos(c.total)}`,
     `Válida hasta el ${formatearFecha(c.validaHasta)}.`,
     ...(config.leyenda ? [config.leyenda] : []),
-    ...(urlAbsoluta(c.pdfUrl) ? [`PDF: ${urlAbsoluta(c.pdfUrl)}`] : []),
+    // Link firmado sin sesión: el PDF se genera al abrirlo (nunca queda roto).
+    ...(urlAbsoluta(rutaPublicaPdf("cotizacion", ctx.panelId, c.id))
+      ? [`PDF: ${urlAbsoluta(rutaPublicaPdf("cotizacion", ctx.panelId, c.id))}`]
+      : []),
   ];
   return { texto: lineas.join("\n"), telefono: c.cliente?.telefono ?? null };
 }
 
-const PREFIJO_ARCHIVOS = "/api/publico/archivos/";
-
-async function cargarLogo(doc: PDFDocument, logoUrl: string | null): Promise<PDFImage | null> {
-  if (!logoUrl) return null;
-  try {
-    let datos: Uint8Array | null = null;
-    if (logoUrl.startsWith(PREFIJO_ARCHIVOS)) {
-      datos = (await obtenerStorage().leer(logoUrl.slice(PREFIJO_ARCHIVOS.length)))?.datos ?? null;
-    } else if (/^https?:\/\//.test(logoUrl)) {
-      const r = await fetch(logoUrl, { signal: AbortSignal.timeout(3000) });
-      if (r.ok) datos = new Uint8Array(await r.arrayBuffer());
-    } else if (logoUrl.startsWith("/")) {
-      datos = await leerArchivoPublico(logoUrl);
-    }
-    if (!datos || datos.length < 4) return null;
-    if (datos[0] === 0x89 && datos[1] === 0x50) return await doc.embedPng(datos);
-    if (datos[0] === 0xff && datos[1] === 0xd8) return await doc.embedJpg(datos);
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * PDF de la cotización (A4): logo y nombre del negocio, código, fecha,
- * validez, cliente, tabla de productos (en mayorista con columna "Escalón" y
- * resumen de escalones al pie), descuento, total, leyenda y vendedor. Se
- * guarda en el storage y queda en `pdfUrl` (salvo en una convertida, que ya
- * no se modifica: ahí solo se devuelve el link).
+ * PDF de la cotización (A4) para el Route Handler
+ * `GET /api/p/{slug}/cotizaciones/{id}/pdf` (y el link público de WhatsApp):
+ * se genera en el momento y se cachea en el storage con una firma de todo lo
+ * que dibuja (la cotización con sus ítems, el panel, la configuración y el
+ * negocio): si algo cambia, la próxima vez se regenera solo.
  */
-export async function generarPDF(ctx: Ctx, id: string): Promise<{ url: string }> {
+export async function pdfCotizacion(
+  ctx: Ctx,
+  id: string,
+): Promise<{ pdf: Uint8Array; archivo: string }> {
   const c = await obtener(ctx, id);
   const db = dbPara(ctx.panelId);
   const [panel, config, negocio] = await Promise.all([
@@ -785,6 +760,22 @@ export async function generarPDF(ctx: Ctx, id: string): Promise<{ url: string }>
     obtenerConfigCotizacion(ctx),
     nombreNegocio(),
   ]);
+  const clave = clavePdf("cotizacion", ctx.panelId, id, { v: 1, c, panel, config, negocio });
+  const pdf = await pdfCacheado(clave, () => dibujarPdfCotizacion(c, panel, config, negocio));
+  return { pdf, archivo: `cotizacion-${c.codigo}.pdf` };
+}
+
+/**
+ * Dibuja el PDF: logo y nombre del negocio, código, fecha, validez, cliente,
+ * tabla de productos (en mayorista con columna "Escalón" y resumen de
+ * escalones al pie), descuento, total, leyenda y vendedor.
+ */
+async function dibujarPdfCotizacion(
+  c: Awaited<ReturnType<typeof obtener>>,
+  panel: { nombre: string; logoUrl: string | null },
+  config: Awaited<ReturnType<typeof obtenerConfigCotizacion>>,
+  negocio: string,
+): Promise<Uint8Array> {
   const mayorista = c.tipo === TipoCotizacion.MAYORISTA;
 
   const doc = await PDFDocument.create();
@@ -792,7 +783,7 @@ export async function generarPDF(ctx: Ctx, id: string): Promise<{ url: string }>
   doc.setCreator(negocio);
   const normal = await doc.embedFont(StandardFonts.Helvetica);
   const negrita = await doc.embedFont(StandardFonts.HelveticaBold);
-  const logo = await cargarLogo(doc, panel.logoUrl);
+  const logo = await cargarLogoPdf(doc, panel.logoUrl);
 
   const mono = await doc.embedFont(StandardFonts.CourierBold);
 
@@ -1020,16 +1011,7 @@ export async function generarPDF(ctx: Ctx, id: string): Promise<{ url: string }>
     });
   });
 
-  const bytes = await doc.save();
-  const url = await obtenerStorage().guardar(
-    claveAleatoria("cotizaciones", c.codigo, "pdf"),
-    bytes,
-    "application/pdf",
-  );
-  if (c.estado !== EstadoCotizacion.CONVERTIDA) {
-    await db.cotizacion.update({ where: { id }, data: { pdfUrl: url } });
-  }
-  return { url };
+  return doc.save();
 }
 
 // =============================================================================

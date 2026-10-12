@@ -10,6 +10,7 @@ import { SectionCard } from "@/components/ui/section-card";
 import { formatearNumero } from "@/lib/format";
 import { ESTADO_TRANSFERENCIA_UI } from "@/lib/movimientos-ui";
 import { rutaPanel } from "@/lib/paneles";
+import { rutaPdf } from "@/lib/pdfs";
 import { puede } from "@/lib/permisos";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
@@ -70,7 +71,7 @@ export default async function TransferenciaPage({ params }: { params: Promise<{ 
             id={t.id}
             codigo={t.codigo}
             pendiente={pendiente}
-            remitoUrl={t.remitoUrl}
+            remitoHref={rutaPdf.remito(ctx.panel.slug, t.id)}
             whatsapp={whatsapp}
             puedeCompletar={pendiente && puede(ctx.usuario, ctx.panelId, Modulo.STOCK, "editar")}
             puedeAnular={pendiente && puede(ctx.usuario, ctx.panelId, Modulo.STOCK, "eliminar")}

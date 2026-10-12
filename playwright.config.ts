@@ -45,7 +45,7 @@ export default defineConfig({
       DATABASE_URL: URL_TEST,
       DIRECT_URL: URL_TEST,
       NEXT_PUBLIC_APP_URL: `http://localhost:${PUERTO}`,
-      STORAGE_DIR: ".storage-e2e",
+      STORAGE_DIR: process.env.E2E_STORAGE_DIR ?? ".storage-e2e",
       RATE_LIMIT_POR_MINUTO: "5000",
       LOG_LEVEL: "warn",
       // Cotizaciones fijas sembradas por el setup: sin consultas a dolarapi/criptoya.

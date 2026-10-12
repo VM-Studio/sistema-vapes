@@ -41,6 +41,7 @@ import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useBarcodeScanner } from "@/features/scanner/useBarcodeScanner";
 import { useScanFeedback } from "@/features/scanner/useScanFeedback";
 import { formatearPesos } from "@/lib/format";
+import { rutaPdf } from "@/lib/pdfs";
 import { cn } from "@/lib/utils";
 import type { calcularPrecios } from "@/server/services/precio.service";
 import type { ProductoMasVendido } from "@/server/services/venta.service";
@@ -49,7 +50,6 @@ import {
   calcularPreciosAction,
   guardarCotizacionAction,
   masVendidosCotizadorAction,
-  pdfCotizacionAction,
   whatsappCotizacionAction,
 } from "./actions";
 import { abrirEnPestana } from "./compartir";
@@ -331,7 +331,7 @@ export function EditorCotizacion({
           if (!g) return null;
           codigo = g.codigo;
           return tipoAccion === "pdf"
-            ? pdfCotizacionAction({ id: g.id })
+            ? { ok: true as const, data: { url: rutaPdf.cotizacion(panel.slug, g.id) } }
             : whatsappCotizacionAction({ id: g.id });
         });
         if (error && codigo) toast.error("No se pudo abrir", error);

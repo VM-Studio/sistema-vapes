@@ -30,7 +30,6 @@ import {
   convertirEnVenta,
   crearCotizacion,
   duplicar,
-  generarPDF,
   marcarAceptada,
   marcarEnviada,
   marcarRechazada,
@@ -47,7 +46,7 @@ import { productosMasVendidos } from "@/server/services/venta.service";
 
 /**
  * Permisos del COTIZADOR (en el panel actual):
- *   ver → listado, detalle, PDF y WhatsApp · crear → armar, editar, duplicar y cambiar estado
+ *   ver → listado, detalle y WhatsApp (el PDF: GET /api/p/{slug}/cotizaciones/{id}/pdf) · crear → armar, editar, duplicar y cambiar estado
  *   editar → precio manual por ítem y descuento global
  *   configuración y escalones por defecto → solo dueños
  *   escalones de un producto → dueños o "editar" en PRODUCTOS
@@ -129,15 +128,6 @@ export const duplicarCotizacionAction = actionHandler(async (input: unknown) => 
   const ctx = await requireCtx(Modulo.COTIZADOR, "crear");
   const { id: cotizacionId } = z.object({ id }).parse(input);
   const r = await duplicar(ctx, cotizacionId);
-  revalidar();
-  return r;
-});
-
-/** Genera (o regenera) el PDF y devuelve su URL. */
-export const pdfCotizacionAction = actionHandler(async (input: unknown) => {
-  const ctx = await requireCtx(Modulo.COTIZADOR, "ver");
-  const { id: cotizacionId } = z.object({ id }).parse(input);
-  const r = await generarPDF(ctx, cotizacionId);
   revalidar();
   return r;
 });

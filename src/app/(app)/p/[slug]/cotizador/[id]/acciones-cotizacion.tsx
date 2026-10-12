@@ -6,18 +6,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { useRutaPanel } from "@/components/layout/panel-context";
+import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { formatearPesos } from "@/lib/format";
+import { rutaPdf } from "@/lib/pdfs";
 
 import {
   cambiarEstadoCotizacionAction,
   duplicarCotizacionAction,
-  pdfCotizacionAction,
   prepararConversionAction,
 } from "../actions";
 
@@ -45,10 +45,10 @@ export function AccionesCotizacion({
   convertirAlCargar: boolean;
 }) {
   const ruta = useRutaPanel();
+  const panel = usePanel();
   const router = useRouter();
   const toast = useToast();
   const [ocupado, setOcupado] = useState<string | null>(null);
-  const [pdf, setPdf] = useState<string | null>(null);
   const [rechazo, setRechazo] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [cambios, setCambios] = useState<Cambio[] | null>(null);
@@ -67,15 +67,6 @@ export function AccionesCotizacion({
     setRechazo(false);
     if (!r.ok) return toast.error("No se pudo cambiar el estado", r.error.message);
     router.refresh();
-  }
-
-  async function generarPdf() {
-    setOcupado("pdf");
-    const r = await pdfCotizacionAction({ id });
-    setOcupado(null);
-    if (!r.ok) return toast.error("No se pudo generar el PDF", r.error.message);
-    setPdf(r.data.url);
-    window.open(r.data.url, "_blank", "noopener");
   }
 
   async function duplicarla() {
@@ -159,9 +150,15 @@ export function AccionesCotizacion({
           >
             <MessageCircle strokeWidth={1.75} /> WhatsApp
           </a>
-          <Button variant="secondary" onClick={() => void generarPdf()} loading={ocupado === "pdf"}>
-            {ocupado !== "pdf" && <FileText strokeWidth={1.75} />} PDF
-          </Button>
+          <a
+            href={rutaPdf.cotizacion(panel.slug, id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({ variant: "secondary" })}
+            data-testid="pdf-cotizacion"
+          >
+            <FileText strokeWidth={1.75} /> PDF
+          </a>
           {editable && (
             <Link
               href={ruta(`/cotizador/${id}/editar`)}
@@ -183,18 +180,6 @@ export function AccionesCotizacion({
         </div>
       </div>
       {botonConvertir && <BarraAccion soloMobile>{botonConvertir}</BarraAccion>}
-      {pdf && (
-        <a
-          href={pdf}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-foreground inline-flex items-center gap-1.5 self-start text-sm font-medium underline underline-offset-4"
-          data-testid="pdf-cotizacion"
-        >
-          <FileText className="size-4" strokeWidth={1.75} aria-hidden />
-          Abrir el PDF de <span className="font-mono">{codigo}</span>
-        </a>
-      )}
 
       <Dialog
         open={rechazo}
