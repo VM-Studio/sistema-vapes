@@ -1,10 +1,12 @@
 "use client";
 
+import { Modulo } from "@prisma/client";
 import { CircleCheck, Copy, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 import { useRutaPanel } from "@/components/layout/panel-context";
+import { usePuede } from "@/components/layout/usuario-context";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { formatearPesos } from "@/lib/format";
 import {
@@ -32,6 +34,7 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
     }),
   );
   const debe = Number(venta.saldoPendiente) > 0;
+  const verFiados = usePuede(Modulo.FIADOS, "ver");
   const medios =
     venta.pagos.length > 1
       ? venta.pagos.map((p) => ETIQUETA_MEDIO_PAGO[p.medioPago]).join(" + ")
@@ -58,8 +61,20 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
             className="text-foreground text-sm font-medium tabular-nums"
             data-testid="pago-parcial"
           >
-            Pagado {formatearPesos(venta.montoPagado)} · Pendiente{" "}
-            {formatearPesos(venta.saldoPendiente)}
+            {Number(venta.montoPagado) > 0 && <>Pagado {formatearPesos(venta.montoPagado)} · </>}
+            Pendiente {formatearPesos(venta.saldoPendiente)}
+            {verFiados && (
+              <>
+                {" · "}
+                <Link
+                  href={ruta(`/fiados/${venta.cliente.id}`)}
+                  className="underline-offset-4 hover:underline"
+                  data-testid="ver-en-fiados"
+                >
+                  ver en Fiados
+                </Link>
+              </>
+            )}
           </p>
         )}
       </div>

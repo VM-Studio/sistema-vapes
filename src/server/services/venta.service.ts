@@ -160,6 +160,11 @@ async function generarEnTx(
   // 1. Galpón, pagos, cliente e ítems presentes.
   if (!input.depositoId) throw new DomainError("Elegí el galpón de la venta.");
   if (input.pagos.length === 0 && !input.fiar) throw new DomainError(ELEGI_MEDIO);
+  // Pedir fiado (botón «Fiado» = sin pagos, o «Fiar el resto») exige FIADOS
+  // "crear" de entrada, aunque el total termine cubierto: el permiso no depende
+  // de lo que mande el cliente.
+  if (input.fiar && !(await puedeFiados(ctx, "crear", tx)))
+    throw new ForbiddenError("No tenés permiso para vender fiado.");
   if (input.pagos.some((p) => !MEDIOS.has(p.medioPago))) throw new DomainError(ELEGI_MEDIO);
   if (new Set(input.pagos.map((p) => p.medioPago)).size !== input.pagos.length)
     throw new DomainError("Usá cada medio de pago una sola vez.");
@@ -274,14 +279,13 @@ async function generarEnTx(
   }
   const saldoPendiente = total.minus(montoPagado);
   const fiada = saldoPendiente.greaterThan(0);
-  if (fiada) {
-    if (!(await puedeFiados(ctx, "crear", tx)))
-      throw new ForbiddenError("No tenés permiso para vender fiado.");
-    if (!input.fiar) {
-      throw new DomainError(
-        `El pago no cubre el total (${dec(montoPagado)} de ${dec(total)}): activá «Fiar el resto» o completá el pago.`,
-      );
-    }
+  if (fiada && !input.fiar) {
+    const noCubre = `El pago no cubre el total (${dec(montoPagado)} de ${dec(total)})`;
+    throw new DomainError(
+      (await puedeFiados(ctx, "crear", tx))
+        ? `${noCubre}: activá «Fiar el resto» o completá el pago.`
+        : `${noCubre}.`,
+    );
   }
   const estadoPago = estadoPagoDe(montoPagado, saldoPendiente);
   // Medio principal: el de mayor monto (a igualdad, el primero que se cargó). Una

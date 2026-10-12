@@ -31,9 +31,9 @@ import {
   type Paso,
   type VentaEnCurso,
 } from "./estado-venta";
-import { PasoPago } from "./paso-pago";
 import { ID_BUSCADOR_VENTA, PasoProductos, type SaborParaVenta } from "./paso-productos";
 import { StepperVenta } from "./_componentes/stepper-venta";
+import { esFiadoTotal, PasoPago } from "./paso-pago";
 import { VentaExitosa } from "./venta-exitosa";
 
 export interface DepositoVenta {
@@ -247,10 +247,12 @@ export function ModalVenta({
 
   const resumenPago = resumirPago(venta, totales.total);
   const quedaPendiente = Number(resumenPago.pendiente) > 0;
-  const fiar = venta.dividido && venta.fiar && puedeFiar && quedaPendiente;
+  // «Fiado» (sin medio) o «Fiar el resto» (pago dividido que no cubre el total).
+  const fiadoTotal = puedeFiar && esFiadoTotal(venta);
+  const fiar = (venta.dividido ? venta.fiar : fiadoTotal) && puedeFiar && quedaPendiente;
   const pagoValido =
     resumenPago.error === null &&
-    (venta.dividido || venta.medioPago !== null) &&
+    (venta.dividido || venta.medioPago !== null || (fiadoTotal && quedaPendiente)) &&
     (!quedaPendiente || fiar);
 
   const puedeConfirmar =

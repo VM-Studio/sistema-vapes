@@ -1,7 +1,7 @@
 "use client";
 
 import type { MedioPago } from "@prisma/client";
-import { HandCoins, Plus, Split, X } from "lucide-react";
+import { HandCoins, type LucideIcon, Plus, Split, X } from "lucide-react";
 
 import type { ClienteElegido } from "@/components/clientes/selector-cliente";
 import { Button } from "@/components/ui/button";
@@ -32,8 +32,13 @@ import {
 
 type EstadoPago = Pick<VentaEnCurso, "medioPago" | "dividido" | "pagos" | "fiar">;
 
+/** Botón «Fiado» elegido: sin medio ni filas, todo el total queda en la cuenta corriente. */
+export const esFiadoTotal = (p: EstadoPago) => !p.dividido && p.medioPago === null && p.fiar;
+
 /**
- * Paso 4 "¿Cómo paga?": tocar un medio = un pago por el total. "Dividir pago"
+ * Paso 4 "¿Cómo paga?": tocar un medio = un pago por el total. Quien tiene
+ * FIADOS "crear" ve además el botón «Fiado» (sin pagos: todo el total queda en
+ * su cuenta corriente); sin ese permiso el botón no existe. "Dividir pago"
  * abre filas medio + monto + referencia (hasta 3, sin repetir medio) con el
  * restante precargado. Si lo pagado no cubre el total, quien tiene FIADOS
  * "crear" puede "Fiar el resto"; sin ese permiso no se puede confirmar.
@@ -44,6 +49,7 @@ export function PasoPago({
   items,
   pago,
   resumenPago,
+  medios = MEDIOS_PAGO,
   puedeFiar,
   descuento,
   notas,
@@ -60,7 +66,9 @@ export function PasoPago({
   pago: EstadoPago;
   /** resumirPago(pago, total): lo calcula el modal (también lo usa para confirmar). */
   resumenPago: ResumenPago;
-  /** FIADOS "crear": puede dejar saldo pendiente. */
+  /** Medios habilitados, en el orden de los botones. */
+  medios?: readonly MedioPago[];
+  /** FIADOS "crear": puede dejar saldo pendiente (y ve el botón «Fiado»). */
   puedeFiar: boolean;
   descuento: string;
   notas: string;
@@ -79,6 +87,8 @@ export function PasoPago({
     aCentavos(montoTipeado(descuento) ?? 0) > aCentavos(totales.subtotal);
   const pendiente = Number(resumenPago.pendiente) > 0;
   const noCubre = pago.dividido && pendiente && resumenPago.error === null;
+  const fiadoTotal = puedeFiar && esFiadoTotal(pago);
+  const columnas = medios.length + (puedeFiar ? 1 : 0);
 
   function cambiarFila(i: number, cambio: Partial<FilaPago>) {
     onPago({ pagos: pago.pagos.map((f, j) => (j === i ? { ...f, ...cambio } : f)) });
@@ -89,33 +99,31 @@ export function PasoPago({
       <div className="flex flex-col gap-4">
         <fieldset className="flex flex-col">
           <legend className="text-h2 mb-4 font-semibold">¿Cómo paga?</legend>
-          <div role="radiogroup" aria-label="Medio de pago" className="grid gap-2 sm:grid-cols-3">
-            {MEDIOS_PAGO.map((m) => {
-              const Icono = ICONO_MEDIO_PAGO[m];
-              const activo = !pago.dividido && pago.medioPago === m;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  role="radio"
-                  aria-checked={activo}
-                  onClick={() => onPago({ medioPago: m, dividido: false, fiar: false })}
-                  className={cn(
-                    "text-body rounded-control flex min-h-14 items-center gap-3 border px-4 text-left font-semibold transition-colors sm:min-h-24 sm:flex-col sm:justify-center sm:text-center",
-                    activo
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-foreground bg-surface text-foreground hover:bg-surface-2",
-                  )}
-                >
-                  <Icono
-                    className={cn("size-6", activo ? "text-background" : "text-muted")}
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
-                  {ETIQUETA_MEDIO_PAGO[m]}
-                </button>
-              );
-            })}
+          <div
+            role="radiogroup"
+            aria-label="Medio de pago"
+            className={cn(
+              "grid gap-2",
+              columnas >= 4 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3",
+            )}
+          >
+            {medios.map((m) => (
+              <BotonMedio
+                key={m}
+                icono={ICONO_MEDIO_PAGO[m]}
+                etiqueta={ETIQUETA_MEDIO_PAGO[m]}
+                activo={!pago.dividido && pago.medioPago === m}
+                onClick={() => onPago({ medioPago: m, dividido: false, fiar: false })}
+              />
+            ))}
+            {puedeFiar && (
+              <BotonMedio
+                icono={HandCoins}
+                etiqueta="Fiado"
+                activo={fiadoTotal}
+                onClick={() => onPago({ medioPago: null, dividido: false, fiar: true, pagos: [] })}
+              />
+            )}
           </div>
           {!pago.dividido && (
             <Button
@@ -166,7 +174,7 @@ export function PasoPago({
                       aria-label={`Medio del pago ${i + 1}`}
                       value={f.medioPago}
                       onChange={(e) => cambiarFila(i, { medioPago: e.target.value as MedioPago })}
-                      options={MEDIOS_PAGO.map((m) => ({
+                      options={medios.map((m) => ({
                         value: m,
                         label: ETIQUETA_MEDIO_PAGO[m],
                         disabled: usados.has(m),
@@ -334,6 +342,12 @@ export function PasoPago({
               <dd className="text-right tabular-nums">{formatearPesos(resumenPago.vuelto)}</dd>
             </>
           )}
+          {fiadoTotal && (
+            <>
+              <dt className="text-muted">Fiado</dt>
+              <dd className="text-right font-medium">Por el total</dd>
+            </>
+          )}
           {pago.dividido && pendiente && pago.fiar && puedeFiar && (
             <>
               <dt className="text-muted">Pendiente</dt>
@@ -375,7 +389,55 @@ export function PasoPago({
             {formatearPesos(totales.total)}
           </dd>
         </dl>
+        {fiadoTotal && pendiente && (
+          <p
+            role="status"
+            className="bg-surface-3 text-foreground rounded-control flex items-center gap-2 px-3 py-2.5 text-sm"
+            data-testid="venta-fiada"
+          >
+            <HandCoins className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+            <span>
+              Esta venta queda fiada a {cliente.nombre} por{" "}
+              <strong className="tabular-nums">{formatearPesos(resumenPago.pendiente)}</strong>
+            </span>
+          </p>
+        )}
       </section>
     </div>
+  );
+}
+
+/** Botón grande de "¿Cómo paga?": un medio por el total, o «Fiado». */
+function BotonMedio({
+  icono: Icono,
+  etiqueta,
+  activo,
+  onClick,
+}: {
+  icono: LucideIcon;
+  etiqueta: string;
+  activo: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={activo}
+      onClick={onClick}
+      className={cn(
+        "text-body rounded-control flex min-h-14 items-center gap-3 border px-4 text-left font-semibold transition-colors sm:min-h-24 sm:flex-col sm:justify-center sm:text-center",
+        activo
+          ? "border-foreground bg-foreground text-background"
+          : "border-foreground bg-surface text-foreground hover:bg-surface-2",
+      )}
+    >
+      <Icono
+        className={cn("size-6", activo ? "text-background" : "text-muted")}
+        strokeWidth={1.75}
+        aria-hidden
+      />
+      {etiqueta}
+    </button>
   );
 }

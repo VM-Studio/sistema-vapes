@@ -7,7 +7,10 @@
  *  2. Venta fiada: PARCIAL, saldo del cliente, /fiados con antigüedad, cobro
  *     posterior, cobro de más → error, anular la venta fiada revierte todo.
  *  3. Un cobro imputado a dos ventas (de la más vieja a la más nueva).
- *  4. Trinidad: divide pagos, pero no fía, no cobra y no ve Fiados.
+ *  2b. (A2) Venta fiada entera desde el botón «Fiado» (sin pagos): PENDIENTE,
+ *     saldo en /fiados y en la ficha, cobro parcial → PARCIAL, cobro final →
+ *     PAGADA; sin «fiar», pagos vacíos → DomainError.
+ *  4. Trinidad: divide pagos, pero no fía (ni con pagos vacíos), no cobra y no ve Fiados.
  *  7. Migración de datos: ventas viejas → PagoVenta + PAGADA (en una base
  *     auxiliar `<base>_mig`) e invariantes de montos en la base del test.
  *  8. 10 cobros simultáneos de $1.000 sobre una deuda de $5.000 → pasan 5.
@@ -39,7 +42,7 @@ import {
   periodoDesdeParams,
   ventasPorMedioPago,
 } from "../src/server/services/analitica.service";
-import { crearCliente } from "../src/server/services/cliente.service";
+import { crearCliente, obtenerCliente } from "../src/server/services/cliente.service";
 import {
   anularCobro,
   cuentaCorriente,
@@ -331,6 +334,66 @@ async function main() {
   );
 
   // ---------------------------------------------------------------------------
+  console.log("\n2b) Venta de $20.000 fiada entera (botón «Fiado»: sin pagos)");
+  const cF = await cliente("Cliente fiado entero");
+  const sinMedio = await error(() => venta(ctx, cF.id, diez.id, 2, []));
+  check(
+    sinMedio instanceof DomainError && /medio de pago/.test(msg(sinMedio)),
+    `sin pagos y sin «fiar» → DomainError («${msg(sinMedio).slice(0, 40)}…»)`,
+  );
+  const vF = await venta(ctx, cF.id, diez.id, 2, [], true);
+  const filaF = await db.venta.findUniqueOrThrow({
+    where: { id: vF.id },
+    include: { pagos: true },
+  });
+  check(
+    filaF.estadoPago === EstadoPago.PENDIENTE &&
+      filaF.medioPago === null &&
+      filaF.pagos.length === 0 &&
+      $(filaF.montoPagado) === "0.00" &&
+      $(filaF.saldoPendiente) === "20000.00",
+    `PENDIENTE, sin pagos ni medio, saldoPendiente ${$(filaF.saldoPendiente)}`,
+  );
+  const dF = (await deudores(ctx, { page: 1, q: "Cliente fiado entero" })).deudores.find(
+    (d) => d.id === cF.id,
+  );
+  check(
+    !!dF && dF.saldo === "20000.00" && dF.ventasPendientes === 1 && dF.diasAntiguedad === 0,
+    `/fiados lo lista al instante: debe ${dF?.saldo}, ${dF?.diasAntiguedad} días`,
+  );
+  const fichaF = await obtenerCliente(ctx, cF.id, { verTotales: true });
+  check(
+    fichaF.cliente.saldoDeudor === "20000.00",
+    `ficha del cliente: saldo ${fichaF.cliente.saldoDeudor}`,
+  );
+  await registrarCobro(ctx, { clienteId: cF.id, monto: 8000, medioPago: "EFECTIVO" });
+  const parcialF = await db.venta.findUniqueOrThrow({ where: { id: vF.id } });
+  check(
+    parcialF.estadoPago === EstadoPago.PARCIAL &&
+      $(parcialF.saldoPendiente) === "12000.00" &&
+      (await saldoDe(cF.id)) === "12000.00",
+    `cobro parcial de $8.000 → PARCIAL, debe ${$(parcialF.saldoPendiente)}`,
+  );
+  await registrarCobro(ctx, { clienteId: cF.id, monto: 12000, medioPago: "TRANSFERENCIA" });
+  const finalF = await db.venta.findUniqueOrThrow({ where: { id: vF.id } });
+  check(
+    finalF.estadoPago === EstadoPago.PAGADA &&
+      $(finalF.saldoPendiente) === "0.00" &&
+      $(finalF.montoPagado) === "20000.00" &&
+      (await saldoDe(cF.id)) === "0.00",
+    "cobro final de $12.000 → PAGADA, saldo del cliente en 0",
+  );
+  const vF2 = await venta(ctx, cF.id, cinco.id, 1, [], true);
+  await anularVenta(ctx, vF2.id, "Prueba de anulación de venta fiada entera");
+  check(
+    (await saldoDe(cF.id)) === "0.00" &&
+      !(await deudores(ctx, { page: 1, q: "Cliente fiado entero" })).deudores.some(
+        (d) => d.id === cF.id,
+      ),
+    "anular una venta fiada entera → el saldo vuelve a 0 y sale de /fiados",
+  );
+
+  // ---------------------------------------------------------------------------
   console.log("\n3) Cobro de $25.000 a un cliente con dos ventas pendientes ($15.000 y $20.000)");
   const c3 = await cliente("Cliente dos ventas");
   fijarReloj(() => new Date(Date.now() - 2 * DIA));
@@ -394,6 +457,18 @@ async function main() {
     `forzar generarVenta con pagos < total → ForbiddenError («${msg(forzada)}»)`,
   );
   // La página, las acciones y la navegación usan esta misma regla (FIADOS "ver").
+  const forzadaSinPagos = await error(() => venta(ctxTri, c4.id, cinco.id, 1, [], true));
+  check(
+    forzadaSinPagos instanceof ForbiddenError && (await db.venta.count()) === ventasTri,
+    `forzar el botón «Fiado» (pagos vacíos + fiar) → ForbiddenError («${msg(forzadaSinPagos)}»)`,
+  );
+  const forzadaCubierta = await error(() =>
+    venta(ctxTri, c4.id, cinco.id, 1, [{ medioPago: "EFECTIVO", monto: 5000 }], true),
+  );
+  check(
+    forzadaCubierta instanceof ForbiddenError,
+    "pedir «fiar» aunque el pago cubra el total → ForbiddenError (el permiso va primero)",
+  );
   check(
     !puede(sujeto, VAPES, "FIADOS", "ver") && !(await puedeFiados(ctxTri, "ver")),
     "no ve /fiados (sin FIADOS ver)",

@@ -37,11 +37,12 @@ test("dueño: ve blue y USDT con fuente; override manual en el widget; quitar ov
 
   await page.goto("/configuracion/cambio");
   await page.getByRole("button", { name: "Quitar override" }).click();
+  // "$ 1.300" también figura en el historial: esperar a que desaparezca el override.
+  await expect(blue).not.toContainText("Cargada a mano");
   await expect(blue).toContainText("$ 1.300");
-  const fila = await db.configuracionGlobal.findUnique({
-    where: { clave: "cambio.overrideUSD_BLUE" },
-  });
-  expect(fila).toBeNull();
+  await expect
+    .poll(() => db.configuracionGlobal.findUnique({ where: { clave: "cambio.overrideUSD_BLUE" } }))
+    .toBeNull();
 });
 
 test("widget en la barra del panel: dueño con link a la configuración", async ({ page }) => {
