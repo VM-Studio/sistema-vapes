@@ -6,7 +6,8 @@ import { logosCandidatos } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
 
 /**
- * Área del logo en las tarjetas de /paneles: rectángulo blanco de 120px de
+ * Área del logo en las tarjetas de /paneles: blanco como la tarjeta y sin borde
+ * (los logos traen fondo blanco: así no se notan sus márgenes), 120px de
  * alto con el logo centrado (contain). Si el logo no carga, prueba el de marca
  * del slug; sin ninguno, el nombre tipografiado.
  */
@@ -25,7 +26,7 @@ export function LogoTarjeta({
   return (
     <div
       className={cn(
-        "rounded-control bg-surface border-border flex h-[120px] items-center justify-center overflow-hidden border px-6 py-4",
+        "rounded-control bg-surface flex h-[120px] items-center justify-center overflow-hidden px-6 py-4",
         className,
       )}
     >
