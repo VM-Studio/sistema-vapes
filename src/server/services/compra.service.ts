@@ -18,6 +18,7 @@ import { registrarAuditoria } from "@/server/services/audit.service";
 import { obtenerCotizacion } from "@/server/services/cambio.service";
 import { actualizarUltimoCosto } from "@/server/services/costo-variante.service";
 import { asignarProducto } from "@/server/services/proveedor.service";
+import { sincronizarComisionPasista } from "@/server/services/pasista.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
@@ -52,6 +53,9 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  *   compra RECIBIDA además pasa el costo final a `Variante.ultimoCosto` de los
  *   sabores cuya última compra recibida es esta (historial en
  *   CostoVarianteHistorial). Recibir usa el costo final, no el base.
+ * - Comisión del pasista (módulo Pasista): cada cambio de la comisión de la
+ *   compra se refleja en ComisionPasista en la misma transacción
+ *   (sincronizarComisionPasista en pasista.service).
  * - Una compra recibida no se edita (lo garantiza la DB): se anula. Lo único
  *   que cambia después es la comisión, los gastos y lo que se calcula de ellos.
  * - Costos y totales: solo dueños o `ver` en COMPRAS (el módulo entero ya lo exige).
@@ -262,6 +266,7 @@ export async function crearCompra(
         items: { create: conUsdt(itemsParaCrear(t, productoDe, costos), usdt.usdtDe) },
       },
     });
+    await sincronizarComisionPasista(tx, ctx, compra.id);
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.CREATE,
@@ -329,6 +334,7 @@ export async function actualizarCompra(
         items: { create: conUsdt(itemsParaCrear(t, productoDe, costos), usdt.usdtDe) },
       },
     });
+    await sincronizarComisionPasista(tx, ctx, id);
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.UPDATE,
@@ -707,6 +713,8 @@ export async function anularCompra(
 
       const notas = [compra.notas, `[Anulada] ${motivo}`].filter(Boolean).join("\n");
       await tx.compra.update({ where: { id }, data: { estado: EstadoCompra.ANULADA, notas } });
+      // Comisión del pasista: pendiente se borra; ya pagada queda un ajuste negativo.
+      await sincronizarComisionPasista(tx, ctx, id);
       await registrarAuditoria(tx, {
         usuarioId: ctx.usuarioId,
         accion: AccionAuditoria.UPDATE,
@@ -811,6 +819,7 @@ export async function recalcularCostosFinales(
       }
     }
   }
+  await sincronizarComisionPasista(tx, ctx, compraId);
   return costos;
 }
 

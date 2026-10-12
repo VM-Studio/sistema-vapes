@@ -1,5 +1,6 @@
 import { Modulo } from "@prisma/client";
 import {
+  BadgePercent,
   BarChart3,
   Boxes,
   Building2,
@@ -162,7 +163,18 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     ordenMobile: 13,
     descripcion: "Mercadería recibida de proveedores",
   },
-  // Los dos accesos directos van antes que el listado: tituloDeRuta toma el primero que coincide.
+  {
+    modulo: Modulo.PASISTA,
+    label: "Pasista",
+    href: "/pasista",
+    icon: BadgePercent,
+    grupo: "Compras",
+    enBottomBar: false,
+    ordenMobile: 14,
+    descripcion: "Comisión del pasista por compra y por mes",
+  },
+  // Los accesos directos (/cotizador/…/nueva) también coinciden con el listado (/cotizador):
+  // gana el más específico (itemActivo).
   {
     modulo: Modulo.COTIZADOR,
     label: "Cotizar por unidad",
@@ -170,7 +182,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Calculator,
     grupo: "Análisis",
     enBottomBar: false,
-    ordenMobile: 14,
+    ordenMobile: 15,
     descripcion: "Presupuesto por unidad",
   },
   {
@@ -180,7 +192,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: PackageOpen,
     grupo: "Análisis",
     enBottomBar: false,
-    ordenMobile: 15,
+    ordenMobile: 16,
     descripcion: "Presupuesto con precios por escalón",
   },
   {
@@ -190,7 +202,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: FileSpreadsheet,
     grupo: "Análisis",
     enBottomBar: false,
-    ordenMobile: 16,
+    ordenMobile: 17,
     descripcion: "Presupuestos guardados, enviados y convertidos",
   },
   {
@@ -200,7 +212,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: BarChart3,
     grupo: "Análisis",
     enBottomBar: false,
-    ordenMobile: 17,
+    ordenMobile: 18,
     descripcion: "Ventas, stock y rendimiento",
   },
   {
@@ -210,7 +222,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: UsersRound,
     grupo: "Análisis",
     enBottomBar: false,
-    ordenMobile: 18,
+    ordenMobile: 19,
     descripcion: "Rendimiento de cada vendedor",
   },
   {
@@ -220,7 +232,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: SlidersHorizontal,
     grupo: "Administración",
     enBottomBar: false,
-    ordenMobile: 20,
+    ordenMobile: 21,
     descripcion: "Depósitos, categorías, marcas, escáner y ventas",
   },
   {
@@ -230,7 +242,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: UserCog,
     grupo: "Administración",
     enBottomBar: false,
-    ordenMobile: 21,
+    ordenMobile: 22,
     global: true,
     descripcion: "Accesos y permisos del equipo",
   },
@@ -241,7 +253,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     icon: Settings,
     grupo: "Administración",
     enBottomBar: false,
-    ordenMobile: 22,
+    ordenMobile: 23,
     global: true,
     descripcion: "Negocio, cotizaciones, backups, auditoría",
   },
@@ -273,6 +285,25 @@ export function navegacionPermitida(
   });
 }
 
+/**
+ * El ítem activo para `pathname`: entre los que coinciden (esRutaActiva),
+ * el de prefijo más largo. Así /cotizador/mayorista/nueva marca solo
+ * "Cotizar por mayor" y no también "Cotizaciones" (/cotizador). Un solo
+ * ítem activo; null si no coincide ninguno.
+ */
+export function itemActivo<T extends Pick<ItemNavegacion, "href" | "base">>(
+  items: readonly T[],
+  pathname: string,
+): T | null {
+  let mejor: T | null = null;
+  for (const item of items) {
+    const ruta = item.base ?? item.href;
+    if (esRutaActiva(ruta, pathname) && (!mejor || ruta.length > (mejor.base ?? mejor.href).length))
+      mejor = item;
+  }
+  return mejor;
+}
+
 /** ¿`href` corresponde a la ruta actual? (inicio del panel solo exacto; el resto por prefijo). */
 export function esRutaActiva(href: string, pathname: string): boolean {
   if (/^\/p\/[^/]+$/.test(href) || href === "/") return pathname === href;
@@ -293,7 +324,10 @@ export function tituloDeRuta(pathname: string): string {
   const m = pathname.match(/^\/p\/[^/]+(\/.*)?$/);
   if (m) {
     const resto = m[1] ?? "/";
-    const item = NAVEGACION.find((i) => !i.global && i.href !== "/" && esRutaActiva(i.href, resto));
+    const item = itemActivo(
+      NAVEGACION.filter((i) => !i.global && i.href !== "/"),
+      resto,
+    );
     return item?.label ?? "Inicio";
   }
   const extra = Object.entries(TITULOS_GLOBALES).find(([href]) => esRutaActiva(href, pathname));

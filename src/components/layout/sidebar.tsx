@@ -3,7 +3,7 @@
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 
-import { esRutaActiva, GRUPOS, type ItemNavegacion } from "@/config/navigation";
+import { GRUPOS, itemActivo, type ItemNavegacion } from "@/config/navigation";
 import { useRutaOptimista } from "@/hooks/use-ruta-optimista";
 import { cn } from "@/lib/utils";
 
@@ -23,9 +23,10 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
   // Activo al instante al tocar, sin esperar la respuesta del servidor.
   const { ruta: pathname, marcar } = useRutaOptimista();
   const sueltos = items.filter((i) => i.grupo === null);
+  const activoHref = itemActivo(items, pathname)?.href ?? null;
 
   const renderItem = (item: ItemNavegacion) => {
-    const activo = esRutaActiva(item.base ?? item.href, pathname);
+    const activo = item.href === activoHref;
     const Icono = item.icon;
     return (
       <li key={item.href}>

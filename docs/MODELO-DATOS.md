@@ -631,6 +631,32 @@ Table GastoCompra {
   Note: 'Solo se anula (trigger): nunca se edita ni se borra.'
 }
 
+Table ComisionPasista {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  compraId text [not null]
+  tipo TipoComisionPasista [not null, default: 'ORIGINAL', note: 'ORIGINAL | AJUSTE']
+  monto decimal(12,2) [not null, note: 'ORIGINAL > 0; AJUSTE ≠ 0.']
+  porcentaje decimal(5,2)
+  base decimal(12,2) [not null, note: 'Total de la compra.']
+  fecha timestamp [not null, note: '= Compra.fecha.']
+  mes date [note: 'GENERADA: date_trunc(month, fecha − 3 h).']
+  estado EstadoComisionPasista [not null, default: 'PENDIENTE']
+  pagadaAt timestamp
+  pagadaPorId text
+  medioPago MedioPago
+  referencia text
+  observacion text
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null]
+
+  indexes {
+    (panelId, compraId, tipo) [unique]
+    (panelId, mes, estado)
+    (panelId, estado)
+  }
+}
+
 Table CostoVarianteHistorial {
   id text [pk, default: `cuid()`]
   panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
@@ -984,6 +1010,8 @@ Ref: CompraItem.panelId > Panel.id [delete: restrict]
 Ref: CompraItem.compraId > Compra.id [delete: cascade]
 Ref: CompraItem.varianteId > Variante.id [delete: restrict]
 Ref: CompraItem.productoId > Producto.id [delete: restrict]
+Ref: ComisionPasista.compraId > Compra.id [delete: restrict]
+Ref: ComisionPasista.pagadaPorId > Usuario.id [delete: restrict]
 Ref: GastoCompra.compraId > Compra.id [delete: restrict]
 Ref: GastoCompra.usuarioId > Usuario.id [delete: restrict]
 Ref: GastoCompra.anuladoPorId > Usuario.id [delete: restrict]
@@ -1089,6 +1117,7 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
   - **Costo final**: tick «Comisión del {10}% para el pasista» (`comisionPasistaPorcentaje`, el default sale de la clave de configuración `compras`) y gastos extras (`GastoCompra`). `calcularCostosFinales()` (`src/lib/costos-compra.ts`, pura y testeada) prorratea comisión + gastos **por unidad** —el pasista y el envío cobran por bulto, no por precio—: `costoUnitarioFinal = costoUnitario + (comisión + gastos) ÷ unidades`. `recalcularCostosFinales()` corre al crear/editar, al cambiar el tick y al agregar/anular gastos (anular: solo dueños); en una compra recibida pasa el costo final a `ultimoCosto` de los sabores cuya última compra recibida es esta. Las ventas ya hechas conservan su snapshot de costo. En una compra recibida lo único que cambia de los ítems es `costoUnitarioFinal` (el trigger de ítems congelados ignora esa columna).
 - **GastoCompra**: gasto extra de una compra (motivo y monto > 0). Se anula, nunca se edita ni se borra (trigger).
 - **CostoVarianteHistorial**: historial inmutable de `Variante.ultimoCosto` (anterior, nuevo, origen, compra).
+- **ComisionPasista** (módulo Pasista): una fila `ORIGINAL` por compra con comisión, con su monto (= `Compra.comisionPasistaMonto`), % y base, la fecha de la compra y `mes` (columna **generada**: primer día del mes argentino, `date_trunc('month', fecha − 3 h)`). `sincronizarComisionPasista()` (`pasista.service.ts`) la crea, actualiza o borra en la misma transacción que cambia la compra. `PENDIENTE` → `PAGADA` (medio, referencia, fecha, quién; solo dueños). Pagada no se modifica ni se borra (trigger): destildar da error y un cambio de monto o la anulación de la compra dejan una fila `AJUSTE` con la diferencia (±). Única por `(panelId, compraId, tipo)`.
 - **CompraItem**: un renglón por **sabor** (`varianteId`) con cantidad y costo unitario. Lleva `productoId` desnormalizado (igual a `variante.productoId`, verificado por trigger) para comparar con los precios de `ProveedorProducto`, que son por producto: si una compra trae varios sabores del mismo producto con costos distintos, el precio del proveedor queda con el del último ítem cargado. El costo sugerido al cargar es el precio en pesos del proveedor para el producto o, si no tiene, el `ultimoCosto` del sabor (`costoSugerido()` en `compra.service.ts`).
 
 ### Ventas y devoluciones

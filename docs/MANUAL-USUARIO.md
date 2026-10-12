@@ -448,6 +448,20 @@ Desde el detalle de la compra (permiso para eliminar en Compras), con un motivo:
 
 Los costos, subtotales y totales de las compras los ven los dueños y quien tiene permiso para ver Compras. Sin ese permiso, la sección Compras no aparece.
 
+### Comisión del pasista y gastos extras
+
+Al final de la compra está la tarjeta **Costos finales**: tildá **«Comisión del 10% para el pasista»** (el porcentaje se cambia al lado; el valor que aparece por defecto se ajusta en _Ajustes del panel → Ventas y catálogo_). El resumen muestra el subtotal, la comisión, el total y el **costo final por unidad**.
+
+Desde el listado de compras (o el detalle), **Agregar gastos extras** abre una lista para cargar motivo y monto (por ejemplo «Valija» $50.000 y «Envío» $30.000). Mientras escribís se ve cómo queda: comisión + gastos repartidos por unidad → costo final por unidad. Un gasto mal cargado lo anula un dueño.
+
+Ejemplo: 100 unidades a $10.000 con 10% de pasista y $80.000 de gastos → costo final $1.180.000, **$11.800 por unidad**. Se reparte por unidad (no por precio) porque el pasista y el envío cobran por bulto. Ese costo final es el que toman las ventas siguientes para calcular la ganancia; las ventas ya hechas no cambian.
+
+## Pasista
+
+En **Pasista** (grupo Compras; en el celular, en «Más») está la comisión de cada compra con el tick, mes por mes: lo pendiente de pago, lo devengado y lo pagado en el mes, y la lista de compras con su base, porcentaje y comisión. Tocando una fila se ve la compra completa con sus productos, sabores y fechas.
+
+Los dueños usan **Marcar mes como pagado** (o **Marcar pagada** en una compra) indicando cómo se pagó, una referencia y la fecha. Si una comisión ya pagada cambia (o se anula la compra), queda un **ajuste** con la diferencia para el próximo pago. El Excel del mes sale con **Excel del mes**. Para que un empleado vea esta sección, dale el permiso «Pasista».
+
 ## Proveedores
 
 En **Proveedores** cargás a quién le comprás, qué te vende y a cuánto. Cada proveedor tiene:

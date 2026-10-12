@@ -65,6 +65,7 @@ export const MODULOS_DE_PANEL: readonly Modulo[] = [
   Modulo.CLIENTES,
   Modulo.DEVOLUCIONES,
   Modulo.COMPRAS,
+  Modulo.PASISTA,
   Modulo.COTIZADOR,
   Modulo.REPORTES,
 ];
@@ -81,13 +82,16 @@ export const MODULO_LABEL: Record<Modulo, string> = {
   COTIZADOR: "Cotizador",
   REPORTES: "Reportes",
   FIADOS: "Fiados",
+  PASISTA: "Pasista",
   USUARIOS: "Usuarios",
   CONFIGURACION: "Configuración",
 };
 
 /** Acciones que tienen sentido para el módulo (la grilla muestra solo esas). */
 export function accionesDe(modulo: Modulo): readonly Accion[] {
-  if (modulo === Modulo.DASHBOARD || modulo === Modulo.REPORTES) return ["ver"];
+  // Pasista: solo "Ver"; marcar pagadas y deshacer pagos es de dueños.
+  if (modulo === Modulo.DASHBOARD || modulo === Modulo.REPORTES || modulo === Modulo.PASISTA)
+    return ["ver"];
   // Fiados no tiene "eliminar": anular un cobro es solo de dueños.
   if (modulo === Modulo.FIADOS) return ["ver", "crear", "editar"];
   return ACCIONES;
@@ -100,6 +104,8 @@ export const MODULO_AYUDA: Partial<Record<Modulo, string>> = {
   REPORTES: "Solo «Ver». Los costos y ganancias los ven únicamente los dueños.",
   FIADOS:
     "Cuenta corriente. Ver: deudas de los clientes · Crear: vender fiado · Editar: registrar cobros.",
+  PASISTA:
+    "Solo «Ver»: comisiones del pasista por compra y su acumulado mensual. Marcarlas pagadas es de los dueños.",
 };
 
 export const ACCION_LABEL: Record<Accion, string> = {

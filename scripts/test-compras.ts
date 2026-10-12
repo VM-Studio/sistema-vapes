@@ -17,7 +17,7 @@ import type { SujetoPermisos } from "../src/lib/permisos";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
 import { compraSchema } from "../src/lib/validations/compra";
 import { crearProveedorSchema } from "../src/lib/validations/proveedor";
-import { ConflictError, DomainError, NotFoundError } from "../src/server/errors";
+import { ConflictError, DomainError, ForbiddenError, NotFoundError } from "../src/server/errors";
 import {
   actualizarCompra,
   agregarGastosCompra,
@@ -30,6 +30,14 @@ import {
   preciosQueCambian,
   recibirCompra,
 } from "../src/server/services/compra.service";
+import {
+  deshacerPago,
+  detalle as detallePasista,
+  listar as listarPasista,
+  marcarPagadas,
+  mesActualAR,
+  totalesPasista,
+} from "../src/server/services/pasista.service";
 import {
   generarPdfEtiquetas,
   listarVariantesParaEtiquetas,
@@ -839,6 +847,158 @@ async function main() {
       )) instanceof DomainError,
       "una compra anulada no acepta gastos",
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  console.log("\n11) Pasista: comisión por compra, pago del mes, ajustes y anulación");
+  {
+    const comisiones = (compraId: string) =>
+      db.comisionPasista.findMany({ where: { compraId }, orderBy: { tipo: "asc" } });
+    const pendienteAntes = Number((await totalesPasista(actor, mesActualAR())).pendienteMes);
+    const cp = await crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: prov.id,
+        depositoId: g1.id,
+        comisionPasistaPorcentaje: "10",
+        items: [{ varianteId: uva.id, cantidad: 100, costoUnitario: "10000" }],
+      }),
+    );
+    let filas = await comisiones(cp.id);
+    const mes = mesActualAR();
+    check(
+      filas.length === 1 &&
+        filas[0]?.tipo === "ORIGINAL" &&
+        filas[0].estado === "PENDIENTE" &&
+        filas[0].monto.toFixed(2) === "100000.00" &&
+        filas[0].mes?.toISOString().slice(0, 7) === mes,
+      `tick 10% → comisión PENDIENTE de ${filas[0]?.monto.toFixed(0)} en ${filas[0]?.mes?.toISOString().slice(0, 7)}`,
+    );
+    const lista = await listarPasista(actor, { mes, page: 1, pageSize: 100 });
+    const tot = await totalesPasista(actor, mes);
+    check(
+      lista.filas.some((f) => f.compraId === cp.id && f.unidades === 100) &&
+        Number(tot.pendienteMes) - pendienteAntes === 100_000,
+      `/pasista del mes la lista y el pendiente del mes sube $100.000 (${pendienteAntes} → ${tot.pendienteMes})`,
+    );
+    await cambiarComisionPasista(actor, cp.id, 12);
+    filas = await comisiones(cp.id);
+    check(
+      filas.length === 1 && filas[0]?.monto.toFixed(2) === "120000.00",
+      "pendiente: cambiar el % actualiza la misma fila",
+    );
+
+    const vendedora = await prisma.usuario.findFirstOrThrow({
+      where: { rol: RolUsuario.EMPLEADO, deletedAt: null },
+    });
+    const ctxEmpleado = {
+      ...actor,
+      usuarioId: vendedora.id,
+      usuario: { rol: vendedora.rol, permisos: [], paneles: [VAPES] },
+    };
+    check(
+      (await error(() =>
+        marcarPagadas(
+          ctxEmpleado,
+          { ids: [filas[0]!.id] },
+          { medioPago: "EFECTIVO", fecha: new Date() },
+        ),
+      )) instanceof ForbiddenError,
+      "una empleada no puede marcar comisiones pagadas",
+    );
+    const pago = await marcarPagadas(
+      actor,
+      { ids: [filas[0]!.id] },
+      { medioPago: "TRANSFERENCIA", referencia: "TRF-1", fecha: new Date() },
+    );
+    filas = await comisiones(cp.id);
+    check(
+      pago.cantidad === 1 && pago.total === "120000.00" && filas[0]?.estado === "PAGADA",
+      `marcar pagada → ${pago.total} PAGADA`,
+    );
+    const quitar = await error(() => cambiarComisionPasista(actor, cp.id, null));
+    check(
+      quitar instanceof DomainError && /ya se pagó/.test(quitar.message),
+      `destildar una comisión pagada → «${quitar instanceof Error ? quitar.message.slice(0, 60) : ""}…»`,
+    );
+    await cambiarComisionPasista(actor, cp.id, 10);
+    filas = await comisiones(cp.id);
+    check(
+      filas.length === 2 &&
+        filas[0]?.estado === "PAGADA" &&
+        filas[0].monto.toFixed(2) === "120000.00" &&
+        filas[1]?.tipo === "AJUSTE" &&
+        filas[1].monto.toFixed(2) === "-20000.00" &&
+        filas[1].estado === "PENDIENTE",
+      `bajar a 10% después de pagada → AJUSTE ${filas[1]?.monto.toFixed(0)} pendiente`,
+    );
+    const mensaje = async (fn: () => Promise<unknown>) => {
+      const e = await error(fn);
+      return e instanceof Error ? e.message : "";
+    };
+    check(
+      /ya está pagada/.test(
+        await mensaje(
+          () =>
+            prisma.$executeRaw`UPDATE "ComisionPasista" SET "monto" = 1 WHERE "id" = ${filas[0]!.id}`,
+        ),
+      ) &&
+        /ya está pagada/.test(
+          await mensaje(
+            () => prisma.$executeRaw`DELETE FROM "ComisionPasista" WHERE "id" = ${filas[0]!.id}`,
+          ),
+        ),
+      "la DB no deja modificar ni borrar una comisión pagada",
+    );
+    await deshacerPago(actor, filas[0]!.id, "Prueba de deshacer");
+    filas = await comisiones(cp.id);
+    check(
+      filas.length === 1 &&
+        filas[0]?.estado === "PENDIENTE" &&
+        filas[0].monto.toFixed(2) === "100000.00",
+      `deshacer el pago junta original + ajuste: ${filas[0]?.monto.toFixed(0)} pendiente`,
+    );
+    const pagoMes = await marcarPagadas(
+      actor,
+      { mes },
+      { medioPago: "EFECTIVO", fecha: new Date() },
+    );
+    check(
+      pagoMes.cantidad >= 1,
+      `marcar el mes como pagado: ${pagoMes.cantidad} comisión(es), ${pagoMes.total}`,
+    );
+    await anularCompra(actor, cp.id, "Prueba anulación con comisión pagada");
+    filas = await comisiones(cp.id);
+    check(
+      filas.length === 2 &&
+        filas[1]?.tipo === "AJUSTE" &&
+        filas[1].monto.toFixed(2) === "-100000.00",
+      "anular la compra con la comisión pagada → ajuste negativo (a descontar)",
+    );
+
+    const cSinPagar = await crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: prov.id,
+        depositoId: g1.id,
+        comisionPasistaPorcentaje: "10",
+        items: [{ varianteId: uva.id, cantidad: 2, costoUnitario: "1000" }],
+      }),
+    );
+    await anularCompra(actor, cSinPagar.id, "Prueba anulación sin pagar");
+    check(
+      (await comisiones(cSinPagar.id)).length === 0,
+      "anular con la comisión pendiente la borra",
+    );
+    const det = await detallePasista(actor, filas[0]!.id);
+    check(
+      det.compra.items.length === 1 && det.compra.unidades === 100 && det.relacionadas.length === 1,
+      "detalle: la compra con sus productos y el ajuste relacionado",
+    );
+    const desdeCosmetic = await error(() =>
+      detallePasista({ ...actor, panelId: COSMETIC }, filas[0]!.id),
+    );
+    check(desdeCosmetic instanceof NotFoundError, "una comisión de Vapes no existe desde Cosmetic");
   }
 
   console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);

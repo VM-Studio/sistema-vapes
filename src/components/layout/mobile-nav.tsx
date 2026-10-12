@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
-import { esRutaActiva, type ItemNavegacion } from "@/config/navigation";
+import { esRutaActiva, itemActivo, type ItemNavegacion } from "@/config/navigation";
 import { useRutaOptimista } from "@/hooks/use-ruta-optimista";
 import { cn } from "@/lib/utils";
 
@@ -91,9 +91,8 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
   const enOrden = [...items].sort((a, b) => a.ordenMobile - b.ordenMobile);
   const principales = enOrden.filter((i) => i.enBottomBar).slice(0, 4);
   const resto = enOrden.filter((i) => !principales.includes(i));
-  const masActivo =
-    resto.some((i) => esRutaActiva(i.base ?? i.href, pathname)) ||
-    esRutaActiva("/cuenta", pathname);
+  const activoHref = itemActivo(items, pathname)?.href ?? null;
+  const masActivo = resto.some((i) => i.href === activoHref) || esRutaActiva("/cuenta", pathname);
 
   const claseItem = (activo: boolean) =>
     cn(
@@ -111,7 +110,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
       >
         <ul className="flex">
           {principales.map((item) => {
-            const activo = esRutaActiva(item.base ?? item.href, pathname);
+            const activo = item.href === activoHref;
             const Icono = item.icon;
             return (
               <li key={item.href} className="flex flex-1">
@@ -146,7 +145,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
         {resto.length > 0 && (
           <ul className="grid grid-cols-3 gap-2">
             {resto.map((item) => {
-              const activo = esRutaActiva(item.base ?? item.href, pathname);
+              const activo = item.href === activoHref;
               const Icono = item.icon;
               return (
                 <li key={item.href}>
