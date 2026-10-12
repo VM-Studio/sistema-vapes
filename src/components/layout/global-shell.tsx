@@ -79,8 +79,8 @@ export function GlobalShell({
                   className={cn(
                     "rounded-control flex h-9 shrink-0 items-center gap-2 px-2.5 text-sm font-medium transition-colors",
                     activo
-                      ? "bg-azul-velo-2 text-foreground [&>svg]:text-marca-azul"
-                      : "text-muted hover:bg-azul-velo-1 hover:text-foreground",
+                      ? "bg-brand-orange-strong text-primary-foreground font-semibold"
+                      : "text-muted hover:bg-brand-orange-soft hover:text-foreground",
                   )}
                 >
                   <Icono className="size-[1.125rem]" strokeWidth={1.75} aria-hidden />

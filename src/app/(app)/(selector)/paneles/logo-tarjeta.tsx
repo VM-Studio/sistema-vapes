@@ -25,7 +25,7 @@ export function LogoTarjeta({
   return (
     <div
       className={cn(
-        "rounded-control bg-background flex h-[120px] items-center justify-center overflow-hidden px-6 py-4",
+        "rounded-control bg-surface border-border flex h-[120px] items-center justify-center overflow-hidden border px-6 py-4",
         className,
       )}
     >

@@ -10,7 +10,7 @@ export interface TabItem<V extends string> {
 
 /**
  * Pestañas controladas (estado local). Para pestañas por URL usar <TabsNav>.
- * - `linea` (default): subrayado negro en la activa.
+ * - `linea` (default): subrayado y texto naranja (módulo activo) en la activa.
  * - `segmentado`: control segmentado sobre gris (filtros cortos, 2–4 opciones).
  */
 export function Tabs<V extends string>({
@@ -77,7 +77,7 @@ export function Tabs<V extends string>({
               className={cn(
                 "-mb-px flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium whitespace-nowrap transition-colors",
                 activo
-                  ? "border-foreground text-foreground"
+                  ? "border-brand-orange text-brand-orange-strong font-semibold"
                   : "text-muted hover:text-foreground border-transparent",
               )}
             >
@@ -86,7 +86,9 @@ export function Tabs<V extends string>({
                 <span
                   className={cn(
                     "rounded-inner min-w-5 px-1.5 py-0.5 text-center text-xs leading-none tabular-nums",
-                    activo ? "bg-foreground text-background" : "bg-surface-2 text-muted",
+                    activo
+                      ? "bg-brand-orange-strong text-primary-foreground"
+                      : "bg-surface-2 text-muted",
                   )}
                 >
                   {t.badge}

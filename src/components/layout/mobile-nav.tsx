@@ -98,7 +98,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
   const claseItem = (activo: boolean) =>
     cn(
       "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
-      activo ? "text-foreground [&>svg]:text-marca-azul" : "text-subtle",
+      activo ? "text-brand-orange-strong font-semibold" : "text-subtle",
     );
   const claseLink =
     "hover:bg-surface-3/60 flex min-h-12 items-center gap-3 rounded-control px-3 text-sm font-medium";
@@ -160,8 +160,8 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
                     className={cn(
                       "rounded-control flex min-h-20 flex-col items-center justify-center gap-1.5 px-1 text-center text-xs font-medium transition-colors",
                       activo
-                        ? "bg-foreground text-background"
-                        : "bg-surface text-foreground hover:bg-surface-3/60",
+                        ? "bg-brand-orange-strong text-primary-foreground"
+                        : "bg-surface text-foreground hover:bg-brand-orange-soft",
                     )}
                   >
                     <Icono className="size-6" strokeWidth={1.75} aria-hidden />

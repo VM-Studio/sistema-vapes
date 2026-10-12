@@ -4,10 +4,13 @@
  * Sistema de diseño (docs/DISENO.md). Reglas:
  * - Colores del logo, siempre sutiles: marrón #594a42 (texto y acción, en
  *   lugar del negro), azul #004aac (velos transparentes de fondo, foco,
- *   ítem activo), naranja #ff914d y oliva #aeb03f (datos y semánticos).
- * - Fondo de página gris azulado muy claro con un velo azul tenue; tarjetas
- *   blancas con un filete y una sombra muy suave (--sombra-tarjeta); Sheets y
- *   Dialogs blancos. Ítem activo, selección y foco en azul.
+ *   selección), naranja #ff914d y oliva #aeb03f (datos y semánticos).
+ * - Naranja exacto del logo (#fe7a3e, --brand-orange) SOLO para el módulo
+ *   activo: ítem de sidebar, bottom bar y pestañas de navegación. Nunca en
+ *   botones ni en gráficos.
+ * - Fondo de página celeste muy claro liso (--page-bg); tarjetas blancas con
+ *   un filete y una sombra muy suave (--sombra-tarjeta); Sheets y Dialogs
+ *   blancos. Selección y foco en azul.
  * - Cada KPI con un ícono sobre un círculo del color de su tono (--tono-*).
  * - Semánticos apagados: éxito = oliva, alerta = naranja, error = rojo.
  * - El osito sin fondo (/brand/osito*.png) como marca y marca de agua.
@@ -30,13 +33,28 @@
   --marca-oliva-claro: #d8d99c;
   --marca-oliva-oscuro: #6f7120;
 
+  /*
+   * Naranja del módulo activo. --brand-orange es el color medido en los logos
+   * (moda de los píxeles naranjas de logoVape/Cosmetics/Especial/portadaApp
+   * con sharp). Blanco sobre él da 2,60:1 (no llega a AA), así que el fondo
+   * del ítem activo y el texto naranja usan --brand-orange-strong: el mismo
+   * tono (H 19°) oscurecido hasta 4,55:1 con blanco. --brand-orange queda para
+   * trazos (línea de la pestaña, indicador) y --brand-orange-soft para hover.
+   */
+  --brand-orange: #fe7a3e;
+  --brand-orange-strong: #ca4e16;
+  --brand-orange-soft: #fff1eb;
+
+  /* Fondo de página: celeste muy claro (detrás de tarjetas y tablas blancas). */
+  --page-bg: #eef6fc;
+
   /* Velos azules (transparentes, sobre blanco) */
   --azul-velo-1: rgb(0 74 172 / 0.035);
   --azul-velo-2: rgb(0 74 172 / 0.06);
   --azul-velo-3: rgb(0 74 172 / 0.1);
 
   /* Neutros: grises levemente azulados; textos en la gama del marrón. */
-  --background: #f5f7fb;
+  --background: var(--page-bg);
   --surface: #ffffff;
   --card: #ffffff;
   --card-hover: #fcfdff;
@@ -203,6 +221,10 @@
   --color-tono-marron: var(--tono-marron);
   --color-tono-marron-suave: var(--tono-marron-suave);
   --color-marca-azul: var(--marca-azul);
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-strong: var(--brand-orange-strong);
+  --color-brand-orange-soft: var(--brand-orange-soft);
+  --color-page-bg: var(--page-bg);
   --color-marca-azul-claro: var(--marca-azul-claro);
   --color-marca-azul-oscuro: var(--marca-azul-oscuro);
   --color-marca-naranja: var(--marca-naranja);
@@ -303,16 +325,12 @@
     padding-right: env(safe-area-inset-right);
   }
   /*
-   * Fondo de las pantallas: blanco con dos velos azules muy tenues (arriba a
-   * la derecha y arriba a la izquierda). Fijo, para que no "viaje" al scrollear.
+   * Fondo de las pantallas: celeste muy claro liso (--page-bg). Sin los velos
+   * radiales de antes: sobre el celeste sumaban azul y ensuciaban el borde de
+   * las tarjetas de arriba.
    */
   .fondo-marca {
-    background-color: var(--background);
-    background-image:
-      radial-gradient(1100px 560px at 100% -160px, rgb(0 74 172 / 0.075), transparent 70%),
-      radial-gradient(800px 480px at -8% -120px, rgb(0 74 172 / 0.04), transparent 70%);
-    background-attachment: fixed;
-    background-repeat: no-repeat;
+    background-color: var(--page-bg);
   }
   /*
    * Marca de agua con la silueta del osito (sin fondo), teñida con

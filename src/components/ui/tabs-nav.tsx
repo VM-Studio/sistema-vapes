@@ -34,7 +34,7 @@ export function TabsNav({
               className={cn(
                 "-mb-px flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium whitespace-nowrap transition-colors",
                 t.activo
-                  ? "border-foreground text-foreground"
+                  ? "border-brand-orange text-brand-orange-strong font-semibold"
                   : "text-muted hover:text-foreground hover:border-input border-transparent",
               )}
             >
@@ -43,7 +43,9 @@ export function TabsNav({
                 <span
                   className={cn(
                     "rounded-inner min-w-5 px-1.5 py-0.5 text-center text-xs leading-none tabular-nums",
-                    t.activo ? "bg-foreground text-background" : "bg-surface-2 text-muted",
+                    t.activo
+                      ? "bg-brand-orange-strong text-primary-foreground"
+                      : "bg-surface-2 text-muted",
                   )}
                 >
                   {t.badge}

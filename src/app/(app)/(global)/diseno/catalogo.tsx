@@ -3,6 +3,7 @@
 import {
   Boxes,
   Download,
+  House,
   Package,
   Pencil,
   Plus,
@@ -40,10 +41,12 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
 import { Tabs } from "@/components/ui/tabs";
+import { TabsNav } from "@/components/ui/tabs-nav";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { Tooltip } from "@/components/ui/tooltip";
 import { formatearPesos } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 function Seccion({ id, titulo, children }: { id: string; titulo: string; children: ReactNode }) {
   return (
@@ -101,6 +104,7 @@ const INDICE = [
   ["tipografia", "Tipografía"],
   ["botones", "Botones"],
   ["formularios", "Formularios"],
+  ["modulo-activo", "Módulo activo"],
   ["filtros", "Filtros y pestañas"],
   ["badges", "Badges y avatares"],
   ["tarjetas", "Tarjetas"],
@@ -145,15 +149,17 @@ export function Catalogo() {
 
       <Seccion id="colores" titulo="Colores">
         <p className="text-muted max-w-2xl text-sm">
-          Colores del logo, sutiles: marrón para texto y acciones (en lugar del negro), velos azules
-          transparentes para fondos, tarjetas e ítems activos; naranja y oliva en gráficos y
-          semánticos. El osito sin fondo aparece como marca y marca de agua.
+          Colores del logo, sutiles: marrón para texto y acciones (en lugar del negro), fondo de
+          página celeste muy claro, tarjetas blancas; el naranja del logo solo para el módulo
+          activo; naranja y oliva en gráficos y semánticos. El osito sin fondo aparece como marca y
+          marca de agua.
         </p>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
-          <Muestra nombre="Fondo" hex="#FBFCFE" borde />
-          <Muestra nombre="Tarjeta" hex="#F2F6FB" />
-          <Muestra nombre="Superficie 3" hex="#E5ECF6" />
-          <Muestra nombre="Borde" hex="#E3E9F1" />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
+          <Muestra nombre="Fondo de página" hex="#EEF6FC" borde />
+          <Muestra nombre="Tarjeta" hex="#FFFFFF" borde />
+          <Muestra nombre="Superficie 2" hex="#F3F6FB" />
+          <Muestra nombre="Superficie 3" hex="#E8EEF7" />
+          <Muestra nombre="Borde" hex="#E5EAF1" />
           <Muestra nombre="Texto" hex="#594A42" />
           <Muestra nombre="Secundario" hex="#6E625B" />
           <Muestra nombre="Terciario" hex="#736861" />
@@ -167,6 +173,11 @@ export function Catalogo() {
           <Muestra nombre="Naranja claro" hex={COLORES_MARCA.naranjaClaro.toUpperCase()} />
           <Muestra nombre="Oliva" hex={COLORES_MARCA.oliva.toUpperCase()} />
           <Muestra nombre="Marrón" hex={COLORES_MARCA.marron.toUpperCase()} />
+        </div>
+        <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
+          <Muestra nombre="Naranja del logo" hex="#FE7A3E" />
+          <Muestra nombre="Naranja activo (AA)" hex="#CA4E16" />
+          <Muestra nombre="Naranja suave (hover)" hex="#FFF1EB" borde />
         </div>
         <div className="grid grid-cols-3 gap-4 lg:grid-cols-6">
           <Muestra nombre="Éxito" hex="#66691C" />
@@ -243,6 +254,64 @@ export function Catalogo() {
             <Radio name="medio" label="Transferencia" hint="Con comprobante" />
           </fieldset>
         </Card>
+      </Seccion>
+
+      <Seccion id="modulo-activo" titulo="Módulo activo">
+        <p className="text-muted max-w-2xl text-sm">
+          El naranja del logo marca dónde está parado el usuario: ítem del sidebar (fondo naranja,
+          texto blanco), ítem de la bottom bar (ícono y etiqueta naranjas) y pestaña de navegación
+          (subrayado y texto naranjas). Nunca en botones ni en gráficos.
+        </p>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="flex flex-col gap-0.5 p-3">
+            {[
+              { label: "Ventas", activo: true },
+              { label: "Stock", activo: false },
+              { label: "Productos", activo: false },
+            ].map((i) => (
+              <span
+                key={i.label}
+                className={cn(
+                  "rounded-control flex h-10 items-center gap-3 px-3 text-sm font-medium",
+                  i.activo
+                    ? "bg-brand-orange-strong text-primary-foreground font-semibold"
+                    : "text-muted hover:bg-brand-orange-soft hover:text-foreground",
+                )}
+              >
+                <ShoppingCart className="size-5" strokeWidth={1.75} aria-hidden />
+                {i.label}
+              </span>
+            ))}
+          </Card>
+          <Card className="flex items-stretch p-0">
+            {[
+              { label: "Inicio", activo: false },
+              { label: "Ventas", activo: true },
+              { label: "Stock", activo: false },
+            ].map((i) => (
+              <span
+                key={i.label}
+                className={cn(
+                  "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium",
+                  i.activo ? "text-brand-orange-strong font-semibold" : "text-subtle",
+                )}
+              >
+                <House className="size-6" strokeWidth={i.activo ? 2 : 1.75} aria-hidden />
+                {i.label}
+              </span>
+            ))}
+          </Card>
+          <Card className="p-4">
+            <TabsNav
+              ariaLabel="Ejemplo de pestañas"
+              items={[
+                { href: "/diseno#modulo-activo", label: "Stock", activo: true, badge: 3 },
+                { href: "/diseno#modulo-activo", label: "Movimientos", activo: false },
+                { href: "/diseno#modulo-activo", label: "Transferencias", activo: false },
+              ]}
+            />
+          </Card>
+        </div>
       </Seccion>
 
       <Seccion id="filtros" titulo="Filtros y pestañas">

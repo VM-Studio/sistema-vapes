@@ -6,15 +6,21 @@ import { cn } from "@/lib/utils";
 const base =
   "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-control border px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-4";
 
-/** Filtro rápido (link): activo = relleno con el primario. */
+/**
+ * Filtro rápido (link): activo = relleno con el primario. Con `pestana`, el
+ * chip funciona como pestaña de navegación del módulo y el activo va en el
+ * naranja del módulo activo (p. ej. Todas / Unitarias / Mayoristas del Cotizador).
+ */
 export function ChipLink({
   href,
   activo,
+  pestana = false,
   children,
   className,
 }: {
   href: string;
   activo: boolean;
+  pestana?: boolean;
   children: ReactNode;
   className?: string;
 }) {
@@ -26,7 +32,9 @@ export function ChipLink({
       className={cn(
         base,
         activo
-          ? "border-foreground bg-foreground text-background"
+          ? pestana
+            ? "border-brand-orange-strong bg-brand-orange-strong text-primary-foreground"
+            : "border-foreground bg-foreground text-background"
           : "border-border bg-surface text-muted hover:border-input hover:text-foreground",
         className,
       )}

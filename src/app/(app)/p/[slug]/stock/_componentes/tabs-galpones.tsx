@@ -3,7 +3,8 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /**
- * Pestañas de galpón (por URL) como botones rectangulares: la activa en negro.
+ * Pestañas de galpón (por URL) como botones rectangulares: la activa en el
+ * naranja del módulo activo (fondo --brand-orange-strong, texto blanco).
  * Es un <nav> "Galpones" con links (aria-current="page" en la activa), con
  * scroll horizontal en mobile.
  */
@@ -29,7 +30,7 @@ export function TabsGalpones({
               className={cn(
                 "rounded-control flex h-11 items-center border px-4 text-sm font-medium whitespace-nowrap transition-colors md:h-10",
                 t.activo
-                  ? "border-foreground bg-foreground text-background"
+                  ? "border-brand-orange-strong bg-brand-orange-strong text-primary-foreground"
                   : "border-border bg-surface text-muted hover:border-input hover:text-foreground",
               )}
             >

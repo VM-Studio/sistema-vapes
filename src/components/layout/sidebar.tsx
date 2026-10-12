@@ -15,9 +15,9 @@ interface SidebarProps {
 
 /**
  * Navegación lateral (≥768px), debajo de la barra superior: 240px, fondo
- * blanco, ítems ícono + texto; activo sobre un velo azul transparente, con el
- * ícono en azul y una línea azul fina a la izquierda. Al pie, el osito en azul
- * tenue. Colapsable a solo íconos.
+ * blanco, ítems ícono + texto; el módulo activo en naranja del logo (fondo
+ * --brand-orange-strong con texto e ícono blancos) y hover naranja muy suave.
+ * Al pie, el osito en azul tenue. Colapsable a solo íconos.
  */
 export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
   // Activo al instante al tocar, sin esperar la respuesta del servidor.
@@ -37,8 +37,8 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
           className={cn(
             "rounded-control relative flex h-10 items-center gap-3 px-3 text-sm font-medium transition-colors",
             activo
-              ? "bg-azul-velo-2 text-marca-azul before:bg-marca-azul before:rounded-circle font-semibold before:absolute before:inset-y-2 before:left-0 before:w-[3px]"
-              : "text-muted hover:bg-azul-velo-1 hover:text-foreground",
+              ? "bg-brand-orange-strong text-primary-foreground font-semibold"
+              : "text-muted hover:bg-brand-orange-soft hover:text-foreground",
             colapsado && "justify-center px-0",
           )}
         >

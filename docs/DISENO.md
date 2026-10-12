@@ -9,30 +9,62 @@ colores de `src/components/ui/chart-theme.tsx`.
 
 Todos los colores salen del logo — marrón `#594A42`, azul `#004AAC`, naranja
 `#FF914D` y oliva `#AEB03F` — y se usan **sutiles**: el marrón reemplaza al
-negro; el azul entra como velos transparentes de fondo; naranja y oliva quedan
-para datos y semánticos.
+negro; el azul entra como velos transparentes y foco; el **naranja exacto del
+logo marca solo el módulo activo** (sidebar, bottom bar y pestañas); naranja
+claro y oliva quedan para datos y semánticos. Fondo de página celeste muy claro.
 
-| Uso                                                   | Color                                                                                                       |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Fondo de página (`fondo-marca`)                       | `#F5F7FB` + dos velos radiales `rgb(0 74 172 / 0.04–0.075)`                                                 |
-| Barras superiores, sidebar, inputs, tablas            | Blanco `#FFFFFF` (`bg-surface`)                                                                             |
-| Texto principal, botón primario, bordes de secundario | Marrón `#594A42` (`text-foreground`, `bg-primary`)                                                          |
-| Hover del primario                                    | `#473A33`                                                                                                   |
-| Texto secundario                                      | `#6E625B` (`text-muted`)                                                                                    |
-| Texto terciario, placeholders                         | `#736861` (`text-subtle`)                                                                                   |
-| Tarjetas, Sheets, Dialogs                             | Blanco (`bg-card`) con filete y sombra muy suave (`--sombra-tarjeta`, automática en `bg-card rounded-card`) |
-| Encabezado de tablas                                  | `#F3F6FB` (`bg-surface-2`)                                                                                  |
-| Hover de tarjeta clickeable                           | `shadow-card-hover`: filete azul y sombra un poco más marcada                                               |
-| Superficie de contraste dentro de una tarjeta         | `#E5ECF6` (`bg-surface-3`)                                                                                  |
-| Bordes y separadores                                  | `#E3E9F1` (`border-border`); dentro de tarjetas `border-marca-azul/[0.08]`                                  |
-| Borde de inputs                                       | `#CFD8E4` (`border-input`)                                                                                  |
-| Foco (`--ring`), selección de texto                   | Azul `#004AAC` / azul al 14%                                                                                |
-| Ítem activo de sidebar y nav global                   | `bg-azul-velo-2`, texto e ícono azul semibold, línea azul de 3px; grupos en versalitas chicas               |
-| Selector de período activo                            | Azul `#004AAC` con texto blanco                                                                             |
-| Hover de navegación                                   | `bg-azul-velo-1` (azul al 3,5%)                                                                             |
+| Uso                                                     | Color                                                                                                       |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Fondo de página (`fondo-marca`, `bg-page-bg`)           | Celeste muy claro `#EEF6FC` liso (`--page-bg`; también `--background`)                                      |
+| Barras superiores, sidebar, inputs, tablas              | Blanco `#FFFFFF` (`bg-surface`)                                                                             |
+| Texto principal, botón primario, bordes de secundario   | Marrón `#594A42` (`text-foreground`, `bg-primary`)                                                          |
+| Hover del primario                                      | `#473A33`                                                                                                   |
+| Texto secundario                                        | `#6E625B` (`text-muted`)                                                                                    |
+| Texto terciario, placeholders                           | `#736861` (`text-subtle`)                                                                                   |
+| Tarjetas, Sheets, Dialogs                               | Blanco (`bg-card`) con filete y sombra muy suave (`--sombra-tarjeta`, automática en `bg-card rounded-card`) |
+| Encabezado de tablas                                    | `#F3F6FB` (`bg-surface-2`)                                                                                  |
+| Hover de tarjeta clickeable                             | `shadow-card-hover`: filete azul y sombra un poco más marcada                                               |
+| Superficie de contraste dentro de una tarjeta           | `#E5ECF6` (`bg-surface-3`)                                                                                  |
+| Bordes y separadores                                    | `#E3E9F1` (`border-border`); dentro de tarjetas `border-marca-azul/[0.08]`                                  |
+| Borde de inputs                                         | `#CFD8E4` (`border-input`)                                                                                  |
+| Foco (`--ring`), selección de texto                     | Azul `#004AAC` / azul al 14%                                                                                |
+| Módulo activo: sidebar y nav global                     | Fondo `bg-brand-orange-strong` `#CA4E16`, texto e ícono blancos semibold; grupos en versalitas chicas       |
+| Módulo activo: bottom bar mobile                        | Ícono y etiqueta `text-brand-orange-strong` semibold; en «Más», tarjeta naranja con texto blanco            |
+| Pestaña activa (`TabsNav`, `Tabs`, galpones, Cotizador) | Subrayado `--brand-orange` y texto `--brand-orange-strong`; las de botón, fondo naranja y texto blanco      |
+| Selector de período activo                              | Azul `#004AAC` con texto blanco                                                                             |
+| Hover de navegación                                     | `bg-brand-orange-soft` `#FFF1EB`                                                                            |
 
 Velos azules (transparentes, se apoyan sobre blanco): `--azul-velo-1` 3,5%,
 `--azul-velo-2` 6%, `--azul-velo-3` 10% (`bg-azul-velo-*`).
+
+**Naranja del módulo activo** (`--brand-orange*`, Tailwind `*-brand-orange*`). Se
+midió con `sharp` sobre los logos (`public/brand/originales/logo*.png` y
+`portadaApp.png`): moda de los píxeles naranjas saturados `#FE742E` (Vape),
+`#FE7B39` (Cosmetic), `#FE843A` (Especial), `#FE7A3E` (portada, la más
+frecuente en el conjunto). El `#FF914D` de `--marca-naranja` es más claro que
+el logo real y queda solo para gráficos.
+
+| Token                   | Hex       | Uso                                                                      |
+| ----------------------- | --------- | ------------------------------------------------------------------------ |
+| `--brand-orange`        | `#FE7A3E` | naranja del logo: trazos (subrayado de pestaña activa)                   |
+| `--brand-orange-strong` | `#CA4E16` | fondo del ítem activo y texto naranja (mismo tono, 19°, oscurecido a AA) |
+| `--brand-orange-soft`   | `#FFF1EB` | hover de los ítems de navegación                                         |
+| `--page-bg`             | `#EEF6FC` | fondo de página celeste                                                  |
+
+Blanco sobre `#FE7A3E` da **2,60:1** (no llega ni a 3:1), por eso el fondo del
+activo es `#CA4E16` (**4,55:1** con blanco; 4,55:1 como texto sobre blanco). El
+naranja **no** va en botones, chips de filtro ni gráficos: lo vigila
+`tests/unit/colores-hardcodeados.test.ts` (que reemplaza al `grep` de colores
+hardcodeados: paleta de Tailwind, `bg-[#…]`, hex sueltos fuera de los archivos
+permitidos y `brand-orange` fuera de la navegación).
+
+Fondo de página: se compararon `#F2F8FD`, `#EEF6FC` y `#F5FAFF`
+(`verificacion/a2/bloque2-fondos-candidatos-*.png`). `#F5FAFF` casi no se
+distingue del blanco y `#F2F8FD` queda a mitad de camino; `#EEF6FC` se lee
+celeste sin opacar las tarjetas blancas (1,09:1 contra blanco, más el filete
+`--sombra-tarjeta`, alcanza para separarlas) ni las tablas. Los velos radiales
+azules de antes se quitaron: sobre el celeste sumaban azul y ensuciaban el
+borde de las tarjetas de arriba.
 
 **Colores del logo** (`--marca-*`, también en `COLORES_MARCA` de `chart-theme.tsx`):
 
@@ -72,9 +104,9 @@ text-marca-azul opacity-[0.05–0.06]`)
 en los estados vacíos y detrás del formulario de login.
 
 Prohibido: acento por panel, dark mode, sombras fuertes, bordes gruesos,
-negro puro, colores de la paleta de Tailwind (`bg-blue-500`, etc.) y hex
-sueltos en componentes (salvo `chart-theme.tsx`). Los únicos gradientes son los
-velos de `fondo-marca`.
+negro puro, colores de la paleta de Tailwind (`bg-blue-500`, etc.), hex
+sueltos en componentes (salvo `chart-theme.tsx`, PDFs y PWA) y el naranja del
+módulo activo fuera de la navegación. Sin gradientes de fondo.
 
 ## Forma
 
@@ -124,14 +156,14 @@ Montos siempre con `formatearPesos()` → `$ 12.345` (`Intl.NumberFormat("es-AR"
 - Barra superior blanca de 56px en mobile y 64px en desktop, con línea inferior fina; logo del panel de 44 / 52px. Las pantallas globales (usuarios, configuración, cuenta, ayuda) van dentro de la barra y el menú del último panel abierto (cookie `panel_ultimo`); solo el selector de sistemas usa la barra global.
 - Widget de cotizaciones en la barra del panel (dueños y quien ve el Cotizador): pastilla `bg-surface-2` de texto 11–12px, «Blue $ X · USDT $ Y» (apilado en mobile, en una línea desde `sm`, con la hora desde `lg`); si alguna lleva más de 2 h sin actualizarse, fondo `bg-warning-soft` y triángulo `text-warning`. Para dueños es un link a `/configuracion/cambio`.
 - Sidebar desktop 240px (colapsable a 64px), fondo blanco, grupos con etiqueta
-  gris chica; activo sobre `bg-azul-velo-2` con ícono azul y línea azul de 2px a la izquierda;
-  osito en azul tenue al pie.
-- Bottom bar mobile blanca con línea superior, 5 ítems; activo en marrón con ícono azul,
-  inactivo en gris. Safe areas respetadas (`pt-safe`, `pb-safe`, `env()`).
+  gris chica; activo con fondo naranja `bg-brand-orange-strong` y texto e ícono blancos;
+  hover naranja muy suave; osito en azul tenue al pie.
+- Bottom bar mobile blanca con línea superior, 5 ítems; activo con ícono y etiqueta naranjas
+  (`text-brand-orange-strong`), inactivo en gris. Safe areas respetadas (`pt-safe`, `pb-safe`, `env()`).
 
 ## Íconos
 
-`lucide-react`, 20px (`size-5`), trazo 1.75, marrón o gris; azul solo en el ítem activo de la navegación.
+`lucide-react`, 20px (`size-5`), trazo 1.75, marrón o gris; en el módulo activo, blanco sobre naranja (sidebar) o naranja (bottom bar).
 Estados vacíos: ícono de 56px, trazo 1.25, gris.
 
 ## Componentes (`src/components/ui/`)
@@ -142,8 +174,8 @@ Estados vacíos: ícono de 56px, trazo 1.25, gris.
 | `IconButton`                                                         | solo ícono, `aria-label` obligatorio; `ghost`/`secondary`/`primary`, `md`/`sm`                                                                                                   |
 | `Input`, `Select`, `Textarea`, `CantidadInput`, `SearchInput`        | borde gris, foco con halo suave, error en rojo apagado; 44px mobile / 40px desktop                                                                                               |
 | `Switch`, `Checkbox`, `Radio`                                        | marrón al activarse                                                                                                                                                              |
-| `ChipLink` / `FilterChip`                                            | filtro rectangular; activo = marrón                                                                                                                                              |
-| `Tabs` (estado local, `linea` / `segmentado`), `TabsNav` (por URL)   | subrayado marrón                                                                                                                                                                 |
+| `ChipLink` / `FilterChip`                                            | filtro rectangular; activo = marrón. `ChipLink pestana`: chip que es pestaña de navegación (Cotizador), activo naranja                                                           |
+| `Tabs` (estado local, `linea` / `segmentado`), `TabsNav` (por URL)   | `linea`/`TabsNav`: subrayado y texto naranja del módulo activo; `segmentado`: neutro (blanco sobre gris)                                                                         |
 | `Badge`                                                              | `neutral`, `primary` (marrón), `success`, `warning`, `danger`                                                                                                                    |
 | `Card`                                                               | `default`/`flat` (gris), `kpi`, `clickable` (hover), `outline` (blanco con borde, para ir dentro de otra tarjeta)                                                                |
 | `StatCard`                                                           | valor grande, etiqueta, `anterior` + `deltaPct` (azul sube / naranja baja, con flecha), `href`                                                                                   |
@@ -211,14 +243,15 @@ ventas en este período" y los gráficos con placeholder.
 
 ## Contraste (WCAG AA, texto normal ≥ 4,5:1)
 
-| Texto                | Sobre tarjeta `#F2F6FB` | Sobre hover `#EAF0F8` | Sobre blanco |
-| -------------------- | ----------------------- | --------------------- | ------------ |
-| Principal `#594A42`  | 7,79                    | 7,38                  | 8,46         |
-| Secundario `#6E625B` | 5,43                    | 5,14                  | 5,90         |
-| Terciario `#736861`  | 4,99                    | 4,72                  | 5,41         |
+| Texto                | Sobre tarjeta `#F2F6FB` | Sobre hover `#EAF0F8` | Sobre blanco | Sobre fondo `#EEF6FC` |
+| -------------------- | ----------------------- | --------------------- | ------------ | --------------------- |
+| Principal `#594A42`  | 7,79                    | 7,38                  | 8,46         | 7,74                  |
+| Secundario `#6E625B` | 5,43                    | 5,14                  | 5,90         | 5,40                  |
+| Terciario `#736861`  | 4,99                    | 4,72                  | 5,41         | 4,95                  |
 | Éxito `#66691C`      | 5,37                    | 5,09                  | 5,83         |
 | Error `#B04A45`      | 4,95                    | 4,68                  | 5,37         |
 | Alerta `#A64F15`     | 5,16                    | 4,88                  | 5,60         |
 
-Blanco sobre el primario marrón: 8,46. Badges sobre su fondo suave: éxito 6,53
+Blanco sobre el primario marrón: 8,46. Blanco sobre el naranja del activo
+`#CA4E16`: 4,55; `#CA4E16` como texto sobre blanco: 4,55. Badges sobre su fondo suave: éxito 6,53
 · error 6,47 · alerta 5,96.

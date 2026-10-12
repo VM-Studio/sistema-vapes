@@ -167,13 +167,13 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
       </div>
       <section aria-label="Filtros" className="bg-card rounded-card mb-4 flex flex-col gap-3 p-4">
         <ChipRow ariaLabel="Tipo de cotización">
-          <ChipLink href={tab(null)} activo={!tipo}>
+          <ChipLink href={tab(null)} activo={!tipo} pestana>
             Todas
           </ChipLink>
-          <ChipLink href={tab("UNITARIA")} activo={tipo === "UNITARIA"}>
+          <ChipLink href={tab("UNITARIA")} activo={tipo === "UNITARIA"} pestana>
             Unitarias
           </ChipLink>
-          <ChipLink href={tab("MAYORISTA")} activo={tipo === "MAYORISTA"}>
+          <ChipLink href={tab("MAYORISTA")} activo={tipo === "MAYORISTA"} pestana>
             Mayoristas
           </ChipLink>
         </ChipRow>
