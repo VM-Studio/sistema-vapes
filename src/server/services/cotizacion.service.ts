@@ -34,7 +34,7 @@ import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
 import {
   aWinAnsi,
-  cargarLogoPdf,
+  cargarLogoPanelPdf,
   COLOR_PDF,
   envolver,
   recortar,
@@ -858,12 +858,12 @@ export async function pdfCotizacion(
   const [panel, config, negocio] = await Promise.all([
     db.panel.findUniqueOrThrow({
       where: { id: ctx.panelId },
-      select: { nombre: true, logoUrl: true },
+      select: { nombre: true, slug: true, logoUrl: true },
     }),
     obtenerConfigCotizacion(ctx),
     nombreNegocio(),
   ]);
-  const clave = clavePdf("cotizacion", ctx.panelId, id, { v: 2, c, panel, config, negocio });
+  const clave = clavePdf("cotizacion", ctx.panelId, id, { v: 3, c, panel, config, negocio });
   const pdf = await pdfCacheado(clave, () => dibujarPdfCotizacion(c, panel, config, negocio));
   return { pdf, archivo: `cotizacion-${c.codigo}.pdf` };
 }
@@ -876,7 +876,7 @@ export async function pdfCotizacion(
  */
 async function dibujarPdfCotizacion(
   c: Awaited<ReturnType<typeof obtener>>,
-  panel: { nombre: string; logoUrl: string | null },
+  panel: { nombre: string; slug: string; logoUrl: string | null },
   config: Awaited<ReturnType<typeof obtenerConfigCotizacion>>,
   negocio: string,
 ): Promise<Uint8Array> {
@@ -888,7 +888,7 @@ async function dibujarPdfCotizacion(
   doc.setCreator(negocio);
   const normal = await doc.embedFont(StandardFonts.Helvetica);
   const negrita = await doc.embedFont(StandardFonts.HelveticaBold);
-  const logo = await cargarLogoPdf(doc, panel.logoUrl);
+  const logo = await cargarLogoPanelPdf(doc, panel);
 
   const mono = await doc.embedFont(StandardFonts.CourierBold);
 
@@ -939,7 +939,8 @@ async function dibujarPdfCotizacion(
     texto(panel.nombre, M, y - 30, { size: 20, font: negrita });
   }
   texto(negocio, ANCHO - M, y - 14, { size: 11, font: negrita, derecha: true });
-  texto(panel.nombre, ANCHO - M, y - 28, { size: 9, color: gris, derecha: true });
+  // Con logo, el nombre del panel ya está en la imagen.
+  if (!logo) texto(panel.nombre, ANCHO - M, y - 28, { size: 9, color: gris, derecha: true });
   texto(`Vendedor: ${c.vendedor.nombre}`, ANCHO - M, y - 41, {
     size: 8.5,
     color: gris,

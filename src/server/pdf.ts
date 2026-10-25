@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { rgb, type PDFDocument, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 
+import { logosCandidatos } from "@/lib/paneles";
 import { obtenerStorage } from "@/server/storage";
 
 /** Puntos por milímetro (PDF = 72 pt por pulgada). */
@@ -141,6 +142,21 @@ export async function leerArchivoPublico(ruta: string): Promise<Uint8Array | nul
   }
 }
 
+/**
+ * Plan B de un archivo de `public/`: pedirlo al propio sitio. En Vercel la
+ * función no siempre lleva `public/` en su bundle (lo sirve el CDN).
+ */
+async function leerPublicoPorHttp(ruta: string): Promise<Uint8Array | null> {
+  const base = process.env.NEXT_PUBLIC_APP_URL;
+  if (!base || ruta.startsWith("//")) return null;
+  try {
+    const r = await fetch(new URL(ruta, base), { signal: AbortSignal.timeout(3000) });
+    return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+  } catch {
+    return null;
+  }
+}
+
 const PREFIJO_ARCHIVOS = "/api/publico/archivos/";
 
 /**
@@ -161,7 +177,7 @@ export async function cargarLogoPdf(
       const r = await fetch(logoUrl, { signal: AbortSignal.timeout(3000) });
       if (r.ok) datos = new Uint8Array(await r.arrayBuffer());
     } else if (logoUrl.startsWith("/")) {
-      datos = await leerArchivoPublico(logoUrl);
+      datos = (await leerArchivoPublico(logoUrl)) ?? (await leerPublicoPorHttp(logoUrl));
     }
     if (!datos || datos.length < 4) return null;
     if (datos[0] === 0x89 && datos[1] === 0x50) return await doc.embedPng(datos);
@@ -170,4 +186,19 @@ export async function cargarLogoPdf(
   } catch {
     return null;
   }
+}
+
+/**
+ * Logo de un panel para un PDF: el que cargó el dueño y, si falta o no carga,
+ * el logo de marca del slug (logosCandidatos). null si ninguno se puede leer.
+ */
+export async function cargarLogoPanelPdf(
+  doc: PDFDocument,
+  panel: { slug: string; logoUrl: string | null },
+): Promise<PDFImage | null> {
+  for (const url of logosCandidatos(panel.slug, panel.logoUrl)) {
+    const logo = await cargarLogoPdf(doc, url);
+    if (logo) return logo;
+  }
+  return null;
 }
