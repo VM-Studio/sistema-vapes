@@ -267,6 +267,16 @@ En el dashboard, los dueños ven **Rendimiento del equipo** para el período ele
 
 La comisión es **orientativa**: sale del % que el dueño le cargó a ese usuario para ventas unitarias y para mayoristas (ver [Dar acceso a un empleado](#dar-acceso-a-un-empleado)). No se descuenta ni se paga desde el sistema; si el usuario no tiene %, dice **Sin comisión**.
 
+## Ganancia por vape (Trinidad)
+
+Un vendedor puede ganar un monto fijo **por cada vape vendido**, según el tipo de venta y si el cliente es nuevo (se dio de alta con esa venta). Trinidad lo tiene cargado en Vapes: **minorista $1.500**, **mayorista $300**, **minorista a cliente nuevo $2.000** y **mayorista a cliente nuevo $500** por vape.
+
+- **Dónde se ve (dueños):** Reportes → **Ventas de Trinidad** (o Equipo → Trinidad), sección **Ganancia de Trinidad**. Con las flechas se elige el mes. Muestra lo **ganado a hoy** (el mes en curso se calcula en el momento, siempre al día), las ventas, los vapes y el total vendido; el desglose de las 4 categorías (cantidad de ventas, vapes, ganancia por vape, ganancia y total vendido de cada una); y la lista de ventas con su categoría, vapes y ganancia: tocando una se abre la venta completa. **Exportar Excel** baja el mes (resumen y ventas).
+- **Cambiar los montos:** botón **Ganancia por vape** en esa misma sección (para otro empleado: **Configurar ganancia por vape**). Afecta el mes en curso y los que todavía no se liquidaron.
+- **Ventas anuladas:** no suman. **Devoluciones (garantías):** descuentan los vapes devueltos a la tarifa de la venta original, en el mes en que se registró la devolución (si el cliente devuelve en noviembre un vape de octubre, se descuenta en noviembre y octubre queda como se liquidó).
+- **Fin de mes:** el día 1 el sistema genera la **liquidación** del mes que terminó, con los montos de ese momento, y en el inicio de los dueños aparece el aviso «Cerró octubre: a Trinidad le corresponden $…». Tocándolo se abre la liquidación: **Registrar pago** (monto, cómo se le pagó, fecha). Mientras está pendiente se puede **Recalcular** (por ejemplo, si se anuló una venta de ese mes). Abajo queda el historial de **Liquidaciones** con su estado.
+- **Trinidad** ve lo mismo de lo suyo: en su inicio, la tarjeta **Mi ganancia** con lo que lleva del mes, y tocándola **Mi ganancia** con el detalle y sus liquidaciones. No ve costos ni ganancias del negocio.
+
 ## Reportes
 
 En **Reportes** hay una tarjeta por reporte. Cada uno se filtra (período, galpón, vendedor, medio de pago, marca, según el reporte), muestra un gráfico y la tabla, y se **exporta a PDF o Excel** con los mismos filtros. Los marcados **Solo dueños** no aparecen para los empleados.

@@ -35,7 +35,8 @@ Todas las rutas (`find src/app -name page.tsx`) con los Sheets, Dialogs y modale
 | devoluciones  | `/p/[slug]/devoluciones/[id]`                     | —                                                         | ✅     |
 | diseno        | `/diseno`                                         | Dialog «¿Anular la venta?»<br>Sheet «Nuevo proveedor»     | ✅     |
 | equipo        | `/p/[slug]/equipo`                                | —                                                         | ✅     |
-| equipo        | `/p/[slug]/equipo/[usuarioId]`                    | —                                                         | ✅     |
+| equipo        | `/p/[slug]/equipo/[usuarioId]`                    | Dialog «Ganancia por vape» · Sheet «Pago a {vendedor}»    | ✅     |
+| ganancia      | `/p/[slug]/ganancia`                              | —                                                         | ✅     |
 | login         | `/login`                                          | —                                                         | ✅     |
 | offline       | `/offline`                                        | —                                                         | ✅     |
 | paneles       | `/paneles`                                        | Sheet «Nuevo sistema»                                     | ✅     |

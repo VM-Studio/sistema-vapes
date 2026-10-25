@@ -220,29 +220,34 @@ model Usuario {
   updatedAt            DateTime   @updatedAt
   deletedAt            DateTime?
 
-  permisos             PermisoUsuario[]
-  paneles              UsuarioPanel[]
-  movimientos          MovimientoStock[]
-  compras              Compra[]
-  ventas               Venta[]                  @relation("VentaUsuario")
-  ventasAnuladas       Venta[]                  @relation("VentaAnuladaPor")
-  transferencias       Transferencia[]
-  auditLogs            AuditLog[]
-  devoluciones         Devolucion[]             @relation("DevolucionUsuario")
-  devolucionesAnuladas Devolucion[]             @relation("DevolucionAnuladaPor")
-  pagosVenta           PagoVenta[]              @relation("PagoVentaUsuario")
-  pagosVentaAnulados   PagoVenta[]              @relation("PagoVentaAnuladoPor")
-  facturas             Factura[]                @relation("FacturaUsuario")
-  facturasAnuladas     Factura[]                @relation("FacturaAnuladaPor")
-  cotizaciones         Cotizacion[]             @relation("CotizacionVendedor")
-  preciosProveedor     ProveedorProducto[]
-  gastosCompra         GastoCompra[]            @relation("GastoCompraUsuario")
-  gastosCompraAnulados GastoCompra[]            @relation("GastoCompraAnuladoPor")
-  cambiosCosto         CostoVarianteHistorial[]
-  comisionesPagadas    ComisionPasista[]
-  sesiones             Sesion[]                 @relation("SesionUsuario")
-  sesionesRevocadas    Sesion[]                 @relation("SesionRevocadaPor")
-  clientesCreados      Cliente[]                @relation("ClienteCreadoPor")
+  permisos               PermisoUsuario[]
+  paneles                UsuarioPanel[]
+  movimientos            MovimientoStock[]
+  compras                Compra[]
+  ventas                 Venta[]                  @relation("VentaUsuario")
+  ventasAnuladas         Venta[]                  @relation("VentaAnuladaPor")
+  transferencias         Transferencia[]
+  auditLogs              AuditLog[]
+  devoluciones           Devolucion[]             @relation("DevolucionUsuario")
+  devolucionesAnuladas   Devolucion[]             @relation("DevolucionAnuladaPor")
+  pagosVenta             PagoVenta[]              @relation("PagoVentaUsuario")
+  pagosVentaAnulados     PagoVenta[]              @relation("PagoVentaAnuladoPor")
+  facturas               Factura[]                @relation("FacturaUsuario")
+  facturasAnuladas       Factura[]                @relation("FacturaAnuladaPor")
+  cotizaciones           Cotizacion[]             @relation("CotizacionVendedor")
+  preciosProveedor       ProveedorProducto[]
+  gastosCompra           GastoCompra[]            @relation("GastoCompraUsuario")
+  gastosCompraAnulados   GastoCompra[]            @relation("GastoCompraAnuladoPor")
+  cambiosCosto           CostoVarianteHistorial[]
+  comisionesPagadas      ComisionPasista[]
+  sesiones               Sesion[]                 @relation("SesionUsuario")
+  sesionesRevocadas      Sesion[]                 @relation("SesionRevocadaPor")
+  clientesCreados        Cliente[]                @relation("ClienteCreadoPor")
+  tarifasVendedor        TarifaVendedor[]         @relation("TarifaVendedorUsuario")
+  tarifasActualizadas    TarifaVendedor[]         @relation("TarifaVendedorActualizadaPor")
+  liquidaciones          LiquidacionVendedor[]    @relation("LiquidacionVendedor")
+  liquidacionesGeneradas LiquidacionVendedor[]    @relation("LiquidacionGeneradaPor")
+  liquidacionesPagadas   LiquidacionVendedor[]    @relation("LiquidacionPagadaPor")
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -404,6 +409,8 @@ model Panel {
   gastosCompra              GastoCompra[]
   historialCostos           CostoVarianteHistorial[]
   comisionesPasista         ComisionPasista[]
+  tarifasVendedor           TarifaVendedor[]
+  liquidacionesVendedor     LiquidacionVendedor[]
   secuencias                Secuencia[]
   auditLogs                 AuditLog[]
 
@@ -1500,4 +1507,87 @@ model FacturaItem {
   variante Variante? @relation(fields: [varianteId], references: [id], onDelete: Restrict)
 
   @@index([facturaId])
+}
+
+// -----------------------------------------------------------------------------
+// Ganancia por unidad de los vendedores y liquidación mensual (A3)
+// -----------------------------------------------------------------------------
+
+/// Cuánto gana un vendedor por unidad vendida en un panel, según el tipo de
+/// venta (UNITARIA = minorista / MAYORISTA) y si el cliente se dio de alta con
+/// esa venta (Venta.clienteNuevo). Sin fila = el vendedor no tiene ganancia
+/// por unidad en ese panel. La cargan y cambian los dueños (Equipo).
+model TarifaVendedor {
+  id               String   @id @default(cuid())
+  panelId          String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  usuarioId        String
+  /// $ por unidad. CHECK ≥ 0.
+  minorista        Decimal  @db.Decimal(12, 2)
+  mayorista        Decimal  @db.Decimal(12, 2)
+  minoristaNuevo   Decimal  @db.Decimal(12, 2)
+  mayoristaNuevo   Decimal  @db.Decimal(12, 2)
+  actualizadaPorId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  panel          Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  usuario        Usuario  @relation("TarifaVendedorUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  actualizadaPor Usuario? @relation("TarifaVendedorActualizadaPor", fields: [actualizadaPorId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, usuarioId])
+}
+
+enum EstadoLiquidacion {
+  /// Mes cerrado, falta pagarle al vendedor.
+  PENDIENTE
+  /// Se registró el pago.
+  PAGADA
+}
+
+/// Liquidación mensual de la ganancia por unidad de un vendedor: snapshot
+/// (tarifas, categorías y ventas) del mes ya terminado. Única por panel,
+/// vendedor y mes. Pagada, el snapshot no se modifica (trigger).
+model LiquidacionVendedor {
+  id                   String            @id @default(cuid())
+  panelId              String            @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  usuarioId            String
+  /// Primer día del mes (argentino) liquidado.
+  mes                  DateTime          @db.Date
+  estado               EstadoLiquidacion @default(PENDIENTE)
+  /// Tarifas aplicadas ($ por unidad), snapshot de TarifaVendedor al generar.
+  tarifaMinorista      Decimal           @db.Decimal(12, 2)
+  tarifaMayorista      Decimal           @db.Decimal(12, 2)
+  tarifaMinoristaNuevo Decimal           @db.Decimal(12, 2)
+  tarifaMayoristaNuevo Decimal           @db.Decimal(12, 2)
+  /// Lo que le corresponde (Σ categorías, nunca negativo).
+  total                Decimal           @db.Decimal(12, 2)
+  cantidadVentas       Int
+  /// Unidades vendidas menos las devueltas en el mes.
+  unidades             Int
+  /// Σ total de las ventas del mes.
+  totalVendido         Decimal           @db.Decimal(12, 2)
+  /// [{ categoria, ventas, unidades, unidadesDevueltas, tarifa, monto, totalVendido }]
+  categorias           Json
+  /// Ventas y devoluciones del mes con su categoría y ganancia (snapshot).
+  detalle              Json
+  /// null = la generó el sistema al terminar el mes.
+  generadaPorId        String?
+  generadaAt           DateTime          @default(now())
+  /// Pago (estado PAGADA).
+  montoPagado          Decimal?          @db.Decimal(12, 2)
+  medioPago            MedioPago?
+  referencia           String?
+  fechaPago            DateTime?
+  pagadaPorId          String?
+  pagadaAt             DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  panel       Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  usuario     Usuario  @relation("LiquidacionVendedor", fields: [usuarioId], references: [id], onDelete: Restrict)
+  generadaPor Usuario? @relation("LiquidacionGeneradaPor", fields: [generadaPorId], references: [id], onDelete: Restrict)
+  pagadaPor   Usuario? @relation("LiquidacionPagadaPor", fields: [pagadaPorId], references: [id], onDelete: Restrict)
+
+  @@unique([panelId, usuarioId, mes])
+  @@index([panelId, estado])
 }

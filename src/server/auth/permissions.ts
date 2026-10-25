@@ -181,6 +181,11 @@ export async function requireCtxAlguno(
   return armarCtx(panel, await requirePermisoAlguno(panel.id, modulos, accion));
 }
 
+/** Cualquier usuario con acceso al panel actual (lo suyo; el servicio decide el resto). */
+export async function requireCtxPanelUsuario(): Promise<CtxPanel> {
+  return armarCtx(await getPanelActual(), await requireUsuario());
+}
+
 /** Solo dueños, dentro de un panel (configuración del panel). */
 export async function requireCtxOwner(): Promise<CtxPanel> {
   const panel = await getPanelActual();
@@ -227,7 +232,7 @@ export function requirePaginaPanelOwner() {
 
 /** Cualquier usuario con acceso al panel actual (ej: inicio del panel). */
 export function requirePaginaPanelUsuario() {
-  return paraPagina(async () => armarCtx(await getPanelActual(), await requireUsuario()));
+  return paraPagina(requireCtxPanelUsuario);
 }
 
 export function requirePaginaOwner() {

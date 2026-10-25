@@ -20,6 +20,7 @@ import {
   SkeletonTarjeta,
 } from "@/components/analitica/secciones";
 import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
+import { AvisoLiquidacionesInicio, TarjetaMiGanancia } from "@/components/ganancia/tarjetas-inicio";
 import { cardVariants } from "@/components/ui/card";
 import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
 import { navegacionPermitida, type ItemNavegacion } from "@/config/navigation";
@@ -63,6 +64,15 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
           <Titulo panel={panel.nombre} />
           <p className="text-muted text-body">Elegí por dónde empezar.</p>
         </header>
+        {owner ? (
+          <Suspense fallback={null}>
+            <AvisoLiquidacionesInicio ctx={ctx} />
+          </Suspense>
+        ) : (
+          <Suspense fallback={null}>
+            <TarjetaMiGanancia ctx={ctx} />
+          </Suspense>
+        )}
         {accesos.length > 0 && <AccesosRapidos items={accesos} />}
       </div>
     );
@@ -92,6 +102,12 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
           comparacion={desc.comparacion}
         />
       </header>
+
+      {owner && (
+        <Suspense fallback={null}>
+          <AvisoLiquidacionesInicio ctx={ctx} />
+        </Suspense>
+      )}
 
       <Suspense key={`k${clave}`} fallback={<SkeletonKpis n={cantidadKpis} />}>
         <SeccionKpis {...props} />
@@ -148,6 +164,12 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
             <SeccionMiRendimiento {...props} className="lg:col-span-12" />
           )}
         </Suspense>
+
+        {!owner && (
+          <Suspense fallback={null}>
+            <TarjetaMiGanancia ctx={ctx} className="lg:col-span-12" />
+          </Suspense>
+        )}
 
         <Suspense fallback={<SkeletonTarjeta className="lg:col-span-6" alto="h-40" />}>
           <SeccionAlertas

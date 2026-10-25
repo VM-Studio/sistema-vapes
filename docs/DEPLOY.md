@@ -87,7 +87,7 @@ Las `SEED_*` solo las lee `prisma/seed.ts`. Con `NODE_ENV=production` son **obli
    - [ ] Variables de Production (las de la tabla de arriba, sin las `SEED_*`), con `STORAGE_PROVIDER=s3` y `NEXT_PUBLIC_APP_URL=https://tu-dominio`.
    - [ ] Dominio propio con HTTPS. Después de verificarlo, enviar el dominio a [hstspreload.org](https://hstspreload.org) (el header ya incluye `preload`).
    - [ ] Desactivar el deploy automático de Git para `main` (lo hace el job `deploy`, después del release). Los Preview pueden seguir automáticos.
-   - [ ] Cron de Vercel: solo `/api/cron/cambio` una vez por día (09:00 AR), que es lo que permite el plan Hobby. Las cotizaciones cada 15 min las dispara `.github/workflows/cambio.yml` (ver [Cotizaciones](#cotizaciones-dólar-blue-y-usdt)). El backup corre en GitHub Actions.
+   - [ ] Crons de Vercel (una vez por día como máximo, lo que permite el plan Hobby): `/api/cron/cambio` (09:00 AR) y `/api/cron/liquidaciones` el día 1 a las 00:10 AR (cierra el mes de la ganancia por vape de los vendedores; si no corriera, la pantalla de la ganancia cierra lo que falte al abrirse). Las cotizaciones cada 15 min las dispara `.github/workflows/cambio.yml` (ver [Cotizaciones](#cotizaciones-dólar-blue-y-usdt)). El backup corre en GitHub Actions.
 5. **GitHub**
    - [ ] Environment `production` con los secrets: `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `CRON_SECRET`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_BACKUP_BUCKET`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; y la variable `NEXT_PUBLIC_APP_URL`.
    - [ ] Protección de `main`: requiere el check **CI** en verde.
