@@ -152,3 +152,68 @@ function ahorro(lista: OfertaComparada[], valor: (o: OfertaProveedor) => number)
   if (lista.length < 2) return null;
   return deCentavos(Math.round(valor(lista[lista.length - 1]!) - valor(lista[0]!)));
 }
+
+// =============================================================================
+// Comparador dentro de una compra (formulario de compra)
+// =============================================================================
+
+export interface OfertaCompra extends OfertaComparada {
+  /** Proveedor activo: se le puede comprar (los inactivos se muestran, sin acción). */
+  activo: boolean;
+  /** Es el proveedor elegido en la compra. */
+  esActual: boolean;
+}
+
+export interface ComparacionCompra {
+  /** Del más barato al más caro (normalizado a pesos si hay cotización). */
+  ofertas: OfertaCompra[];
+  monedasSinConvertir: boolean;
+  /** El más barato (el primero del grupo principal). */
+  masBarato: OfertaCompra | null;
+  /** La oferta del proveedor de la compra (null = no lo vende o no tiene precio). */
+  actual: OfertaCompra | null;
+  /**
+   * Cuánto más caro (por unidad, en la moneda del grupo) le sale con el
+   * proveedor actual que con el más barato. null = el actual es el más
+   * barato, no lo vende, o no se pueden comparar (monedas distintas sin cotización).
+   */
+  sobrecostoActual: string | null;
+}
+
+/**
+ * Ofertas de un producto para mostrar en una compra: el orden de
+ * `compararOfertas` (pesos y USDT normalizados con la cotización), con el
+ * proveedor actual y el más barato marcados, y el sobrecosto del actual.
+ */
+export function compararParaCompra(
+  ofertas: (OfertaProveedor & { activo: boolean })[],
+  opciones: {
+    proveedorActualId: string | null;
+    cotizacionUsdt?: number | null;
+    ahora: Date;
+  },
+): ComparacionCompra {
+  const activoDe = new Map(ofertas.map((o) => [o.proveedorId, o.activo]));
+  const r = compararOfertas(ofertas, {
+    cotizacionUsdt: opciones.cotizacionUsdt,
+    ahora: opciones.ahora,
+  });
+  const lista: OfertaCompra[] = r.ofertas.map((o) => ({
+    ...o,
+    activo: activoDe.get(o.proveedorId) ?? true,
+    esActual: o.proveedorId === opciones.proveedorActualId,
+  }));
+  const masBarato = lista[0] ?? null;
+  const actual = lista.find((o) => o.esActual) ?? null;
+  const comparables = actual !== null && masBarato !== null && actual.grupo === masBarato.grupo;
+  return {
+    ofertas: lista,
+    monedasSinConvertir: r.monedasSinConvertir,
+    masBarato,
+    actual,
+    sobrecostoActual:
+      comparables && !actual.masBarato && aCentavos(actual.diferencia) > 0
+        ? actual.diferencia
+        : null,
+  };
+}

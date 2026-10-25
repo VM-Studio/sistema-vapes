@@ -11,6 +11,7 @@ import { calcularCostosFinales, type CostosFinales } from "@/lib/costos-compra";
 import { finDelDia, hoyAR, inicioDelDia } from "@/lib/fechas";
 import { formatearIdCompra } from "@/lib/paneles";
 import type { Compra, FiltrosCompras } from "@/lib/validations/compra";
+import { saborVisible } from "@/lib/validations/producto";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, NotFoundError, StockInsuficienteError } from "@/server/errors";
@@ -429,6 +430,125 @@ export async function costoSugerido(
       return [v.id, { costo: null, fuente: null }];
     }),
   );
+}
+
+export interface SaborCatalogoCompra {
+  varianteId: string;
+  /** null = sabor "Único" (no se muestra). */
+  sabor: string | null;
+  sku: string;
+  /** Unidades en el galpón destino (null = no se indicó galpón). */
+  stock: number | null;
+}
+
+export interface ProductoCatalogoCompra {
+  productoId: string;
+  nombreCompleto: string;
+  marca: string;
+  /** Precio del proveedor, en su moneda. */
+  precio: string;
+  moneda: Moneda;
+  /**
+   * Costo en pesos que se precarga al agregarlo (igual que `costoSugerido`):
+   * ARS tal cual; USDT × cotización (la del borrador o la vigente),
+   * redondeado a pesos. null = está en USDT y no hay cotización.
+   */
+  costoArs: string | null;
+  /** Solo USDT con cotización: la cotización usada. */
+  tipoCambio: string | null;
+  actualizadoAt: Date;
+  sabores: SaborCatalogoCompra[];
+}
+
+/** Precio del proveedor → costo en pesos para la compra (ver `costoSugerido`). */
+function costoEnPesos(
+  precio: Prisma.Decimal,
+  moneda: Moneda,
+  tipoCambio: Prisma.Decimal | null,
+): Prisma.Decimal | null {
+  if (moneda === Moneda.ARS) return precio;
+  return tipoCambio ? precio.mul(tipoCambio).toDecimalPlaces(0) : null;
+}
+
+/**
+ * Catálogo del proveedor para el formulario de compra: los productos que
+ * vende (activos y no borrados) con su precio, el costo en pesos que se
+ * precarga y sus sabores activos (con el stock del galpón destino si se
+ * indica). Orden por marca y modelo. Solo para quien tiene `ver` en COMPRAS.
+ */
+export async function catalogoParaCompra(
+  ctx: Ctx,
+  proveedorId: string,
+  opciones: { compraId?: string; depositoId?: string } = {},
+): Promise<ProductoCatalogoCompra[]> {
+  const db = dbPara(ctx.panelId);
+  const [filas, borrador] = await Promise.all([
+    db.proveedorProducto.findMany({
+      where: {
+        proveedorId,
+        proveedor: { deletedAt: null },
+        producto: { deletedAt: null, activo: true },
+      },
+      orderBy: [
+        { producto: { marca: { nombre: "asc" } } },
+        { producto: { nombre: "asc" } },
+        { producto: { nombreCompleto: "asc" } },
+      ],
+      take: 1000,
+      select: {
+        precio: true,
+        moneda: true,
+        actualizadoAt: true,
+        producto: {
+          select: {
+            id: true,
+            nombreCompleto: true,
+            marca: { select: { nombre: true } },
+            variantes: {
+              where: { deletedAt: null, activo: true },
+              orderBy: { nombre: "asc" },
+              select: {
+                id: true,
+                nombre: true,
+                sku: true,
+                stocks: opciones.depositoId
+                  ? { where: { depositoId: opciones.depositoId }, select: { cantidad: true } }
+                  : false,
+              },
+            },
+          },
+        },
+      },
+    }),
+    opciones.compraId
+      ? db.compra.findFirst({
+          where: { id: opciones.compraId, proveedorId },
+          select: { tipoCambioUSDT: true },
+        })
+      : null,
+  ]);
+  const tipoCambio = filas.some((f) => f.moneda === Moneda.USDT)
+    ? (borrador?.tipoCambioUSDT ?? (await cotizacionUsdtActual()))
+    : null;
+  return filas.map((f) => {
+    const costo = costoEnPesos(f.precio, f.moneda, tipoCambio);
+    return {
+      productoId: f.producto.id,
+      nombreCompleto: f.producto.nombreCompleto,
+      marca: f.producto.marca.nombre,
+      precio: dec(f.precio),
+      moneda: f.moneda,
+      costoArs: costo ? dec(costo) : null,
+      tipoCambio: f.moneda === Moneda.USDT && tipoCambio ? dec(tipoCambio) : null,
+      actualizadoAt: f.actualizadoAt,
+      sabores: f.producto.variantes.map((v) => ({
+        varianteId: v.id,
+        sabor: saborVisible(v.nombre),
+        sku: v.sku,
+        stock: opciones.depositoId ? (v.stocks?.[0]?.cantidad ?? 0) : null,
+      })),
+    };
+  });
 }
 
 export interface CambioPrecioProveedor {

@@ -109,6 +109,19 @@ export const costoSugeridoSchema = z.object({
   varianteIds: z.array(id).min(1).max(500),
 });
 
+/** Catálogo del proveedor en el formulario de compra. */
+export const catalogoCompraSchema = z.object({
+  proveedorId: id,
+  compraId: z.preprocess(vacioAUndefined, id.optional()),
+  depositoId: z.preprocess(vacioAUndefined, id.optional()),
+});
+
+/** Comparador de proveedores para los productos de una compra. */
+export const ofertasCompraSchema = z.object({
+  productoIds: z.array(id).min(1).max(200),
+  proveedorId: z.preprocess(vacioAUndefined, id.optional()),
+});
+
 const fechaFiltro = z
   .preprocess(
     vacioAUndefined,

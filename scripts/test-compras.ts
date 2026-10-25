@@ -24,6 +24,7 @@ import {
   anularCompra,
   anularGastoCompra,
   cambiarComisionPasista,
+  catalogoParaCompra,
   costoSugerido,
   crearCompra,
   obtenerCompra,
@@ -60,6 +61,7 @@ import {
   desactivar as desactivarProveedor,
   listar as listarProveedores,
   listarProveedoresActivos,
+  ofertasParaCompra,
   proveedoresDeProducto,
 } from "../src/server/services/proveedor.service";
 
@@ -644,6 +646,51 @@ async function main() {
         sug[uva.id]?.precioUsdt === "4.00" &&
         sug[uva.id]?.tipoCambio === "1300.00",
       `4 USDT × $ 1.300 → costo sugerido ${sug[uva.id]?.costo} (${sug[uva.id]?.fuente})`,
+    );
+    // Catálogo del proveedor y comparador por producto en el formulario de compra.
+    const catalogo = await catalogoParaCompra(actor, enDolares.id, { depositoId: g1.id });
+    const enCatalogo = catalogo.find((p) => p.productoId === producto.id);
+    const stockUva = await stockDe(uva.id, g1.id);
+    check(
+      enCatalogo?.moneda === Moneda.USDT &&
+        enCatalogo.precio === "4.00" &&
+        enCatalogo.costoArs === "5200.00" &&
+        enCatalogo.tipoCambio === "1300.00" &&
+        enCatalogo.sabores.length === 3 &&
+        enCatalogo.sabores.find((s) => s.varianteId === uva.id)?.stock === stockUva,
+      `catálogo de ${enDolares.nombre}: ${enCatalogo?.precio} USDT → $ ${enCatalogo?.costoArs}, ${enCatalogo?.sabores.length} sabores con stock del galpón`,
+    );
+    const { productos: comparados } = await ofertasParaCompra(actor, [producto.id], enDolares.id);
+    const cmp = comparados[producto.id];
+    const pesos = (o: { precio: string; moneda: string }) =>
+      o.moneda === "USDT" ? Number(o.precio) * 1300 : Number(o.precio);
+    const ordenado = (cmp?.ofertas ?? []).every(
+      (o, i, a) => i === 0 || pesos(a[i - 1]!) <= pesos(o),
+    );
+    const ofertaLeo = cmp?.ofertas.find((o) => o.proveedorId === enDolares.id);
+    check(
+      Boolean(cmp) &&
+        cmp!.ofertas.length === 3 &&
+        ordenado &&
+        ofertaLeo?.esActual === true &&
+        ofertaLeo.precioArsEquivalente === "5200.00" &&
+        cmp!.actual?.proveedorId === enDolares.id &&
+        cmp!.masBarato?.proveedorId === cmp!.ofertas[0]?.proveedorId &&
+        cmp!.ofertas.filter((o) => o.esActual).length === 1,
+      `comparador en la compra (USDT a pesos): ${cmp?.ofertas.map((o) => `${o.proveedor} ${o.precio} ${o.moneda}`).join(" < ")}`,
+    );
+    const masBaratoPesos = pesos(cmp!.masBarato!);
+    check(
+      cmp!.actual?.masBarato
+        ? cmp!.sobrecostoActual === null
+        : cmp!.sobrecostoActual === (5200 - masBaratoPesos).toFixed(2),
+      `sobrecosto de comprarle a ${enDolares.nombre}: ${cmp?.sobrecostoActual ?? "ninguno"}`,
+    );
+    const otroPanel = await ofertasParaCompra({ panelId: COSMETIC }, [producto.id], null);
+    check(
+      (otroPanel.productos[producto.id]?.ofertas.length ?? 0) === 0 &&
+        (await catalogoParaCompra({ ...actor, panelId: COSMETIC }, enDolares.id)).length === 0,
+      "catálogo y comparador no cruzan paneles",
     );
     const cUsdt = await crearCompra(
       actor,

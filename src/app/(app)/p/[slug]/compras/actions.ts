@@ -11,9 +11,11 @@ import {
   agregarGastosCompraSchema,
   anularCompraSchema,
   anularGastoCompraSchema,
+  catalogoCompraSchema,
   comisionPasistaSchema,
   costoSugeridoSchema,
   guardarCompraSchema,
+  ofertasCompraSchema,
   recibirCompraSchema,
 } from "@/lib/validations/compra";
 import { actionHandler } from "@/server/action-handler";
@@ -25,6 +27,7 @@ import {
   anularCompra,
   anularGastoCompra,
   cambiarComisionPasista,
+  catalogoParaCompra,
   costoSugerido,
   crearCompra,
   obtenerCostosCompra,
@@ -32,6 +35,7 @@ import {
   recibirCompra,
 } from "@/server/services/compra.service";
 import { buscarVariantes } from "@/server/services/producto.service";
+import { ofertasParaCompra } from "@/server/services/proveedor.service";
 
 /**
  * Permisos de COMPRAS: crear → nueva (borrador) · editar → modificar el
@@ -82,6 +86,20 @@ export const costoSugeridoAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.COMPRAS, "ver");
   const { proveedorId, varianteIds, compraId } = costoSugeridoSchema.parse(input);
   return costoSugerido(ctx, proveedorId, varianteIds, compraId);
+});
+
+/** Lo que vende el proveedor elegido, con su precio y el costo en pesos que se precarga. */
+export const catalogoProveedorCompraAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const { proveedorId, compraId, depositoId } = catalogoCompraSchema.parse(input);
+  return catalogoParaCompra(ctx, proveedorId, { compraId, depositoId });
+});
+
+/** Quién vende cada producto de la compra y a cuánto (del más barato al más caro). */
+export const ofertasCompraAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const { productoIds, proveedorId } = ofertasCompraSchema.parse(input);
+  return ofertasParaCompra(ctx, productoIds, proveedorId ?? null);
 });
 
 export interface SaborBuscado {

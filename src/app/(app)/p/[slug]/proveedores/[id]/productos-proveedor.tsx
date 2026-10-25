@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Package, Trash2 } from "lucide-react";
+import { Check, Package, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -71,6 +71,10 @@ export function ProductosProveedor({
   const [filas, setFilas] = useState<Fila[]>(() => productos.map(aFila));
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState<string | null>(null);
+  const [guardandoTodos, setGuardandoTodos] = useState(false);
+  const [filtro, setFiltro] = useState("");
+  /** Fila recién agregada: su precio toma el foco. */
+  const [agregado, setAgregado] = useState<string | null>(null);
   const editable = verPrecios && puedeEditar;
 
   const [previos, setPrevios] = useState(productos);
@@ -95,8 +99,14 @@ export function ProductosProveedor({
   const actualizar = (productoId: string, cambios: Partial<Fila>) =>
     setFilas((fs) => fs.map((f) => (f.productoId === productoId ? { ...f, ...cambios } : f)));
 
-  async function guardar(f: Fila) {
-    setGuardando(f.productoId);
+  const cambiada = (f: Fila) =>
+    f.precio !== "" &&
+    (f.guardado === null ||
+      f.guardado.precio !== String(Number(f.precio.replace(",", "."))) ||
+      f.guardado.moneda !== f.moneda);
+
+  /** Guarda una fila; devuelve si salió bien (el error queda en la fila). */
+  async function guardarFila(f: Fila): Promise<boolean> {
     setErrores((e) => ({ ...e, [f.productoId]: "" }));
     const r = await asignarProductoAction({
       proveedorId,
@@ -104,15 +114,43 @@ export function ProductosProveedor({
       precio: f.precio.replace(",", "."),
       moneda: f.moneda,
     });
-    setGuardando(null);
     if (!r.ok) {
       const msj = r.error.fields?.precio?.[0] ?? r.error.message;
       setErrores((e) => ({ ...e, [f.productoId]: msj }));
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async function guardar(f: Fila) {
+    setGuardando(f.productoId);
+    const ok = await guardarFila(f);
+    setGuardando(null);
+    if (!ok) return;
     toast.success("Precio guardado", f.nombreCompleto);
     router.refresh();
   }
+
+  /** "Guardar todos": los precios cambiados o nuevos, uno por uno (cada uno con su fecha). */
+  async function guardarTodos() {
+    const pendientes = filas.filter(cambiada);
+    setGuardandoTodos(true);
+    let ok = 0;
+    for (const f of pendientes) if (await guardarFila(f)) ok++;
+    setGuardandoTodos(false);
+    if (ok === pendientes.length) toast.success(`${ok} precio(s) guardado(s)`);
+    else toast.error(`Se guardaron ${ok} de ${pendientes.length}`, "Revisá los marcados en rojo.");
+    router.refresh();
+  }
+
+  const pendientes = editable ? filas.filter(cambiada).length : 0;
+  const palabras = filtro.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visibles = palabras.length
+    ? filas.filter(
+        (f) =>
+          f.guardado === null || palabras.every((w) => f.nombreCompleto.toLowerCase().includes(w)),
+      )
+    : filas;
 
   async function quitar(f: Fila) {
     if (f.guardado === null) {
@@ -142,6 +180,23 @@ export function ProductosProveedor({
       }
       contentClassName="flex flex-col gap-4"
     >
+      {filas.length > 8 && (
+        <div className="relative">
+          <Search
+            className="text-muted pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+            strokeWidth={1.75}
+            aria-hidden
+          />
+          <input
+            type="search"
+            aria-label="Filtrar productos del proveedor"
+            placeholder={`Filtrar sus ${filas.length} productos`}
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            className={cn(controlClass, "h-11 pl-9 md:h-10")}
+          />
+        </div>
+      )}
       {filas.length === 0 ? (
         <EmptyState
           icon={Package}
@@ -170,7 +225,12 @@ export function ProductosProveedor({
             {puedeEditar && <span />}
           </div>
           <ul aria-label="Productos del proveedor" className="divide-border flex flex-col divide-y">
-            {filas.map((f) => {
+            {visibles.length === 0 && (
+              <li className="text-muted px-4 py-3 text-sm">
+                Ningún producto coincide con «{filtro.trim()}».
+              </li>
+            )}
+            {visibles.map((f) => {
               const cambio =
                 f.guardado === null ||
                 f.guardado.precio !== String(Number(f.precio.replace(",", "."))) ||
@@ -220,6 +280,18 @@ export function ProductosProveedor({
                         onChange={(e) =>
                           actualizar(f.productoId, { precio: soloDecimal(e.target.value) })
                         }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && cambiada(f)) {
+                            e.preventDefault();
+                            void guardar(f);
+                          }
+                        }}
+                        ref={(el) => {
+                          if (el && agregado === f.productoId) {
+                            el.focus();
+                            setAgregado(null);
+                          }
+                        }}
                         className={cn(controlClass, "h-11 text-right tabular-nums md:h-10")}
                       />
                       <select
@@ -278,6 +350,16 @@ export function ProductosProveedor({
           </ul>
         </div>
       )}
+      {editable && pendientes > 1 && (
+        <Button
+          className="self-end max-md:w-full"
+          loading={guardandoTodos}
+          disabled={guardando !== null}
+          onClick={() => void guardarTodos()}
+        >
+          <Check strokeWidth={1.75} /> Guardar los {pendientes} precios
+        </Button>
+      )}
       {editable && (
         <BuscadorRemoto
           ariaLabel="Agregar producto que vende"
@@ -285,7 +367,8 @@ export function ProductosProveedor({
           buscar={(q) => buscarProductosProveedorAction({ q })}
           getKey={(p) => p.id}
           render={(p) => <span className="truncate">{p.nombreCompleto}</span>}
-          onSelect={(p) =>
+          onSelect={(p) => {
+            setAgregado(p.id);
             setFilas((fs) =>
               fs.some((f) => f.productoId === p.id)
                 ? fs
@@ -300,8 +383,8 @@ export function ProductosProveedor({
                       guardado: null,
                     },
                   ],
-            )
-          }
+            );
+          }}
         />
       )}
     </SectionCard>

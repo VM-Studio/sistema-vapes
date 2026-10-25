@@ -13,6 +13,8 @@ import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
 import {
   compararOfertas,
+  compararParaCompra,
+  type ComparacionCompra,
   type OfertaProveedor,
   type ResultadoComparacion,
 } from "@/server/reportes/comparador";
@@ -729,6 +731,87 @@ export function sqlComparador(panelId: string, productoId: string): Prisma.Sql {
       LIMIT 1
     ) uc ON TRUE
     ORDER BY pr."id", pp."precio" ASC, pp."actualizadoAt" DESC`;
+}
+
+const filaOfertasCompraSchema = z.array(
+  z.object({
+    base_id: z.string(),
+    proveedor_id: z.string(),
+    proveedor: z.string(),
+    tienda: z.string(),
+    telefono: z.string().nullable(),
+    activo: z.boolean(),
+    precio: monto,
+    moneda,
+    actualizado_at: z.date(),
+  }),
+);
+
+/**
+ * Comparador dentro de una compra: para cada producto, quién lo vende y a
+ * cuánto, del más barato al más caro (USDT normalizado a pesos con la
+ * cotización vigente, la misma que usa el reporte del comparador), con el
+ * proveedor de la compra marcado. "Mismo producto" = misma regla que
+ * `compararProveedores` (marca + modelo + especificación). Una sola consulta
+ * para todos los productos. No filtra por permisos: quien llama exige `ver`
+ * en COMPRAS (que es quien ve precios de proveedor).
+ */
+export async function ofertasParaCompra(
+  ctx: Pick<Ctx, "panelId">,
+  productoIds: string[],
+  proveedorActualId: string | null,
+): Promise<{ cotizacionUsdt: CotizacionUsdt; productos: Record<string, ComparacionCompra> }> {
+  const ids = [...new Set(productoIds)].slice(0, 200);
+  const cotizacionUsdt = await obtenerCotizacion("USDT");
+  if (ids.length === 0) return { cotizacionUsdt, productos: {} };
+  const filas = filaOfertasCompraSchema.parse(
+    await dbPara(ctx.panelId).$queryRaw`
+      WITH base AS (
+        SELECT "id" AS base_id, "marcaId", "especificacionNorm", lower(btrim("nombre")) AS modelo
+        FROM "Producto" WHERE "panelId" = ${ctx.panelId} AND "id" = ANY(${ids}::text[])
+      )
+      SELECT DISTINCT ON (b.base_id, pr."id")
+             b.base_id, pr."id" AS proveedor_id, pr."nombre" AS proveedor, pr."nombreTienda" AS tienda,
+             pr."telefono", pr."activo", pp."precio", pp."moneda"::text AS moneda,
+             pp."actualizadoAt" AS actualizado_at
+      FROM base b
+      JOIN "Producto" p ON p."panelId" = ${ctx.panelId} AND p."marcaId" = b."marcaId"
+       AND p."especificacionNorm" = b."especificacionNorm" AND lower(btrim(p."nombre")) = b.modelo
+       AND p."deletedAt" IS NULL
+      JOIN "ProveedorProducto" pp ON pp."panelId" = ${ctx.panelId} AND pp."productoId" = p."id"
+      JOIN "Proveedor" pr ON pr."id" = pp."proveedorId" AND pr."panelId" = ${ctx.panelId} AND pr."deletedAt" IS NULL
+      ORDER BY b.base_id, pr."id", pp."precio" ASC, pp."actualizadoAt" DESC`,
+  );
+  const porProducto = new Map<string, (OfertaProveedor & { activo: boolean })[]>(
+    ids.map((id) => [id, []]),
+  );
+  for (const f of filas) {
+    porProducto.get(f.base_id)?.push({
+      proveedorId: f.proveedor_id,
+      proveedor: f.proveedor,
+      tienda: f.tienda,
+      telefono: f.telefono,
+      activo: f.activo,
+      precio: f.precio,
+      moneda: f.moneda,
+      actualizadoAt: f.actualizado_at,
+      ultimaCompra: null,
+    });
+  }
+  const momento = ahora();
+  return {
+    cotizacionUsdt,
+    productos: Object.fromEntries(
+      [...porProducto.entries()].map(([id, ofertas]) => [
+        id,
+        compararParaCompra(ofertas, {
+          proveedorActualId,
+          cotizacionUsdt: cotizacionUsdt?.valor,
+          ahora: momento,
+        }),
+      ]),
+    ),
+  };
 }
 
 export interface ProductoConVariosProveedores {

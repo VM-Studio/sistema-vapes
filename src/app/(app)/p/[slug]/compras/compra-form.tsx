@@ -1,15 +1,30 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { ArrowLeft, Plus, Search, Store, Trash2, Truck, Warehouse } from "lucide-react";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Plus,
+  Scale,
+  Search,
+  Store,
+  Trash2,
+  Truck,
+  Warehouse,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AltaRapidaSheet } from "@/components/catalogo/alta-rapida-sheet";
 import { SelectorGalpon } from "@/components/catalogo/selector-galpon";
 import { BuscadorRemoto } from "@/components/compras/buscador-remoto";
+import { CatalogoProveedor } from "@/components/compras/catalogo-proveedor";
 import { DialogoRecibir } from "@/components/compras/dialogo-recibir";
 import { CheckComisionPasista } from "@/components/compras/comision-pasista";
+import {
+  ProductoCompraSheet,
+  type SaborAgregado,
+} from "@/components/compras/producto-compra-sheet";
 import { ProveedorForm, soloDecimal } from "@/components/compras/proveedor-form";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
@@ -31,16 +46,23 @@ import { invalidarResoluciones, resolverCodigo } from "@/features/scanner/resolv
 import { ScanInput } from "@/features/scanner/ScanInput";
 import { useBarcodeScanner } from "@/features/scanner/useBarcodeScanner";
 import { useScanFeedback } from "@/features/scanner/useScanFeedback";
+import type { CotizacionVigente } from "@/lib/cambio";
 import { calcularCostosFinales } from "@/lib/costos-compra";
 import { hoyAR } from "@/lib/fechas";
-import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { CambioPrecioProveedor } from "@/server/services/compra.service";
+import type { ComparacionCompra } from "@/server/reportes/comparador";
+import type {
+  CambioPrecioProveedor,
+  ProductoCatalogoCompra,
+} from "@/server/services/compra.service";
 
 import {
   buscarSaboresCompraAction,
+  catalogoProveedorCompraAction,
   costoSugeridoAction,
   guardarCompraAction,
+  ofertasCompraAction,
   preciosQueCambianAction,
   recibirCompraAction,
   type SaborBuscado,
@@ -147,6 +169,18 @@ export function CompraForm({
   const [desconocido, setDesconocido] = useState<string | null>(null);
   const [recibir, setRecibir] = useState<{ cambios: CambioPrecioProveedor[] | null } | null>(null);
   const clave = useRef(0);
+  // Catálogo del proveedor (null = cargando) y comparador por producto.
+  const [catalogo, setCatalogo] = useState<{
+    proveedorId: string;
+    productos: ProductoCatalogoCompra[];
+  } | null>(null);
+  const [comparaciones, setComparaciones] = useState<{
+    proveedorId: string;
+    cotizacionUsdt: CotizacionVigente | null;
+    productos: Record<string, ComparacionCompra>;
+  }>({ proveedorId, cotizacionUsdt: null, productos: {} });
+  /** Producto abierto en la hoja (catálogo + quién lo vende). */
+  const [enFoco, setEnFoco] = useState<{ productoId: string; nombreCompleto: string } | null>(null);
 
   const proveedor = proveedores.find((p) => p.id === proveedorId);
   const deposito = depositos.find((d) => d.id === depositoId);
@@ -197,6 +231,64 @@ export function CompraForm({
     if (proveedorId && sinCosto.length) void sugerirCostos(proveedorId, sinCosto);
   }, [proveedorId, sugerirCostos]);
 
+  // Catálogo del proveedor elegido (paso Ítems). Se recarga al cambiar de proveedor o de galpón.
+  useEffect(() => {
+    if (paso !== 3 || !proveedorId) return;
+    let vigente = true;
+    void catalogoProveedorCompraAction({
+      proveedorId,
+      depositoId: depositoId || undefined,
+      compraId: compraIdRef.current ?? undefined,
+    }).then((r) => {
+      if (!vigente) return;
+      setCatalogo({ proveedorId, productos: r.ok ? r.data : [] });
+    });
+    return () => {
+      vigente = false;
+    };
+  }, [paso, proveedorId, depositoId]);
+  const productosCatalogo = catalogo?.proveedorId === proveedorId ? catalogo.productos : null;
+
+  // Quién vende cada producto de la compra (y el abierto en la hoja), del más barato al más caro.
+  const productosComparar = useMemo(() => {
+    const ids = new Set(items.map((i) => i.productoId));
+    if (enFoco) ids.add(enFoco.productoId);
+    return [...ids].sort();
+  }, [items, enFoco]);
+  const comparacionesVigentes =
+    comparaciones.proveedorId === proveedorId ? comparaciones.productos : {};
+  const faltanComparar = productosComparar.filter((id) => !(id in comparacionesVigentes));
+  const claveFaltantes = faltanComparar.join(",");
+  const enFocoAbierto = enFoco !== null;
+  useEffect(() => {
+    if (paso !== 3 || !claveFaltantes) return;
+    let vigente = true;
+    // Con la hoja abierta, enseguida; si no, se espera a que termine la ráfaga
+    // de escaneos (un pedido por tanda, no por código).
+    const t = setTimeout(
+      () =>
+        void ofertasCompraAction({
+          productoIds: claveFaltantes.split(","),
+          proveedorId: proveedorId || undefined,
+        }).then((r) => {
+          if (!vigente || !r.ok) return;
+          setComparaciones((c) => ({
+            proveedorId,
+            cotizacionUsdt: r.data.cotizacionUsdt,
+            productos: {
+              ...(c.proveedorId === proveedorId ? c.productos : {}),
+              ...r.data.productos,
+            },
+          }));
+        }),
+      enFocoAbierto ? 0 : 700,
+    );
+    return () => {
+      vigente = false;
+      clearTimeout(t);
+    };
+  }, [paso, proveedorId, claveFaltantes, enFocoAbierto]);
+
   function agregar(v: {
     varianteId: string;
     productoId: string;
@@ -227,6 +319,76 @@ export function CompraForm({
     if (!existe) void sugerirCostos(proveedorId, [v.varianteId]);
   }
 
+  /** Desde la hoja del producto: suma las cantidades elegidas con el costo del proveedor. */
+  function agregarDesdeHoja(
+    p: ProductoCatalogoCompra,
+    sabores: SaborAgregado[],
+    costo: { valor: string; editado: boolean },
+  ) {
+    const origen: ItemCompraForm["origenCosto"] = costo.editado
+      ? "manual"
+      : p.moneda === "USDT"
+        ? "PROVEEDOR_USDT"
+        : "PROVEEDOR";
+    const detalleUsdt =
+      origen === "PROVEEDOR_USDT" && p.tipoCambio
+        ? `${formatearUsdt(p.precio)} × ${formatearPesos(p.tipoCambio)}`
+        : null;
+    const valor = String(Number(costo.valor) || "");
+    setItems((its) => {
+      const nuevos = [...its];
+      for (const s of sabores) {
+        const i = nuevos.findIndex((x) => x.varianteId === s.varianteId);
+        if (i >= 0) {
+          const actual = nuevos[i]!;
+          nuevos[i] = {
+            ...actual,
+            cantidad: String(num(actual.cantidad) + s.cantidad),
+            ...(costo.editado || actual.origenCosto !== "manual"
+              ? { costo: valor, origenCosto: origen, detalleUsdt }
+              : {}),
+          };
+        } else {
+          nuevos.push({
+            varianteId: s.varianteId,
+            productoId: p.productoId,
+            nombreCompleto: p.nombreCompleto,
+            sabor: s.sabor,
+            sku: s.sku,
+            cantidad: String(s.cantidad),
+            costo: valor,
+            origenCosto: origen,
+            detalleUsdt,
+          });
+        }
+      }
+      return nuevos;
+    });
+    const unidades = sabores.reduce((a, s) => a + s.cantidad, 0);
+    toast.success(
+      `${formatearNumero(unidades)} u. agregadas`,
+      `${p.nombreCompleto} a ${formatearPesos(valor)} c/u`,
+    );
+    setEnFoco(null);
+  }
+
+  /**
+   * Pasar la compra a otro proveedor desde el comparador: solo si no tiene
+   * productos distintos del que se está comparando (los costos sugeridos se
+   * recalculan con el precio del nuevo; los cargados a mano quedan).
+   */
+  const puedeCambiarProveedor = (id: string) =>
+    proveedores.some((p) => p.id === id) && items.every((i) => i.productoId === enFoco?.productoId);
+  function cambiarProveedor(id: string) {
+    const nuevo = proveedores.find((p) => p.id === id);
+    if (!nuevo || !puedeCambiarProveedor(id)) return;
+    setItems((its) =>
+      its.map((i) => (i.origenCosto === "manual" ? i : { ...i, origenCosto: "cargando" })),
+    );
+    setProveedorId(id);
+    toast.success(`La compra ahora es a ${nuevo.nombre}`, nuevo.nombreTienda);
+  }
+
   const procesar = async (codigo: string) => {
     const r = await resolverCodigo(panel.id, codigo);
     if (!r.ok) {
@@ -254,7 +416,8 @@ export function CompraForm({
   // Pistola activa en el paso de ítems (pausada con el alta rápida o el diálogo abiertos).
   useBarcodeScanner({
     onScan: (c) => void procesar(c),
-    enabled: paso === 3 && desconocido === null && recibir === null && !nuevoProveedor,
+    enabled:
+      paso === 3 && desconocido === null && recibir === null && !nuevoProveedor && enFoco === null,
   });
 
   const unidades = items.reduce((a, i) => a + num(i.cantidad), 0);
@@ -264,6 +427,12 @@ export function CompraForm({
     comisionPorcentaje: comisionActiva ? comisionPct : null,
     gastos: inicial.gastos,
   });
+  const unidadesPorProducto = new Map<string, number>();
+  for (const i of items)
+    unidadesPorProducto.set(
+      i.productoId,
+      (unidadesPorProducto.get(i.productoId) ?? 0) + num(i.cantidad),
+    );
   const actualizar = (id: string, cambios: Partial<ItemCompraForm>) =>
     setItems((its) => its.map((i) => (i.varianteId === id ? { ...i, ...cambios } : i)));
 
@@ -620,6 +789,17 @@ export function CompraForm({
           </CardContent>
         </Card>
 
+        {proveedor && (
+          <CatalogoProveedor
+            proveedor={proveedor.nombre}
+            productos={productosCatalogo}
+            enCompra={unidadesPorProducto}
+            onElegir={(p) =>
+              setEnFoco({ productoId: p.productoId, nombreCompleto: p.nombreCompleto })
+            }
+          />
+        )}
+
         {items.length === 0 ? (
           <EmptyState
             icon={Truck}
@@ -662,6 +842,18 @@ export function CompraForm({
                         {it.origenCosto === "ULTIMO_COSTO" && " · último costo"}
                         {it.origenCosto === "cargando" && " · buscando costo…"}
                       </p>
+                      {items.findIndex((x) => x.productoId === it.productoId) === i && (
+                        <PistaComparador
+                          comparacion={comparacionesVigentes[it.productoId] ?? null}
+                          proveedor={proveedor?.nombre ?? "este proveedor"}
+                          onComparar={() =>
+                            setEnFoco({
+                              productoId: it.productoId,
+                              nombreCompleto: it.nombreCompleto,
+                            })
+                          }
+                        />
+                      )}
                     </div>
                     <label className="text-muted text-small row-start-2 flex flex-col gap-1 md:row-start-auto">
                       <span className="md:sr-only">Cantidad</span>
@@ -843,6 +1035,26 @@ export function CompraForm({
           agregar(v);
         }}
       />
+      <ProductoCompraSheet
+        abierto={enFoco !== null}
+        onCerrar={() => setEnFoco(null)}
+        nombreCompleto={enFoco?.nombreCompleto ?? ""}
+        proveedorActual={proveedor?.nombre ?? "el proveedor"}
+        catalogo={productosCatalogo?.find((p) => p.productoId === enFoco?.productoId) ?? null}
+        comparacion={enFoco ? (comparacionesVigentes[enFoco.productoId] ?? null) : null}
+        cotizacionUsdt={comparaciones.cotizacionUsdt}
+        puedeCambiarProveedor={puedeCambiarProveedor}
+        otrosProductos={
+          new Set(items.filter((i) => i.productoId !== enFoco?.productoId).map((i) => i.productoId))
+            .size
+        }
+        hrefNuevaCompra={(id) => ruta(`/compras/nueva?proveedor=${id}`)}
+        onAgregar={(sabores, costo) => {
+          const p = productosCatalogo?.find((x) => x.productoId === enFoco?.productoId);
+          if (p) agregarDesdeHoja(p, sabores, costo);
+        }}
+        onCambiarProveedor={cambiarProveedor}
+      />
       <DialogoRecibir
         abierto={recibir !== null}
         onCerrar={() => {
@@ -857,5 +1069,63 @@ export function CompraForm({
         onConfirmar={(a) => void confirmarRecibir(a)}
       />
     </>
+  );
+}
+
+/**
+ * Debajo del primer sabor de cada producto: si el proveedor de la compra es
+ * el más barato, o quién lo vende más barato y cuánto se ahorra por unidad.
+ */
+function PistaComparador({
+  comparacion,
+  proveedor,
+  onComparar,
+}: {
+  comparacion: ComparacionCompra | null;
+  proveedor: string;
+  onComparar: () => void;
+}) {
+  if (!comparacion || comparacion.ofertas.length === 0) return null;
+  const { actual, masBarato, ofertas, sobrecostoActual } = comparacion;
+  const n = ofertas.length;
+  const boton = (
+    <button
+      type="button"
+      onClick={onComparar}
+      className="text-foreground inline-flex min-h-6 items-center gap-1 font-medium underline underline-offset-4"
+    >
+      <Scale className="size-3.5" strokeWidth={1.75} aria-hidden />
+      {n === 1 ? "Ver proveedor" : `Comparar ${n} proveedores`}
+    </button>
+  );
+  let texto: React.ReactNode;
+  let tono = "text-muted";
+  if (actual?.masBarato) {
+    tono = "text-success";
+    texto =
+      n > 1 ? (
+        <span className="inline-flex items-center gap-1">
+          <BadgeCheck className="size-3.5" strokeWidth={1.75} aria-hidden />
+          {proveedor} es el más barato
+        </span>
+      ) : (
+        `Solo lo vende ${proveedor}`
+      );
+  } else if (masBarato && sobrecostoActual) {
+    tono = "text-warning-soft-foreground";
+    texto = `Más barato con ${masBarato.proveedor}: ${formatearMonto(masBarato.precio, masBarato.moneda)} · ahorrás ${formatearMonto(sobrecostoActual, masBarato.grupo)}/u`;
+  } else if (!actual && masBarato) {
+    texto = `${proveedor} no lo tiene cargado · desde ${formatearMonto(masBarato.precio, masBarato.moneda)} con ${masBarato.proveedor}`;
+  } else {
+    texto = `Lo venden ${n} proveedores`;
+  }
+  return (
+    <p
+      className={cn("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs", tono)}
+      data-testid="pista-comparador"
+    >
+      <span>{texto}</span>
+      {boton}
+    </p>
   );
 }

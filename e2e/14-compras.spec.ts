@@ -1,9 +1,14 @@
+import path from "node:path";
+
+import type { Locator, Page } from "@playwright/test";
+
 import { expect, test } from "./base";
 
 import {
   db,
   depositoId,
   EMAIL_DUENO,
+  esMobile,
   login,
   loginDueno,
   PANEL_VAPES,
@@ -150,4 +155,111 @@ test("Trinidad (sin COMPRAS) no puede entrar a Compras", async ({ page }) => {
   await expect(page).toHaveURL(/sin-acceso/);
   const nav = page.locator('aside, nav[aria-label="Navegación inferior"]');
   await expect(nav.locator('a[href^="/p/vapes/compras"]')).toHaveCount(0);
+});
+
+/** Capturas para verificación manual (solo con CAPTURAS_DIR): 1440 en escritorio y 375 en el celular. */
+async function captura(page: Page, nombre: string, foco?: Locator) {
+  const dir = process.env.CAPTURAS_DIR;
+  if (!dir) return;
+  if (esMobile(page)) await page.setViewportSize({ width: 375, height: 812 });
+  const ancho = esMobile(page) ? 375 : 1440;
+  if (foco) await foco.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(dir, `${nombre}-${ancho}.png`) });
+}
+
+test("catálogo del proveedor y comparador: agregar sabores con su precio y pasarle la compra al más barato", async ({
+  page,
+}) => {
+  const sufijo = String(Date.now()).slice(-6);
+  const { producto, proveedor: lucas, mango, uva } = await preparar(sufijo);
+  const nc = producto.nombreCompleto;
+  const dueno = await db.usuario.findUniqueOrThrow({ where: { email: EMAIL_DUENO } });
+  // Ana lo vende en USDT: 5 × $ 1.350 (cotización fija del e2e) = $ 6.750, más barato que Lucas.
+  const ana = await db.proveedor.create({
+    data: {
+      panelId: PANEL_VAPES,
+      nombre: "Ana",
+      nombreTienda: `Mayorista Ana ${sufijo}`,
+      productos: {
+        create: {
+          panelId: PANEL_VAPES,
+          productoId: producto.id,
+          precio: 5,
+          moneda: "USDT",
+          usuarioId: dueno.id,
+        },
+      },
+    },
+  });
+
+  await loginDueno(page);
+  await page.goto("/p/vapes/compras/nueva");
+  await page.getByRole("radio", { name: new RegExp(`Vape House ${sufijo}`) }).click();
+  await page.getByRole("radio", { name: /Mercedes/ }).click();
+  await page.getByRole("button", { name: "Continuar con Mercedes" }).click();
+
+  // Paso 3: el catálogo de Lucas con su precio.
+  const catalogo = page.getByRole("list", { name: "Productos de Lucas" });
+  const fila = catalogo.getByRole("button", { name: `Agregar ${nc}` });
+  await expect(fila).toContainText(/\$\s*7\.000/);
+  await captura(page, "bloqueA-catalogo", catalogo);
+  await fila.click();
+
+  // Hoja del producto: sabores con cantidad y costo precargado; quién lo vende.
+  const hoja = page.getByRole("dialog", { name: nc });
+  await expect(hoja.getByLabel("Costo unitario")).toHaveValue("7000");
+  const ofertas = hoja
+    .getByRole("list", { name: "Proveedores que lo venden" })
+    .getByTestId("oferta-compra");
+  await expect(ofertas).toHaveCount(2);
+  await expect(ofertas.nth(0)).toHaveAttribute("data-proveedor", "Ana");
+  await expect(ofertas.nth(0)).toContainText("Más barato");
+  await expect(ofertas.nth(0)).toContainText(/≈ \$\s*6\.750/);
+  await expect(ofertas.nth(1)).toContainText("Proveedor de esta compra");
+  await hoja.getByLabel("Cantidad a agregar de Mango").fill("3");
+  await hoja.getByLabel("Cantidad a agregar de Uva").fill("2");
+  await captura(page, "bloqueA-hoja-producto");
+  await hoja.getByRole("button", { name: /Agregar 5 u\./ }).click();
+  await expect(hoja).toBeHidden();
+
+  await expect(page.getByLabel(`Cantidad de ${nc} — Mango`)).toHaveValue("3");
+  await expect(page.getByLabel(`Cantidad de ${nc} — Uva`)).toHaveValue("2");
+  await expect(page.getByLabel(`Costo de ${nc} — Mango`)).toHaveValue("7000");
+  // Pista en el ítem: Ana lo vende más barato.
+  const pista = page.getByTestId("pista-comparador");
+  await expect(pista).toContainText("Más barato con Ana");
+  await expect(pista).toContainText(/ahorrás \$\s*250/);
+  await captura(page, "bloqueA-items-pista", page.getByTestId("pista-comparador"));
+
+  // La compra solo tiene este producto: se la paso a Ana desde el comparador.
+  await pista.getByRole("button", { name: "Comparar 2 proveedores" }).click();
+  await hoja.getByRole("button", { name: "Comprarle a Ana" }).click();
+  await hoja.getByRole("button", { name: "Cerrar" }).click();
+  await expect(page.getByText(`Ana · Mayorista Ana ${sufijo}`)).toBeVisible();
+  // Los costos sugeridos pasan al precio de Ana (5 USDT × $ 1.350).
+  await expect(page.getByLabel(`Costo de ${nc} — Mango`)).toHaveValue("6750");
+  await expect(page.getByLabel(`Costo de ${nc} — Uva`)).toHaveValue("6750");
+  await expect(page.getByTestId("pista-comparador")).toContainText("Ana es el más barato");
+  await expect(page.getByRole("list", { name: "Productos de Ana" })).toBeVisible();
+  await captura(page, "bloqueA-cambio-proveedor", page.getByTestId("pista-comparador"));
+
+  await page.getByRole("button", { name: "Guardar borrador" }).click();
+  await page.waitForURL(
+    (u) => /^\/p\/vapes\/compras\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nueva"),
+  );
+  const compra = await db.compra.findFirstOrThrow({
+    where: { panelId: PANEL_VAPES, proveedorId: ana.id },
+    include: { items: true },
+  });
+  expect(compra.estado).toBe("BORRADOR");
+  expect(
+    compra.items.map((i) => [i.varianteId, i.cantidad, i.costoUnitario.toFixed(0)]).sort(),
+  ).toEqual(
+    [
+      [mango.id, 3, "6750"],
+      [uva.id, 2, "6750"],
+    ].sort(),
+  );
+  expect(await db.compra.count({ where: { proveedorId: lucas.id } })).toBe(0);
 });

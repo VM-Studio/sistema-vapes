@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   aCentavos,
   compararOfertas,
+  compararParaCompra,
   esDesactualizado,
   type OfertaProveedor,
 } from "@/server/reportes/comparador";
@@ -161,5 +162,73 @@ describe("compararOfertas", () => {
   it("aCentavos redondea sin errores de coma flotante", () => {
     expect(aCentavos("0.1") + aCentavos("0.2")).toBe(aCentavos("0.3"));
     expect(aCentavos("10500.50")).toBe(1050050);
+  });
+});
+
+describe("compararParaCompra (formulario de compra)", () => {
+  const activa = (o: OfertaProveedor, activo = true) => ({ ...o, activo });
+
+  it("normaliza USDT a pesos con la cotización, ordena y marca actual y más barato", () => {
+    // 10 USDT × 1.300 = $ 13.000; Lucas $ 12.500; Ana 11 USDT = $ 14.300.
+    const r = compararParaCompra(
+      [
+        activa(oferta("ana", "11", "USDT")),
+        activa(oferta("lucas", "12500")),
+        activa(oferta("beto", "10", "USDT")),
+      ],
+      { proveedorActualId: "beto", cotizacionUsdt: 1300, ahora: AHORA },
+    );
+    expect(r.ofertas.map((o) => o.proveedorId)).toEqual(["lucas", "beto", "ana"]);
+    expect(r.ofertas.map((o) => o.precioArsEquivalente)).toEqual([null, "13000.00", "14300.00"]);
+    expect(r.masBarato?.proveedorId).toBe("lucas");
+    expect(r.actual?.proveedorId).toBe("beto");
+    expect(r.ofertas.filter((o) => o.esActual).map((o) => o.proveedorId)).toEqual(["beto"]);
+    // Le sale $ 500 más caro por unidad con el actual.
+    expect(r.sobrecostoActual).toBe("500.00");
+    expect(r.monedasSinConvertir).toBe(false);
+  });
+
+  it("sin sobrecosto si el actual es el más barato (o empata)", () => {
+    const r = compararParaCompra(
+      [
+        activa(oferta("a", "9000")),
+        activa(oferta("b", "9000", "ARS", { actualizadoAt: hace(10) })),
+      ],
+      { proveedorActualId: "b", ahora: AHORA },
+    );
+    expect(r.actual?.masBarato).toBe(true);
+    expect(r.sobrecostoActual).toBeNull();
+  });
+
+  it("proveedor actual que no lo vende: actual null y sin sobrecosto", () => {
+    const r = compararParaCompra([activa(oferta("a", "9000"))], {
+      proveedorActualId: "otro",
+      ahora: AHORA,
+    });
+    expect(r.actual).toBeNull();
+    expect(r.masBarato?.proveedorId).toBe("a");
+    expect(r.sobrecostoActual).toBeNull();
+  });
+
+  it("sin cotización: grupos separados y el actual en USDT no se compara contra pesos", () => {
+    const r = compararParaCompra(
+      [activa(oferta("u", "10", "USDT")), activa(oferta("p", "12000"))],
+      { proveedorActualId: "u", cotizacionUsdt: null, ahora: AHORA },
+    );
+    expect(r.monedasSinConvertir).toBe(true);
+    expect(r.ofertas.map((o) => o.grupo)).toEqual(["ARS", "USDT"]);
+    expect(r.sobrecostoActual).toBeNull();
+  });
+
+  it("conserva si el proveedor está activo (los inactivos se muestran sin acción)", () => {
+    const r = compararParaCompra([activa(oferta("a", "100"), false), activa(oferta("b", "200"))], {
+      proveedorActualId: "b",
+      ahora: AHORA,
+    });
+    expect(r.ofertas.map((o) => [o.proveedorId, o.activo])).toEqual([
+      ["a", false],
+      ["b", true],
+    ]);
+    expect(r.sobrecostoActual).toBe("100.00");
   });
 });
