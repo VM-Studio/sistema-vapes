@@ -45,7 +45,6 @@ export function ConfigVentasForm({
   const panel = usePanel();
   const [redondeo, setRedondeo] = useState(String(ventas.redondeoVentas));
   const [medios, setMedios] = useState<MedioPago[]>([...ventas.mediosPago]);
-  const [usarPrecioML, setUsarPrecioML] = useState(ventas.usarPrecioMLEnVentasML);
   const [prefijoSku, setPrefijoSku] = useState(catalogo.prefijoSku);
   const [alertaStockMinimo, setAlerta] = useState(catalogo.alertaStockMinimo);
   const [comisionPasista, setComisionPasista] = useState(
@@ -60,7 +59,6 @@ export function ConfigVentasForm({
       guardarConfigVentasAction({
         redondeoVentas: Number(redondeo),
         mediosPago: medios,
-        usarPrecioMLEnVentasML: usarPrecioML,
       }),
       guardarConfigCatalogoAction({ prefijoSku, alertaStockMinimo }),
       guardarConfigComprasAction({
@@ -122,12 +120,16 @@ export function ConfigVentasForm({
         >
           <MediosPago medios={medios} onCambiar={setMedios} error={errores.mediosPago} />
           {medios.includes("MERCADO_LIBRE") && (
-            <Switch
-              label="Las ventas cobradas por Mercado Libre van a precio Mercado Libre"
-              hint="Cada producto con precio Mercado Libre se cobra a ese precio; los que no tienen, a precio de lista."
-              checked={usarPrecioML}
-              onCheckedChange={setUsarPrecioML}
-            />
+            <p
+              className="border-border bg-surface text-small rounded-control flex gap-2.5 border p-3"
+              data-testid="aviso-precio-ml"
+            >
+              <Info className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+              <span>
+                En una venta cobrada por Mercado Libre se carga a mano el precio de cada producto.
+                Su factura (ARCA) se marca como cargada en Facturas → Ventas Mercado Libre.
+              </span>
+            </p>
           )}
         </SectionCard>
         <SectionCard

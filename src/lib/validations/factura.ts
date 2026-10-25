@@ -277,3 +277,48 @@ export type DatosFiscales = z.output<typeof datosFiscalesSchema>;
 export type FacturarVenta = z.output<typeof facturarVentaSchema>;
 export type FacturaSuelta = z.output<typeof facturaSueltaSchema>;
 export type FiltrosFacturas = z.output<typeof listarFacturasSchema>;
+
+// --- Facturas de ventas Mercado Libre (cargadas en ARCA, por fuera) ---------------
+
+export const ESTADOS_FACTURA_ML = ["PENDIENTE", "CARGADA"] as const;
+export type EstadoFacturaML = (typeof ESTADOS_FACTURA_ML)[number];
+
+export const ESTADO_FACTURA_ML_UI: Record<
+  EstadoFacturaML,
+  { label: string; variante: "warning" | "success" }
+> = {
+  PENDIENTE: { label: "Pendiente", variante: "warning" },
+  CARGADA: { label: "Cargada", variante: "success" },
+};
+
+/** Archivo de la factura ML: PDF o imagen, hasta 5 MB (límite de las Server Actions: 6 MB). */
+export const TIPOS_ARCHIVO_FACTURA_ML = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+export const MAX_ARCHIVO_FACTURA_ML = 5 * 1024 * 1024;
+
+/** Filtros de Facturas → Ventas Mercado Libre (período de la VENTA y estado de la factura). */
+export const listarVentasMLSchema = z.object({
+  desde: fechaFiltro,
+  hasta: fechaFiltro,
+  estado: z.preprocess(vacioAUndefined, z.enum(ESTADOS_FACTURA_ML).optional()).catch(undefined),
+  /** ID de venta (COS-000123 o 123) o cliente. */
+  q: z.preprocess(vacioAUndefined, z.string().trim().max(100).optional()).catch(undefined),
+  page: z.coerce.number().int().min(1).catch(1),
+  pageSize: z.coerce.number().int().min(10).max(100).catch(30),
+});
+
+/** «Cargado»: la fecha de la factura (default hoy) y, opcional, su archivo (aparte, FormData). */
+export const cargarFacturaMLSchema = z.object({
+  ventaId: id,
+  fecha: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
+});
+
+export type FiltrosVentasML = z.output<typeof listarVentasMLSchema>;
+export type CargarFacturaML = z.output<typeof cargarFacturaMLSchema>;

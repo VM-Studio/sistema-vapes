@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import {
   anularFacturaSchema,
+  cargarFacturaMLSchema,
   facturarVentaSchema,
   facturaSueltaSchema,
   numeroExternoSchema,
@@ -22,11 +23,13 @@ import {
   subirArchivo,
   ventaParaFacturar,
 } from "@/server/services/factura.service";
+import { marcarFacturaMLCargada } from "@/server/services/factura-ml.service";
 
 /**
  * Permisos de FACTURAS (en el panel actual):
  *   ver → listado, detalle y PDF · crear → facturar una venta o una suelta
- *   editar → subir el PDF real y cargar el número fiscal · anular → solo dueños
+ *   editar → subir el PDF real, cargar el número fiscal y marcar cargada la
+ *            factura de una venta Mercado Libre · anular → solo dueños
  * Importes, numeración y validaciones fiscales: el servicio.
  */
 
@@ -81,4 +84,26 @@ export const buscarVentaFacturarAction = actionHandler(async (input: unknown) =>
   const ctx = await requireCtx(Modulo.FACTURAS, "crear");
   const { texto } = z.object({ texto: z.string().trim().min(1).max(40) }).parse(input);
   return ventaParaFacturar(ctx, texto);
+});
+
+/**
+ * Ventas Mercado Libre → «Cargado». FormData: `ventaId`, `fecha` (YYYY-MM-DD) y,
+ * opcional, `archivo` (PDF o imagen de la factura emitida en ARCA).
+ */
+export const cargarFacturaMLAction = actionHandler(async (form: FormData) => {
+  const ctx = await requireCtx(Modulo.FACTURAS, "editar");
+  const datos = cargarFacturaMLSchema.parse({
+    ventaId: form.get("ventaId"),
+    fecha: form.get("fecha"),
+  });
+  const archivo = form.get("archivo");
+  const r = await marcarFacturaMLCargada(
+    ctx,
+    datos,
+    archivo instanceof File && archivo.size > 0
+      ? { datos: new Uint8Array(await archivo.arrayBuffer()), nombre: archivo.name }
+      : null,
+  );
+  revalidar();
+  return r;
 });

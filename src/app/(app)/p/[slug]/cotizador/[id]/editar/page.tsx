@@ -3,15 +3,11 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { rutaPanel } from "@/lib/paneles";
-import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { esOwner, puede } from "@/lib/permisos";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { obtenerCotizacion } from "@/server/services/cambio.service";
-import {
-  obtenerConfigCotizacion,
-  obtenerConfigVentas,
-} from "@/server/services/configuracion.service";
+import { obtenerConfigCotizacion } from "@/server/services/configuracion.service";
 import { obtener } from "@/server/services/cotizacion.service";
 
 import { EditorCotizacion } from "../../editor-cotizacion";
@@ -28,13 +24,12 @@ export default async function EditarCotizacionPage({
 }) {
   const ctx = await requirePaginaPanel(Modulo.COTIZADOR, "crear");
   const { id } = await params;
-  const [c, config, configVentas] = await Promise.all([
+  const [c, config] = await Promise.all([
     obtener(ctx, id).catch((e: unknown) => {
       if (e instanceof NotFoundError) notFound();
       throw e;
     }),
     obtenerConfigCotizacion(ctx),
-    obtenerConfigVentas(ctx),
   ]);
   if (!esEditable(c.estado)) redirect(rutaPanel(ctx.panel.slug, `/cotizador/${id}`));
   // Vigente: su propio blue (snapshot); vencida o sin snapshot: el de hoy.
@@ -93,7 +88,8 @@ export default async function EditarCotizacionPage({
       puedeEditar={puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "editar")}
       esOwner={esOwner(ctx.usuario)}
       puedeVender={puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear")}
-      conMercadoLibre={c.tipo === "UNITARIA" && (c.aPrecioML || tieneMercadoLibre(configVentas))}
+      // Solo las cotizaciones viejas a precio Mercado Libre (para poder sacarlo).
+      conMercadoLibre={c.tipo === "UNITARIA" && c.aPrecioML}
     />
   );
 }

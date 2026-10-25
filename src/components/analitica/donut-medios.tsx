@@ -6,8 +6,9 @@ import { ChartPlaceholder, ChartTheme, colorSerie } from "@/components/ui/chart-
 import { formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Orden fijo: Efectivo, Transferencia, Binance (el color sigue al medio, no al ranking):
- * azul, azul claro, naranja. La leyenda usa los mismos tokens (--serie-N). */
+/** Orden de los medios del panel: Efectivo, Transferencia y Binance o Mercado Libre (el
+ * color sigue al medio, no al ranking): azul, azul claro, naranja. La leyenda usa los
+ * mismos tokens (--serie-N). */
 const COLORES = [colorSerie(0), colorSerie(1), colorSerie(2)];
 const PUNTO = ["bg-serie-1", "bg-serie-2", "bg-serie-3"];
 

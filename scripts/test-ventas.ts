@@ -4,8 +4,8 @@
  * descuento (solo con "editar"), falta de stock (todo o nada), teléfono
  * repetido, pagos (PagoVenta por el total), listado y totales, anulación (solo
  * dueños, anula los pagos), ventas de un cliente,
- * más vendidos, aislamiento entre paneles (VAP-/COS-) y medios por panel con
- * precio Mercado Libre (Cosmetic).
+ * más vendidos, aislamiento entre paneles (VAP-/COS-), medios por panel, ventas
+ * por Mercado Libre con precio a mano y la carga de sus facturas (Cosmetic).
  * Uso: pnpm test:ventas — pensado para una DB recién sembrada (crea datos).
  */
 import {
@@ -21,9 +21,11 @@ import {
 import { prisma } from "../src/lib/db";
 import { formatearIdVenta } from "../src/lib/paneles";
 import {
+  cargarFacturaMLSchema,
   facturarVentaSchema,
   facturaSueltaSchema,
   listarFacturasSchema,
+  listarVentasMLSchema,
 } from "../src/lib/validations/factura";
 import { generarVentaSchema, listarVentasSchema } from "../src/lib/validations/venta";
 import { dbPara, transaccion, type Ctx } from "../src/server/db/panel-scoped";
@@ -37,6 +39,12 @@ import {
   obtener as obtenerFactura,
   pdfFactura,
 } from "../src/server/services/factura.service";
+import {
+  archivoFacturaML,
+  listarVentasML,
+  marcarFacturaMLCargada,
+  totalesFacturasML,
+} from "../src/server/services/factura-ml.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
 import {
   anularVenta,
@@ -622,43 +630,74 @@ async function main() {
       items,
     });
 
+  // Venta por Mercado Libre: el precio de cada ítem se carga a mano (obligatorio);
+  // el precio ML guardado en el producto ya no se usa.
+  const itemsML = [
+    { varianteId: rosa.id, cantidad: 2 },
+    { varianteId: coco.id, cantidad: 1 },
+    { varianteId: sinML.variantes[0]!.id, cantidad: 1 },
+  ];
+  const sinPrecio = await error(() =>
+    generarVenta(ctxCos, ventaCos([{ medioPago: "MERCADO_LIBRE", monto: 30000 }], itemsML), DUENO),
+  );
+  check(
+    sinPrecio instanceof DomainError && /precio de cada producto/.test(msg(sinPrecio)),
+    `ML sin precio a mano → «${msg(sinPrecio)}»`,
+  );
+  const unoSinPrecio = await error(() =>
+    generarVenta(
+      ctxCos,
+      ventaCos(
+        [{ medioPago: "MERCADO_LIBRE", monto: 30000 }],
+        [
+          { ...itemsML[0]!, precioML: 14000 },
+          { ...itemsML[1]!, precioML: 0 },
+        ],
+      ),
+      DUENO,
+    ),
+  );
+  check(unoSinPrecio instanceof DomainError, "ML con un precio en 0 → error");
   const porML = await generarVenta(
     ctxCos,
     ventaCos(
-      [{ medioPago: "MERCADO_LIBRE", monto: 15000 + 16500 + 8000 }],
+      [{ medioPago: "MERCADO_LIBRE", monto: 2 * 14000 + 17250.5 + 9000 }],
       [
-        { varianteId: rosa.id, cantidad: 1 },
-        { varianteId: coco.id, cantidad: 1 },
-        { varianteId: sinML.variantes[0]!.id, cantidad: 1 },
+        { ...itemsML[0]!, precioML: 14000 },
+        { ...itemsML[1]!, precioML: "17250.50" },
+        { ...itemsML[2]!, precioML: 9000 },
       ],
     ),
-    DUENO,
+    // El precio a mano de ML no exige "editar" (es propio de Mercado Libre).
+    EMPLEADO,
   );
   const item = (venta: typeof porML, id: string) => venta.items.find((i) => i.varianteId === id)!;
   check(
-    item(porML, rosa.id).precioUnitario === "15000.00" &&
-      item(porML, rosa.id).origenPrecio === "ML",
-    `vendido por ML: lista $ 12.000 → $ ${item(porML, rosa.id).precioUnitario} (origenPrecio ${item(porML, rosa.id).origenPrecio})`,
+    item(porML, rosa.id).precioUnitario === "14000.00" &&
+      item(porML, rosa.id).precioLista === "14000.00" &&
+      item(porML, rosa.id).origenPrecio === "ML" &&
+      !item(porML, rosa.id).esPrecioEspecial,
+    `vendido por ML a mano: $ ${item(porML, rosa.id).precioUnitario} (origenPrecio ${item(porML, rosa.id).origenPrecio}; el guardado era $ 15.000)`,
   );
   check(
-    item(porML, coco.id).precioUnitario === "16500.00",
-    "el precio ML propio del sabor pisa al del producto",
+    item(porML, coco.id).precioUnitario === "17250.50" &&
+      item(porML, sinML.variantes[0]!.id).origenPrecio === "ML",
+    "cada ítem a su precio a mano (también los que no tenían precio ML)",
   );
   check(
-    item(porML, sinML.variantes[0]!.id).precioUnitario === "8000.00" &&
-      item(porML, sinML.variantes[0]!.id).origenPrecio === "LISTA",
-    "sin precio ML queda a lista (LISTA)",
+    porML.total === "54250.50" && porML.medioPago === MedioPago.MERCADO_LIBRE,
+    `total = suma de los precios a mano (${porML.total})`,
   );
-  check(
-    porML.total === "39500.00" && porML.medioPago === MedioPago.MERCADO_LIBRE,
-    `total ${porML.total}`,
-  );
-  const enDb = await dbPara(COSMETIC).ventaItem.findFirstOrThrow({
-    where: { ventaId: porML.id, varianteId: rosa.id },
+  const enDb = await prisma.venta.findUniqueOrThrow({
+    where: { id: porML.id },
+    include: { items: { where: { varianteId: rosa.id } } },
   });
   check(
-    $(enDb.precioLista) === "15000.00" && enDb.origenPrecio === "ML",
-    "VentaItem guarda precioLista = precio ML y origenPrecio = ML",
+    $(enDb.items[0]!.precioLista) === "14000.00" &&
+      enDb.items[0]!.origenPrecio === "ML" &&
+      $(enDb.costoTotal) === "14000.00" &&
+      $(enDb.gananciaBruta) === "40250.50",
+    `VentaItem guarda el precio a mano (ML); costo y ganancia del servidor (${$(enDb.costoTotal)} / ${$(enDb.gananciaBruta)})`,
   );
 
   const efectivo = await generarVenta(
@@ -671,37 +710,63 @@ async function main() {
       item(efectivo, rosa.id).origenPrecio === "LISTA",
     "en efectivo, el mismo producto va a lista",
   );
+  const manualSinML = await error(() =>
+    generarVenta(
+      ctxCos,
+      ventaCos(
+        [{ medioPago: "EFECTIVO", monto: 12000 }],
+        [{ varianteId: rosa.id, cantidad: 1, precioML: 10000 }],
+      ),
+      DUENO,
+    ),
+  );
+  check(manualSinML instanceof DomainError, "precio a mano sin cobrar por ML → error");
 
-  // Mixto: el medio de mayor monto decide.
+  // Mixto: el medio de mayor monto decide. ML mayoritario → precios a mano.
   const mixto = await generarVenta(
     ctxCos,
     ventaCos(
       [
-        { medioPago: "EFECTIVO", monto: 5000 },
-        { medioPago: "MERCADO_LIBRE", monto: 10000 },
+        { medioPago: "EFECTIVO", monto: 4000 },
+        { medioPago: "MERCADO_LIBRE", monto: 9000 },
+      ],
+      [{ varianteId: rosa.id, cantidad: 1, precioML: 13000 }],
+    ),
+    DUENO,
+  );
+  check(
+    item(mixto, rosa.id).precioUnitario === "13000.00" &&
+      item(mixto, rosa.id).origenPrecio === "ML" &&
+      mixto.medioPago === MedioPago.MERCADO_LIBRE,
+    "pago dividido con ML mayoritario → precio a mano (ML)",
+  );
+  const mixtoMinoritario = await generarVenta(
+    ctxCos,
+    ventaCos(
+      [
+        { medioPago: "EFECTIVO", monto: 8000 },
+        { medioPago: "MERCADO_LIBRE", monto: 4000 },
       ],
       [{ varianteId: rosa.id, cantidad: 1 }],
     ),
     DUENO,
   );
   check(
-    item(mixto, rosa.id).precioUnitario === "15000.00",
-    "pago mixto con ML mayoritario → precio ML",
+    item(mixtoMinoritario, rosa.id).origenPrecio === "LISTA" &&
+      mixtoMinoritario.medioPago === MedioPago.EFECTIVO,
+    "ML minoritario → precio de lista (no es venta ML)",
   );
-
-  const especial = await generarVenta(
-    ctxCos,
-    ventaCos(
-      [{ medioPago: "MERCADO_LIBRE", monto: 13000 }],
-      [{ varianteId: rosa.id, cantidad: 1, precioEspecial: 13000 }],
+  const especial = await error(() =>
+    generarVenta(
+      ctxCos,
+      ventaCos(
+        [{ medioPago: "MERCADO_LIBRE", monto: 13000 }],
+        [{ varianteId: rosa.id, cantidad: 1, precioML: 13000, precioEspecial: 12500 }],
+      ),
+      DUENO,
     ),
-    DUENO,
   );
-  check(
-    item(especial, rosa.id).precioUnitario === "13000.00" &&
-      item(especial, rosa.id).origenPrecio === "ESPECIAL",
-    "el precio especial pisa al de Mercado Libre (ESPECIAL)",
-  );
+  check(especial instanceof DomainError, "venta ML con precio especial → error (manda el de ML)");
 
   const binance = await error(() =>
     generarVenta(
@@ -735,7 +800,7 @@ async function main() {
   check(/^COS-F-\d{6}$/.test(facturaB.codigo), `factura B desde la venta: ${facturaB.codigo}`);
   const fb = await obtenerFactura(ctxCos, facturaB.id);
   check(
-    fb.total === "39500.00" && fb.iva === "0.00" && fb.items.length === 3,
+    fb.total === "54250.50" && fb.iva === "0.00" && fb.items.length === 3,
     `toma ítems y total de la venta (${fb.total}, ${fb.items.length} renglones)`,
   );
   const repetida = await error(() =>
@@ -762,7 +827,7 @@ async function main() {
   );
   const fa = await obtenerFactura(ctxCos, facturaA.id);
   check(
-    fa.total === "39500.00" && fa.subtotal === "32644.63" && fa.iva === "6855.37",
+    fa.total === "54250.50" && fa.subtotal === "44835.12" && fa.iva === "9415.38",
     `anulada la B, se vuelve a facturar como A con IVA discriminado (${fa.subtotal} + ${fa.iva})`,
   );
   const suelta = await crearSuelta(
@@ -786,6 +851,110 @@ async function main() {
     enVapes instanceof DomainError && /facturación/.test(msg(enVapes)),
     `Vapes no tiene la facturación habilitada → «${msg(enVapes)}»`,
   );
+
+  console.log("\n12) Facturas de ventas Mercado Libre (ARCA, por fuera)");
+  const antes = await totalesFacturasML(ctxCos);
+  const listaML = await listarVentasML(ctxCos, listarVentasMLSchema.parse({ pageSize: 100 }));
+  const fila = (id: string) => listaML.ventas.find((v) => v.id === id);
+  check(
+    fila(porML.id)?.estado === "PENDIENTE" && fila(mixto.id)?.estado === "PENDIENTE",
+    "cada venta ML aparece sola como pendiente",
+  );
+  check(
+    !fila(efectivo.id) && !fila(mixtoMinoritario.id),
+    "las ventas que no son ML (ni ML minoritario) no aparecen",
+  );
+  // Una venta ML anulada no aparece.
+  const anulable = await generarVenta(
+    ctxCos,
+    ventaCos(
+      [{ medioPago: "MERCADO_LIBRE", monto: 5000 }],
+      [{ varianteId: rosa.id, cantidad: 1, precioML: 5000 }],
+    ),
+    DUENO,
+  );
+  await anularVenta(ctxCos, anulable.id, "Prueba de anulada");
+  const conAnulada = await listarVentasML(ctxCos, listarVentasMLSchema.parse({ pageSize: 100 }));
+  check(!conAnulada.ventas.some((v) => v.id === anulable.id), "una venta ML anulada no aparece");
+  const noML = await error(() =>
+    marcarFacturaMLCargada(
+      ctxCos,
+      cargarFacturaMLSchema.parse({ ventaId: efectivo.id, fecha: "2026-10-25" }),
+    ),
+  );
+  check(noML instanceof DomainError, `una venta en efectivo no se carga → «${msg(noML)}»`);
+  const exe = await error(() =>
+    marcarFacturaMLCargada(
+      ctxCos,
+      cargarFacturaMLSchema.parse({ ventaId: porML.id, fecha: "2026-10-25" }),
+      { datos: new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03]), nombre: "factura.pdf" },
+    ),
+  );
+  check(
+    exe instanceof DomainError,
+    "un archivo que no es PDF ni imagen se rechaza (por contenido)",
+  );
+  const pdfFalso = new TextEncoder().encode("%PDF-1.4\n% factura ARCA de prueba\n%%EOF");
+  const cargada = await marcarFacturaMLCargada(
+    ctxCos,
+    cargarFacturaMLSchema.parse({ ventaId: porML.id, fecha: "2026-10-24" }),
+    { datos: pdfFalso, nombre: "Factura ARCA ñandú.pdf" },
+  );
+  const sinArchivo = await marcarFacturaMLCargada(
+    ctxCos,
+    cargarFacturaMLSchema.parse({ ventaId: mixto.id, fecha: "2026-10-25" }),
+  );
+  const despues = await totalesFacturasML(ctxCos);
+  const sumar = (a: string, b: string) => $(new Prisma.Decimal(a).plus(b));
+  const restar = (a: string, b: string) => $(new Prisma.Decimal(a).minus(b));
+  check(
+    despues.cargadas.cantidad === antes.cargadas.cantidad + 2 &&
+      despues.cargadas.total === sumar(sumar(antes.cargadas.total, porML.total), mixto.total) &&
+      despues.pendientes.cantidad === antes.pendientes.cantidad - 2 &&
+      despues.pendientes.total === restar(restar(antes.pendientes.total, porML.total), mixto.total),
+    `tarjetas: cargadas ${despues.cargadas.cantidad} ($ ${despues.cargadas.total}), pendientes ${despues.pendientes.cantidad} ($ ${despues.pendientes.total})`,
+  );
+  const soloCargadas = await listarVentasML(
+    ctxCos,
+    listarVentasMLSchema.parse({ estado: "CARGADA", pageSize: 100 }),
+  );
+  const filaCargada = soloCargadas.ventas.find((v) => v.id === porML.id);
+  check(
+    !!filaCargada &&
+      soloCargadas.ventas.every((v) => v.estado === "CARGADA") &&
+      filaCargada.factura?.tieneArchivo === true &&
+      filaCargada.factura.archivoTipo === "application/pdf",
+    "filtro por estado: cargada, con su archivo",
+  );
+  check(
+    soloCargadas.ventas.find((v) => v.id === mixto.id)?.factura?.tieneArchivo === false,
+    "se puede marcar cargada sin archivo",
+  );
+  const archivo = await archivoFacturaML(ctxCos, porML.id);
+  check(
+    Buffer.from(archivo.datos.subarray(0, 5)).toString() === "%PDF-" &&
+      archivo.tipo === "application/pdf" &&
+      archivo.nombre === "Factura ARCA nandu.pdf",
+    `el archivo se puede ver/descargar (${archivo.nombre})`,
+  );
+  const dosVeces = await error(() =>
+    marcarFacturaMLCargada(
+      ctxCos,
+      cargarFacturaMLSchema.parse({ ventaId: porML.id, fecha: "2026-10-25" }),
+    ),
+  );
+  check(dosVeces instanceof DomainError, `una sola carga por venta → «${msg(dosVeces)}»`);
+  const auditoria = await prisma.auditLog.findFirst({
+    where: { entidad: "FacturaMercadoLibre", entidadId: cargada.id },
+  });
+  check(auditoria !== null, "la carga queda en la auditoría");
+  const tocada = await error(
+    () =>
+      prisma.$executeRaw`UPDATE "FacturaMercadoLibre" SET "archivoUrl" = NULL WHERE "id" = ${sinArchivo.id}`,
+  );
+  check(/no se modifica/.test(msg(tocada)), "la carga no se modifica (trigger)");
+  const desdeVapes = await error(() => archivoFacturaML(ctx, porML.id));
+  check(desdeVapes instanceof NotFoundError, "desde otro panel la carga no existe");
 
   console.log(fallos ? `\n✘ ${fallos} verificaciones fallaron` : "\n✔ Todo OK");
   process.exitCode = fallos ? 1 : 0;

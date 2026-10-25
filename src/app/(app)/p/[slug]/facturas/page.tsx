@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
+import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFecha } from "@/lib/utils";
@@ -22,10 +23,15 @@ import {
   TIPO_FACTURA_LABEL,
 } from "@/lib/validations/factura";
 import { requirePaginaPanel } from "@/server/auth/permissions";
-import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
+import {
+  obtenerConfigFacturacion,
+  obtenerConfigVentas,
+} from "@/server/services/configuracion.service";
 import { listar, type FacturaListada } from "@/server/services/factura.service";
+import { totalesFacturasML } from "@/server/services/factura-ml.service";
 
 import { FiltrosFacturas } from "./filtros-facturas";
+import { TabsFacturas } from "./tabs-facturas";
 
 export const metadata: Metadata = { title: "Facturas" };
 
@@ -34,7 +40,8 @@ type SP = Record<string, string | string[] | undefined>;
 /**
  * Facturas del panel (FACTURAS "ver"): número, tipo, fecha, cliente, venta
  * vinculada, total, estado y PDF; filtros por período, tipo, estado y texto;
- * Excel del período para el contador.
+ * Excel del período para el contador. En los paneles que cobran por Mercado
+ * Libre, una pestaña aparte con la carga de las facturas de esas ventas.
  */
 export default async function FacturasPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanel(Modulo.FACTURAS, "ver");
@@ -43,7 +50,13 @@ export default async function FacturasPage({ searchParams }: { searchParams: Pro
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   const filtros = listarFacturasSchema.parse(plano);
-  const [r, config] = await Promise.all([listar(ctx, filtros), obtenerConfigFacturacion(ctx)]);
+  const [r, config, configVentas] = await Promise.all([
+    listar(ctx, filtros),
+    obtenerConfigFacturacion(ctx),
+    obtenerConfigVentas(ctx),
+  ]);
+  const conML = tieneMercadoLibre(configVentas);
+  const pendientesML = conML ? (await totalesFacturasML(ctx)).pendientes.cantidad : 0;
   const puedeCrear = config.habilitada && puede(ctx.usuario, ctx.panelId, Modulo.FACTURAS, "crear");
   const href = (f: FacturaListada) => rutaPanel(slug, `/facturas/${f.id}`);
   const exportar = `/api/p/${slug}/facturas/exportar?${new URLSearchParams(
@@ -75,6 +88,7 @@ export default async function FacturasPage({ searchParams }: { searchParams: Pro
           </>
         }
       />
+      {conML && <TabsFacturas slug={slug} activa="facturas" pendientesML={pendientesML} />}
       {!config.habilitada && (
         <p className="bg-card text-muted rounded-card mb-4 px-4 py-3 text-sm">
           La facturación está desactivada en este panel.

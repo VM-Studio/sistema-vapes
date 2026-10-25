@@ -234,6 +234,7 @@ model Usuario {
   pagosVentaAnulados   PagoVenta[]              @relation("PagoVentaAnuladoPor")
   facturas             Factura[]                @relation("FacturaUsuario")
   facturasAnuladas     Factura[]                @relation("FacturaAnuladaPor")
+  facturasML           FacturaMercadoLibre[]
   cotizaciones         Cotizacion[]             @relation("CotizacionVendedor")
   preciosProveedor     ProveedorProducto[]
   gastosCompra         GastoCompra[]            @relation("GastoCompraUsuario")
@@ -396,6 +397,7 @@ model Panel {
   cotizaciones              Cotizacion[]
   facturas                  Factura[]
   facturaItems              FacturaItem[]
+  facturasML                FacturaMercadoLibre[]
   cotizacionItems           CotizacionItem[]
   transferencias            Transferencia[]
   transferenciaItems        TransferenciaItem[]
@@ -971,19 +973,21 @@ model Venta {
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 
-  panel            Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  cotizacion       Cotizacion?  @relation("VentaCotizacion", fields: [cotizacionId], references: [id], onDelete: Restrict)
-  cliente          Cliente      @relation(fields: [clienteId], references: [id], onDelete: Restrict)
-  deposito         Deposito     @relation(fields: [depositoId], references: [id], onDelete: Restrict)
-  vendedor         Usuario      @relation("VentaUsuario", fields: [vendedorId], references: [id], onDelete: Restrict)
-  anuladaPor       Usuario?     @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+  panel            Panel                @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  cotizacion       Cotizacion?          @relation("VentaCotizacion", fields: [cotizacionId], references: [id], onDelete: Restrict)
+  cliente          Cliente              @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  deposito         Deposito             @relation(fields: [depositoId], references: [id], onDelete: Restrict)
+  vendedor         Usuario              @relation("VentaUsuario", fields: [vendedorId], references: [id], onDelete: Restrict)
+  anuladaPor       Usuario?             @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
   items            VentaItem[]
   devoluciones     Devolucion[]
-  cotizacionOrigen Cotizacion?  @relation("CotizacionVenta")
+  cotizacionOrigen Cotizacion?          @relation("CotizacionVenta")
   pagos            PagoVenta[]
   /// Facturas de la venta: a lo sumo una EMITIDA (índice único parcial); las anuladas quedan.
   facturas         Factura[]
-  clienteCreado    Cliente?     @relation("ClienteCreadoEnVenta")
+  /// Venta cobrada por Mercado Libre: la carga de su factura (ARCA). Sin fila = pendiente.
+  facturaML        FacturaMercadoLibre?
+  clienteCreado    Cliente?             @relation("ClienteCreadoEnVenta")
 
   @@unique([panelId, numero])
   @@unique([panelId, codigo])
@@ -1500,4 +1504,29 @@ model FacturaItem {
   variante Variante? @relation(fields: [varianteId], references: [id], onDelete: Restrict)
 
   @@index([facturaId])
+}
+
+/// Factura de una venta cobrada por Mercado Libre (medio principal), emitida en
+/// ARCA por fuera del sistema. Las ventas ML confirmadas SIN fila acá están
+/// "pendientes de cargar"; con fila, "cargadas". `fecha` = la de la factura
+/// (default hoy); el archivo (PDF o imagen) es opcional.
+model FacturaMercadoLibre {
+  id            String   @id @default(cuid())
+  panelId       String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  ventaId       String   @unique
+  fecha         DateTime
+  /// Referencia del storage (privado); null = se marcó cargada sin archivo.
+  archivoUrl    String?
+  /// MIME detectado: application/pdf, image/png, image/jpeg o image/webp.
+  archivoTipo   String?
+  /// Nombre original del archivo subido (para la descarga).
+  archivoNombre String?
+  usuarioId     String
+  createdAt     DateTime @default(now())
+
+  panel   Panel   @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  venta   Venta   @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([panelId, fecha])
 }

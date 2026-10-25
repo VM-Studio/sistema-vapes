@@ -13,7 +13,7 @@ import {
 
 import { finDelDia, inicioDelDia } from "@/lib/fechas";
 import { formatearIdVenta, numeroDeIdVenta } from "@/lib/paneles";
-import { esCobroMercadoLibre, listaDeMedios, tieneMercadoLibre } from "@/lib/medios-pago";
+import { esCobroMercadoLibre, listaDeMedios } from "@/lib/medios-pago";
 import { costoParaVenta, precioVentaEfectivo, precioVentaMLEfectivo } from "@/lib/precios";
 import { ahora } from "@/lib/reloj";
 import type { FiltrosVentas, GenerarVenta } from "@/lib/validations/venta";
@@ -45,11 +45,14 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  * - Precio de lista y costo SIEMPRE del servidor: precioVentaEfectivo del sabor
  *   y snapshot de su último costo (costoParaVenta). El precio especial y el
  *   descuento global exigen "editar" en VENTAS.
- * - Medios: solo los habilitados en el panel (configuración de ventas). Si la
- *   venta se cobra por Mercado Libre (pago único o el de mayor monto) y el
- *   panel lo tiene activado (usarPrecioMLEnVentasML), el precio de lista de
- *   cada ítem es su precio Mercado Libre efectivo (los que no tienen quedan a
- *   lista). El precio especial pisa todo. VentaItem.origenPrecio lo registra.
+ * - Medios: solo los habilitados en el panel (configuración de ventas).
+ * - Mercado Libre: si la venta se cobra por ML (pago único o el de MAYOR monto
+ *   en un pago dividido), el precio de CADA ítem se carga a mano (`precioML`,
+ *   obligatorio y > 0; no exige "editar") y ese es su precio de lista y
+ *   cobrado (origenPrecio ML); el precio especial no aplica. El precio ML
+ *   guardado en el producto ya no se usa. Si ML no es el principal, los ítems
+ *   van a lista/especial como siempre y no se manda `precioML`.
+ *   VentaItem.origenPrecio registra de dónde salió cada precio.
  * - `numero` es correlativo por panel (Secuencia VENTA) y se toma en la misma
  *   transacción; `codigo` = formatearIdVenta(slug, numero) ("VAP-000001").
  * - Costos y ganancia: solo los ve el OWNER (`verCostos`); a un empleado no le llegan.
@@ -197,13 +200,26 @@ async function generarEnTx(
     throw new DomainError("Falta la cotización de origen de la venta.");
   const puedeFijarPrecios = permisos.puedeEditar || desdeCotizacion;
   // Cobro por Mercado Libre: lo decide el medio principal de lo que se manda a
-  // pagar (la UI ya calculó esos montos con los precios ML). Una cotización
-  // convertida conserva sus precios.
-  const aPrecioML =
-    !desdeCotizacion &&
-    tieneMercadoLibre(config) &&
-    config.usarPrecioMLEnVentasML &&
-    esCobroMercadoLibre(input.pagos);
+  // pagar (los medios ya se validaron contra los del panel). Cada ítem trae su
+  // precio cargado a mano. Una cotización convertida conserva sus precios.
+  const aPrecioML = !desdeCotizacion && esCobroMercadoLibre(input.pagos);
+  for (const i of input.items) {
+    if (aPrecioML) {
+      if (i.precioML === undefined || !(i.precioML > 0))
+        throw new DomainError(
+          "Venta por Mercado Libre: cargá el precio de cada producto (mayor a 0).",
+          "VALIDATION_ERROR",
+          400,
+          { precioML: ["Cargá el precio de cada producto"] },
+        );
+      if (i.precioEspecial !== undefined)
+        throw new DomainError(
+          "En una venta por Mercado Libre el precio de cada producto se carga a mano: sin precio especial.",
+        );
+    } else if (i.precioML !== undefined) {
+      throw new DomainError("El precio a mano es solo para ventas cobradas por Mercado Libre.");
+    }
+  }
 
   const deposito = await tx.deposito.findUnique({
     where: { id: input.depositoId },
@@ -221,13 +237,11 @@ async function generarEnTx(
       activo: true,
       productoId: true,
       precioVenta: true,
-      precioVentaML: true,
       ultimoCosto: true,
       producto: {
         select: {
           nombreCompleto: true,
           precioVenta: true,
-          precioVentaML: true,
           activo: true,
           deletedAt: true,
         },
@@ -244,8 +258,9 @@ async function generarEnTx(
       const titulo = nombreConSabor(v.producto.nombreCompleto, v.nombre);
       if (!v.activo || !v.producto.activo)
         throw new DomainError(`${titulo} está inactivo: no se puede vender.`);
-      const precioML = aPrecioML ? precioVentaMLEfectivo(v, v.producto) : null;
-      const precioLista = D(precioML ?? precioVentaEfectivo(v, v.producto));
+      // ML: el precio cargado a mano es el de lista y el cobrado de este ítem.
+      const precioML = aPrecioML ? r2(D(i.precioML!)) : null;
+      const precioLista = precioML ?? D(precioVentaEfectivo(v, v.producto));
       let precioUnitario = precioLista;
       if (i.precioEspecial !== undefined) {
         if (!puedeFijarPrecios)
@@ -955,9 +970,9 @@ export async function unidadesPorDeposito(ctx: Ctx): Promise<Record<string, numb
 }
 
 /**
- * Precio Mercado Libre efectivo de unos sabores (null = no tienen): el modal lo
- * pide al llegar al pago para mostrar el total si se cobra por Mercado Libre.
- * El servidor lo vuelve a leer al confirmar.
+ * Precio Mercado Libre guardado de unos sabores (null = no tienen; dato viejo:
+ * el producto ya no lo pide). El modal lo muestra solo como SUGERENCIA (placeholder)
+ * en el precio a mano de una venta por Mercado Libre; nunca se cobra solo.
  */
 export async function preciosMercadoLibre(
   ctx: Ctx,

@@ -26,7 +26,7 @@ import {
   unidadesPorDepositoAction,
 } from "./actions";
 import {
-  aplicarPreciosML,
+  aplicarPreciosManualesML,
   ETIQUETA_PASO,
   guardarVentaEnCurso,
   medioPrincipalElegido,
@@ -105,7 +105,7 @@ export function ModalVenta({
   conversion?: ConversionVenta | null;
   /** Medios del panel, en el orden de los botones (configuración de ventas). */
   medios?: readonly MedioPago[];
-  /** El panel cobra por Mercado Libre y usa el precio ML en esas ventas. */
+  /** El panel cobra por Mercado Libre: esas ventas llevan el precio de cada ítem a mano. */
   preciosMLActivos?: boolean;
   onCerrado: () => void;
 }) {
@@ -125,8 +125,8 @@ export function ModalVenta({
   const [subdialogo, setSubdialogo] = useState(false);
   /** "Continuar" con unidades sin verificar: se pide confirmación explícita. */
   const [faltanAlContinuar, setFaltanAlContinuar] = useState(0);
-  /** Precio Mercado Libre de los sabores de la venta (se pide al llegar al pago). */
-  const [preciosML, setPreciosML] = useState<Record<string, string | null>>({});
+  /** Precio ML guardado de los sabores (dato viejo): solo sugerencia del precio a mano. */
+  const [sugerenciasML, setSugerenciasML] = useState<Record<string, string | null>>({});
   const ventaRef = useRef(venta);
   ventaRef.current = venta;
 
@@ -147,14 +147,14 @@ export function ModalVenta({
     if (ventaTieneDatos(venta) || venta.paso !== "galpon") guardarVentaEnCurso(claveStorage, venta);
   }, [abierto, venta, exito, claveStorage, conversion]);
 
-  // Precios ML de lo que hay en la venta: se piden al llegar al pago (el servidor
-  // los vuelve a leer al confirmar). Una cotización convertida conserva sus precios.
+  // Sugerencias del precio ML (el guardado en el producto, si hay): se piden al
+  // llegar al pago. Una cotización convertida conserva sus precios.
   const idsVenta = venta.items.map((i) => i.varianteId).join(",");
   useEffect(() => {
     if (!abierto || !preciosMLActivos || conversion || venta.paso !== "pago" || !idsVenta) return;
     let vigente = true;
     void preciosMercadoLibreAction({ ids: idsVenta.split(",") }).then((r) => {
-      if (vigente && r.ok) setPreciosML(r.data);
+      if (vigente && r.ok) setSugerenciasML(r.data);
     });
     return () => {
       vigente = false;
@@ -162,10 +162,11 @@ export function ModalVenta({
   }, [abierto, preciosMLActivos, conversion, venta.paso, idsVenta]);
 
   const deposito = depositos.find((d) => d.id === venta.depositoId) ?? null;
-  // Cobro por Mercado Libre (medio único o el de mayor monto): cada ítem a su precio ML.
+  // Cobro por Mercado Libre (medio único o el de mayor monto en un pago dividido):
+  // el precio de cada ítem se carga a mano y el total sale de la suma.
   const cobroML =
     preciosMLActivos && !conversion && medioPrincipalElegido(venta) === "MERCADO_LIBRE";
-  const conML = cobroML ? aplicarPreciosML(venta.items, preciosML) : null;
+  const conML = cobroML ? aplicarPreciosManualesML(venta.items, venta.preciosML ?? {}) : null;
   const itemsCobrados = conML ? conML.items : venta.items;
   const totales = totalesVenta(
     itemsCobrados,
@@ -315,6 +316,7 @@ export function ModalVenta({
     venta.cliente !== null &&
     venta.items.length > 0 &&
     !!venta.depositoId &&
+    (conML === null || conML.faltan.length === 0) &&
     (!puedeEditar || venta.descuento.trim() === "" || montoTipeado(venta.descuento) !== null);
 
   async function confirmar() {
@@ -368,10 +370,15 @@ export function ModalVenta({
         cliente.tipo === "existente"
           ? { id: cliente.id }
           : { nuevo: { nombre: cliente.nombre, telefono: cliente.telefono } },
-      items: venta.items.map((i) => ({
+      items: (conML ? conML.items : venta.items).map((i) => ({
         varianteId: i.varianteId,
         cantidad: i.cantidad,
-        ...(i.precioEspecial !== null ? { precioEspecial: i.precioEspecial } : {}),
+        // Mercado Libre: el precio a mano de cada ítem (el servidor lo exige).
+        ...(conML
+          ? { precioML: i.precioLista }
+          : i.precioEspecial !== null
+            ? { precioEspecial: i.precioEspecial }
+            : {}),
       })),
       pagos: resumenPago.pagos,
       fiar,
@@ -655,7 +662,18 @@ export function ModalVenta({
                     pago={venta}
                     resumenPago={resumenPago}
                     medios={medios}
-                    cambiosML={conML?.cambios ?? null}
+                    ml={
+                      conML
+                        ? {
+                            precios: venta.preciosML ?? {},
+                            faltan: conML.faltan,
+                            sugerencias: sugerenciasML,
+                          }
+                        : null
+                    }
+                    onPrecioML={(id, precio) =>
+                      setVenta((v) => ({ ...v, preciosML: { ...v.preciosML, [id]: precio } }))
+                    }
                     puedeFiar={puedeFiar}
                     descuento={venta.descuento}
                     notas={venta.notas}

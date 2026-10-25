@@ -167,7 +167,9 @@ En **Ventas** tocá **Generar venta** (en el celular, el botón grande de abajo)
    - **Precio especial** (solo con permiso para editar ventas): tocá **Precio especial** en el renglón y escribí el precio por unidad; el de lista queda tachado.
    - Abajo ves el **total**. Tocá **Continuar**.
 3. **Cliente**: «¿Es cliente nuevo?». **No**: buscalo por nombre o teléfono y tocalo. **Sí**: escribí nombre y teléfono (ver [Dar de alta un cliente nuevo](#dar-de-alta-un-cliente-nuevo)). Tocá **Continuar**.
-4. **¿Cómo paga?** Elegí **Efectivo**, **Transferencia** o **Binance**. Una venta se cobra completa, con un solo medio. Con permiso para editar ventas podés poner un **descuento** sobre el total. Podés dejar **notas**. Tocá **Confirmar venta**.
+4. **¿Cómo paga?** Elegí uno de los medios del sistema (por ejemplo **Efectivo**, **Transferencia** y **Binance**, o **Mercado Libre** en Cosmetic). Con permiso para editar ventas podés poner un **descuento** sobre el total. Podés dejar **notas**. Tocá **Confirmar venta**.
+   - **Mercado Libre**: al elegirlo aparece **Precios Mercado Libre** con un casillero por producto: escribí el **precio por unidad** al que se vendió cada uno (es obligatorio; el total se arma con la suma). Hasta que no estén todos no se puede confirmar. Si dividís el pago, los precios a mano se piden cuando Mercado Libre es el medio de **mayor monto**.
+   - Cada venta cobrada por Mercado Libre aparece sola en **Facturas → Ventas Mercado Libre** como **pendiente**. Cuando emitas su factura en ARCA, tocá **Cargar**: queda la fecha de hoy (la podés cambiar) y podés subir el PDF o una foto de la factura (opcional). Tocá **Cargado** y pasa a **cargada**. Arriba ves el total de las ventas con factura cargada y el de las pendientes.
 5. **Venta registrada**: ves el **ID de venta**, por ejemplo **VAP-000123** (con **Copiar ID**). Ese código es el que se usa para buscarla, para una devolución o para contestarle al cliente.
 
 Si cerrás la ventana a mitad de camino, el sistema te pregunta si querés guardar la venta para **retomarla** después o descartarla. Si se corta la conexión al confirmar, avisa «La venta NO se registró»: probá de nuevo.

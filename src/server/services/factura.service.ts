@@ -39,7 +39,7 @@ import type { Exportacion } from "@/server/reportes/exportar";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
 import { nombreNegocio } from "@/server/services/identidad.service";
-import { claveDeUrl, obtenerStorage } from "@/server/storage";
+import { claveAleatoria, claveDeUrl, obtenerStorage } from "@/server/storage";
 
 /**
  * FACTURAS (por panel, si el panel tiene la facturación habilitada).
@@ -359,7 +359,8 @@ export async function subirArchivo(
   if (!f) throw new NotFoundError("La factura no existe.");
   if (f.estado === EstadoFactura.ANULADA)
     throw new DomainError(`La factura ${f.codigo} está anulada.`);
-  const clave = `facturas/${ctx.panelId}/${id}-${Date.now()}.pdf`;
+  // Clave del storage: solo [a-z0-9-] (el panelId lleva "_").
+  const clave = claveAleatoria("facturas", `${ctx.panelId}-${id}`, "pdf");
   const archivoUrl = await obtenerStorage().guardar(clave, pdf, "application/pdf");
   return transaccion(ctx, async (tx) => {
     await tx.factura.update({ where: { id }, data: { archivoUrl } });
