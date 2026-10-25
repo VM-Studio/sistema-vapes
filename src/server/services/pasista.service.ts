@@ -159,9 +159,64 @@ export async function sincronizarComisionPasista(
 // Lectura
 // =============================================================================
 
+// =============================================================================
+// Cálculos puros (los usa la pantalla y los testea tests/unit/pasista.test.ts)
+// =============================================================================
+
+/** Comisión de una compra: ROUND(total × % / 100, 2), igual que el CHECK de la DB. */
+export function calcularComision(base: string | number, porcentaje: string | number): string {
+  return new Prisma.Decimal(base)
+    .mul(new Prisma.Decimal(porcentaje))
+    .div(100)
+    .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+    .toFixed(2);
+}
+
+export interface TotalesComisiones {
+  /** Σ de todas las filas (original + ajustes): lo que se le debe en total. */
+  total: string;
+  pagado: string;
+  pendiente: string;
+  /** Σ del total de las compras (solo las filas ORIGINAL: un ajuste no suma otra compra). */
+  totalCompras: string;
+  compras: number;
+}
+
+/** Totales de un conjunto de comisiones (las de una compra, las de un mes…). */
+export function totalizarComisiones(
+  filas: {
+    compraId: string;
+    tipo: TipoComisionPasista | "ORIGINAL" | "AJUSTE";
+    monto: string;
+    base: string;
+    estado: EstadoComisionPasista | "PENDIENTE" | "PAGADA";
+  }[],
+): TotalesComisiones {
+  const suma = (fs: typeof filas, campo: "monto" | "base") =>
+    fs.reduce((a, f) => a.plus(f[campo]), new Prisma.Decimal(0)).toFixed(2);
+  return {
+    total: suma(filas, "monto"),
+    pagado: suma(
+      filas.filter((f) => f.estado === "PAGADA"),
+      "monto",
+    ),
+    pendiente: suma(
+      filas.filter((f) => f.estado === "PENDIENTE"),
+      "monto",
+    ),
+    totalCompras: suma(
+      filas.filter((f) => f.tipo === "ORIGINAL"),
+      "base",
+    ),
+    compras: new Set(filas.map((f) => f.compraId)).size,
+  };
+}
+
 export interface ResumenMesPasista {
   /** "YYYY-MM". */
   mes: string;
+  /** Σ del total de las compras con comisión del mes. */
+  totalCompras: string;
   devengado: string;
   pagado: string;
   pendiente: string;
@@ -171,6 +226,7 @@ export interface ResumenMesPasista {
 const resumenSchema = z.array(
   z.object({
     mes: z.date(),
+    total_compras: z.string(),
     devengado: z.string(),
     pagado: z.string(),
     pendiente: z.string(),
@@ -185,6 +241,7 @@ export async function resumenPorMes(
 ): Promise<ResumenMesPasista[]> {
   const filas = await dbPara(ctx.panelId).$queryRaw`
     SELECT cp."mes" AS "mes",
+           COALESCE(SUM(cp."base") FILTER (WHERE cp."tipo" = 'ORIGINAL'), 0)::text AS "total_compras",
            COALESCE(SUM(cp."monto"), 0)::text AS "devengado",
            COALESCE(SUM(cp."monto") FILTER (WHERE cp."estado" = 'PAGADA'), 0)::text AS "pagado",
            COALESCE(SUM(cp."monto") FILTER (WHERE cp."estado" = 'PENDIENTE'), 0)::text AS "pendiente",
@@ -197,6 +254,7 @@ export async function resumenPorMes(
     ORDER BY cp."mes" DESC`;
   return resumenSchema.parse(filas).map((f) => ({
     mes: mesDeFecha(f.mes),
+    totalCompras: dec(f.total_compras),
     devengado: dec(f.devengado),
     pagado: dec(f.pagado),
     pendiente: dec(f.pendiente),
@@ -207,6 +265,8 @@ export async function resumenPorMes(
 export interface TotalesPasista {
   /** Pendiente de pago de TODOS los meses. */
   pendienteTotal: string;
+  /** Σ del total de las compras con comisión del mes. */
+  totalComprasMes: string;
   devengadoMes: string;
   pagadoMes: string;
   pendienteMes: string;
@@ -225,6 +285,7 @@ export async function totalesPasista(ctx: Ctx, mes: string): Promise<TotalesPasi
   const m = delMes[0];
   return {
     pendienteTotal: dec(pendiente._sum.monto ?? 0),
+    totalComprasMes: m?.totalCompras ?? "0.00",
     devengadoMes: m?.devengado ?? "0.00",
     pagadoMes: m?.pagado ?? "0.00",
     pendienteMes: m?.pendiente ?? "0.00",
@@ -362,14 +423,25 @@ export interface DetalleComisionPasista {
     cargadaPor: string;
     unidades: number;
     subtotal: string;
+    descuento: string;
     total: string;
     comisionPasistaPorcentaje: string | null;
     comisionPasistaMonto: string;
     gastosExtrasTotal: string;
     costoFinalTotal: string;
     costoUnitarioFinalPromedio: string;
+    /** Gastos extras vigentes (no anulados). */
+    gastos: { id: string; motivo: string; monto: string; fecha: Date }[];
     items: ItemCompraPasista[];
   };
+  /** Totales de la comisión de la compra (original + ajustes). */
+  totales: TotalesComisiones;
+  /**
+   * Comisión que da hoy la compra (ROUND(total × % / 100, 2); 0 si está
+   * anulada o sin tick). Coincide con `totales.total` salvo un cambio a
+   * medio sincronizar.
+   */
+  comisionVigente: string;
 }
 
 const esSaborUnico = (nombre: string) => nombre.trim().toLowerCase() === "único";
@@ -391,6 +463,11 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
         proveedor: { select: { nombre: true, nombreTienda: true } },
         deposito: { select: { nombre: true } },
         usuario: { select: { nombre: true } },
+        gastos: {
+          where: { anulado: false },
+          orderBy: [{ fecha: "asc" }, { id: "asc" }],
+          select: { id: true, motivo: true, monto: true, fecha: true },
+        },
         items: {
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           include: {
@@ -407,9 +484,14 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
       select: { createdAt: true },
     }),
   ]);
+  const comision = aListada(slug, c);
+  const relacionadas = otras.map((o) => aListada(slug, o));
   return {
-    comision: aListada(slug, c),
-    relacionadas: otras.map((o) => aListada(slug, o)),
+    comision,
+    relacionadas,
+    totales: totalizarComisiones([comision, ...relacionadas]),
+    comisionVigente:
+      compra.estado === EstadoCompra.ANULADA ? "0.00" : dec(compra.comisionPasistaMonto),
     compra: {
       id: compra.id,
       codigo: formatearIdCompra(slug, compra.numero),
@@ -423,6 +505,7 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
       cargadaPor: compra.usuario.nombre,
       unidades: compra.unidadesTotal,
       subtotal: dec(compra.subtotal),
+      descuento: dec(compra.descuento),
       total: dec(compra.total),
       comisionPasistaPorcentaje: compra.comisionPasistaPorcentaje
         ? dec(compra.comisionPasistaPorcentaje)
@@ -431,6 +514,12 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
       gastosExtrasTotal: dec(compra.gastosExtrasTotal),
       costoFinalTotal: dec(compra.costoFinalTotal),
       costoUnitarioFinalPromedio: dec(compra.costoUnitarioFinalPromedio),
+      gastos: compra.gastos.map((g) => ({
+        id: g.id,
+        motivo: g.motivo,
+        monto: dec(g.monto),
+        fecha: g.fecha,
+      })),
       items: compra.items.map((i) => ({
         varianteId: i.varianteId,
         producto: i.variante.producto.nombreCompleto,
@@ -443,6 +532,21 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
       })),
     },
   };
+}
+
+/** Comisiones de una compra (para enlazar la compra con Pasista). */
+export async function comisionesDeCompra(
+  ctx: Pick<Ctx, "panelId">,
+  compraId: string,
+): Promise<
+  { id: string; tipo: TipoComisionPasista; monto: string; estado: EstadoComisionPasista }[]
+> {
+  const filas = await dbPara(ctx.panelId).comisionPasista.findMany({
+    where: { compraId },
+    orderBy: { tipo: "asc" },
+    select: { id: true, tipo: true, monto: true, estado: true },
+  });
+  return filas.map((f) => ({ ...f, monto: dec(f.monto) }));
 }
 
 // =============================================================================

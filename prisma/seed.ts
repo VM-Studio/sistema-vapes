@@ -23,6 +23,7 @@ import { prisma } from "../src/lib/db";
 import { normalizarPermiso, type PermisoModulo } from "../src/lib/permisos";
 import { configCotizacionSchema } from "../src/lib/validations/cotizacion";
 import { configVentasSchema } from "../src/lib/validations/venta";
+import { configComprasSchema } from "../src/lib/validations/config-panel";
 import { dbPara } from "../src/server/db/panel-scoped";
 
 /**
@@ -196,6 +197,8 @@ async function seedConfiguracion() {
     escaner: { ...CONFIG_ESCANER_DEFAULT, sufijos: [...CONFIG_ESCANER_DEFAULT.sufijos] },
     ventas: configVentasSchema.parse({}) as Prisma.InputJsonValue,
     cotizacion: configCotizacionSchema.parse({}) as Prisma.InputJsonValue,
+    // % del pasista que propone cada compra (módulo Pasista, en los tres paneles).
+    compras: configComprasSchema.parse({}) as Prisma.InputJsonValue,
   };
   const paneles = await prisma.panel.findMany({ select: { id: true, slug: true } });
   for (const { id: panelId, slug } of paneles) {

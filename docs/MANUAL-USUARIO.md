@@ -461,7 +461,12 @@ Ejemplo: 100 unidades a $10.000 con 10% de pasista y $80.000 de gastos → costo
 
 ## Pasista
 
-En **Pasista** (grupo Compras; en el celular, en «Más») está la comisión de cada compra con el tick, mes por mes: lo pendiente de pago, lo devengado y lo pagado en el mes, y la lista de compras con su base, porcentaje y comisión. Tocando una fila se ve la compra completa con sus productos, sabores y fechas.
+En **Pasista** (grupo Compras; en el celular, en «Más») está la comisión de cada compra con el tick, mes por mes. Está en los tres sistemas (Vapes, Cosmetic y Especiales), cada uno con sus compras y su porcentaje por defecto (_Ajustes del panel → Ventas y catálogo_).
+
+- Arriba: la **comisión del mes** (cuántas compras y por cuánto), lo **pagado**, lo **pendiente del mes** y el **pendiente total** de todos los meses.
+- La lista: por cada comisión, la **compra** (código, con el link **Ver compra**), la fecha, el proveedor, las unidades, el **total de la compra**, el **%** y la **comisión**, y si está pagada o pendiente. Abajo, los totales del mes (total de las compras, comisión total, pagada y pendiente) y el **total a pagar**.
+- Tocando una comisión se ve la compra completa: productos, sabores, cantidades, costo unitario, costo final y subtotal de cada renglón, el total de los productos, los gastos extras uno por uno y el **cálculo de la comisión** («Total de la compra $25.000 × 10% = $2.500», más los ajustes si los hubo), con lo pagado y lo pendiente.
+- Desde el detalle de una compra con comisión, **Ver comisión en Pasista** lleva directo a su comisión.
 
 Los dueños usan **Marcar mes como pagado** (o **Marcar pagada** en una compra) indicando cómo se pagó, una referencia y la fecha. Si una comisión ya pagada cambia (o se anula la compra), queda un **ajuste** con la diferencia para el próximo pago. El Excel del mes sale con **Excel del mes**. Para que un empleado vea esta sección, dale el permiso «Pasista».
 

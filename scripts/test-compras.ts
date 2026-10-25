@@ -31,7 +31,9 @@ import {
   preciosQueCambian,
   recibirCompra,
 } from "../src/server/services/compra.service";
+import { obtenerConfigCompras } from "../src/server/services/configuracion.service";
 import {
+  comisionesDeCompra,
   deshacerPago,
   detalle as detallePasista,
   listar as listarPasista,
@@ -1046,6 +1048,79 @@ async function main() {
       detallePasista({ ...actor, panelId: COSMETIC }, filas[0]!.id),
     );
     check(desdeCosmetic instanceof NotFoundError, "una comisión de Vapes no existe desde Cosmetic");
+  }
+
+  // ---------------------------------------------------------------------------
+  console.log("\n12) Pasista en los tres paneles: config, comisión, detalle y totales por panel");
+  for (const panelId of [VAPES, COSMETIC, "pnl_especiales"]) {
+    const ctxP = { ...actor, panelId };
+    const dbP = dbPara(panelId);
+    const cfg = await obtenerConfigCompras(ctxP);
+    const fila = await dbP.configuracion.findFirst({ where: { clave: "compras" } });
+    check(
+      cfg.comisionPasistaPorcentajeDefault > 0 && fila !== null,
+      `${panelId}: config "compras" cargada (${cfg.comisionPasistaPorcentajeDefault}% por defecto)`,
+    );
+    const { varianteId, proveedorId, depositoId } = await transaccion(ctxP, async (tx) => {
+      const marca = await tx.marca.upsert({
+        where: { panelId_nombre: { panelId, nombre: "Test Pasista" } },
+        update: {},
+        create: { nombre: "Test Pasista" },
+      });
+      const p = await tx.producto.create({
+        data: {
+          marcaId: marca.id,
+          nombre: `Pas ${sufijo}`,
+          precioVenta: "5000.00",
+          variantes: { create: [{ nombre: "Rosa", sku: `TP-${panelId}-${sufijo}` }] },
+        },
+        include: { variantes: true },
+      });
+      const prov = await tx.proveedor.create({
+        data: { nombre: `Pasista ${sufijo}`, nombreTienda: `Tienda ${panelId}` },
+      });
+      const dep = await tx.deposito.findFirstOrThrow({ where: { activo: true } });
+      return { varianteId: p.variantes[0]!.id, proveedorId: prov.id, depositoId: dep.id };
+    });
+    const mes = mesActualAR();
+    const antes = await totalesPasista(ctxP, mes);
+    const compraP = await crearCompra(
+      ctxP,
+      compraSchema.parse({
+        proveedorId,
+        depositoId,
+        comisionPasistaPorcentaje: "7.5",
+        items: [{ varianteId, cantidad: 4, costoUnitario: "1000" }],
+      }),
+    );
+    await recibirCompra(ctxP, compraP.id, { actualizarPrecioProveedor: false });
+    const deCompra = await comisionesDeCompra(ctxP, compraP.id);
+    const tot = await totalesPasista(ctxP, mes);
+    check(
+      deCompra.length === 1 &&
+        deCompra[0]!.monto === "300.00" &&
+        Number(tot.devengadoMes) - Number(antes.devengadoMes) === 300 &&
+        Number(tot.pendienteMes) - Number(antes.pendienteMes) === 300 &&
+        Number(tot.totalComprasMes) - Number(antes.totalComprasMes) === 4000 &&
+        tot.comprasMes - antes.comprasMes === 1,
+      `${panelId}: compra $ 4.000 × 7,5% → comisión ${deCompra[0]?.monto}; totales del mes suben`,
+    );
+    const det = await detallePasista(ctxP, deCompra[0]!.id);
+    check(
+      det.compra.items.length === 1 &&
+        det.compra.items[0]!.sabor === "Rosa" &&
+        det.compra.total === "4000.00" &&
+        det.totales.total === "300.00" &&
+        det.totales.pendiente === "300.00" &&
+        det.comisionVigente === "300.00" &&
+        det.comision.compra.endsWith(String(compraP.numero).padStart(6, "0")),
+      `${panelId}: detalle con la compra ${det.comision.compra}, sus productos y el cálculo`,
+    );
+    const otro = panelId === VAPES ? COSMETIC : VAPES;
+    check(
+      (await comisionesDeCompra({ panelId: otro }, compraP.id)).length === 0,
+      `${panelId}: su comisión no aparece desde ${otro}`,
+    );
   }
 
   console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);

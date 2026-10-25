@@ -16,7 +16,7 @@ import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
-import { detalle, type ComisionListada } from "@/server/services/pasista.service";
+import { calcularComision, detalle, type ComisionListada } from "@/server/services/pasista.service";
 
 import { DeshacerPago, MarcarPagado } from "../acciones-pasista";
 
@@ -31,12 +31,15 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
     if (e instanceof NotFoundError) notFound();
     throw e;
   });
-  const { comision: c, compra } = d;
+  const { comision: c, compra, totales } = d;
   const owner = esOwner(ctx.usuario);
   const verCompra = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "ver");
   const filas: ComisionListada[] = [c, ...d.relacionadas].sort((a, b) =>
     a.tipo.localeCompare(b.tipo),
   );
+  // La fila ORIGINAL (si se borró por deshacer y juntar, la que se está viendo).
+  const original = filas.find((f) => f.tipo === "ORIGINAL") ?? c;
+  const ajustes = filas.filter((f) => f.tipo === "AJUSTE");
 
   return (
     <>
@@ -118,9 +121,61 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
               </div>
             )}
           />
+          <p
+            className="border-border mt-3 flex items-baseline justify-between gap-3 border-t pt-3 font-semibold"
+            aria-label="Total de los productos"
+          >
+            <span>Total de los productos ({formatearNumero(compra.unidades)} u.)</span>
+            <span className="tabular-nums">{formatearPesos(compra.subtotal)}</span>
+          </p>
         </SectionCard>
 
         <div className="flex flex-col gap-4">
+          <SectionCard
+            title="Cálculo de la comisión"
+            description="Sobre el total de la compra (sin gastos extras)."
+          >
+            <dl className="flex flex-col gap-2 text-sm" aria-label="Cálculo de la comisión">
+              <Linea label="Productos" valor={formatearPesos(compra.subtotal)} />
+              {Number(compra.descuento) > 0 && (
+                <Linea label="Descuento" valor={`− ${formatearPesos(compra.descuento)}`} />
+              )}
+              <Linea label="Total de la compra" valor={formatearPesos(original.base)} fuerte />
+              {original.porcentaje && (
+                <Linea
+                  label={`× ${formatearNumero(Number(original.porcentaje))}% del pasista`}
+                  valor={formatearPesos(calcularComision(original.base, original.porcentaje))}
+                />
+              )}
+              {ajustes.map((a) => (
+                <Linea
+                  key={a.id}
+                  label={a.observacion ?? "Ajuste"}
+                  valor={`${Number(a.monto) > 0 ? "+ " : "− "}${formatearPesos(Math.abs(Number(a.monto)))}`}
+                />
+              ))}
+              <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
+                <dt className="font-semibold">Comisión total</dt>
+                <dd className="text-h3 font-semibold tabular-nums" aria-label="Comisión total">
+                  {formatearPesos(totales.total)}
+                </dd>
+              </div>
+              <Linea label="Pagado" valor={formatearPesos(totales.pagado)} />
+              <Linea label="Pendiente" valor={formatearPesos(totales.pendiente)} fuerte />
+            </dl>
+            {original.base !== compra.total && compra.estado !== "ANULADA" && (
+              <p className="text-muted text-small mt-3">
+                La comisión pagada se calculó sobre {formatearPesos(original.base)}; hoy la compra
+                suma {formatearPesos(compra.total)} y la diferencia va como ajuste.
+              </p>
+            )}
+            {compra.estado === "ANULADA" && (
+              <p className="text-muted text-small mt-3">
+                La compra está anulada: no genera comisión
+                {Number(totales.total) !== 0 ? " (queda el saldo a descontar)" : ""}.
+              </p>
+            )}
+          </SectionCard>
           <SectionCard title="Comisión" contentClassName="flex flex-col gap-4">
             <ul className="flex flex-col gap-3">
               {filas.map((f) => (
@@ -187,7 +242,19 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
               <Dato label="Galpón">{compra.deposito}</Dato>
               <Dato label="Cargada por">{compra.cargadaPor}</Dato>
               <Dato label="Total de la compra">{formatearPesos(compra.total)}</Dato>
-              <Dato label="Gastos extras">{formatearPesos(compra.gastosExtrasTotal)}</Dato>
+              <Dato label="Gastos extras">
+                {formatearPesos(compra.gastosExtrasTotal)}
+                {compra.gastos.length > 0 && (
+                  <ul className="text-subtle mt-1 flex flex-col gap-0.5 text-xs">
+                    {compra.gastos.map((g) => (
+                      <li key={g.id} className="flex justify-between gap-3">
+                        <span className="truncate">{g.motivo}</span>
+                        <span className="tabular-nums">{formatearPesos(g.monto)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Dato>
               <Dato label="Costo final">
                 <span className={cn("font-semibold")}>
                   {formatearPesos(compra.costoFinalTotal)}
@@ -209,6 +276,15 @@ function Dato({ label, children }: { label: string; children: React.ReactNode })
     <div className="flex min-w-0 flex-col gap-0.5">
       <dt className="text-muted text-small">{label}</dt>
       <dd>{children}</dd>
+    </div>
+  );
+}
+
+function Linea({ label, valor, fuerte }: { label: string; valor: string; fuerte?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className={fuerte ? "font-medium" : "text-muted"}>{label}</dt>
+      <dd className={cn("tabular-nums", fuerte && "font-semibold")}>{valor}</dd>
     </div>
   );
 }

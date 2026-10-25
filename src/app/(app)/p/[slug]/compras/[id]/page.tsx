@@ -21,6 +21,7 @@ import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { obtenerCompra, preciosQueCambian } from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
+import { comisionesDeCompra } from "@/server/services/pasista.service";
 import { veCostosCompras } from "@/server/services/proveedor.service";
 
 import { AccionesCompra } from "./acciones-compra";
@@ -47,6 +48,10 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
   const editaCostos = verCostos && puedeEditar && c.estado !== "ANULADA";
   const configCompras = editaCostos ? await obtenerConfigCompras(ctx) : null;
   const gastosVigentes = c.gastos.filter((g) => !g.anulado);
+  // Enlace a Pasista (la comisión de esta compra y su estado de pago).
+  const verPasista = puede(usuario, panelId, Modulo.PASISTA, "ver");
+  const comisiones = verPasista ? await comisionesDeCompra(ctx, c.id) : [];
+  const comisionPagada = comisiones.length > 0 && comisiones.every((x) => x.estado === "PAGADA");
 
   return (
     <>
@@ -235,6 +240,18 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                   </dd>
                 </div>
               </dl>
+              {comisiones[0] && (
+                <Link
+                  href={ruta(`/pasista/${comisiones[0].id}`)}
+                  className="text-small flex items-center justify-end gap-1 self-end underline-offset-4 hover:underline"
+                >
+                  <Badge variant={comisionPagada ? "success" : "warning"}>
+                    {comisionPagada ? "Pagada" : "Pendiente"}
+                  </Badge>
+                  Ver comisión en Pasista
+                  <ChevronRight className="size-4" strokeWidth={1.75} aria-hidden />
+                </Link>
+              )}
               {editaCostos && configCompras && (
                 <div className="border-border flex flex-col gap-3 border-t pt-4">
                   <EditarComisionPasista

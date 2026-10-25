@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { marcarPagadasSchema } from "@/lib/validations/pasista";
-import { fechaDeMes, mesActualAR, mesDeFecha } from "@/server/services/pasista.service";
+import {
+  calcularComision,
+  fechaDeMes,
+  mesActualAR,
+  mesDeFecha,
+  totalizarComisiones,
+} from "@/server/services/pasista.service";
 
 describe("pasista: meses argentinos", () => {
   it("el mes actual es el de Argentina (UTC−3), no el de UTC", () => {
@@ -45,5 +51,46 @@ describe("marcarPagadasSchema", () => {
       marcarPagadasSchema.safeParse({ mes: "2026-13", medioPago: "EFECTIVO", fecha: "2026-09-30" })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("cálculo de la comisión del pasista", () => {
+  it("ROUND(total × % / 100, 2), como el CHECK de la DB", () => {
+    expect(calcularComision("1000000", "10")).toBe("100000.00");
+    expect(calcularComision("3000", "7.5")).toBe("225.00");
+    // Medio centavo redondea para arriba.
+    expect(calcularComision("100.05", "10")).toBe("10.01");
+    expect(calcularComision("0", "10")).toBe("0.00");
+  });
+
+  it("totales: original + ajustes, pagado/pendiente y el total de compras sin duplicar", () => {
+    const t = totalizarComisiones([
+      { compraId: "a", tipo: "ORIGINAL", monto: "120000.00", base: "1200000.00", estado: "PAGADA" },
+      {
+        compraId: "a",
+        tipo: "AJUSTE",
+        monto: "-20000.00",
+        base: "1000000.00",
+        estado: "PENDIENTE",
+      },
+      { compraId: "b", tipo: "ORIGINAL", monto: "225.00", base: "3000.00", estado: "PENDIENTE" },
+    ]);
+    expect(t).toEqual({
+      total: "100225.00",
+      pagado: "120000.00",
+      pendiente: "-19775.00",
+      totalCompras: "1203000.00",
+      compras: 2,
+    });
+  });
+
+  it("sin filas, todo en cero", () => {
+    expect(totalizarComisiones([])).toEqual({
+      total: "0.00",
+      pagado: "0.00",
+      pendiente: "0.00",
+      totalCompras: "0.00",
+      compras: 0,
+    });
   });
 });

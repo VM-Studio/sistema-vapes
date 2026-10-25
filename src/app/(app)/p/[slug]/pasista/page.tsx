@@ -14,7 +14,7 @@ import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
-import { esOwner } from "@/lib/permisos";
+import { esOwner, puede } from "@/lib/permisos";
 import { formatearFecha } from "@/lib/utils";
 import { filtrosPasistaSchema } from "@/lib/validations/pasista";
 import { requirePaginaPanel } from "@/server/auth/permissions";
@@ -61,6 +61,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
     totalesPasista(ctx, mes),
   ]);
   const owner = esOwner(ctx.usuario);
+  const verCompra = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "ver");
   const nombre = nombreMes(mes);
   const delMesActual = mes === hoy;
   const detalle = (c: ComisionListada) => `${PATH}/${c.id}`;
@@ -92,24 +93,29 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
       />
       <section
         aria-label="Resumen del pasista"
-        className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3 md:gap-4"
+        className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 xl:grid-cols-4"
       >
         <StatCard
-          label="Pendiente de pago"
-          value={formatearPesos(t.pendienteTotal)}
-          hint="Todos los meses"
-          acento="naranja"
-        />
-        <StatCard
-          label={delMesActual ? "Devengado este mes" : `Devengado en ${nombre}`}
+          label={delMesActual ? "Comisión de este mes" : `Comisión de ${nombre}`}
           value={formatearPesos(t.devengadoMes)}
-          hint={`${formatearNumero(t.comprasMes)} ${t.comprasMes === 1 ? "compra" : "compras"}`}
+          hint={`${formatearNumero(t.comprasMes)} ${t.comprasMes === 1 ? "compra" : "compras"} por ${formatearPesos(t.totalComprasMes)}`}
           acento="azul"
         />
         <StatCard
-          label={delMesActual ? "Pagado este mes" : `Pagado en ${nombre}`}
+          label={delMesActual ? "Pagado este mes" : `Pagado de ${nombre}`}
           value={formatearPesos(t.pagadoMes)}
           acento="oliva"
+        />
+        <StatCard
+          label={delMesActual ? "Pendiente de este mes" : `Pendiente de ${nombre}`}
+          value={formatearPesos(t.pendienteMes)}
+          acento="naranja"
+        />
+        <StatCard
+          label="Pendiente total"
+          value={formatearPesos(t.pendienteTotal)}
+          hint="Todos los meses"
+          acento="naranja"
         />
       </section>
       <div className="bg-card rounded-card mb-4 flex flex-col gap-3 p-4 md:flex-row md:items-end md:justify-between">
@@ -159,6 +165,15 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
                 {c.estadoCompra === "ANULADA" && (
                   <span className="text-subtle text-xs">Compra anulada</span>
                 )}
+                {verCompra && (
+                  <Link
+                    href={rutaPanel(slug, `/compras/${c.compraId}`)}
+                    className="text-muted text-xs underline underline-offset-4"
+                    aria-label={`Ver la compra ${c.compra}`}
+                  >
+                    Ver compra
+                  </Link>
+                )}
               </span>
             ),
           },
@@ -182,7 +197,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
           },
           {
             key: "base",
-            header: "Base",
+            header: "Total compra",
             className: "text-right tabular-nums",
             cell: (c) => formatearPesos(c.base),
           },
@@ -244,7 +259,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
               <p className="truncate font-medium">{c.proveedor ?? "Sin proveedor"}</p>
               <div className="flex items-end justify-between gap-2">
                 <p className="text-muted text-small">
-                  {formatearFecha(c.fecha)} · {formatearNumero(c.unidades)} u. ·{" "}
+                  {formatearFecha(c.fecha)} · {formatearNumero(c.unidades)} u. · compra{" "}
                   {formatearPesos(c.base)}
                   {c.porcentaje ? ` × ${formatearNumero(Number(c.porcentaje))}%` : ""}
                 </p>
@@ -278,13 +293,40 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
         pathname={PATH}
         params={plano}
       />
-      <p
-        className="bg-card rounded-card mt-4 flex flex-wrap items-baseline justify-between gap-2 p-4"
-        aria-label="Total a pagar del mes"
+      <section
+        aria-label={`Totales de ${nombre}`}
+        className="bg-card rounded-card mt-4 flex flex-col gap-3 p-4 md:p-5"
       >
-        <span className="font-semibold">Total a pagar al pasista en {nombre}</span>
-        <strong className="text-h2 tabular-nums">{formatearPesos(t.pendienteMes)}</strong>
-      </p>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-4">
+          <div className="flex flex-col gap-0.5">
+            <dt className="text-muted text-small">
+              Total de las compras ({formatearNumero(t.comprasMes)})
+            </dt>
+            <dd className="font-semibold tabular-nums">{formatearPesos(t.totalComprasMes)}</dd>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <dt className="text-muted text-small">Comisión total</dt>
+            <dd className="font-semibold tabular-nums" aria-label="Comisión total del mes">
+              {formatearPesos(t.devengadoMes)}
+            </dd>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <dt className="text-muted text-small">Pagada</dt>
+            <dd className="font-semibold tabular-nums">{formatearPesos(t.pagadoMes)}</dd>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <dt className="text-muted text-small">Pendiente</dt>
+            <dd className="font-semibold tabular-nums">{formatearPesos(t.pendienteMes)}</dd>
+          </div>
+        </dl>
+        <p
+          className="border-border flex flex-wrap items-baseline justify-between gap-2 border-t pt-3"
+          aria-label="Total a pagar del mes"
+        >
+          <span className="font-semibold">Total a pagar al pasista en {nombre}</span>
+          <strong className="text-h2 tabular-nums">{formatearPesos(t.pendienteMes)}</strong>
+        </p>
+      </section>
     </>
   );
 }
