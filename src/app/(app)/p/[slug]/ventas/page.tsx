@@ -108,9 +108,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
               abrirAlCargar={conversion ? null : abrirAlCargar}
               conversion={conversion}
               medios={configVentas.mediosPago}
-              preciosMLActivos={
-                tieneMercadoLibre(configVentas) && configVentas.usarPrecioMLEnVentasML
-              }
+              preciosMLActivos={tieneMercadoLibre(configVentas)}
             />
           )
         }

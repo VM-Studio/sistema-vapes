@@ -29,7 +29,7 @@ export const medioPagoSchema = z.enum(MedioPago, { error: "Elegí el medio de pa
 export const pagoSchema = z.object({
   medioPago: medioPagoSchema,
   monto,
-  /** Nro. de operación de la transferencia / Binance. */
+  /** Nro. de operación de la transferencia / Binance / Mercado Libre. */
   referencia: textoOpcional(100),
 });
 
@@ -56,6 +56,12 @@ export const itemVentaSchema = z.object({
   cantidad: enteroPositivo,
   /** Precio cobrado por unidad si difiere del de lista (requiere "editar" en VENTAS). */
   precioEspecial: montoOpcional,
+  /**
+   * Venta cobrada por Mercado Libre (medio principal): precio por unidad cargado
+   * a mano, obligatorio y > 0 en cada ítem (no requiere "editar"). En cualquier
+   * otra venta no se manda.
+   */
+  precioML: montoOpcional,
 });
 
 /** Detalle de "Verificar con pistola" que manda el modal; el servidor decide si alcanza. */
@@ -125,7 +131,10 @@ export const configVentasSchema = z.object({
     .min(1, "Habilitá al menos un medio de pago")
     .refine((m) => sinDuplicados(m, (x) => x), "Cada medio va una sola vez")
     .default([...MEDIOS_PAGO_DEFAULT]),
-  /** Venta cobrada por Mercado Libre → cada ítem a su precio Mercado Libre (si lo tiene). */
+  /**
+   * OBSOLETO (v2.5): una venta cobrada por Mercado Libre lleva el precio de cada
+   * ítem cargado a mano. Se conserva solo para leer configuraciones guardadas.
+   */
   usarPrecioMLEnVentasML: z.boolean().default(true),
 });
 

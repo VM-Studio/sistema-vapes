@@ -47,7 +47,7 @@ export function GenerarVenta({
   conversion: ConversionVenta | null;
   /** Medios de pago del panel (configuración de ventas). */
   medios: readonly MedioPago[];
-  /** Cobrar por Mercado Libre pone cada ítem a su precio ML. */
+  /** El panel cobra por Mercado Libre: esas ventas llevan el precio de cada ítem a mano. */
   preciosMLActivos: boolean;
 }) {
   const { slug } = usePanel();

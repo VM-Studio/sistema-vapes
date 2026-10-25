@@ -78,7 +78,7 @@ export const unidadesPorDepositoAction = actionHandler(async () => {
   return unidadesPorDeposito(ctx);
 });
 
-/** Precio Mercado Libre de los sabores de la venta (paso «¿Cómo paga?»). */
+/** Precio Mercado Libre guardado de los sabores: sugerencia del precio a mano (paso «¿Cómo paga?»). */
 export const preciosMercadoLibreAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.VENTAS, "crear");
   const { ids } = z.object({ ids: z.array(id).max(300) }).parse(input);

@@ -7,12 +7,14 @@ import { RecordarPanel } from "@/components/layout/recordar-panel";
 import { SincronizacionOffline } from "@/components/pwa/sincronizacion-offline";
 import { COOKIE_SIDEBAR } from "@/config/ui";
 import { ScannerProvider } from "@/features/scanner/scanner-provider";
+import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { esOwner, puede } from "@/lib/permisos";
 import { requirePaginaPanelUsuario } from "@/server/auth/permissions";
 import { obtenerCotizacionesSeguro } from "@/server/services/cambio.service";
 import {
   obtenerConfigEscaner,
   obtenerConfigFacturacion,
+  obtenerConfigVentas,
 } from "@/server/services/configuracion.service";
 
 /**
@@ -25,11 +27,12 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const ctx = await requirePaginaPanelUsuario();
   // Widget de cotizaciones: dueños y quien ve el Cotizador (lectura local; nunca espera a las APIs).
   const veCambio = puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "ver");
-  const [jar, configEscaner, cotizaciones, facturacion] = await Promise.all([
+  const [jar, configEscaner, cotizaciones, facturacion, configVentas] = await Promise.all([
     cookies(),
     obtenerConfigEscaner(ctx),
     veCambio ? obtenerCotizacionesSeguro() : Promise.resolve(null),
     obtenerConfigFacturacion(ctx),
+    obtenerConfigVentas(ctx),
   ]);
   const colapsado = jar.get(COOKIE_SIDEBAR)?.value === "colapsado";
 
@@ -43,7 +46,11 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             sidebarColapsadoInicial={colapsado}
             restringido={ctx.usuario.debeCambiarPassword}
             cambio={cotizaciones ? { cotizaciones, enlace: esOwner(ctx.usuario) } : null}
-            funciones={{ facturacion: facturacion.habilitada }}
+            // Facturas: con la facturación habilitada o si cobra por Mercado Libre
+            // (la carga de las facturas de esas ventas vive ahí).
+            funciones={{
+              facturacion: facturacion.habilitada || tieneMercadoLibre(configVentas),
+            }}
           >
             {children}
           </AppShell>

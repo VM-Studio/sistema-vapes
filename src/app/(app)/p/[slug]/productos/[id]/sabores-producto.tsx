@@ -58,11 +58,6 @@ export function SaboresProducto({
         {formatearPesos(s.precioVenta)}
         {s.tienePrecioPropio && <Badge variant="primary">propio</Badge>}
       </span>
-      {s.precioVentaML !== null && (
-        <span className="text-muted text-xs" title="Precio Mercado Libre">
-          ML {formatearPesos(s.precioVentaML)}
-        </span>
-      )}
     </span>
   );
 

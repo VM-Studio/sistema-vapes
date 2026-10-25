@@ -24,7 +24,6 @@ import {
   medioLibre,
   montoTipeado,
   precioCobrado,
-  type CambioPrecioML,
   type FilaPago,
   type ItemVenta,
   type ResumenPago,
@@ -43,6 +42,8 @@ export const esFiadoTotal = (p: EstadoPago) => !p.dividido && p.medioPago === nu
  * abre filas medio + monto + referencia (hasta 3, sin repetir medio) con el
  * restante precargado. Si lo pagado no cubre el total, quien tiene FIADOS
  * "crear" puede "Fiar el resto"; sin ese permiso no se puede confirmar.
+ * Si se cobra por Mercado Libre (medio principal), se carga a mano el precio
+ * por unidad de cada producto (obligatorio): el total sale de la suma.
  */
 export function PasoPago({
   deposito,
@@ -56,9 +57,10 @@ export function PasoPago({
   notas,
   puedeEditar,
   bloqueado = false,
-  cambiosML = null,
+  ml = null,
   totales,
   onPago,
+  onPrecioML,
   onDescuento,
   onNotas,
 }: {
@@ -77,10 +79,14 @@ export function PasoPago({
   puedeEditar: boolean;
   /** Venta desde una cotización: sin descuento ni notas editables (precios cotizados). */
   bloqueado?: boolean;
-  /** Se cobra por Mercado Libre: detalle de los precios ML aplicados (null = no aplica). */
-  cambiosML?: CambioPrecioML[] | null;
+  /**
+   * Se cobra por Mercado Libre: precios a mano por varianteId (tal como se
+   * tipearon), los que faltan y el precio ML guardado como sugerencia. null = no aplica.
+   */
+  ml?: PreciosML | null;
   totales: { unidades: number; subtotal: string; descuento: string; total: string };
   onPago: (p: Partial<EstadoPago>) => void;
+  onPrecioML?: (varianteId: string, precio: string) => void;
   onDescuento: (d: string) => void;
   onNotas: (n: string) => void;
 }) {
@@ -145,6 +151,14 @@ export function PasoPago({
             </Button>
           )}
         </fieldset>
+
+        {ml && (
+          <PreciosManualesML
+            items={items}
+            ml={ml}
+            onPrecio={(id, precio) => onPrecioML?.(id, precio)}
+          />
+        )}
 
         {pago.dividido && (
           <section
@@ -372,6 +386,7 @@ export function PasoPago({
             <li key={i.varianteId} className="flex justify-between gap-3">
               <span className="min-w-0">
                 {i.cantidad} × {i.titulo}
+                {ml && <span className="text-muted block text-xs">Precio Mercado Libre</span>}
                 {i.precioEspecial !== null && (
                   <span className="text-muted block text-xs">
                     {bloqueado ? "Precio cotizado" : "Precio especial"}{" "}
@@ -385,7 +400,6 @@ export function PasoPago({
             </li>
           ))}
         </ul>
-        {cambiosML && <PreciosMLAplicados cambios={cambiosML} />}
         <dl className="border-border grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t pt-3 text-sm">
           <dt className="text-muted">Subtotal</dt>
           <dd className="text-right tabular-nums">{formatearPesos(totales.subtotal)}</dd>
@@ -418,43 +432,96 @@ export function PasoPago({
   );
 }
 
+export interface PreciosML {
+  /** Precio por unidad tipeado, por varianteId. */
+  precios: Record<string, string>;
+  /** varianteId sin precio válido (> 0). */
+  faltan: string[];
+  /** Precio ML guardado en el producto (dato viejo): solo placeholder. */
+  sugerencias: Record<string, string | null>;
+}
+
 /**
- * Venta cobrada por Mercado Libre: qué precios cambiaron. Los ítems sin precio
- * ML quedan a lista (con aviso) y los de precio especial conservan el especial.
+ * Venta cobrada por Mercado Libre: un input de precio por unidad por producto
+ * (obligatorio), con el subtotal de cada uno y el total en vivo. No se puede
+ * confirmar hasta que estén todos.
  */
-function PreciosMLAplicados({ cambios }: { cambios: CambioPrecioML[] }) {
-  const cambian = cambios.filter((c) => c.precioML !== null && !c.conPrecioEspecial);
-  const sinPrecio = cambios.filter((c) => c.precioML === null && !c.conPrecioEspecial);
+function PreciosManualesML({
+  items,
+  ml,
+  onPrecio,
+}: {
+  items: ItemVenta[];
+  ml: PreciosML;
+  onPrecio: (varianteId: string, precio: string) => void;
+}) {
+  const faltan = new Set(ml.faltan);
+  const total = items.reduce((a, i) => a + aCentavos(i.precioLista) * i.cantidad, 0);
   return (
-    <div
-      role="status"
-      className="bg-surface-3 text-foreground rounded-control flex flex-col gap-1.5 px-3 py-2.5 text-sm"
+    <section
+      aria-label="Precios Mercado Libre"
+      className="bg-card rounded-card flex flex-col gap-4 p-4 md:p-5"
       data-testid="precios-ml"
     >
-      <p className="flex items-center gap-2 font-semibold">
-        <ShoppingBag className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
-        Precios Mercado Libre aplicados
-      </p>
-      {cambian.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {cambian.map((c) => (
-            <li key={c.varianteId} className="flex justify-between gap-3">
-              <span className="min-w-0">{c.titulo}</span>
-              <span className="shrink-0 tabular-nums">
-                <span className="text-muted line-through">{formatearPesos(c.precioLista)}</span>{" "}
-                {formatearPesos(c.precioML!)}
+      <div className="flex flex-col gap-1">
+        <h3 className="text-h3 flex items-center gap-2 font-semibold">
+          <ShoppingBag className="text-muted size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+          Precios Mercado Libre
+        </h3>
+        <p className="text-muted text-small">
+          Cargá el precio por unidad de cada producto, tal como se vendió en Mercado Libre.
+        </p>
+      </div>
+      <ul className="flex flex-col gap-3">
+        {items.map((i) => {
+          const tipeado = ml.precios[i.varianteId] ?? "";
+          const invalido = tipeado.trim() !== "" && faltan.has(i.varianteId);
+          const sugerido = ml.sugerencias[i.varianteId];
+          return (
+            <li
+              key={i.varianteId}
+              className="grid grid-cols-[minmax(0,1fr)_9rem] items-start gap-x-3 gap-y-1 md:grid-cols-[minmax(0,1fr)_10rem_7rem]"
+              data-testid="precio-ml-item"
+            >
+              <span className="min-w-0 pt-2.5 text-sm">
+                <span className="font-medium">{i.titulo}</span>
+                <span className="text-muted block text-xs">
+                  {i.cantidad} {i.cantidad === 1 ? "unidad" : "unidades"}
+                </span>
+              </span>
+              <Input
+                aria-label={`Precio Mercado Libre de ${i.titulo}`}
+                inputMode="decimal"
+                placeholder={sugerido ? formatearPesos(sugerido) : "$ por unidad"}
+                value={tipeado}
+                onChange={(e) => onPrecio(i.varianteId, e.target.value)}
+                error={invalido ? "Precio inválido" : undefined}
+                className="tabular-nums"
+              />
+              <span className="text-muted col-span-2 text-right text-sm tabular-nums md:col-span-1 md:pt-2.5">
+                {faltan.has(i.varianteId)
+                  ? "—"
+                  : formatearPesos(deCentavos(aCentavos(i.precioLista) * i.cantidad))}
               </span>
             </li>
-          ))}
-        </ul>
-      )}
-      {sinPrecio.length > 0 && (
-        <p className="text-warning-soft-foreground text-small" data-testid="sin-precio-ml">
-          Sin precio Mercado Libre, quedan a precio de lista:{" "}
-          {sinPrecio.map((c) => c.titulo).join(", ")}.
+          );
+        })}
+      </ul>
+      <p
+        className="border-border flex justify-between gap-3 border-t pt-3 text-sm"
+        data-testid="total-ml"
+      >
+        <span className="text-muted">Total Mercado Libre</span>
+        <strong className="tabular-nums">{formatearPesos(deCentavos(total))}</strong>
+      </p>
+      {ml.faltan.length > 0 && (
+        <p role="alert" className="text-danger text-small" data-testid="faltan-precios-ml">
+          {ml.faltan.length === 1
+            ? "Falta el precio de 1 producto."
+            : `Falta el precio de ${ml.faltan.length} productos.`}
         </p>
       )}
-    </div>
+    </section>
   );
 }
 

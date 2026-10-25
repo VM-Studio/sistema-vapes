@@ -60,6 +60,8 @@ export interface VentaEnCurso {
   verificar: boolean;
   /** Unidades verificadas por varianteId (ver verificacion-escaneo.ts). */
   verificadas: Record<string, number>;
+  /** Venta por Mercado Libre: precio por unidad cargado a mano por varianteId (tal como se tipeó). */
+  preciosML: Record<string, string>;
 }
 
 export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
@@ -75,6 +77,7 @@ export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
   notas: "",
   verificar: false,
   verificadas: {},
+  preciosML: {},
 });
 
 /** ¿Hay algo que se perdería al cerrar? */
@@ -239,40 +242,23 @@ export function medioPrincipalElegido(
   );
 }
 
-/** Un ítem cuyo precio cambia (o no) por cobrarse por Mercado Libre. */
-export interface CambioPrecioML {
-  varianteId: string;
-  titulo: string;
-  precioLista: string;
-  /** null = no tiene precio Mercado Libre: queda a precio de lista. */
-  precioML: string | null;
-  /** Tiene precio especial: el especial pisa al de Mercado Libre. */
-  conPrecioEspecial: boolean;
-}
-
 /**
- * Venta cobrada por Mercado Libre: cada ítem pasa a su precio ML (los que no
- * tienen quedan a lista; el precio especial sigue mandando). Devuelve los
- * ítems con el precio de lista ya cambiado y el detalle para mostrar.
+ * Venta cobrada por Mercado Libre (medio principal): el precio de CADA ítem se
+ * carga a mano (obligatorio, > 0) y pasa a ser su precio de lista y cobrado (sin
+ * precio especial); el total sale de la suma. Devuelve los ítems con ese precio
+ * (los que no tienen uno válido, en 0) y los varianteId a los que les falta.
  */
-export function aplicarPreciosML(
+export function aplicarPreciosManualesML(
   items: ItemVenta[],
-  preciosML: Record<string, string | null>,
-): { items: ItemVenta[]; cambios: CambioPrecioML[] } {
-  const cambios: CambioPrecioML[] = items.map((i) => ({
-    varianteId: i.varianteId,
-    titulo: i.titulo,
-    precioLista: i.precioLista,
-    precioML: preciosML[i.varianteId] ?? null,
-    conPrecioEspecial: i.precioEspecial !== null,
-  }));
-  return {
-    items: items.map((i) => {
-      const ml = preciosML[i.varianteId];
-      return ml ? { ...i, precioLista: ml } : i;
-    }),
-    cambios,
-  };
+  precios: Record<string, string>,
+): { items: ItemVenta[]; faltan: string[] } {
+  const faltan: string[] = [];
+  const conPrecio = items.map((i) => {
+    const m = montoTipeado(precios[i.varianteId] ?? "");
+    if (m === null || !(Number(m) > 0)) faltan.push(i.varianteId);
+    return { ...i, precioLista: m ?? "0.00", precioEspecial: null };
+  });
+  return { items: conPrecio, faltan };
 }
 
 /**

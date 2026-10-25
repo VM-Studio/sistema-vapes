@@ -5,16 +5,16 @@ import { db, llamarAccion, loginDueno, PANEL_COSMETIC, pistola, soltarFoco } fro
 
 /**
  * Cosmetic cobra por Mercado Libre: sus medios son Efectivo, Transferencia y
- * Mercado Libre (sin Binance); un producto con precio de lista $ 12.000 y
- * precio Mercado Libre $ 15.000 vendido por ML va a $ 15.000 (origenPrecio ML),
- * y esa venta se factura (factura B con su PDF).
+ * Mercado Libre (sin Binance); un producto con precio de lista $ 12.000
+ * vendido por ML lleva el precio cargado a mano en la venta ($ 15.000,
+ * origenPrecio ML), y esa venta se factura (factura B con su PDF).
  */
 test.describe.configure({ mode: "serial" });
 
 const sufijo = () => `${Date.now()}`.slice(-5) + `${Math.floor(Math.random() * 900) + 100}`;
 const modal = (page: Page) => page.getByTestId("modal-venta");
 
-export async function productoConPrecioML(page: Page) {
+export async function productoCosmetic(page: Page) {
   const codigoBarras = `98${sufijo()}${sufijo().slice(0, 3)}`;
   const modelo = `Serum ML ${codigoBarras.slice(-5)}`;
   await page.goto("/p/cosmetic/productos");
@@ -45,21 +45,15 @@ export async function productoConPrecioML(page: Page) {
   return { codigoBarras, modelo, variante };
 }
 
-test("Cosmetic: precio Mercado Libre en el producto y venta por ML a $ 15.000", async ({
-  page,
-}, info) => {
+test("Cosmetic: venta por ML con el precio cargado a mano ($ 15.000)", async ({ page }, info) => {
   test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
   await loginDueno(page);
-  const { codigoBarras, variante } = await productoConPrecioML(page);
+  const { codigoBarras, variante } = await productoCosmetic(page);
 
-  // El formulario de producto de Cosmetic tiene la sección "Precio Mercado Libre".
+  // El producto ya no pide precio Mercado Libre: se carga en cada venta.
   await page.goto(`/p/cosmetic/productos/${variante.productoId}/editar`);
-  await page.getByLabel("Precio Mercado Libre").fill("15000");
-  await page.getByRole("button", { name: "Guardar", exact: true }).click();
-  await page.waitForURL(new RegExp(`/productos/${variante.productoId}$`));
-  await expect(page.getByText("ML $ 15.000").first()).toBeVisible();
-  const producto = await db.producto.findUniqueOrThrow({ where: { id: variante.productoId } });
-  expect(producto.precioVentaML?.toFixed(2)).toBe("15000.00");
+  await expect(page.getByLabel("Precio de venta")).toBeVisible();
+  await expect(page.getByLabel("Precio Mercado Libre")).toHaveCount(0);
 
   // Venta: el paso 4 ofrece Efectivo / Transferencia / Mercado Libre (sin Binance).
   await page.goto("/p/cosmetic/ventas");
@@ -91,9 +85,13 @@ test("Cosmetic: precio Mercado Libre en el producto y venta por ML a $ 15.000", 
   await expect(modal(page).getByTestId("total-venta")).toHaveText("$ 12.000");
 
   await medios.getByRole("radio", { name: "Mercado Libre" }).click();
-  await expect(modal(page).getByTestId("precios-ml")).toContainText(
-    "Precios Mercado Libre aplicados",
-  );
+  await expect(modal(page).getByTestId("precios-ml")).toContainText("Precios Mercado Libre");
+  await expect(modal(page).getByTestId("faltan-precios-ml")).toBeVisible();
+  await expect(modal(page).getByRole("button", { name: "Confirmar venta" })).toBeDisabled();
+  await modal(page)
+    .getByRole("textbox", { name: /^Precio Mercado Libre de / })
+    .fill("15000");
+  await expect(modal(page).getByTestId("faltan-precios-ml")).toHaveCount(0);
   await expect(modal(page).getByTestId("total-venta")).toHaveText("$ 15.000");
   await modal(page).getByRole("button", { name: "Confirmar venta" }).click();
   const id = modal(page).getByTestId("id-venta");
@@ -166,5 +164,6 @@ test("medios de pago del panel: se editan en Ajustes → Ventas", async ({ page 
   const lista = page.getByTestId("medios-pago");
   await expect(lista.getByRole("checkbox", { name: "Mercado Libre" })).toBeChecked();
   await expect(lista.getByRole("checkbox", { name: "Binance" })).not.toBeChecked();
-  await expect(page.getByRole("switch", { name: /precio Mercado Libre/ })).toBeVisible();
+  await expect(page.getByRole("switch", { name: /precio Mercado Libre/ })).toHaveCount(0);
+  await expect(page.getByTestId("aviso-precio-ml")).toContainText("se carga a mano");
 });

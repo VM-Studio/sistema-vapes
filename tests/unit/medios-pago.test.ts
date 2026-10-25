@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  aplicarPreciosML,
+  aplicarPreciosManualesML,
   filasIniciales,
   medioLibre,
   medioPrincipalElegido,
@@ -114,25 +114,37 @@ describe("precio Mercado Libre", () => {
     );
     expect(precioVentaMLEfectivo({ precioVentaML: null }, { precioVentaML: null })).toBeNull();
   });
+});
 
-  it("lista $ 12.000 y ML $ 15.000 → el ítem va a $ 15.000 y el total se recalcula", () => {
-    const items = [item("rosa", "12000.00"), item("crema", "8000.00")];
-    const { items: conML, cambios } = aplicarPreciosML(items, {
-      rosa: "15000.00",
-      crema: null,
+describe("venta por Mercado Libre: precio a mano por ítem", () => {
+  it("cada ítem va al precio cargado y el total es la suma", () => {
+    const items = [item("rosa", "12000.00", { cantidad: 2 }), item("crema", "8000.00")];
+    const { items: conML, faltan } = aplicarPreciosManualesML(items, {
+      rosa: "15.000",
+      crema: "9500,50",
     });
-    expect(conML[0]!.precioLista).toBe("15000.00");
-    expect(conML[1]!.precioLista).toBe("8000.00");
-    expect(totalesVenta(conML, "").total).toBe("23000.00");
-    expect(cambios.find((c) => c.varianteId === "crema")!.precioML).toBeNull();
+    expect(faltan).toEqual([]);
+    expect(conML.map((i) => i.precioLista)).toEqual(["15000.00", "9500.50"]);
+    expect(totalesVenta(conML, "").total).toBe("39500.50");
   });
 
-  it("el precio especial sigue mandando", () => {
-    const { items: conML, cambios } = aplicarPreciosML(
+  it("vacío, inválido o en 0 = falta (no se puede confirmar)", () => {
+    const items = [item("a", "100.00"), item("b", "100.00"), item("c", "100.00"), item("d", "1")];
+    const { items: conML, faltan } = aplicarPreciosManualesML(items, {
+      b: "abc",
+      c: "0",
+      d: "50",
+    });
+    expect(faltan).toEqual(["a", "b", "c"]);
+    expect(totalesVenta(conML, "").total).toBe("50.00");
+  });
+
+  it("el precio especial no aplica: manda el precio a mano", () => {
+    const { items: conML } = aplicarPreciosManualesML(
       [item("rosa", "12000.00", { precioEspecial: "13000.00" })],
-      { rosa: "15000.00" },
+      { rosa: "15000" },
     );
-    expect(totalesVenta(conML, "").total).toBe("13000.00");
-    expect(cambios[0]!.conPrecioEspecial).toBe(true);
+    expect(conML[0]!.precioEspecial).toBeNull();
+    expect(totalesVenta(conML, "").total).toBe("15000.00");
   });
 });

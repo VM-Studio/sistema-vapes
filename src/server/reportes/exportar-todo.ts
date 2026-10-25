@@ -723,6 +723,48 @@ export function streamExportarTodo(meta: {
       }),
     );
 
+    await hoja(
+      wb,
+      "Facturas Mercado Libre",
+      [
+        SISTEMA,
+        { header: "Venta", key: "v", width: 12 },
+        { header: "Fecha de la venta", key: "fv", width: 14 },
+        { header: "Cliente", key: "c", width: 26 },
+        { header: "Total", key: "tot", width: 12, numFmt: MONEDA },
+        { header: "Fecha de la factura", key: "f", width: 14 },
+        { header: "Archivo", key: "a", width: 28 },
+        { header: "Cargó", key: "u", width: 18 },
+        { header: "Cargada el", key: "cr", width: 18 },
+      ],
+      (c) =>
+        prisma.facturaMercadoLibre.findMany({
+          ...pag(c),
+          include: {
+            venta: {
+              select: {
+                codigo: true,
+                fecha: true,
+                total: true,
+                cliente: { select: { nombre: true } },
+              },
+            },
+            usuario: { select: { nombre: true } },
+          },
+        }),
+      (x) => ({
+        sis: sistema(x.panelId),
+        v: x.venta.codigo,
+        fv: formatearFecha(x.venta.fecha),
+        c: x.venta.cliente.nombre,
+        tot: num(x.venta.total),
+        f: formatearFecha(x.fecha),
+        a: x.archivoNombre ?? "",
+        u: x.usuario.nombre,
+        cr: formatearFechaHora(x.createdAt),
+      }),
+    );
+
     await wb.commit();
   })().catch((e: unknown) => paso.destroy(e as Error));
   return Readable.toWeb(paso) as ReadableStream<Uint8Array>;

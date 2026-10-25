@@ -23,6 +23,7 @@ import type { PrismaClient } from "@prisma/client";
 export const TABLAS_NEGOCIO = [
   "FacturaItem",
   "Factura",
+  "FacturaMercadoLibre",
   "CotizacionItem",
   "PagoVenta",
   "VentaItem",
