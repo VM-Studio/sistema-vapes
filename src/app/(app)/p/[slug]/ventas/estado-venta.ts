@@ -62,6 +62,8 @@ export interface VentaEnCurso {
   verificadas: Record<string, number>;
   /** Venta por Mercado Libre: precio por unidad cargado a mano por varianteId (tal como se tipeó). */
   preciosML: Record<string, string>;
+  /** «Escanea Charly» (solo galpones con escaneo remoto). */
+  escaneoRemoto: boolean;
 }
 
 export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
@@ -78,6 +80,7 @@ export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
   verificar: false,
   verificadas: {},
   preciosML: {},
+  escaneoRemoto: false,
 });
 
 /** ¿Hay algo que se perdería al cerrar? */

@@ -36,6 +36,7 @@ Todas las rutas (`find src/app -name page.tsx`) con los Sheets, Dialogs y modale
 | diseno        | `/diseno`                                         | Dialog «¿Anular la venta?»<br>Sheet «Nuevo proveedor»     | ✅     |
 | equipo        | `/p/[slug]/equipo`                                | —                                                         | ✅     |
 | equipo        | `/p/[slug]/equipo/[usuarioId]`                    | —                                                         | ✅     |
+| escaneo       | `/p/[slug]/escaneo`                               | CameraScanner                                             | ✅     |
 | login         | `/login`                                          | —                                                         | ✅     |
 | offline       | `/offline`                                        | —                                                         | ✅     |
 | paneles       | `/paneles`                                        | Sheet «Nuevo sistema»                                     | ✅     |

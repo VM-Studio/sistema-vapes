@@ -16,6 +16,7 @@ export interface DepositoListado {
   direccion: string | null;
   activo: boolean;
   esPrincipal: boolean;
+  escaneoRemoto: boolean;
   unidades: number;
 }
 
@@ -23,6 +24,8 @@ export interface DepositoBasico {
   id: string;
   nombre: string;
   esPrincipal: boolean;
+  /** Admite «Escanea Charly» (escaneo remoto de sus ventas). */
+  escaneoRemoto: boolean;
 }
 
 /** Depósitos activos del panel, principal primero (columnas de inventario, selects). */
@@ -32,7 +35,7 @@ export async function listarDepositosActivos(
 ): Promise<DepositoBasico[]> {
   return tx.deposito.findMany({
     where: { activo: true },
-    select: { id: true, nombre: true, esPrincipal: true },
+    select: { id: true, nombre: true, esPrincipal: true, escaneoRemoto: true },
     orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
   });
 }
@@ -53,6 +56,7 @@ export async function listarDepositos(ctx: Pick<Ctx, "panelId">): Promise<Deposi
     direccion: d.direccion,
     activo: d.activo,
     esPrincipal: d.esPrincipal,
+    escaneoRemoto: d.escaneoRemoto,
     unidades: porDeposito.get(d.id) ?? 0,
   }));
 }
@@ -63,7 +67,13 @@ async function unidadesEnDeposito(tx: Tx, depositoId: string): Promise<number> {
 }
 
 function snapshot(d: Deposito): Prisma.InputJsonObject {
-  return { nombre: d.nombre, direccion: d.direccion, activo: d.activo, esPrincipal: d.esPrincipal };
+  return {
+    nombre: d.nombre,
+    direccion: d.direccion,
+    activo: d.activo,
+    esPrincipal: d.esPrincipal,
+    escaneoRemoto: d.escaneoRemoto,
+  };
 }
 
 function conflictoNombre(error: unknown): void {
@@ -98,6 +108,7 @@ export async function crearDeposito(ctx: Ctx, input: CrearDeposito): Promise<{ i
           direccion: input.direccion ?? null,
           activo: input.activo,
           esPrincipal: false,
+          escaneoRemoto: input.escaneoRemoto,
         },
       });
       // El primer depósito activo del panel queda como principal.
@@ -140,7 +151,12 @@ export async function actualizarDeposito(
 
       await tx.deposito.update({
         where: { id: input.id },
-        data: { nombre: input.nombre, direccion: input.direccion ?? null, activo: input.activo },
+        data: {
+          nombre: input.nombre,
+          direccion: input.direccion ?? null,
+          activo: input.activo,
+          escaneoRemoto: input.escaneoRemoto,
+        },
       });
       if (input.esPrincipal && !antes.esPrincipal) await hacerPrincipal(tx, input.id);
 

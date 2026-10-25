@@ -54,6 +54,8 @@ enum Modulo {
   PASISTA
   /// Facturas (paneles con facturación): ver, crear (emitir/registrar), editar (PDF y número externo).
   FACTURAS
+  /// «Escanea Charly»: ver las ventas con escaneo remoto pedido y confirmar su escaneo.
+  ESCANEO
   USUARIOS
   CONFIGURACION
 }
@@ -75,6 +77,14 @@ enum TipoMovimiento {
   GARANTIA_ANULADA
   /// Ingreso: se anuló una venta (vuelve la mercadería).
   VENTA_ANULADA
+}
+
+/// «Escanea Charly»: verificación física de una venta de un galpón con escaneo remoto.
+enum Escaneo {
+  /// Pedido: la venta espera que la escanee el usuario de escaneo.
+  PENDIENTE
+  /// Todo lo vendido coincidió con lo escaneado: lista para retirar.
+  ESCANEADA
 }
 
 enum EstadoVenta {
@@ -226,6 +236,8 @@ model Usuario {
   compras              Compra[]
   ventas               Venta[]                  @relation("VentaUsuario")
   ventasAnuladas       Venta[]                  @relation("VentaAnuladaPor")
+  escaneosPedidos      Venta[]                  @relation("VentaEscaneoPedidoPor")
+  ventasEscaneadas     Venta[]                  @relation("VentaEscaneadaPor")
   transferencias       Transferencia[]
   auditLogs            AuditLog[]
   devoluciones         Devolucion[]             @relation("DevolucionUsuario")
@@ -431,15 +443,17 @@ model Secuencia {
 // -----------------------------------------------------------------------------
 
 model Deposito {
-  id          String   @id @default(cuid())
-  panelId     String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
-  nombre      String
-  direccion   String?
-  activo      Boolean  @default(true)
+  id            String   @id @default(cuid())
+  panelId       String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  nombre        String
+  direccion     String?
+  activo        Boolean  @default(true)
   /// Un solo depósito principal por panel (índice único parcial en SQL).
-  esPrincipal Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  esPrincipal   Boolean  @default(false)
+  /// Admite «Escanea Charly»: sus ventas pueden pedir el escaneo remoto (Vapes: Mercedes).
+  escaneoRemoto Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   panel                 Panel             @relation(fields: [panelId], references: [id], onDelete: Restrict)
   stocks                Stock[]
@@ -965,6 +979,15 @@ model Venta {
   /// "Verificar con pistola": TODAS las unidades se escanearon contra el carrito
   /// (varianteId exacto). Lo decide el servidor con el detalle que manda el modal.
   verificadaPorEscaneo Boolean     @default(false)
+  /// «Escanea Charly» (solo galpones con escaneoRemoto): null = no se pidió;
+  /// PENDIENTE = espera el escaneo; ESCANEADA = todo coincidió (lista para retirar).
+  escaneoRemoto        Escaneo?
+  escaneoPedidoPorId   String?
+  escaneoPedidoAt      DateTime?
+  escaneadaPorId       String?
+  escaneadaAt          DateTime?
+  /// Lo escaneado al confirmar: [{ codigo, varianteId }] (auditoría del escaneo).
+  escaneoDetalle       Json?
   /// La cotización de la que salió (trazabilidad).
   cotizacionId         String?     @unique
   anuladaPorId         String?
@@ -979,6 +1002,8 @@ model Venta {
   deposito         Deposito             @relation(fields: [depositoId], references: [id], onDelete: Restrict)
   vendedor         Usuario              @relation("VentaUsuario", fields: [vendedorId], references: [id], onDelete: Restrict)
   anuladaPor       Usuario?             @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+  escaneoPedidoPor Usuario?             @relation("VentaEscaneoPedidoPor", fields: [escaneoPedidoPorId], references: [id], onDelete: Restrict)
+  escaneadaPor     Usuario?             @relation("VentaEscaneadaPor", fields: [escaneadaPorId], references: [id], onDelete: Restrict)
   items            VentaItem[]
   devoluciones     Devolucion[]
   cotizacionOrigen Cotizacion?          @relation("CotizacionVenta")
@@ -997,6 +1022,7 @@ model Venta {
   @@index([panelId, clienteId])
   @@index([panelId, tipo, fecha])
   @@index([panelId, depositoId, fecha])
+  @@index([panelId, escaneoRemoto])
 }
 
 model VentaItem {

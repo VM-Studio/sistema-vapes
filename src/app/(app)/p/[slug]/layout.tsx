@@ -8,7 +8,7 @@ import { SincronizacionOffline } from "@/components/pwa/sincronizacion-offline";
 import { COOKIE_SIDEBAR } from "@/config/ui";
 import { ScannerProvider } from "@/features/scanner/scanner-provider";
 import { tieneMercadoLibre } from "@/lib/medios-pago";
-import { esOwner, puede } from "@/lib/permisos";
+import { esOwner, esPerfilEscaneo, puede } from "@/lib/permisos";
 import { requirePaginaPanelUsuario } from "@/server/auth/permissions";
 import { obtenerCotizacionesSeguro } from "@/server/services/cambio.service";
 import {
@@ -35,6 +35,20 @@ export default async function PanelLayout({ children }: { children: React.ReactN
     obtenerConfigVentas(ctx),
   ]);
   const colapsado = jar.get(COOKIE_SIDEBAR)?.value === "colapsado";
+  // «Escaneo (Charly)»: sin navegación ni catálogo offline, solo su pantalla y salir.
+  const soloEscaneo = esPerfilEscaneo(ctx.usuario);
+
+  if (soloEscaneo) {
+    return (
+      <PanelProvider panel={ctx.panel}>
+        <ScannerProvider config={configEscaner}>
+          <AppShell sidebarColapsadoInicial={colapsado} restringido>
+            {children}
+          </AppShell>
+        </ScannerProvider>
+      </PanelProvider>
+    );
+  }
 
   return (
     <PanelProvider panel={ctx.panel}>

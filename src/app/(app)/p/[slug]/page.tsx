@@ -33,6 +33,8 @@ import {
   queryPeriodo,
 } from "@/server/services/analitica.service";
 
+import { AvisosEscaneo } from "./ventas/_componentes/avisos-escaneo";
+
 export const metadata: Metadata = { title: "Inicio" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -55,6 +57,12 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
   const accesos = navegacionPermitida(usuario, panel, {
     facturacion: facturacion.habilitada,
   }).filter((i) => i.modulo !== null);
+  // «Escanea Charly»: ventas propias (todas, para los dueños) escaneadas o esperando.
+  const avisoEscaneo = puede(usuario, panelId, Modulo.VENTAS, "ver") && (
+    <Suspense>
+      <AvisosEscaneo ctx={ctx} soloPropias={!owner} />
+    </Suspense>
+  );
 
   if (!verDashboard) {
     return (
@@ -63,6 +71,7 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
           <Titulo panel={panel.nombre} />
           <p className="text-muted text-body">Elegí por dónde empezar.</p>
         </header>
+        {avisoEscaneo}
         {accesos.length > 0 && <AccesosRapidos items={accesos} />}
       </div>
     );
@@ -93,6 +102,7 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
         />
       </header>
 
+      {avisoEscaneo}
       <Suspense key={`k${clave}`} fallback={<SkeletonKpis n={cantidadKpis} />}>
         <SeccionKpis {...props} />
       </Suspense>

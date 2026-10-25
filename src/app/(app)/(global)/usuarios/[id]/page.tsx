@@ -12,7 +12,11 @@ import { cn, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaOwner } from "@/server/auth/permissions";
 import { listarSesionesActivas } from "@/server/auth/sesiones";
 import { listarTodosLosPaneles } from "@/server/services/panel.service";
-import { obtenerAcceso, obtenerUsuario } from "@/server/services/usuario.service";
+import {
+  obtenerAcceso,
+  obtenerUsuario,
+  panelesConEscaneoRemoto,
+} from "@/server/services/usuario.service";
 
 import { AccesoForm } from "./acceso-form";
 import { CerrarSesiones } from "./cerrar-sesiones";
@@ -20,14 +24,22 @@ import { ComisionForm } from "./comision-form";
 
 export const metadata: Metadata = { title: "Acceso del usuario" };
 
-export default async function UsuarioPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function UsuarioPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ perfil?: string }>;
+}) {
   await requirePaginaOwner();
   const { id } = await params;
+  const { perfil } = await searchParams;
   const usuario = await obtenerUsuario(id);
-  const [paneles, acceso, sesiones] = await Promise.all([
+  const [paneles, acceso, sesiones, panelesEscaneo] = await Promise.all([
     listarTodosLosPaneles(),
     obtenerAcceso(id),
     listarSesionesActivas(id),
+    panelesConEscaneoRemoto(),
   ]);
   const owner = usuario.rol === RolUsuario.OWNER;
   // Paneles desactivados solo aparecen si todavía los tiene habilitados.
@@ -91,6 +103,8 @@ export default async function UsuarioPage({ params }: { params: Promise<{ id: st
             paneles={visibles}
             habilitadosIniciales={acceso.paneles}
             permisosIniciales={acceso.permisos}
+            panelesEscaneo={panelesEscaneo}
+            perfilInicial={perfil === "escaneo" ? "escaneo" : undefined}
           />
         </SectionCard>
 

@@ -50,6 +50,8 @@ export interface DepositoVenta {
   id: string;
   nombre: string;
   esPrincipal: boolean;
+  /** Admite «Escanea Charly». */
+  escaneoRemoto?: boolean;
 }
 
 /**
@@ -309,6 +311,15 @@ export function ModalVenta({
     (venta.dividido || venta.medioPago !== null || (fiadoTotal && quedaPendiente)) &&
     (!quedaPendiente || fiar);
 
+  // «Escanea Charly»: solo desde galpones con escaneo remoto, no en una cotización
+  // convertida y no si ya se verificó todo con la pistola.
+  const verificadaCompleta =
+    venta.verificar &&
+    venta.items.length > 0 &&
+    faltanVerificar(venta.items, venta.verificadas) === 0;
+  const ofreceEscaneoRemoto = !!deposito?.escaneoRemoto && !conversion;
+  const pedirEscaneoRemoto = ofreceEscaneoRemoto && venta.escaneoRemoto && !verificadaCompleta;
+
   const puedeConfirmar =
     enLinea &&
     !enviando &&
@@ -385,6 +396,7 @@ export function ModalVenta({
       ...(verificacion ? { verificacion } : {}),
       ...(descuento && Number(descuento) > 0 ? { descuento } : {}),
       notas: venta.notas,
+      escaneoRemoto: pedirEscaneoRemoto,
     }).catch(() => null);
     setEnviando(false);
     if (!r) {
@@ -683,6 +695,15 @@ export function ModalVenta({
                     onPago={(p) => cambiar(p)}
                     onDescuento={(descuento) => cambiar({ descuento })}
                     onNotas={(notas) => cambiar({ notas })}
+                    escaneoRemoto={
+                      ofreceEscaneoRemoto
+                        ? {
+                            activo: pedirEscaneoRemoto,
+                            verificada: verificadaCompleta,
+                            onCambiar: (escaneoRemoto) => cambiar({ escaneoRemoto }),
+                          }
+                        : null
+                    }
                   />
                 )}
               </>

@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { NOMBRE_ESCANEO } from "@/lib/escaneo-remoto";
 import { formatearPesos } from "@/lib/format";
 import {
   ETIQUETA_MEDIO_PAGO,
@@ -56,6 +57,12 @@ export function VentaExitosa({ venta }: { venta: VentaGenerada }) {
         <p className="text-muted text-sm">
           {medios} · {venta.deposito.nombre}
         </p>
+        {venta.escaneoRemoto === "PENDIENTE" && (
+          <p className="text-foreground text-sm font-medium" data-testid="escaneo-pedido">
+            Le pediste a {NOMBRE_ESCANEO} que la escanee: te avisamos cuando esté lista para
+            retirar.
+          </p>
+        )}
         {debe && (
           <p
             className="text-foreground text-sm font-medium tabular-nums"

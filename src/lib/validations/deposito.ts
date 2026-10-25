@@ -10,6 +10,8 @@ export const crearDepositoSchema = z.object({
   direccion: textoOpcional(300),
   activo: z.boolean().default(true),
   esPrincipal: z.boolean().default(false),
+  /** «Escanea Charly»: las ventas de este depósito pueden pedir el escaneo remoto. */
+  escaneoRemoto: z.boolean().default(false),
 });
 
 export const actualizarDepositoSchema = crearDepositoSchema.extend({ id });

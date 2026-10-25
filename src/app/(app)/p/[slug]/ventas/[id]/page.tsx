@@ -28,6 +28,7 @@ import { facturasDeVenta } from "@/server/services/factura.service";
 import { obtenerVenta } from "@/server/services/venta.service";
 
 import { ICONO_MEDIO_PAGO, MedioPagoBadge } from "../_componentes/medio-pago";
+import { EscaneoBadge, EscaneoRemotoVenta } from "../_componentes/escaneo-remoto";
 import { VerificadaBadge } from "../_componentes/verificada-badge";
 import { AnularVenta } from "./acciones-venta";
 
@@ -79,6 +80,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
               {ESTADO_VENTA_UI[v.estado].label}
             </Badge>
             {v.verificadaPorEscaneo && <VerificadaBadge />}
+            <EscaneoBadge escaneo={v.escaneo} anulada={!confirmada} />
             <span>{formatearFechaHora(v.fecha)}</span>
           </span>
         }
@@ -134,6 +136,21 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
             Anulada por {v.anulacion.por} el {formatearFechaHora(v.anulacion.at)}:{" "}
             {v.anulacion.motivo}
           </p>
+        )}
+        {/* «Escanea Charly»: solo galpones con escaneo remoto (o si ya se pidió). */}
+        {(v.escaneo.estado || (confirmada && v.deposito.escaneoRemoto)) && (
+          <EscaneoRemotoVenta
+            ventaId={v.id}
+            escaneo={v.escaneo}
+            deposito={v.deposito.nombre}
+            unidades={unidades}
+            motivoNoEscaneable={v.motivoNoEscaneable}
+            puedeGestionar={
+              confirmada &&
+              puedeHacer(Modulo.VENTAS, "crear") &&
+              (owner || v.vendedor.id === ctx.usuario.id)
+            }
+          />
         )}
         {devolucionesBloquean && (
           <p className="bg-card text-muted rounded-card flex items-start gap-2 px-4 py-3 text-sm">

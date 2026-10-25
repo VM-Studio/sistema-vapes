@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { AccionAuditoria, type RolUsuario } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
+import { esPerfilEscaneo } from "@/lib/permisos";
 import type { RequestMeta } from "@/server/auth/request-meta";
 import { DURACION_SESION_S } from "@/server/auth/session";
 import { registrarAuditoria } from "@/server/services/audit.service";
@@ -21,6 +22,11 @@ export interface EstadoSesion {
   debeCambiarPassword: boolean;
   /** Paneles habilitados (EMPLEADO). Cambiarlos invalida este caché. */
   paneles: string[];
+  /**
+   * Perfil «Escaneo (Charly)» (solo ESCANEO): el middleware lo encierra en su
+   * pantalla de escaneo. Cambiar sus permisos invalida este caché.
+   */
+  soloEscaneo: boolean;
 }
 
 const TTL_MS = 60_000;
@@ -70,6 +76,16 @@ export async function validarSesion(sid: string, tok: string): Promise<EstadoSes
           activo: true,
           deletedAt: true,
           paneles: { select: { panelId: true } },
+          permisos: {
+            select: {
+              panelId: true,
+              modulo: true,
+              puedeVer: true,
+              puedeCrear: true,
+              puedeEditar: true,
+              puedeEliminar: true,
+            },
+          },
         },
       },
     },
@@ -87,6 +103,11 @@ export async function validarSesion(sid: string, tok: string): Promise<EstadoSes
         rol: s.usuario.rol,
         debeCambiarPassword: s.usuario.debeCambiarPassword,
         paneles: s.usuario.paneles.map((p) => p.panelId),
+        soloEscaneo: esPerfilEscaneo({
+          rol: s.usuario.rol,
+          permisos: s.usuario.permisos,
+          paneles: s.usuario.paneles.map((p) => p.panelId),
+        }),
       }
     : null;
   cache.set(clave, { t: Date.now(), estado, usuarioId: s?.usuario.id ?? null });

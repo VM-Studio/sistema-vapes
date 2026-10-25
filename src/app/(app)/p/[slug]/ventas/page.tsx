@@ -32,6 +32,7 @@ import {
 } from "@/server/services/venta.service";
 
 import { EstadoPagoBadge, MedioPagoBadge } from "./_componentes/medio-pago";
+import { EscaneoBadge } from "./_componentes/escaneo-remoto";
 import { VerificadaBadge } from "./_componentes/verificada-badge";
 import { FiltrosVentas } from "./filtros-ventas";
 import { GenerarVenta } from "./generar-venta";
@@ -47,15 +48,17 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
   const plano = Object.fromEntries(
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
-  // Por defecto: las ventas de hoy (salvo que se busque un ID o un cliente).
-  const sinFechas = !plano.rango && !plano.desde && !plano.hasta && !plano.q;
+  // Por defecto: las ventas de hoy (salvo que se busque un ID, un cliente o un
+  // estado de «Escanea Charly», que se buscan en todo el historial).
+  const buscaSinFecha = !!plano.q || !!plano.escaneo;
+  const sinFechas = !plano.rango && !plano.desde && !plano.hasta && !buscaSinFecha;
   const rango: Rango | null = RANGOS.includes(plano.rango as Rango)
     ? (plano.rango as Rango)
     : sinFechas
       ? "hoy"
       : null;
   const todo =
-    plano.rango === "todo" || (!plano.rango && !plano.desde && !plano.hasta && !!plano.q);
+    plano.rango === "todo" || (!plano.rango && !plano.desde && !plano.hasta && buscaSinFecha);
   const fechas = todo
     ? { desde: "", hasta: "" }
     : rango
@@ -140,6 +143,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
         }}
         depositos={depositos.map((d) => ({ id: d.id, nombre: d.nombre }))}
         vendedores={vendedores}
+        conEscaneoRemoto={depositos.some((d) => d.escaneoRemoto)}
       />
       <DataTable
         caption="Ventas"
@@ -235,6 +239,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
                   {ETIQUETA_TIPO_VENTA[v.tipo]}
                 </Badge>
                 {v.verificadaPorEscaneo && <VerificadaBadge />}
+                <EscaneoBadge escaneo={v.escaneo} anulada={v.estado === "ANULADA"} />
               </span>
             ),
           },
@@ -295,6 +300,11 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
                 {estado(v)}
               </span>
             </div>
+            {v.escaneo.estado && v.estado === "CONFIRMADA" && (
+              <div className="flex">
+                <EscaneoBadge escaneo={v.escaneo} />
+              </div>
+            )}
           </Link>
         )}
       />

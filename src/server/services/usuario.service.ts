@@ -456,6 +456,16 @@ export async function actualizarAcceso(
   return r;
 }
 
+/** Paneles con algún depósito activo con escaneo remoto (preset «Escaneo (Charly)»). */
+export async function panelesConEscaneoRemoto(): Promise<string[]> {
+  const filas = await prisma.deposito.findMany({
+    where: { escaneoRemoto: true, activo: true },
+    select: { panelId: true },
+    distinct: ["panelId"],
+  });
+  return filas.map((f) => f.panelId);
+}
+
 /** Nombres de usuarios (incluye dados de baja: aparecen en el historial) para filtros. */
 export async function listarUsuariosBasico(): Promise<
   { id: string; nombre: string; activo: boolean }[]

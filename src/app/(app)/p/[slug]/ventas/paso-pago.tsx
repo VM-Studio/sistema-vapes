@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { NOMBRE_ESCANEO } from "@/lib/escaneo-remoto";
 import { formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ETIQUETA_MEDIO_PAGO, MEDIOS_PAGO } from "@/lib/ventas-ui";
@@ -63,6 +64,7 @@ export function PasoPago({
   onPrecioML,
   onDescuento,
   onNotas,
+  escaneoRemoto = null,
 }: {
   deposito: string;
   cliente: ClienteElegido;
@@ -89,6 +91,13 @@ export function PasoPago({
   onPrecioML?: (varianteId: string, precio: string) => void;
   onDescuento: (d: string) => void;
   onNotas: (n: string) => void;
+  /** Galpón con escaneo remoto: «Escanea Charly» (opcional). null = no aplica. */
+  escaneoRemoto?: {
+    activo: boolean;
+    /** Ya se verificó todo con la pistola: no hace falta. */
+    verificada: boolean;
+    onCambiar: (activo: boolean) => void;
+  } | null;
 }) {
   const descuentoInvalido = descuento.trim() !== "" && montoTipeado(descuento) === null;
   const descuentoExcede =
@@ -334,6 +343,22 @@ export function PasoPago({
               maxLength={2000}
               value={notas}
               onChange={(e) => onNotas(e.target.value)}
+            />
+          </div>
+        )}
+
+        {escaneoRemoto && (
+          <div className="bg-card rounded-card p-4 md:p-5" data-testid="escaneo-remoto">
+            <Switch
+              label={`Escanea ${NOMBRE_ESCANEO}`}
+              hint={
+                escaneoRemoto.verificada
+                  ? "Ya verificaste todo con la pistola: no hace falta."
+                  : `${NOMBRE_ESCANEO} escanea los vapes en ${deposito} y te avisa cuando están listos para retirar.`
+              }
+              checked={escaneoRemoto.activo}
+              disabled={escaneoRemoto.verificada}
+              onCheckedChange={escaneoRemoto.onCambiar}
             />
           </div>
         )}
