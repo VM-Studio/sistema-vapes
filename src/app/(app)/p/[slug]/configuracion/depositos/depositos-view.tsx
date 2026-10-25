@@ -1,7 +1,7 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { Pencil, Plus, Star, Warehouse } from "lucide-react";
+import { Pencil, Plus, ScanBarcode, Star, Warehouse } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -23,6 +23,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Sheet } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { NOMBRE_ESCANEO } from "@/lib/escaneo-remoto";
 import { formatearNumero } from "@/lib/format";
 import { crearDepositoSchema, type CrearDeposito } from "@/lib/validations/deposito";
 import type { DepositoListado } from "@/server/services/deposito.service";
@@ -52,6 +53,11 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
       {d.esPrincipal && (
         <Badge variant="primary">
           <Star strokeWidth={1.75} aria-hidden /> Principal
+        </Badge>
+      )}
+      {d.escaneoRemoto && (
+        <Badge title={`Admite «Escanea ${NOMBRE_ESCANEO}»`}>
+          <ScanBarcode strokeWidth={1.75} aria-hidden /> Escaneo remoto
         </Badge>
       )}
     </span>
@@ -207,6 +213,7 @@ function DepositoForm({
       direccion: deposito?.direccion ?? "",
       activo: deposito?.activo ?? true,
       esPrincipal: deposito?.esPrincipal ?? false,
+      escaneoRemoto: deposito?.escaneoRemoto ?? false,
     },
   });
   const enviando = form.formState.isSubmitting;
@@ -239,6 +246,11 @@ function DepositoForm({
         name="activo"
         label="Activo"
         hint="No se puede desactivar un depósito con stock."
+      />
+      <FormSwitch
+        name="escaneoRemoto"
+        label={`Escaneo remoto («Escanea ${NOMBRE_ESCANEO}»)`}
+        hint={`Las ventas de este depósito pueden pedir que ${NOMBRE_ESCANEO} escanee los productos antes de retirarlos.`}
       />
     </Form>
   );

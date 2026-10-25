@@ -236,6 +236,8 @@ export function streamExportarTodo(meta: {
         { header: "Costo", key: "co", width: 12, numFmt: MONEDA },
         { header: "Ganancia bruta", key: "g", width: 13, numFmt: MONEDA },
         { header: "Motivo de anulación", key: "an", width: 30 },
+        { header: "Verificada por escaneo", key: "ve", width: 12 },
+        { header: "Escaneo remoto", key: "er", width: 34 },
       ],
       (c) =>
         prisma.venta.findMany({
@@ -244,6 +246,7 @@ export function streamExportarTodo(meta: {
             cliente: { select: { nombre: true, telefono: true } },
             vendedor: { select: { nombre: true } },
             deposito: { select: { nombre: true } },
+            escaneadaPor: { select: { nombre: true } },
           },
         }),
       (v) => ({
@@ -267,6 +270,13 @@ export function streamExportarTodo(meta: {
         co: num(v.costoTotal),
         g: num(v.gananciaBruta),
         an: v.motivoAnulacion ?? "",
+        ve: v.verificadaPorEscaneo ? "Sí" : "",
+        er:
+          v.escaneoRemoto === "ESCANEADA"
+            ? `Escaneada por ${v.escaneadaPor?.nombre ?? ""} el ${formatearFechaHora(v.escaneadaAt)}`
+            : v.escaneoRemoto === "PENDIENTE"
+              ? "Esperando escaneo"
+              : "",
       }),
     );
 

@@ -69,6 +69,7 @@ export const MODULOS_DE_PANEL: readonly Modulo[] = [
   Modulo.COTIZADOR,
   Modulo.REPORTES,
   Modulo.FACTURAS,
+  Modulo.ESCANEO,
 ];
 
 export const MODULO_LABEL: Record<Modulo, string> = {
@@ -85,6 +86,7 @@ export const MODULO_LABEL: Record<Modulo, string> = {
   FIADOS: "Fiados",
   PASISTA: "Pasista",
   FACTURAS: "Facturas",
+  ESCANEO: "Escaneo remoto",
   USUARIOS: "Usuarios",
   CONFIGURACION: "Configuración",
 };
@@ -92,7 +94,13 @@ export const MODULO_LABEL: Record<Modulo, string> = {
 /** Acciones que tienen sentido para el módulo (la grilla muestra solo esas). */
 export function accionesDe(modulo: Modulo): readonly Accion[] {
   // Pasista: solo "Ver"; marcar pagadas y deshacer pagos es de dueños.
-  if (modulo === Modulo.DASHBOARD || modulo === Modulo.REPORTES || modulo === Modulo.PASISTA)
+  // Escaneo remoto: "Ver" alcanza para ver las ventas pedidas y confirmar su escaneo.
+  if (
+    modulo === Modulo.DASHBOARD ||
+    modulo === Modulo.REPORTES ||
+    modulo === Modulo.PASISTA ||
+    modulo === Modulo.ESCANEO
+  )
     return ["ver"];
   // Fiados no tiene "eliminar": anular un cobro es solo de dueños.
   if (modulo === Modulo.FIADOS) return ["ver", "crear", "editar"];
@@ -112,6 +120,8 @@ export const MODULO_AYUDA: Partial<Record<Modulo, string>> = {
     "Solo «Ver»: comisiones del pasista por compra y su acumulado mensual. Marcarlas pagadas es de los dueños.",
   FACTURAS:
     "Solo en paneles con facturación. Ver: listado y PDF · Crear: facturar · Editar: subir el PDF y el número fiscal. Anular: solo dueños.",
+  ESCANEO:
+    "«Escanea Charly»: ve las ventas de galpones con escaneo remoto que le pidieron escanear y confirma que lo escaneado es lo vendido. Solo con este módulo, el usuario no ve nada más del sistema.",
 };
 
 export const ACCION_LABEL: Record<Accion, string> = {
@@ -149,6 +159,30 @@ export function puede(
   if (MODULOS_GLOBALES.has(modulo) || !panelId || !accedeAPanel(usuario, panelId)) return false;
   const permiso = usuario.permisos.find((p) => p.panelId === panelId && p.modulo === modulo);
   return permiso?.[CAMPO[accion]] ?? false;
+}
+
+/**
+ * Perfil «Escaneo (Charly)»: EMPLEADO que solo puede ver ESCANEO (en algún
+ * panel) y ningún otro módulo. Ese usuario va directo a su pantalla de escaneo
+ * y cualquier otra ruta del sistema le da "sin acceso" (middleware + layouts;
+ * los servicios igual validan cada módulo).
+ */
+export function esPerfilEscaneo(usuario: SujetoPermisos): boolean {
+  if (esOwner(usuario)) return false;
+  const visibles = usuario.permisos.filter((p) => p.puedeVer);
+  return visibles.length > 0 && visibles.every((p) => p.modulo === Modulo.ESCANEO);
+}
+
+/** Grilla del preset «Escaneo (Charly)»: solo ESCANEO "ver"; todo lo demás apagado. */
+export function permisosPerfilEscaneo(panelId: string): PermisoModulo[] {
+  return MODULOS_DE_PANEL.map((modulo) => ({
+    panelId,
+    modulo,
+    puedeVer: modulo === Modulo.ESCANEO,
+    puedeCrear: false,
+    puedeEditar: false,
+    puedeEliminar: false,
+  }));
 }
 
 /**

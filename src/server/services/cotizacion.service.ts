@@ -1343,6 +1343,8 @@ export async function convertirEnVenta(
           })),
           fiar: opciones.fiar ?? false,
           tipo: c.tipo === TipoCotizacion.MAYORISTA ? TipoVenta.MAYORISTA : TipoVenta.UNITARIA,
+          // «Escanea Charly» se pide después, desde el detalle de la venta.
+          escaneoRemoto: false,
           descuento: descuento.greaterThan(0) ? descuento.toNumber() : undefined,
           notas: `Cotización ${c.codigo}`,
           verificacion: opciones.verificacion,

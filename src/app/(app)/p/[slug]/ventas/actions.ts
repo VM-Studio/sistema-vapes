@@ -6,10 +6,11 @@ import { z } from "zod";
 
 import { puede } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
-import { anularVentaSchema, generarVentaSchema } from "@/lib/validations/venta";
+import { anularVentaSchema, generarVentaSchema, ventaIdSchema } from "@/lib/validations/venta";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx, requireCtxOwner } from "@/server/auth/permissions";
 import { ClienteDuplicadoError, type ClienteBasico } from "@/server/services/cliente.service";
+import { cancelarEscaneo, pedirEscaneo } from "@/server/services/escaneo-remoto.service";
 import {
   anularVenta,
   generarVenta,
@@ -67,6 +68,26 @@ export const anularVentaAction = actionHandler(async (input: unknown) => {
   const { ventaId, motivo } = anularVentaSchema.parse(input);
   const r = await anularVenta(ctx, ventaId, motivo);
   revalidar();
+  return r;
+});
+
+// --- «Escanea Charly» (galpones con escaneo remoto) ---------------------------------
+
+/** Pedir el escaneo remoto de una venta ya generada (su vendedor o un dueño; lo valida el servicio). */
+export const pedirEscaneoAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.VENTAS, "crear");
+  const { ventaId } = ventaIdSchema.parse(input);
+  const r = await pedirEscaneo(ctx, ventaId);
+  revalidatePath("/p/[slug]/ventas", "layout");
+  return r;
+});
+
+/** Cancelar el pedido mientras Charly no la escaneó. */
+export const cancelarEscaneoAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.VENTAS, "crear");
+  const { ventaId } = ventaIdSchema.parse(input);
+  const r = await cancelarEscaneo(ctx, ventaId);
+  revalidatePath("/p/[slug]/ventas", "layout");
   return r;
 });
 

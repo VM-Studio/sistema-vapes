@@ -1,5 +1,6 @@
 import {
   AccionAuditoria,
+  Escaneo,
   EstadoDevolucion,
   EstadoPago,
   EstadoVenta,
@@ -18,6 +19,7 @@ import { costoParaVenta, precioVentaEfectivo, precioVentaMLEfectivo } from "@/li
 import { ahora } from "@/lib/reloj";
 import type { FiltrosVentas, GenerarVenta } from "@/lib/validations/venta";
 import { ETIQUETA_MEDIO_PAGO, nombreConSabor, saborVisible } from "@/lib/ventas-ui";
+import { NOMBRE_ESCANEO } from "@/lib/escaneo-remoto";
 import { ventaVerificada } from "@/lib/verificacion-escaneo";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { siguienteNumero } from "@/server/db/secuencia";
@@ -25,6 +27,10 @@ import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { medir } from "@/server/log";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { crearCliente } from "@/server/services/cliente.service";
+import {
+  motivoNoEscaneable,
+  type EstadoEscaneoVenta,
+} from "@/server/services/escaneo-remoto.service";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
   bloquearCliente,
@@ -129,6 +135,8 @@ export interface VentaGenerada {
   montoPagado: string;
   saldoPendiente: string;
   deposito: { id: string; nombre: string };
+  /** «Escanea Charly» pedido al generarla (PENDIENTE) o null. */
+  escaneoRemoto: Escaneo | null;
   cliente: { id: string; nombre: string; telefono: string };
   /** true si el cliente se dio de alta con esta venta. */
   clienteNuevo: boolean;
@@ -223,10 +231,20 @@ async function generarEnTx(
 
   const deposito = await tx.deposito.findUnique({
     where: { id: input.depositoId },
-    select: { id: true, nombre: true, activo: true },
+    select: { id: true, nombre: true, activo: true, escaneoRemoto: true },
   });
   if (!deposito) throw new NotFoundError("El galpón no existe en este panel.");
   if (!deposito.activo) throw new DomainError(`El galpón "${deposito.nombre}" está inactivo.`);
+  // «Escanea Charly»: opcional y solo en galpones con escaneo remoto (ver escaneo-remoto.service).
+  const verificada = ventaVerificada(input.items, input.verificacion);
+  if (input.escaneoRemoto && !deposito.escaneoRemoto)
+    throw new DomainError(
+      `El galpón ${deposito.nombre} no tiene escaneo remoto: no se puede pedir «Escanea ${NOMBRE_ESCANEO}».`,
+    );
+  if (input.escaneoRemoto && verificada)
+    throw new DomainError(
+      `La venta ya quedó verificada con la pistola: no hace falta que la escanee ${NOMBRE_ESCANEO}.`,
+    );
 
   // 2. Precios de lista y costos del servidor; permisos para precio especial y descuento.
   const variantes = await tx.variante.findMany({
@@ -400,7 +418,14 @@ async function generarEnTx(
       gananciaBruta: total.minus(costoTotal),
       notas: input.notas ?? null,
       clienteNuevo,
-      verificadaPorEscaneo: ventaVerificada(input.items, input.verificacion),
+      verificadaPorEscaneo: verificada,
+      ...(input.escaneoRemoto
+        ? {
+            escaneoRemoto: Escaneo.PENDIENTE,
+            escaneoPedidoPorId: ctx.usuarioId,
+            escaneoPedidoAt: fecha,
+          }
+        : {}),
       cotizacionId: desdeCotizacion ? permisos.cotizacionId : null,
       items: {
         create: items.map((i) => ({
@@ -478,6 +503,7 @@ async function generarEnTx(
       saldoPendiente: dec(saldoPendiente),
       tipo: input.tipo,
       ...(desdeCotizacion ? { cotizacionId: permisos.cotizacionId } : {}),
+      ...(input.escaneoRemoto ? { escaneoRemoto: Escaneo.PENDIENTE } : {}),
       subtotal: dec(subtotal),
       descuento: dec(descuento),
       total: dec(total),
@@ -510,6 +536,7 @@ async function generarEnTx(
     montoPagado: dec(montoPagado),
     saldoPendiente: dec(saldoPendiente),
     deposito: { id: deposito.id, nombre: deposito.nombre },
+    escaneoRemoto: input.escaneoRemoto ? Escaneo.PENDIENTE : null,
     cliente,
     clienteNuevo,
     vendedorId: ctx.usuarioId,
@@ -662,6 +689,7 @@ function whereVentas(f: Omit<FiltrosVentas, "page" | "pageSize">): Prisma.VentaW
   // Medio de pago: ventas con algún pago en ese medio (mixtas incluidas).
   if (f.medioPago) where.pagos = { some: { medioPago: f.medioPago } };
   if (f.tipo) where.tipo = f.tipo;
+  if (f.escaneo) where.escaneoRemoto = f.escaneo;
   if (f.desde || f.hasta) {
     where.fecha = {
       ...(f.desde ? { gte: inicioDelDia(f.desde) } : {}),
@@ -704,6 +732,8 @@ export interface VentaListada {
   gananciaBruta: string | null;
   /** Todas las unidades se escanearon contra el carrito ("Verificar con pistola"). */
   verificadaPorEscaneo: boolean;
+  /** «Escanea Charly»: estado del escaneo remoto (null = no se pidió). */
+  escaneo: EstadoEscaneoVenta;
 }
 
 export interface ListadoVentas {
@@ -734,6 +764,8 @@ export async function listarVentas(
         vendedor: { select: { nombre: true } },
         deposito: { select: { nombre: true } },
         items: { select: { cantidad: true } },
+        escaneoPedidoPor: { select: { nombre: true } },
+        escaneadaPor: { select: { nombre: true } },
       },
     }),
     db.venta.aggregate({
@@ -760,6 +792,7 @@ export async function listarVentas(
       saldoPendiente: dec(v.saldoPendiente),
       gananciaBruta: opciones.verCostos ? dec(v.gananciaBruta) : null,
       verificadaPorEscaneo: v.verificadaPorEscaneo,
+      escaneo: estadoEscaneoDe(v),
     })),
     total,
     page: f.page,
@@ -792,7 +825,9 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
       cliente: { select: { id: true, nombre: true, telefono: true } },
       vendedor: { select: { id: true, nombre: true } },
       anuladaPor: { select: { nombre: true } },
-      deposito: { select: { id: true, nombre: true } },
+      deposito: { select: { id: true, nombre: true, escaneoRemoto: true } },
+      escaneoPedidoPor: { select: { nombre: true } },
+      escaneadaPor: { select: { nombre: true } },
       items: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -846,6 +881,9 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
     medioPago: v.medioPago,
     estadoPago: v.estadoPago,
     verificadaPorEscaneo: v.verificadaPorEscaneo,
+    escaneo: estadoEscaneoDe(v),
+    /** «Escanea Charly»: null si se puede pedir; si no, por qué no. */
+    motivoNoEscaneable: motivoNoEscaneable(v),
     montoPagado: dec(v.montoPagado),
     saldoPendiente: dec(v.saldoPendiente),
     pagos: v.pagos.map((p) => ({
@@ -906,6 +944,22 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
 }
 
 export type VentaDetalle = Awaited<ReturnType<typeof obtenerVenta>>;
+
+function estadoEscaneoDe(v: {
+  escaneoRemoto: Escaneo | null;
+  escaneoPedidoAt: Date | null;
+  escaneadaAt: Date | null;
+  escaneoPedidoPor: { nombre: string } | null;
+  escaneadaPor: { nombre: string } | null;
+}): EstadoEscaneoVenta {
+  return {
+    estado: v.escaneoRemoto,
+    pedidoPor: v.escaneoPedidoPor?.nombre ?? null,
+    pedidoAt: v.escaneoPedidoAt,
+    escaneadaPor: v.escaneadaPor?.nombre ?? null,
+    escaneadaAt: v.escaneadaAt,
+  };
+}
 
 /**
  * Ventas confirmadas de un cliente, más nuevas primero (el modal de

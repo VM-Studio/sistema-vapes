@@ -12,6 +12,9 @@
  *   (solo Vapes). Emails y contraseñas iniciales vienen del entorno
  *   (SEED_OWNER1_EMAIL / SEED_OWNER1_PASSWORD, SEED_OWNER2_*, SEED_EMPLEADO1_*),
  *   con cambio obligatorio al primer ingreso.
+ * - Charly (perfil «Escaneo»: solo escanea las ventas del galpón Mercedes de
+ *   Vapes): en desarrollo siempre; en producción solo si están SEED_ESCANEO_*.
+ *   El depósito Mercedes de Vapes queda con escaneo remoto.
  *
  * Los datos de ejemplo para tests viven en e2e/fixtures/ (no en el seed).
  */
@@ -48,9 +51,11 @@ const PANEL_VAPES = "pnl_vapes";
 interface UsuarioSeed {
   nombre: string;
   rol: RolUsuario;
-  prefijoEnv: "SEED_OWNER1" | "SEED_OWNER2" | "SEED_EMPLEADO1";
+  prefijoEnv: "SEED_OWNER1" | "SEED_OWNER2" | "SEED_EMPLEADO1" | "SEED_ESCANEO";
   /** Solo para desarrollo: en producción el email y la contraseña son obligatorios en el entorno. */
   emailDesarrollo: string;
+  /** En producción, sin su email/contraseña en el entorno, no se crea (en vez de fallar). */
+  opcionalEnProduccion?: boolean;
 }
 
 const USUARIOS: UsuarioSeed[] = [
@@ -71,6 +76,13 @@ const USUARIOS: UsuarioSeed[] = [
     rol: RolUsuario.EMPLEADO,
     prefijoEnv: "SEED_EMPLEADO1",
     emailDesarrollo: "trinidad@negocio.com",
+  },
+  {
+    nombre: "Charly",
+    rol: RolUsuario.EMPLEADO,
+    prefijoEnv: "SEED_ESCANEO",
+    emailDesarrollo: "charly@negocio.com",
+    opcionalEnProduccion: true,
   },
 ];
 
@@ -115,10 +127,11 @@ const PERMISOS_TRINIDAD: Omit<PermisoModulo, "panelId">[] = [
   },
 ];
 
-function credenciales(u: UsuarioSeed): { email: string; password: string } {
+function credenciales(u: UsuarioSeed): { email: string; password: string } | null {
   const email = process.env[`${u.prefijoEnv}_EMAIL`]?.trim().toLowerCase();
   const password = process.env[`${u.prefijoEnv}_PASSWORD`];
   if (email && password) return { email, password };
+  if (PRODUCCION && u.opcionalEnProduccion) return null;
   if (PRODUCCION) {
     throw new Error(
       `Faltan ${u.prefijoEnv}_EMAIL y ${u.prefijoEnv}_PASSWORD (usuario ${u.nombre}).`,
@@ -130,7 +143,9 @@ function credenciales(u: UsuarioSeed): { email: string; password: string } {
 async function seedUsuarios(): Promise<{ ownerId: string }> {
   let ownerId: string | null = null;
   for (const u of USUARIOS) {
-    const { email, password } = credenciales(u);
+    const cred = credenciales(u);
+    if (!cred) continue;
+    const { email, password } = cred;
     // update vacío: re-correr el seed no pisa contraseñas ya cambiadas.
     const fila = await prisma.usuario.upsert({
       where: { email },
@@ -144,6 +159,30 @@ async function seedUsuarios(): Promise<{ ownerId: string }> {
       },
     });
     if (u.rol === RolUsuario.OWNER) ownerId ??= fila.id;
+    if (u.prefijoEnv === "SEED_ESCANEO") {
+      // Perfil «Escaneo (Charly)»: Vapes, solo ESCANEO "ver" (sin ningún otro módulo).
+      await prisma.usuarioPanel.upsert({
+        where: { usuarioId_panelId: { usuarioId: fila.id, panelId: PANEL_VAPES } },
+        update: {},
+        create: { usuarioId: fila.id, panelId: PANEL_VAPES },
+      });
+      await prisma.permisoUsuario.upsert({
+        where: {
+          usuarioId_panelId_modulo: {
+            usuarioId: fila.id,
+            panelId: PANEL_VAPES,
+            modulo: Modulo.ESCANEO,
+          },
+        },
+        update: {},
+        create: {
+          usuarioId: fila.id,
+          panelId: PANEL_VAPES,
+          modulo: Modulo.ESCANEO,
+          puedeVer: true,
+        },
+      });
+    }
     if (u.nombre === "Trinidad") {
       await prisma.usuarioPanel.upsert({
         where: { usuarioId_panelId: { usuarioId: fila.id, panelId: PANEL_VAPES } },
@@ -228,7 +267,7 @@ interface PanelSeed {
   etiquetaEspecificacion: string;
   etiquetaUnidades?: string;
   orden: number;
-  depositos: { nombre: string; esPrincipal: boolean; id?: string }[];
+  depositos: { nombre: string; esPrincipal: boolean; id?: string; escaneoRemoto?: boolean }[];
 }
 
 const PANELES: PanelSeed[] = [
@@ -242,7 +281,8 @@ const PANELES: PanelSeed[] = [
     orden: 1,
     depositos: [
       { nombre: "Ayres Plaza", esPrincipal: true },
-      { nombre: "Mercedes", esPrincipal: false },
+      // Galpón de Las Mercedes: admite «Escanea Charly».
+      { nombre: "Mercedes", esPrincipal: false, escaneoRemoto: true },
     ],
   },
   {
@@ -305,7 +345,13 @@ async function seedPaneles() {
       await prisma.deposito.upsert({
         where: { panelId_nombre: { panelId: p.id, nombre: d.nombre } },
         update: {},
-        create: { id: d.id, panelId: p.id, nombre: d.nombre, esPrincipal: d.esPrincipal },
+        create: {
+          id: d.id,
+          panelId: p.id,
+          nombre: d.nombre,
+          esPrincipal: d.esPrincipal,
+          escaneoRemoto: d.escaneoRemoto ?? false,
+        },
       });
     }
     for (const entidad of ENTIDADES_SECUENCIA) {

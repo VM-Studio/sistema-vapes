@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 
 import { RolUsuario } from "@prisma/client";
 import { Shuffle } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,9 @@ import {
   FormSwitch,
   useZodForm,
 } from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { NOMBRE_ESCANEO } from "@/lib/escaneo-remoto";
 import {
   actualizarUsuarioSchema,
   crearUsuarioSchema,
@@ -62,11 +64,21 @@ export function CrearUsuarioForm({ onListo, onEnviando }: Props) {
     defaultValues: { nombre: "", email: "", rol: RolUsuario.EMPLEADO, password: "" },
   });
   useReportarEnvio(form.formState.isSubmitting, onEnviando);
+  const [perfilEscaneo, setPerfilEscaneo] = useState(false);
+  const empleado = form.watch("rol") === RolUsuario.EMPLEADO;
 
   async function onSubmit(data: CrearUsuario) {
     const r = await crearUsuarioAction(data);
     if (!r.ok) return aplicarErroresServidor(form, r.error);
     if (data.rol === RolUsuario.EMPLEADO) {
+      if (perfilEscaneo) {
+        toast.success(
+          "Usuario creado",
+          "Cargamos el perfil de escaneo: revisalo y guardá el acceso.",
+        );
+        router.push(`/usuarios/${r.data.id}?perfil=escaneo`);
+        return;
+      }
       toast.success("Usuario creado", "Ahora elegí a qué sistemas accede y qué puede hacer.");
       router.push(`/usuarios/${r.data.id}`);
       return;
@@ -89,6 +101,14 @@ export function CrearUsuarioForm({ onListo, onEnviando }: Props) {
         required
       />
       <FormSelect name="rol" label="Rol" options={OPCIONES_ROL} required />
+      {empleado && (
+        <Switch
+          label={`Perfil Escaneo (${NOMBRE_ESCANEO})`}
+          hint="Solo escanea las ventas que le pidan desde los galpones con escaneo remoto. No ve nada más del sistema."
+          checked={perfilEscaneo}
+          onCheckedChange={setPerfilEscaneo}
+        />
+      )}
       <div className="flex flex-col gap-1">
         <FormInput
           name="password"

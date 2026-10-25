@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { ScanBarcode, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -8,9 +8,11 @@ import { LogoPanel } from "@/components/layout/logo-panel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toast";
+import { NOMBRE_ESCANEO } from "@/lib/escaneo-remoto";
 import {
   MODULOS_DE_PANEL,
   normalizarPermiso,
+  permisosPerfilEscaneo,
   type Accion,
   type PermisoModulo,
 } from "@/lib/permisos";
@@ -46,12 +48,18 @@ export function AccesoForm({
   paneles,
   habilitadosIniciales,
   permisosIniciales,
+  panelesEscaneo = [],
+  perfilInicial,
 }: {
   usuarioId: string;
   esOwner: boolean;
   paneles: PanelOpcion[];
   habilitadosIniciales: string[];
   permisosIniciales: PermisoModulo[];
+  /** Paneles con galpones de escaneo remoto: ofrecen el preset «Escaneo (Charly)». */
+  panelesEscaneo?: string[];
+  /** Recién creado con el perfil «Escaneo (Charly)»: se precarga el preset (falta guardar). */
+  perfilInicial?: "escaneo";
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -68,13 +76,29 @@ export function AccesoForm({
     [habilitadosIniciales, paneles, permisosIniciales],
   );
   const [guardado, setGuardado] = useState(inicial);
-  const [habilitados, setHabilitados] = useState(inicial.habilitados);
-  const [grillas, setGrillas] = useState(inicial.grillas);
+  const conPreset = perfilInicial === "escaneo" && !esOwner && panelesEscaneo.length > 0;
+  const [habilitados, setHabilitados] = useState(() =>
+    conPreset ? [...new Set([...inicial.habilitados, ...panelesEscaneo])] : inicial.habilitados,
+  );
+  const [grillas, setGrillas] = useState(() =>
+    conPreset
+      ? {
+          ...inicial.grillas,
+          ...Object.fromEntries(panelesEscaneo.map((id) => [id, permisosPerfilEscaneo(id)])),
+        }
+      : inicial.grillas,
+  );
   const [guardando, setGuardando] = useState(false);
 
   const hayCambios =
     JSON.stringify({ h: [...habilitados].sort(), g: grillas }) !==
     JSON.stringify({ h: [...guardado.habilitados].sort(), g: guardado.grillas });
+
+  /** Preset «Escaneo (Charly)»: en este panel solo «Escaneo remoto», nada más. */
+  function aplicarPerfilEscaneo(panelId: string) {
+    setHabilitados((hs) => (hs.includes(panelId) ? hs : [...hs, panelId]));
+    setGrillas((gs) => ({ ...gs, [panelId]: permisosPerfilEscaneo(panelId) }));
+  }
 
   function alternarPanel(panelId: string, activo: boolean) {
     setHabilitados((hs) => (activo ? [...hs, panelId] : hs.filter((h) => h !== panelId)));
@@ -125,6 +149,16 @@ export function AccesoForm({
           restringir.
         </p>
       )}
+      {conPreset && hayCambios && (
+        <p
+          className="bg-warning-soft text-warning-soft-foreground text-small rounded-control flex items-start gap-2.5 p-4"
+          data-testid="aviso-perfil-escaneo"
+        >
+          <ScanBarcode className="mt-0.5 size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+          Perfil «Escaneo ({NOMBRE_ESCANEO})» cargado: solo va a ver las ventas que le pidan
+          escanear. Revisá y tocá «Guardar acceso».
+        </p>
+      )}
       {paneles.map((panel) => {
         const activo = esOwner || habilitados.includes(panel.id);
         return (
@@ -148,7 +182,19 @@ export function AccesoForm({
                   </span>
                 }
               />
-              <LogoPanel panel={panel} size={24} />
+              <span className="flex items-center gap-2">
+                {!esOwner && panelesEscaneo.includes(panel.id) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => aplicarPerfilEscaneo(panel.id)}
+                    title={`Solo «Escaneo remoto»: ve y escanea las ventas que le pidan en ${panel.nombre}`}
+                  >
+                    <ScanBarcode strokeWidth={1.75} /> Perfil Escaneo ({NOMBRE_ESCANEO})
+                  </Button>
+                )}
+                <LogoPanel panel={panel} size={24} />
+              </span>
             </div>
             {activo && (
               <div className="border-border border-t">

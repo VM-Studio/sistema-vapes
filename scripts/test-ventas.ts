@@ -5,7 +5,8 @@
  * repetido, pagos (PagoVenta por el total), listado y totales, anulación (solo
  * dueños, anula los pagos), ventas de un cliente,
  * más vendidos, aislamiento entre paneles (VAP-/COS-), medios por panel, ventas
- * por Mercado Libre con precio a mano y la carga de sus facturas (Cosmetic).
+ * por Mercado Libre con precio a mano y la carga de sus facturas (Cosmetic),
+ * y «Escanea Charly» (escaneo remoto de las ventas del galpón Mercedes).
  * Uso: pnpm test:ventas — pensado para una DB recién sembrada (crea datos).
  */
 import {
@@ -45,6 +46,13 @@ import {
   marcarFacturaMLCargada,
   totalesFacturasML,
 } from "../src/server/services/factura-ml.service";
+import {
+  cancelarEscaneo,
+  confirmarEscaneo,
+  evaluarCodigosEscaneo,
+  listarPendientesDeEscaneo,
+  pedirEscaneo,
+} from "../src/server/services/escaneo-remoto.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
 import {
   anularVenta,
@@ -955,6 +963,155 @@ async function main() {
   check(/no se modifica/.test(msg(tocada)), "la carga no se modifica (trigger)");
   const desdeVapes = await error(() => archivoFacturaML(ctx, porML.id));
   check(desdeVapes instanceof NotFoundError, "desde otro panel la carga no existe");
+
+  // ---------------------------------------------------------------------------
+  console.log(`\nN) «Escanea Charly»: escaneo remoto de las ventas del galpón Mercedes`);
+  const mercedes = await db.deposito.findFirstOrThrow({ where: { escaneoRemoto: true } });
+  check(mercedes.nombre === "Mercedes", "Mercedes es el galpón con escaneo remoto");
+  const charly = await prisma.usuario.findFirstOrThrow({ where: { email: "charly@negocio.com" } });
+  const ctxCharly: Ctx = { panelId: VAPES, usuarioId: charly.id, meta };
+  const codMango = `TVM${suf}`;
+  const codFrutilla = `TVF${suf}`;
+  await db.variante.update({ where: { id: mango.id }, data: { codigoBarras: codMango } });
+  await db.variante.update({ where: { id: frutilla.id }, data: { codigoBarras: codFrutilla } });
+  for (const v of [mango, frutilla]) {
+    await registrarAjuste(ctx, {
+      depositoId: mercedes.id,
+      varianteId: v.id,
+      cantidadReal: 5,
+      motivo: "Preparación escaneo remoto",
+    });
+  }
+  const clienteEsc = (await db.cliente.findFirstOrThrow({ where: { deletedAt: null } })).id;
+  const ventaMercedes = (escaneoRemoto: boolean, depositoId = mercedes.id) =>
+    generarVentaSchema.parse({
+      depositoId,
+      cliente: { id: clienteEsc },
+      items: [{ varianteId: mango.id, cantidad: 2 }],
+      pagos: [{ medioPago: "EFECTIVO", monto: 32000 }],
+      escaneoRemoto,
+    });
+  const desdeAyres = await error(() => generarVenta(ctxEmp, ventaMercedes(true, g1.id), EMPLEADO));
+  check(
+    desdeAyres instanceof DomainError && /no tiene escaneo remoto/.test(msg(desdeAyres)),
+    `desde ${g1.nombre} no se puede pedir → «${msg(desdeAyres)}»`,
+  );
+  const vEsc = await generarVenta(ctxEmp, ventaMercedes(true), EMPLEADO);
+  const filaEsc = await db.venta.findUniqueOrThrow({ where: { id: vEsc.id } });
+  check(
+    vEsc.escaneoRemoto === "PENDIENTE" &&
+      filaEsc.escaneoRemoto === "PENDIENTE" &&
+      filaEsc.escaneoPedidoPorId === empleado.id &&
+      filaEsc.escaneoPedidoAt !== null &&
+      !filaEsc.verificadaPorEscaneo,
+    "pedido al generar: PENDIENTE, quién y cuándo",
+  );
+  check(
+    (await stock(mango.id, mercedes.id)) === 3,
+    "el stock de la variante exacta se descontó al vender (Mercedes 5→3)",
+  );
+  const pendientes = await listarPendientesDeEscaneo(ctxCharly);
+  const enLista = pendientes.find((p) => p.id === vEsc.id);
+  check(
+    enLista !== undefined &&
+      enLista.items[0]?.sabor === "Mango Ice" &&
+      enLista.items[0]?.especificacion === "5000" &&
+      enLista.etiquetaEspecificacion === "Pitadas",
+    "aparece en la lista de Charly con sabor y pitadas",
+  );
+  const otroSabor = await evaluarCodigosEscaneo(ctxCharly, vEsc.id, [codFrutilla]);
+  check(
+    otroSabor.rechazos[0]?.campos.join() === "sabor" &&
+      otroSabor.rechazos[0]?.varianteIdItem === mango.id &&
+      !otroSabor.completo,
+    `otro sabor → «${otroSabor.rechazos[0]?.resumen}: ${otroSabor.rechazos[0]?.detalles.join(" ")}»`,
+  );
+  const desconocido = await evaluarCodigosEscaneo(ctxCharly, vEsc.id, ["NOEXISTE123"]);
+  check(desconocido.rechazos[0]?.campos.join() === "codigo", "código desconocido");
+  const incompleto = await error(() => confirmarEscaneo(ctxCharly, vEsc.id, [codMango]));
+  check(
+    incompleto instanceof DomainError && /Falta 1 unidad/.test(msg(incompleto)),
+    `confirmar con unidades de menos no guarda → «${msg(incompleto)}»`,
+  );
+  const deMas = await error(() =>
+    confirmarEscaneo(ctxCharly, vEsc.id, [codMango, codMango, codMango]),
+  );
+  check(
+    deMas instanceof DomainError && /Unidades de más/.test(msg(deMas)),
+    "confirmar con unidades de más no guarda",
+  );
+  const conAjeno = await error(() =>
+    confirmarEscaneo(ctxCharly, vEsc.id, [codMango, codFrutilla, codMango]),
+  );
+  check(conAjeno instanceof DomainError, "confirmar con un escaneo que no corresponde no guarda");
+  check(
+    (await db.venta.findUniqueOrThrow({ where: { id: vEsc.id } })).escaneoRemoto === "PENDIENTE",
+    "sigue PENDIENTE tras los intentos fallidos",
+  );
+  const ok = await confirmarEscaneo(ctxCharly, vEsc.id, [codMango, codMango]);
+  const escaneada = await db.venta.findUniqueOrThrow({ where: { id: vEsc.id } });
+  check(
+    ok.codigo === vEsc.codigo &&
+      escaneada.escaneoRemoto === "ESCANEADA" &&
+      escaneada.escaneadaPorId === charly.id &&
+      escaneada.escaneadaAt !== null &&
+      escaneada.verificadaPorEscaneo &&
+      JSON.stringify(escaneada.escaneoDetalle) ===
+        JSON.stringify([
+          { codigo: codMango, varianteId: mango.id },
+          { codigo: codMango, varianteId: mango.id },
+        ]),
+    "exacto: ESCANEADA, verificada por escaneo, quién/cuándo y los códigos",
+  );
+  check((await stock(mango.id, mercedes.id)) === 3, "escanear no vuelve a mover stock (sigue 3)");
+  const auditEsc = await prisma.auditLog.findFirst({
+    where: { entidad: "Venta", entidadId: vEsc.id, usuarioId: charly.id },
+  });
+  check(auditEsc !== null, "el escaneo queda en la auditoría (usuario Charly)");
+  check(
+    !(await listarPendientesDeEscaneo(ctxCharly)).some((p) => p.id === vEsc.id),
+    "ya no aparece en la lista de Charly",
+  );
+  const dosVecesEsc = await error(() => confirmarEscaneo(ctxCharly, vEsc.id, [codMango, codMango]));
+  check(dosVecesEsc instanceof DomainError, "no se escanea dos veces");
+  const filtro = await listarVentas(ctx, listarVentasSchema.parse({ escaneo: "ESCANEADA" }), {
+    verCostos: true,
+  });
+  check(
+    filtro.ventas.some((v) => v.id === vEsc.id && v.escaneo.escaneadaPor === "Charly") &&
+      filtro.ventas.every((v) => v.escaneo.estado === "ESCANEADA"),
+    "filtro del listado por estado de escaneo",
+  );
+
+  // Pedir después, cancelar, anular.
+  const vDespues = await generarVenta(ctx, ventaMercedes(false), DUENO);
+  const ajena = await error(() => pedirEscaneo(ctxEmp, vDespues.id));
+  check(ajena instanceof ForbiddenError, "un empleado no pide el escaneo de una venta ajena");
+  await pedirEscaneo(ctx, vDespues.id);
+  const repetido = await error(() => pedirEscaneo(ctx, vDespues.id));
+  check(repetido instanceof DomainError, `no se pide dos veces → «${msg(repetido)}»`);
+  await cancelarEscaneo(ctx, vDespues.id);
+  const cancelada = await db.venta.findUniqueOrThrow({ where: { id: vDespues.id } });
+  check(
+    cancelada.escaneoRemoto === null && cancelada.escaneoPedidoPorId === null,
+    "cancelar mientras está pendiente lo deja sin pedido",
+  );
+  await pedirEscaneo(ctx, vDespues.id);
+  await anularVenta(ctx, vDespues.id, "Prueba escaneo anulado");
+  check(
+    !(await listarPendientesDeEscaneo(ctxCharly)).some((p) => p.id === vDespues.id),
+    "una venta anulada sale de la lista de Charly",
+  );
+  const anuladaEsc = await error(() => evaluarCodigosEscaneo(ctxCharly, vDespues.id, []));
+  check(anuladaEsc instanceof DomainError, "una venta anulada ya no se escanea");
+  const desdeAyresDespues = await generarVenta(ctx, ventaMercedes(false, g1.id), DUENO);
+  const noRemoto = await error(() => pedirEscaneo(ctx, desdeAyresDespues.id));
+  check(noRemoto instanceof DomainError, `desde ${g1.nombre} tampoco se pide después`);
+  const restriccion = await error(
+    () =>
+      prisma.$executeRaw`UPDATE "Venta" SET "escaneoRemoto" = 'ESCANEADA' WHERE "id" = ${desdeAyresDespues.id}`,
+  );
+  check(/venta_escaneo_remoto_coherente/.test(msg(restriccion)), "CHECK de coherencia en la DB");
 
   console.log(fallos ? `\n✘ ${fallos} verificaciones fallaron` : "\n✔ Todo OK");
   process.exitCode = fallos ? 1 : 0;

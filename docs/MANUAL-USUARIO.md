@@ -180,6 +180,16 @@ Cada venta guarda el **precio de lista**, el **precio cobrado** y el **costo** d
 
 **Sin conexión** no se puede vender: las ventas necesitan conexión para validar el stock.
 
+## Escanea Charly (galpón Mercedes)
+
+Cuando vendés vapes que salen del **galpón de Las Mercedes**, podés pedir que **Charly** los escanee antes de retirarlos. Es opcional y solo aparece en los galpones con escaneo remoto (los dueños lo activan en **Ajustes → Depósitos**; en Vapes viene activo en Mercedes).
+
+1. **Pedirlo**: en el último paso de la venta («¿Cómo paga?») activá **Escanea Charly**. También se puede pedir después, desde el detalle de la venta, con el botón **Escanea Charly** (lo ven quien hizo la venta y los dueños). Mientras Charly no la escaneó, **Cancelar pedido** lo deja sin efecto.
+2. **Charly escanea**: entra con su usuario y ve solo las ventas que le pidieron escanear (de cualquier vendedor). Toca una, escanea cada vape con la pistola o la cámara del celular y el sistema compara cada código con lo vendido: si no coincide, marca dónde está la diferencia (modelo, pitadas, sabor o unidades de más). Cuando todo coincide, se habilita **Vape escaneado**.
+3. **Listo para retirar**: la venta pasa a «Escaneado por Charly · listo para retirar» en el listado, en el detalle y en el inicio de quien la vendió. En Ventas, el filtro «Escanea Charly» muestra las que esperan escaneo o ya están listas.
+
+El stock se descuenta al generar la venta (la variante exacta del galpón); el escaneo de Charly no vuelve a mover stock, deja constancia de qué se escaneó y marca la venta como **Verificada**. Si la venta se anula, desaparece de la lista de Charly. Para crear el usuario de Charly: **Usuarios → Nuevo usuario**, rol Empleado con **Perfil Escaneo (Charly)** (ver [Dar acceso a un empleado](#dar-acceso-a-un-empleado)).
+
 ## Dar de alta un cliente nuevo
 
 Toda venta tiene cliente. Un cliente es **nombre** y **teléfono** (obligatorio), más notas si querés. Se da de alta desde donde lo necesites:

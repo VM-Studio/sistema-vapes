@@ -1,4 +1,4 @@
-import { EstadoVenta, MedioPago, TipoVenta } from "@prisma/client";
+import { Escaneo, EstadoVenta, MedioPago, TipoVenta } from "@prisma/client";
 import { z } from "zod";
 
 import { MEDIOS_PAGO_DEFAULT } from "../medios-pago";
@@ -84,6 +84,16 @@ export const generarVentaSchema = z.object({
   tipo: z.preprocess(vacioAUndefined, z.enum(TipoVenta).default(TipoVenta.UNITARIA)),
   /** "Verificar con pistola": unidades escaneadas por ítem (ver verificacion-escaneo.ts). */
   verificacion: verificacionEscaneoSchema,
+  /** «Escanea Charly»: pedir el escaneo remoto (solo galpones con escaneo remoto; lo valida el servicio). */
+  escaneoRemoto: z.boolean().default(false),
+});
+
+export const ventaIdSchema = z.object({ ventaId: id });
+
+/** Códigos escaneados por el usuario de escaneo, en orden (se evalúan en el servidor). */
+export const escaneoRemotoSchema = z.object({
+  ventaId: id,
+  codigos: z.array(z.string().trim().min(1).max(80)).max(1000, "Demasiados escaneos"),
 });
 
 export const anularVentaSchema = z.object({
@@ -112,6 +122,8 @@ export const listarVentasSchema = z.object({
   medioPago: z.preprocess(vacioAUndefined, z.enum(MedioPago).optional()).catch(undefined),
   tipo: z.preprocess(vacioAUndefined, z.enum(TipoVenta).optional()).catch(undefined),
   estado: z.preprocess(vacioAUndefined, z.enum(EstadoVenta).optional()).catch(undefined),
+  /** «Escanea Charly»: esperando escaneo o ya escaneadas. */
+  escaneo: z.preprocess(vacioAUndefined, z.enum(Escaneo).optional()).catch(undefined),
   /** ID de venta (VAP-000123 o 123), nombre o teléfono del cliente. */
   q: z.preprocess(vacioAUndefined, z.string().trim().max(100).optional()).catch(undefined),
   page: z.coerce.number().int().min(1).catch(1),

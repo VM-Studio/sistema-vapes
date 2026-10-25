@@ -11,6 +11,7 @@ import { hrefCon } from "@/components/ui/pagination";
 import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import { useUrlParams } from "@/hooks/use-url-params";
+import { NOMBRE_ESCANEO } from "@/lib/escaneo-remoto";
 import { RANGO_LABEL, RANGOS, type Rango } from "@/lib/fechas";
 import { formatearIdVenta } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ export function FiltrosVentas({
   depositos,
   vendedores,
   medios,
+  conEscaneoRemoto = false,
 }: {
   params: Record<string, string>;
   rango: Rango | "todo" | null;
@@ -31,12 +33,14 @@ export function FiltrosVentas({
   vendedores: { id: string; nombre: string }[];
   /** Medios del panel (configuración de ventas). */
   medios: readonly MedioPago[];
+  /** El panel tiene galpones con escaneo remoto: filtro «Escanea Charly». */
+  conEscaneoRemoto?: boolean;
 }) {
   const { actualizar } = useUrlParams();
   const ruta = useRutaPanel();
   const { slug } = usePanel();
   // En mobile, fechas y selects van plegados (salvo que ya haya alguno aplicado).
-  const avanzados = ["desde", "hasta", "depositoId", "vendedorId", "medioPago", "tipo"];
+  const avanzados = ["desde", "hasta", "depositoId", "vendedorId", "medioPago", "tipo", "escaneo"];
   const activos = avanzados.filter((k) => params[k]).length;
   const [masFiltros, setMasFiltros] = useState(activos > 0);
   const link = (cambios: Record<string, string | null>) =>
@@ -85,7 +89,8 @@ export function FiltrosVentas({
       <div
         id="filtros-ventas-avanzados"
         className={cn(
-          "grid-cols-2 gap-2 md:grid md:grid-cols-3 lg:grid-cols-6",
+          "grid-cols-2 gap-2 md:grid md:grid-cols-3",
+          conEscaneoRemoto ? "lg:grid-cols-4" : "lg:grid-cols-6",
           masFiltros ? "grid" : "hidden",
         )}
       >
@@ -147,6 +152,19 @@ export function FiltrosVentas({
           value={params.tipo ?? ""}
           onChange={(e) => actualizar({ tipo: e.target.value || null })}
         />
+        {conEscaneoRemoto && (
+          <Select
+            aria-label={`Escanea ${NOMBRE_ESCANEO}`}
+            containerClassName="self-end"
+            options={[
+              { value: "", label: `Con y sin escaneo de ${NOMBRE_ESCANEO}` },
+              { value: "PENDIENTE", label: `Esperando escaneo de ${NOMBRE_ESCANEO}` },
+              { value: "ESCANEADA", label: "Escaneadas · listas para retirar" },
+            ]}
+            value={params.escaneo ?? ""}
+            onChange={(e) => actualizar({ escaneo: e.target.value || null })}
+          />
+        )}
       </div>
     </section>
   );

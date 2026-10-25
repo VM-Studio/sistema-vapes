@@ -5,7 +5,7 @@ import { GlobalShell } from "@/components/layout/global-shell";
 import { PanelProvider } from "@/components/layout/panel-context";
 import { COOKIE_SIDEBAR, COOKIE_ULTIMO_PANEL } from "@/config/ui";
 import { tieneMercadoLibre } from "@/lib/medios-pago";
-import { accedeAPanel } from "@/lib/permisos";
+import { accedeAPanel, esPerfilEscaneo } from "@/lib/permisos";
 import { requirePaginaUsuario } from "@/server/auth/permissions";
 import { panelesActivos } from "@/server/auth/paneles-acceso";
 import {
@@ -23,7 +23,7 @@ import {
  */
 export default async function GlobalLayout({ children }: { children: React.ReactNode }) {
   const usuario = await requirePaginaUsuario({ permitirCambioPendiente: true });
-  if (usuario.debeCambiarPassword) {
+  if (usuario.debeCambiarPassword || esPerfilEscaneo(usuario)) {
     return <GlobalShell restringido>{children}</GlobalShell>;
   }
 

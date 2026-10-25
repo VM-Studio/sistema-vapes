@@ -114,8 +114,17 @@ Enum Modulo {
   COMPRAS
   COTIZADOR
   REPORTES
+  FIADOS
+  PASISTA
+  FACTURAS
+  ESCANEO [note: '«Escanea Charly»: ver las ventas con escaneo remoto pedido y confirmar su escaneo (solo "ver").']
   USUARIOS
   CONFIGURACION
+}
+
+Enum Escaneo {
+  PENDIENTE [note: 'La venta espera el escaneo del usuario de escaneo.']
+  ESCANEADA [note: 'Todo lo vendido coincidió con lo escaneado: lista para retirar.']
 }
 
 Enum TipoMovimiento {
@@ -382,6 +391,7 @@ Table Deposito {
   direccion text
   activo boolean [not null, default: true]
   esPrincipal boolean [not null, default: false, note: 'Un solo depósito principal por panel (índice único parcial en SQL).']
+  escaneoRemoto boolean [not null, default: false, note: 'Admite «Escanea Charly» (Vapes: Mercedes).']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
 
@@ -727,7 +737,13 @@ Table Venta {
   gananciaBruta decimal(12,2) [not null, note: 'total − costoTotal (CHECK en DB).']
   clienteNuevo boolean [not null, default: false, note: 'El cliente se dio de alta con esta venta (inmutable).']
   notas text
-  verificadaPorEscaneo boolean [not null, default: false, note: '"Verificar con pistola": todas las unidades se escanearon contra el carrito (lo decide el servidor).']
+  verificadaPorEscaneo boolean [not null, default: false, note: '"Verificar con pistola": todas las unidades se escanearon contra el carrito (lo decide el servidor). También queda true cuando el escaneo remoto coincide.']
+  escaneoRemoto Escaneo [note: '«Escanea Charly» (solo galpones con escaneoRemoto): null = no se pidió. CHECK venta_escaneo_remoto_coherente.']
+  escaneoPedidoPorId text [note: 'Quién pidió el escaneo remoto.']
+  escaneoPedidoAt timestamp
+  escaneadaPorId text [note: 'Quién la escaneó (perfil Escaneo).']
+  escaneadaAt timestamp
+  escaneoDetalle jsonb [note: 'Lo escaneado al confirmar: [{ codigo, varianteId }].']
   cotizacionId text [unique, note: 'La cotización de la que salió (trazabilidad).']
   anuladaPorId text
   motivoAnulacion text
@@ -743,6 +759,7 @@ Table Venta {
     (panelId, clienteId)
     (panelId, tipo, fecha)
     (panelId, depositoId, fecha)
+    (panelId, escaneoRemoto)
   }
 
   Note: 'Venta: se cobra completa en el momento con un solo medio de pago. Sin galpón, cliente o medio de pago no existe. Inmutable: se anula.'
@@ -1058,6 +1075,8 @@ Ref: Venta.panelId > Panel.id [delete: restrict]
 Ref: Venta.cotizacionId > Cotizacion.id [delete: restrict]
 Ref: Venta.clienteId > Cliente.id [delete: restrict]
 Ref: Venta.depositoId > Deposito.id [delete: restrict]
+Ref: Venta.escaneoPedidoPorId > Usuario.id [delete: restrict]
+Ref: Venta.escaneadaPorId > Usuario.id [delete: restrict]
 Ref: Venta.vendedorId > Usuario.id [delete: restrict]
 Ref: Venta.anuladaPorId > Usuario.id [delete: restrict]
 Ref: VentaItem.panelId > Panel.id [delete: restrict]
@@ -1113,7 +1132,7 @@ Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [dele
 
 - **Usuario**: personas que entran al sistema. `rol` es `OWNER` (dueño: acceso total a todos los paneles y a lo global) o `EMPLEADO` (acceso según `UsuarioPanel` y `PermisoUsuario`). `comisionUnitariaPct` y `comisionMayoristaPct` (0–100, opcionales) son una comisión **orientativa** que el dueño ve en el rendimiento del equipo; no generan movimientos. El email se guarda siempre en minúsculas. `debeCambiarPassword` obliga a pasar por `/cuenta` antes de usar el resto de la app (usuarios nuevos, contraseñas reseteadas y el seed). No se borra: se da de baja (`deletedAt`, `activo = false`).
 - **UsuarioPanel**: paneles a los que accede un empleado. Sin fila, el empleado no entra a ese panel (el middleware lo manda a `/paneles`).
-- **PermisoUsuario**: una fila por (usuario, panel, módulo) con cuatro banderas: ver, crear, editar, eliminar. Solo módulos de panel (`DASHBOARD` … `REPORTES`); `USUARIOS` y `CONFIGURACION` son exclusivos de los dueños y no tienen filas. Los dueños no necesitan filas. Los permisos no viajan en el token: se leen de la base, así que un cambio aplica al instante.
+- **PermisoUsuario**: una fila por (usuario, panel, módulo) con cuatro banderas: ver, crear, editar, eliminar. Solo módulos de panel (`DASHBOARD` … `FACTURAS`, `ESCANEO`); `USUARIOS` y `CONFIGURACION` son exclusivos de los dueños y no tienen filas. Un EMPLEADO cuyo único módulo visible es `ESCANEO` tiene el **perfil «Escaneo (Charly)»** (`esPerfilEscaneo()`): el middleware lo encierra en `/p/{slug}/escaneo` (más `/cuenta` y salir) y cualquier otra ruta le da "sin acceso". Los dueños no necesitan filas. Los permisos no viajan en el token: se leen de la base, así que un cambio aplica al instante.
 - **Sesion**: cada inicio de sesión. El JWT de la cookie lleva `sid` (id de esta fila) y `tok` (secreto aleatorio del que acá se guarda solo el sha256). Revocarla (`revocadaAt`, `revocadaPorId`) corta el acceso en el próximo request; el middleware cachea la validación 60 s por instancia.
 - **IntentoLogin**: registro de cada intento de login (exitoso o no) para el límite de 5 fallidos por email cada 15 minutos. No es FK a `Usuario`: también se registran emails inexistentes.
 - **RateLimit**: contador por clave (`u:<usuarioId>` o `ip:<ip>`) y ventana de un minuto para el rate limit general de `/api/*` y Server Actions.
@@ -1122,7 +1141,7 @@ Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [dele
 
 ### Maestros
 
-- **Deposito**: locales o galpones de un panel. Uno solo por panel puede ser el principal. En Vapes: **Ayres Plaza** (principal) y **Mercedes**. No se borra: se desactiva, y solo si no tiene stock y no es el principal.
+- **Deposito**: locales o galpones de un panel. Uno solo por panel puede ser el principal. En Vapes: **Ayres Plaza** (principal) y **Mercedes**. `escaneoRemoto` = sus ventas pueden pedir «Escanea Charly» (la migración y el seed lo encienden en Mercedes de Vapes; lo editan los dueños en Configuración → Depósitos). No se borra: se desactiva, y solo si no tiene stock y no es el principal.
 - **Categoria** y **Marca**: clasificación de productos, con nombre único por panel. No se pueden desactivar si tienen productos activos. La marca es obligatoria en todo producto (la categoría no); el alta de productos crea la marca si no existe. Renombrar una marca recalcula el `nombreCompleto` de sus productos (trigger `trg_marca_renombrada`). La marca «Sin marca» (creada por la migración R2 para los productos que no tenían) no aparece en el nombre completo.
 - **Proveedor**: `nombre` es la persona de contacto y `nombreTienda` (obligatorio) el comercio. Teléfono opcional, normalizado igual que el de los clientes (`+54` + dígitos) y único por panel entre los no borrados. `notas` libres (la migración R2 pasó ahí el CUIT, el email y la dirección, que dejaron de ser columnas, y los teléfonos repetidos). Un proveedor inactivo no aparece para compras nuevas; no se desactiva si tiene compras en borrador.
 - **ProveedorProducto**: qué productos vende cada proveedor y a cuánto: un `precio` por (proveedor, producto), sin importar el sabor, con su `moneda` (`USDT`, por defecto, o `ARS`), cuándo se actualizó y quién lo fijó. Se pisa al editarlo desde la ficha del proveedor o al recibir una compra con «actualizar precio del proveedor» (cada alta o cambio de precio o moneda queda en `ProveedorProductoHistorial`). La ficha del producto lista los proveedores de menor a mayor precio (índice `(panelId, productoId, precio)`). Precios y montos comprados solo los ven los dueños o quien tiene `ver` en `COMPRAS` (`veCostosCompras()` en `proveedor.service.ts`).
@@ -1158,7 +1177,7 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 
 ### Ventas y devoluciones
 
-- **Venta**: siempre `CONFIRMADA` al crearse (no hay borradores) o `ANULADA`. Tiene `codigo` visible único por panel (`VAP-000001` = `formatearIdVenta(slug, numero)`), galpón, **cliente** y **medio de pago** (uno de los habilitados en el panel: `EFECTIVO`, `TRANSFERENCIA`, `BINANCE` o `MERCADO_LIBRE`; el principal es el de mayor monto), `vendedorId`, `tipo` (`UNITARIA` / `MAYORISTA`), descuento global, costo congelado (`costoTotal`) y ganancia bruta. Se cobra completa con un único medio. No se edita: se anula (quién, cuándo, por qué) y el stock vuelve con `VENTA_ANULADA`.
+- **Venta**: siempre `CONFIRMADA` al crearse (no hay borradores) o `ANULADA`. Tiene `codigo` visible único por panel (`VAP-000001` = `formatearIdVenta(slug, numero)`), galpón, **cliente** y **medio de pago** (uno de los habilitados en el panel: `EFECTIVO`, `TRANSFERENCIA`, `BINANCE` o `MERCADO_LIBRE`; el principal es el de mayor monto), `vendedorId`, `tipo` (`UNITARIA` / `MAYORISTA`), descuento global, costo congelado (`costoTotal`) y ganancia bruta. Se cobra completa con un único medio. No se edita: se anula (quién, cuándo, por qué) y el stock vuelve con `VENTA_ANULADA`. **«Escanea Charly»** (`escaneoRemoto`, solo galpones con `Deposito.escaneoRemoto`): opcional; lo pide el vendedor (o un dueño) al generarla o desde el detalle → `PENDIENTE` (`escaneoPedidoPorId/At`), se puede cancelar mientras está pendiente; el usuario de escaneo la escanea y el servidor compara cada código contra los ítems (variante exacta y cantidades, `src/lib/escaneo-remoto.ts`: explica la diferencia de modelo, pitadas —`Producto.especificacion`—, sabor o unidades) → `ESCANEADA` (`escaneadaPorId/At`, `escaneoDetalle` con los códigos, `verificadaPorEscaneo = true` y AuditLog). El stock NO se mueve al escanear: la venta ya descontó la variante exacta al generarse. Una venta anulada sale de la lista de escaneo.
 - **VentaItem**: un renglón por sabor con `productoId` desnormalizado (verificado por trigger), `precioLista` (el precio efectivo al vender: el de lista o, si la venta se cobró por Mercado Libre, el precio por unidad **cargado a mano** en la venta, obligatorio y > 0 en cada ítem; sin precio especial), `precioUnitario` (lo cobrado), `esPrecioEspecial`, `origenPrecio` (`LISTA`, `ML`, `ESPECIAL` o `COTIZACION`) y `costoUnitario` (snapshot de `Variante.ultimoCosto`, 0 si no hubo compras; `costoParaVenta()`). Subtotal = cantidad × precio cobrado. Costo y ganancia solo se muestran a los dueños.
 - **Devolucion** (garantía): cliente obligatorio, venta opcional, galpón del que sale la **unidad nueva** que se entrega (`GARANTIA` por ítem), `observacion` de al menos 10 caracteres, código `VAP-D-000001` (secuencia `DEVOLUCION`). `REGISTRADA` → `ANULADA` (con motivo; el stock vuelve con `GARANTIA_ANULADA`); no se edita ni se borra.
 - **DevolucionItem**: sabor, producto (verificado por trigger) y cantidad > 0. Inmutable.

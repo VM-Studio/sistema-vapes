@@ -9,7 +9,7 @@ import {
   opcionesCookieSesion,
   verificarToken,
 } from "@/server/auth/session";
-import { panelPorSlug, slugDeRuta } from "@/server/auth/paneles-acceso";
+import { panelesActivos, panelPorSlug, slugDeRuta } from "@/server/auth/paneles-acceso";
 import { extenderSesion, validarSesion } from "@/server/auth/sesiones";
 
 /**
@@ -23,6 +23,8 @@ import { extenderSesion, validarSesion } from "@/server/auth/sesiones";
  * 6. /p/{slug}/* (y /api/p/{slug}/*): el panel existe, está activo y el
  *    usuario accede (OWNER o fila en UsuarioPanel); si no → /paneles con aviso.
  *    Pasa el panel resuelto a la app en x-panel-id / x-panel-slug.
+ * 6b. Perfil «Escaneo (Charly)»: solo su pantalla (/p/{slug}/escaneo), /cuenta
+ *    y salir; el inicio lo lleva ahí y todo lo demás da "sin acceso".
  * 7. Renovación deslizante del JWT y de la sesión.
  *
  * Runtime Node.js (estable desde Next 15.5) para poder consultar la DB con Prisma.
@@ -32,6 +34,8 @@ const RUTAS_PUBLICAS = new Set(["/login", "/api/health", "/api/auth/login", "/of
 const PREFIJOS_PUBLICOS = ["/api/publico/", "/api/cron/", "/serwist/"];
 const PERMITIDAS_CON_CAMBIO_PENDIENTE = new Set(["/cuenta", "/api/auth/logout"]);
 const MUTACIONES = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+/** Lo único que puede abrir el perfil «Escaneo (Charly)» fuera de su pantalla. */
+const PERMITIDAS_SOLO_ESCANEO = new Set(["/cuenta", "/api/auth/logout", "/sin-acceso"]);
 
 const esApi = (pathname: string) => pathname.startsWith("/api/");
 
@@ -175,6 +179,12 @@ export async function middleware(req: NextRequest) {
     cabeceras.set("x-panel-slug", panel.slug);
   }
 
+  // 6b. «Escaneo (Charly)»: encerrado en su pantalla de escaneo.
+  if (estado.soloEscaneo) {
+    const bloqueo = await restringirSoloEscaneo(req, pathname, slug, estado.paneles, esAction);
+    if (bloqueo) return bloqueo;
+  }
+
   const res = seguir();
   if (debeRenovar(sesion)) {
     await extenderSesion(sesion.sid);
@@ -185,6 +195,32 @@ export async function middleware(req: NextRequest) {
     );
   }
   return res;
+}
+
+/**
+ * null = la ruta está permitida. Su pantalla es /p/{slug}/escaneo (las Server
+ * Actions de esa pantalla se postean a la misma ruta); "/" y /paneles lo llevan
+ * ahí; el resto: 403 (API / acciones) o la pantalla de "sin acceso".
+ */
+async function restringirSoloEscaneo(
+  req: NextRequest,
+  pathname: string,
+  slug: string | null,
+  paneles: string[],
+  esAction: boolean,
+): Promise<NextResponse | null> {
+  if (PERMITIDAS_SOLO_ESCANEO.has(pathname)) return null;
+  if (slug && (pathname === `/p/${slug}/escaneo` || pathname === `/p/${slug}/sin-acceso`))
+    return null;
+  if (esApi(pathname) || esAction) return json(403, "FORBIDDEN", "No tenés acceso a esta sección");
+  if (pathname === "/" || pathname === "/paneles" || (slug && pathname === `/p/${slug}`)) {
+    const destino =
+      slug ?? (await panelesActivos()).find((p) => paneles.includes(p.id))?.slug ?? null;
+    return NextResponse.redirect(
+      new URL(destino ? `/p/${destino}/escaneo` : "/sin-acceso", req.url),
+    );
+  }
+  return NextResponse.redirect(new URL(slug ? `/p/${slug}/sin-acceso` : "/sin-acceso", req.url));
 }
 
 export const config = {
