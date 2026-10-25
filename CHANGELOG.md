@@ -5,6 +5,25 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.5.0] - 2026-10-25 — Trinidad, Charly y Mercado Libre (A3)
+
+### Agregado
+
+- **Ganancia mensual por vape** de los vendedores (Trinidad: minorista, mayorista y con cliente
+  nuevo), con liquidación mensual, pago con **remito firmado por mail** (dueño y vendedor) por Gmail.
+- **Usuario de escaneo (Charly)**: «Escanea Charly» en ventas del galpón Mercedes y validación
+  exacta del vape escaneado con el detalle de la diferencia.
+- **Compras**: catálogo del proveedor elegido y comparador de proveedores por producto.
+- **Pasista** completo en los tres paneles.
+- **Mercado Libre**: precio manual por producto y pestaña «Ventas Mercado Libre» en Facturas con
+  carga de la factura de ARCA.
+- **Cambio de contraseña con código por mail**.
+- Almacenamiento de archivos en **Vercel Blob** privado.
+
+### Corregido
+
+- Logo del panel en el PDF de cotizaciones.
+
 ## [2.4.0] - 2026-10-12 — Retoques de los dueños (A2)
 
 ### Agregado
