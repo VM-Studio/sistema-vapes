@@ -248,6 +248,8 @@ model Usuario {
   liquidaciones          LiquidacionVendedor[]    @relation("LiquidacionVendedor")
   liquidacionesGeneradas LiquidacionVendedor[]    @relation("LiquidacionGeneradaPor")
   liquidacionesPagadas   LiquidacionVendedor[]    @relation("LiquidacionPagadaPor")
+  firmasRemito           FirmaRemito[]            @relation("FirmaRemitoUsuario")
+  enviosRemito           EnvioRemito[]            @relation("EnvioRemitoUsuario")
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -411,6 +413,8 @@ model Panel {
   comisionesPasista         ComisionPasista[]
   tarifasVendedor           TarifaVendedor[]
   liquidacionesVendedor     LiquidacionVendedor[]
+  firmasRemito              FirmaRemito[]
+  enviosRemito              EnvioRemito[]
   secuencias                Secuencia[]
   auditLogs                 AuditLog[]
 
@@ -1540,8 +1544,29 @@ model TarifaVendedor {
 enum EstadoLiquidacion {
   /// Mes cerrado, falta pagarle al vendedor.
   PENDIENTE
-  /// Se registró el pago.
+  /// Se registró el pago (firmado por un dueño): falta la firma del vendedor.
   PAGADA
+  /// El vendedor firmó el remito: tiene las dos firmas.
+  FIRMADA
+}
+
+enum RolFirmaRemito {
+  DUENO
+  VENDEDOR
+}
+
+enum TipoEnvioRemito {
+  /// Al vendedor: el remito firmado por el dueño, con el link para firmar.
+  PARA_FIRMAR
+  /// A los dueños: el remito con las dos firmas.
+  FIRMADO
+}
+
+enum ResultadoEnvioMail {
+  ENVIADO
+  /// Sin GMAIL_USER / GMAIL_APP_PASSWORD (o sin destinatarios): no se intentó.
+  SIN_CONFIGURAR
+  ERROR
 }
 
 /// Liquidación mensual de la ganancia por unidad de un vendedor: snapshot
@@ -1580,14 +1605,71 @@ model LiquidacionVendedor {
   fechaPago            DateTime?
   pagadaPorId          String?
   pagadaAt             DateTime?
+  /// Link de firma del vendedor (/firma/{token}): SHA-256 del token (el token
+  /// no se guarda), vencimiento y cuándo se usó. Un solo uso.
+  firmaTokenHash       String?           @unique
+  firmaTokenVenceAt    DateTime?
+  firmaTokenUsadoAt    DateTime?
+  /// Cuándo firmó el vendedor (estado FIRMADA).
+  firmadaAt            DateTime?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  panel       Panel    @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  usuario     Usuario  @relation("LiquidacionVendedor", fields: [usuarioId], references: [id], onDelete: Restrict)
-  generadaPor Usuario? @relation("LiquidacionGeneradaPor", fields: [generadaPorId], references: [id], onDelete: Restrict)
-  pagadaPor   Usuario? @relation("LiquidacionPagadaPor", fields: [pagadaPorId], references: [id], onDelete: Restrict)
+  firmas      FirmaRemito[]
+  envios      EnvioRemito[]
+  panel       Panel         @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  usuario     Usuario       @relation("LiquidacionVendedor", fields: [usuarioId], references: [id], onDelete: Restrict)
+  generadaPor Usuario?      @relation("LiquidacionGeneradaPor", fields: [generadaPorId], references: [id], onDelete: Restrict)
+  pagadaPor   Usuario?      @relation("LiquidacionPagadaPor", fields: [pagadaPorId], references: [id], onDelete: Restrict)
 
   @@unique([panelId, usuarioId, mes])
   @@index([panelId, estado])
+}
+
+/// Firma dibujada en el remito de pago de una liquidación: la del dueño que
+/// registró el pago y la del vendedor. Una por rol. Inmutable (trigger).
+model FirmaRemito {
+  id            String         @id @default(cuid())
+  panelId       String         @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  liquidacionId String
+  rol           RolFirmaRemito
+  /// Quién firmó (el dueño logueado, o el vendedor).
+  usuarioId     String
+  /// Nombre al firmar (para el PDF y el mail).
+  nombre        String
+  /// PNG de la firma (fondo transparente, re-codificado con sharp; ≤ 200 KB).
+  imagen        Bytes
+  ip            String?
+  userAgent     String?
+  /// Por dónde firmó el vendedor: "link" (/firma/{token}) o "sesion".
+  medio         String?
+  firmadaAt     DateTime       @default(now())
+
+  panel       Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  liquidacion LiquidacionVendedor @relation(fields: [liquidacionId], references: [id], onDelete: Restrict)
+  usuario     Usuario             @relation("FirmaRemitoUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@unique([liquidacionId, rol])
+  @@index([panelId, liquidacionId])
+}
+
+/// Registro de cada envío del remito por mail (a quién, cuándo, resultado).
+model EnvioRemito {
+  id            String             @id @default(cuid())
+  panelId       String             @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  liquidacionId String
+  tipo          TipoEnvioRemito
+  destinatarios String[]
+  /// Quién lo mandó (null = el sistema, al firmar el vendedor por el link).
+  enviadoPorId  String?
+  resultado     ResultadoEnvioMail
+  detalle       String?
+  messageId     String?
+  createdAt     DateTime           @default(now())
+
+  panel       Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  liquidacion LiquidacionVendedor @relation(fields: [liquidacionId], references: [id], onDelete: Restrict)
+  enviadoPor  Usuario?            @relation("EnvioRemitoUsuario", fields: [enviadoPorId], references: [id], onDelete: Restrict)
+
+  @@index([panelId, liquidacionId, createdAt])
 }

@@ -83,7 +83,7 @@ export function streamExportarTodo(meta: {
     info.addRow([`${meta.negocio} — exportación completa`]).font = { bold: true, size: 14 };
     info.addRow([`Generada ${formatearFechaHora(new Date())} por ${meta.usuario}`]);
     info.addRow([
-      "Hojas: Productos, Stock, Movimientos, Ventas, Pagos de ventas, Ítems de ventas, Devoluciones, Ítems de devoluciones, Compras, Ítems de compras, Cotizaciones, Ítems de cotizaciones, Clientes, Proveedores, Precios de proveedores. Cada fila indica su sistema.",
+      "Hojas: Productos, Stock, Movimientos, Ventas, Pagos de ventas, Ítems de ventas, Devoluciones, Ítems de devoluciones, Compras, Ítems de compras, Cotizaciones, Ítems de cotizaciones, Clientes, Proveedores, Precios de proveedores, Facturas, Liquidaciones de vendedores. Cada fila indica su sistema.",
     ]);
     info.commit();
     const sistemas = new Map(
@@ -720,6 +720,61 @@ export function streamExportarTodo(meta: {
         tot: num(x.total),
         e: x.estado === "EMITIDA" ? "Emitida" : "Anulada",
         an: x.motivoAnulacion ?? "",
+      }),
+    );
+
+    await hoja(
+      wb,
+      "Liquidaciones de vendedores",
+      [
+        SISTEMA,
+        { header: "Vendedor", key: "v", width: 20 },
+        { header: "Mes", key: "m", width: 10 },
+        { header: "Estado", key: "e", width: 10 },
+        { header: "Ventas", key: "cv", width: 9 },
+        { header: "Vapes", key: "u", width: 9 },
+        { header: "Total vendido", key: "tv", width: 14, numFmt: MONEDA },
+        { header: "Le corresponde", key: "t", width: 14, numFmt: MONEDA },
+        { header: "Pagado", key: "p", width: 12, numFmt: MONEDA },
+        { header: "Medio", key: "md", width: 14 },
+        { header: "Fecha del pago", key: "fp", width: 14 },
+        { header: "Firmó (dueño)", key: "fd", width: 18 },
+        { header: "Firmó el vendedor", key: "fv", width: 16 },
+      ],
+      (c) =>
+        prisma.liquidacionVendedor.findMany({
+          ...pag(c),
+          select: {
+            id: true,
+            panelId: true,
+            mes: true,
+            estado: true,
+            cantidadVentas: true,
+            unidades: true,
+            totalVendido: true,
+            total: true,
+            montoPagado: true,
+            medioPago: true,
+            fechaPago: true,
+            firmadaAt: true,
+            usuario: { select: { nombre: true } },
+            firmas: { where: { rol: "DUENO" }, select: { nombre: true } },
+          },
+        }),
+      (x) => ({
+        sis: sistema(x.panelId),
+        v: x.usuario.nombre,
+        m: x.mes.toISOString().slice(0, 7),
+        e: { PENDIENTE: "Pendiente", PAGADA: "Pagada", FIRMADA: "Firmada" }[x.estado],
+        cv: x.cantidadVentas,
+        u: x.unidades,
+        tv: num(x.totalVendido),
+        t: num(x.total),
+        p: num(x.montoPagado),
+        md: x.medioPago ? ETIQUETA_MEDIO_PAGO[x.medioPago] : "",
+        fp: x.fechaPago ? formatearFecha(x.fechaPago) : "",
+        fd: x.firmas[0]?.nombre ?? "",
+        fv: x.firmadaAt ? formatearFechaHora(x.firmadaAt) : "",
       }),
     );
 

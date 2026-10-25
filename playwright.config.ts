@@ -50,6 +50,11 @@ export default defineConfig({
       LOG_LEVEL: "warn",
       // Cotizaciones fijas sembradas por el setup: sin consultas a dolarapi/criptoya.
       CAMBIO_SIN_RED: "1",
+      // Mails: no sale ninguno; cada uno queda como JSON en .mails-e2e (remitos de pago).
+      MAIL_TRANSPORTE: "prueba",
+      MAIL_PRUEBA_DIR: ".mails-e2e",
+      MAIL_DUENOS: "duenos-e2e@negocio.com",
+      MAIL_FROM_NAME: "Sistema E2E",
     },
   },
 });

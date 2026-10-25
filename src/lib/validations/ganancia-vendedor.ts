@@ -36,3 +36,19 @@ export const pagoLiquidacionSchema = z.object({
     .refine((f) => f <= hoyAR(), "La fecha no puede ser futura")
     .transform((f) => (f === hoyAR() ? new Date() : new Date(`${f}T12:00:00-03:00`))),
 });
+
+/** PNG del canvas de firma ("data:image/png;base64,…"); el servidor lo re-codifica y valida. */
+export const firmaSchema = z
+  .string({ error: "Firmá en el recuadro" })
+  .max(2_000_000, "La firma es demasiado grande")
+  .regex(/^data:image\/png;base64,/, "Firmá en el recuadro");
+
+/** Registrar pago (dueño): el pago + su firma. */
+export const pagoConFirmaSchema = pagoLiquidacionSchema.extend({ firma: firmaSchema });
+
+export const firmarRemitoSchema = z.object({ id, firma: firmaSchema });
+
+export const firmarConTokenSchema = z.object({
+  token: z.string().regex(/^[A-Za-z0-9_-]{43}$/, "Link inválido"),
+  firma: firmaSchema,
+});

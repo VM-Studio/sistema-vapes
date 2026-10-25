@@ -1,4 +1,12 @@
-import { ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Receipt } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileDown,
+  FileSpreadsheet,
+  HandCoins,
+  PenLine,
+  Receipt,
+} from "lucide-react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -21,8 +29,15 @@ import {
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import type { GananciaMes, Liquidacion } from "@/server/services/ganancia-vendedor.service";
+import type { FirmaVista, Remito } from "@/server/services/remito-liquidacion.service";
 
-import { GenerarLiquidacion, RegistrarPago, TarifasDialog } from "./acciones-ganancia";
+import {
+  GenerarLiquidacion,
+  ReenviarRemito,
+  RegistrarPago,
+  TarifasDialog,
+} from "./acciones-ganancia";
+import { FirmarRemito } from "./firmar-remito";
 
 const VARIANTE_CATEGORIA: Record<CategoriaGanancia, "neutral" | "primary" | "success"> = {
   MINORISTA: "neutral",
@@ -35,12 +50,26 @@ export function BadgeCategoria({ categoria }: { categoria: CategoriaGanancia }) 
   return <Badge variant={VARIANTE_CATEGORIA[categoria]}>{ETIQUETA_CATEGORIA[categoria]}</Badge>;
 }
 
-export function EstadoLiquidacionBadge({ l }: { l: Pick<Liquidacion, "estado"> | null }) {
+export function EstadoLiquidacionBadge({
+  l,
+  vendedor,
+}: {
+  l: Pick<Liquidacion, "estado"> | null;
+  /** "Pagada · esperando firma de {vendedor}". */
+  vendedor?: string;
+}) {
   if (!l) return <Badge variant="neutral">Sin liquidar</Badge>;
-  return l.estado === "PENDIENTE" ? (
-    <Badge variant="warning">Pendiente de pago</Badge>
-  ) : (
-    <Badge variant="success">Pagada</Badge>
+  if (l.estado === "PENDIENTE") return <Badge variant="warning">Pendiente de pago</Badge>;
+  if (l.estado === "PAGADA")
+    return (
+      <Badge variant="warning">
+        {vendedor ? `Pagada · esperando firma de ${vendedor}` : "Pagada · falta firma"}
+      </Badge>
+    );
+  return (
+    <Badge variant="success">
+      <PenLine aria-hidden /> Firmada
+    </Badge>
   );
 }
 
@@ -60,8 +89,14 @@ export function SeccionGanancia({
   hrefMes,
   rutaVenta,
   titulo,
+  remito,
+  usuarioActual,
 }: {
   g: GananciaMes;
+  /** Remito del pago del mes (con firmas y envíos), si ya se pagó. */
+  remito: Remito | null;
+  /** Quien mira (el dueño firma con su nombre; el vendedor firma lo suyo). */
+  usuarioActual: { id: string; nombre: string };
   historial: Liquidacion[];
   slug: string;
   /** Vista de dueño: tarifas, generar liquidación y registrar pago. */
@@ -158,7 +193,14 @@ export function SeccionGanancia({
         )}
       </nav>
 
-      <EstadoLiquidacion g={g} dueno={dueno} mesLabel={mesLabel} />
+      <EstadoLiquidacion
+        g={g}
+        dueno={dueno}
+        mesLabel={mesLabel}
+        remito={remito}
+        usuarioActual={usuarioActual}
+        slug={slug}
+      />
 
       <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
         <StatCard
@@ -197,10 +239,16 @@ function EstadoLiquidacion({
   g,
   dueno,
   mesLabel,
+  remito,
+  usuarioActual,
+  slug,
 }: {
   g: GananciaMes;
   dueno: boolean;
   mesLabel: string;
+  remito: Remito | null;
+  usuarioActual: { id: string; nombre: string };
+  slug: string;
 }) {
   const l = g.liquidacion;
   if (g.enCurso) return null;
@@ -216,6 +264,16 @@ function EstadoLiquidacion({
       </div>
     );
   }
+  if (l.estado !== "PENDIENTE" && remito)
+    return (
+      <PanelRemito
+        r={remito}
+        l={l}
+        dueno={dueno}
+        slug={slug}
+        esVendedor={usuarioActual.id === g.usuario.id}
+      />
+    );
   return (
     <div
       className="bg-card rounded-card flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:p-5"
@@ -223,7 +281,7 @@ function EstadoLiquidacion({
     >
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <EstadoLiquidacionBadge l={l} />
+          <EstadoLiquidacionBadge l={l} vendedor={g.usuario.nombre} />
           <span className="text-sm font-semibold">
             {l.estado === "PENDIENTE"
               ? `Le corresponden ${formatearPesos(l.total)}`
@@ -244,10 +302,172 @@ function EstadoLiquidacion({
             nombre={g.usuario.nombre}
             mesLabel={mesLabel}
             total={l.total}
+            dueno={usuarioActual.nombre}
           />
         </div>
       )}
     </div>
+  );
+}
+
+const ETIQUETA_RESULTADO = {
+  ENVIADO: "Enviado",
+  SIN_CONFIGURAR: "No enviado (mail sin configurar)",
+  ERROR: "Error al enviar",
+} as const;
+
+/**
+ * Liquidación pagada: estado de las firmas, las dos firmas (quién y cuándo),
+ * el PDF del remito, reenviar (dueños) y los envíos por mail. El vendedor
+ * firma acá si todavía no lo hizo.
+ */
+function PanelRemito({
+  r,
+  l,
+  dueno,
+  slug,
+  esVendedor,
+}: {
+  r: Remito;
+  l: Liquidacion;
+  dueno: boolean;
+  slug: string;
+  esVendedor: boolean;
+}) {
+  const pago = l.pago!;
+  const firmada = r.estado === "FIRMADA";
+  return (
+    <div
+      className="bg-card rounded-card flex flex-col gap-5 p-4 md:p-5"
+      data-testid="estado-liquidacion"
+    >
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <EstadoLiquidacionBadge l={l} vendedor={r.vendedor.nombre} />
+            <span className="text-sm font-semibold">
+              Se le pagaron {formatearPesos(pago.monto)}
+            </span>
+          </div>
+          <p className="text-muted text-small">
+            {ETIQUETA_MEDIO_PAGO[pago.medioPago]} · {formatearFecha(pago.fecha)} · registró{" "}
+            {pago.registradoPor.nombre}
+            {pago.referencia ? ` · ${pago.referencia}` : ""} · remito {r.numero}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 md:flex-row">
+          <a
+            href={`/api/p/${slug}/liquidaciones/${r.id}/remito`}
+            target="_blank"
+            rel="noopener"
+            className={buttonVariants({ variant: "secondary" })}
+            data-testid="pdf-remito"
+          >
+            <FileDown strokeWidth={1.75} aria-hidden />
+            {firmada ? "Remito firmado (PDF)" : "Remito (PDF)"}
+          </a>
+          {dueno && (
+            <ReenviarRemito liquidacionId={r.id} nombre={r.vendedor.nombre} firmado={firmada} />
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="firmas-remito">
+        <TarjetaFirma titulo="Firma del dueño" f={r.firmaDueno} pendiente="Sin firma" />
+        <TarjetaFirma
+          titulo={`Firma de ${r.vendedor.nombre}`}
+          f={r.firmaVendedor}
+          pendiente={
+            r.link?.vencido
+              ? "El link venció: reenviale el remito"
+              : `Esperando la firma${r.link?.venceAt ? ` (el link vence el ${formatearFecha(r.link.venceAt)})` : ""}`
+          }
+        />
+      </div>
+
+      {esVendedor && !firmada && (
+        <div className="border-border flex flex-col gap-3 border-t pt-4">
+          <p className="text-sm">
+            Revisá el remito y firmalo. Lo firmó{" "}
+            <span className="font-semibold">
+              {r.firmaDueno?.nombre ?? pago.registradoPor.nombre}
+            </span>{" "}
+            como dueño.
+          </p>
+          <FirmarRemito nombre={r.vendedor.nombre} modo={{ liquidacionId: r.id }} />
+        </div>
+      )}
+
+      {dueno && r.envios.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h4 className="text-sm font-semibold">Envíos por mail</h4>
+          <ul className="divide-border text-small divide-y" data-testid="envios-remito">
+            {r.envios.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                <span className="text-muted tabular-nums">{formatearFechaHora(e.createdAt)}</span>
+                <span>
+                  {e.tipo === "PARA_FIRMAR" ? "Para firmar" : "Firmado"} →{" "}
+                  {e.destinatarios.join(", ") || "sin destinatarios"}
+                </span>
+                <Badge
+                  variant={
+                    e.resultado === "ENVIADO"
+                      ? "success"
+                      : e.resultado === "ERROR"
+                        ? "danger"
+                        : "neutral"
+                  }
+                >
+                  {ETIQUETA_RESULTADO[e.resultado]}
+                </Badge>
+                {e.enviadoPor && <span className="text-subtle">por {e.enviadoPor}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TarjetaFirma({
+  titulo,
+  f,
+  pendiente,
+}: {
+  titulo: string;
+  f: FirmaVista | null;
+  pendiente: string;
+}) {
+  return (
+    <figure className="bg-surface rounded-inner flex flex-col gap-2 p-3">
+      <figcaption className="text-muted text-small font-medium">{titulo}</figcaption>
+      <div className="bg-card rounded-inner flex h-28 items-center justify-center overflow-hidden">
+        {f ? (
+          // Data URL de la firma guardada en la DB: next/image no aporta nada acá.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={f.imagen}
+            alt={`${titulo}: ${f.nombre}`}
+            className="max-h-24 max-w-full object-contain"
+          />
+        ) : (
+          <span className="text-subtle text-small px-3 text-center">{pendiente}</span>
+        )}
+      </div>
+      {f && (
+        <p className="text-small">
+          <span className="font-semibold">{f.nombre}</span>{" "}
+          <span className="text-muted">
+            · {formatearFechaHora(f.firmadaAt)}
+            {f.rol === "VENDEDOR" && f.medio
+              ? ` · ${f.medio === "link" ? "por el link" : "desde su usuario"}`
+              : ""}
+            {f.rol === "VENDEDOR" && f.ip ? ` · IP ${f.ip}` : ""}
+          </span>
+        </p>
+      )}
+    </figure>
   );
 }
 

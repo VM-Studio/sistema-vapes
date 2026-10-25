@@ -29,7 +29,8 @@ import { extenderSesion, validarSesion } from "@/server/auth/sesiones";
  */
 
 const RUTAS_PUBLICAS = new Set(["/login", "/api/health", "/api/auth/login", "/offline"]);
-const PREFIJOS_PUBLICOS = ["/api/publico/", "/api/cron/", "/serwist/"];
+// /firma/{token}: el vendedor firma su remito desde el link del mail (sin sesión; el token es la credencial).
+const PREFIJOS_PUBLICOS = ["/api/publico/", "/api/cron/", "/serwist/", "/firma/"];
 const PERMITIDAS_CON_CAMBIO_PENDIENTE = new Set(["/cuenta", "/api/auth/logout"]);
 const MUTACIONES = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 

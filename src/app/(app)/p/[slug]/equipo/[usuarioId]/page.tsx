@@ -39,6 +39,8 @@ import {
   obtenerTarifas,
 } from "@/server/services/ganancia-vendedor.service";
 
+import { obtenerRemito } from "@/server/services/remito-liquidacion.service";
+
 import { EstadoPagoBadge } from "../../ventas/_componentes/medio-pago";
 
 export const metadata: Metadata = { title: "Ventas del vendedor" };
@@ -92,6 +94,10 @@ export default async function EquipoVendedorPage({
     liquidacionesDe(ctx, usuarioId),
     obtenerTarifas(ctx, usuarioId),
   ]);
+  const remito =
+    ganancia?.liquidacion && ganancia.liquidacion.estado !== "PENDIENTE"
+      ? await obtenerRemito(ctx, ganancia.liquidacion.id)
+      : null;
   const pendientes = historial.filter((l) => l.estado === "PENDIENTE" && l.mes !== mes);
   const ruta = (r: string) => rutaPanel(ctx.panel.slug, r);
   const qs = queryPeriodo(sp);
@@ -269,6 +275,8 @@ export default async function EquipoVendedorPage({
             historial={historial}
             slug={ctx.panel.slug}
             dueno
+            remito={remito}
+            usuarioActual={{ id: ctx.usuario.id, nombre: ctx.usuario.nombre }}
             tarifasVigentes={tarifas}
             hrefMes={hrefMes}
             rutaVenta={(id) => ruta(`/ventas/${id}`)}

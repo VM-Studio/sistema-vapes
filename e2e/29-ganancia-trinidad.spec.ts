@@ -8,7 +8,15 @@ import { mesDe, nombreMes, sumarMeses } from "../src/lib/ganancia-vendedor";
 
 import { expect, test } from "./base";
 import { PASSWORD_TRINIDAD } from "./global-setup";
-import { crearUsuario, db, esMobile, login, loginDueno, PANEL_VAPES } from "./helpers";
+import {
+  crearUsuario,
+  db,
+  esMobile,
+  firmarEnCanvas,
+  login,
+  loginDueno,
+  PANEL_VAPES,
+} from "./helpers";
 import { usarCatalogoEjemplo } from "./fixtures";
 
 usarCatalogoEjemplo();
@@ -209,7 +217,12 @@ test("mes cerrado: aviso al dueño, liquidación automática y pago registrado",
   const hoja = page.getByRole("dialog", { name: "Pago a Trinidad" });
   await expect(hoja.getByLabel("Monto pagado")).toHaveValue("4500");
   await hoja.getByLabel("Cómo se le pagó").selectOption("TRANSFERENCIA");
-  await hoja.getByRole("button", { name: "Confirmar pago" }).click();
+  await firmarEnCanvas(page, hoja.getByTestId("firma-canvas"));
+  await hoja.getByRole("button", { name: "Firmar y registrar pago" }).click();
+  await page
+    .getByRole("dialog", { name: "Remito enviado por mail" })
+    .getByRole("button", { name: "Listo" })
+    .click();
   await expect(estado).toContainText("Pagada");
   await expect(estado).toContainText(`Se le pagaron ${formatearPesos(4500)}`);
   const l = await db.liquidacionVendedor.findFirstOrThrow({
@@ -217,7 +230,7 @@ test("mes cerrado: aviso al dueño, liquidación automática y pago registrado",
   });
   expect(l).toMatchObject({ estado: "PAGADA", medioPago: "TRANSFERENCIA" });
   expect(Number(l.total)).toBe(4500);
-  await expect(page.getByTestId("historial-liquidaciones")).toContainText("Pagada");
+  await expect(page.getByTestId("historial-liquidaciones")).toContainText("Pagada · falta firma");
   await captura(page, "liquidacion-pagada");
 });
 

@@ -55,7 +55,7 @@ export async function prepararBaseDeTest(url: string = URL_TEST) {
     ],
   });
   await db.$disconnect();
-  execSync("rm -rf .storage-e2e");
+  execSync("rm -rf .storage-e2e .mails-e2e");
 }
 
 /** Playwright levanta el webServer ANTES que el globalSetup: la base se prepara en el comando del servidor. */

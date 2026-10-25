@@ -711,7 +711,7 @@ Table LiquidacionVendedor {
   panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
   usuarioId text [not null]
   mes date [not null, note: 'Primer día del mes argentino (CHECK día 1).']
-  estado EstadoLiquidacion [not null, default: 'PENDIENTE', note: 'PENDIENTE | PAGADA']
+  estado EstadoLiquidacion [not null, default: 'PENDIENTE', note: 'PENDIENTE | PAGADA | FIRMADA']
   tarifaMinorista decimal(12,2) [not null, note: 'Snapshot de TarifaVendedor al generar.']
   tarifaMayorista decimal(12,2) [not null]
   tarifaMinoristaNuevo decimal(12,2) [not null]
@@ -730,6 +730,10 @@ Table LiquidacionVendedor {
   fechaPago timestamp
   pagadaPorId text
   pagadaAt timestamp
+  firmaTokenHash text [unique, note: 'SHA-256 del token del link /firma/{token} (el token no se guarda).']
+  firmaTokenVenceAt timestamp [note: '14 días desde que se generó.']
+  firmaTokenUsadoAt timestamp [note: 'Un solo uso.']
+  firmadaAt timestamp [note: 'Firma del vendedor (estado FIRMADA).']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
 
@@ -738,7 +742,47 @@ Table LiquidacionVendedor {
     (panelId, estado)
   }
 
-  Note: 'Pagada: el snapshot y el pago no cambian ni se borra (trigger).'
+  Note: 'Pagada: el snapshot y el pago no cambian ni se borra (trigger). Firmada: tampoco el link.'
+}
+
+Table FirmaRemito {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  liquidacionId text [not null]
+  rol RolFirmaRemito [not null, note: 'DUENO | VENDEDOR']
+  usuarioId text [not null, note: 'Quién firmó.']
+  nombre text [not null]
+  imagen bytea [not null, note: 'PNG re-codificado (100 B – 300 KB).']
+  ip text
+  userAgent text
+  medio text [note: 'Vendedor: link | sesion.']
+  firmadaAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (liquidacionId, rol) [unique]
+    (panelId, liquidacionId)
+  }
+
+  Note: 'Inmutable (trigger).'
+}
+
+Table EnvioRemito {
+  id text [pk, default: `cuid()`]
+  panelId text [not null, default: 'dbgenerated("current_setting('app.panel_id'::text, true)")']
+  liquidacionId text [not null]
+  tipo TipoEnvioRemito [not null, note: 'PARA_FIRMAR (al vendedor) | FIRMADO (a los dueños)']
+  destinatarios "text[]" [not null]
+  enviadoPorId text [note: 'null = el sistema (firma por el link).']
+  resultado ResultadoEnvioMail [not null, note: 'ENVIADO | SIN_CONFIGURAR | ERROR']
+  detalle text
+  messageId text
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (panelId, liquidacionId, createdAt)
+  }
+
+  Note: 'Inmutable (trigger).'
 }
 
 Table CostoVarianteHistorial {
@@ -1105,6 +1149,10 @@ Ref: TarifaVendedor.actualizadaPorId > Usuario.id [delete: restrict]
 Ref: LiquidacionVendedor.usuarioId > Usuario.id [delete: restrict]
 Ref: LiquidacionVendedor.generadaPorId > Usuario.id [delete: restrict]
 Ref: LiquidacionVendedor.pagadaPorId > Usuario.id [delete: restrict]
+Ref: FirmaRemito.liquidacionId > LiquidacionVendedor.id [delete: restrict]
+Ref: FirmaRemito.usuarioId > Usuario.id [delete: restrict]
+Ref: EnvioRemito.liquidacionId > LiquidacionVendedor.id [delete: restrict]
+Ref: EnvioRemito.enviadoPorId > Usuario.id [delete: restrict]
 Ref: GastoCompra.compraId > Compra.id [delete: restrict]
 Ref: GastoCompra.usuarioId > Usuario.id [delete: restrict]
 Ref: GastoCompra.anuladoPorId > Usuario.id [delete: restrict]
@@ -1224,6 +1272,7 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 
 - **TarifaVendedor**: cuánto gana un vendedor **por unidad vendida** en un panel, en 4 categorías: tipo de venta (`UNITARIA` = minorista, `MAYORISTA`) × cliente nuevo (`Venta.clienteNuevo`). Única por `(panelId, usuarioId)`; montos ≥ 0 (CHECK). La cargan los dueños desde Equipo → {vendedor}; sin fila, el vendedor no tiene esta sección. Trinidad la trae cargada en Vapes ($1.500 / $300 / $2.000 / $500): la migración `20261025120000_ganancia_vendedores` la inserta para la empleada llamada «Trinidad» con acceso a Vapes (por nombre: el email cambia entre entornos) y el seed hace lo mismo en bases nuevas.
 - **LiquidacionVendedor**: la ganancia de un mes **terminado** congelada (tarifas aplicadas, totales, categorías y el detalle de ventas y devoluciones en JSON). Única por `(panelId, usuarioId, mes)`. La genera el sistema sola —cron `/api/cron/liquidaciones` el día 1 y, por las dudas, cada pantalla que muestra la ganancia— para los meses desde que el vendedor tiene tarifas (hasta 12 para atrás); un dueño puede generarla para un mes terminado anterior o **recalcularla** mientras está `PENDIENTE`. `PENDIENTE` → `PAGADA` (monto, medio, fecha, referencia, quién; solo dueños). Pagada, el snapshot y el pago no cambian y no se borra (trigger). El cálculo (`src/lib/ganancia-vendedor.ts`, puro y testeado): ventas `CONFIRMADA` del vendedor en el mes argentino × tarifa de su categoría; las anuladas no cuentan; una devolución `REGISTRADA` de una venta confirmada del vendedor descuenta sus unidades × la tarifa de la categoría de esa venta **en el mes de la devolución** (un mes liquidado no cambia nunca); el total del mes nunca es negativo.
+- **Pago con remito firmado** (`remito-liquidacion.service.ts`): el dueño registra el pago **firmando** en un canvas → `PAGADA`, su `FirmaRemito` (`DUENO`) y un link de firma para el vendedor: 32 bytes aleatorios en base64url, en la base solo `firmaTokenHash` (SHA-256), vence a los 14 días (`firmaTokenVenceAt`), un solo uso (`firmaTokenUsadoAt`); reenviar genera uno nuevo y el anterior deja de servir. Se manda el remito PDF al email del usuario vendedor diciendo qué dueño lo firmó. El vendedor firma en `/firma/{token}` (pública, con rate limit por IP) o logueado → `FIRMADA`, `firmadaAt` y su `FirmaRemito` (`VENDEDOR`, con IP, user agent y medio); el PDF se regenera con las dos firmas y va a `MAIL_DUENOS` / `GMAIL_USER`. Cada envío queda en **EnvioRemito** (destinatarios, quién, resultado: `ENVIADO`, `SIN_CONFIGURAR` o `ERROR`). Firmas y envíos son inmutables (trigger); `PENDIENTE` → `PAGADA` → `FIRMADA` sin volver atrás. Las firmas viven en la base (entran en los backups `pg_dump`); `/configuracion/exportar-todo` trae la hoja «Liquidaciones de vendedores».
 
 ### Facturas
 

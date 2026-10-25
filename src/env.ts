@@ -50,6 +50,46 @@ const esquema = z
     VERCEL_GIT_COMMIT_SHA: z.string().optional(),
     RATE_LIMIT_POR_MINUTO: z.coerce.number().int().min(10).max(100_000).default(300),
     ALLOW_SEED: bool,
+
+    /**
+     * Mails (remitos de pago de las liquidaciones) por Gmail: la casilla de
+     * los dueños y una contraseña de aplicación (16 letras; docs/DEPLOY.md).
+     * Sin las dos, la app funciona igual y el envío queda "sin configurar".
+     */
+    GMAIL_USER: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.email("GMAIL_USER: email inválido"))
+      .optional(),
+    GMAIL_APP_PASSWORD: z
+      .string()
+      .transform((v) => v.replace(/\s+/g, ""))
+      .pipe(
+        z
+          .string()
+          .regex(/^[a-zA-Z]{16}$/, "GMAIL_APP_PASSWORD: son 16 letras (contraseña de aplicación)"),
+      )
+      .optional(),
+    /** Nombre del remitente ("Bisschen"); por defecto, el nombre del negocio. */
+    MAIL_FROM_NAME: z.string().trim().min(1).max(80).optional(),
+    /** A quién llega el remito firmado (emails separados por coma); por defecto GMAIL_USER. */
+    MAIL_DUENOS: z
+      .string()
+      .transform((v) =>
+        v
+          .split(",")
+          .map((x) => x.trim().toLowerCase())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.email("MAIL_DUENOS: hay un email inválido")).min(1))
+      .optional(),
+    /**
+     * "prueba": los mails no salen, se guardan como JSON en MAIL_PRUEBA_DIR
+     * (E2E y desarrollo). Por defecto "gmail".
+     */
+    MAIL_TRANSPORTE: z.enum(["gmail", "prueba"]).default("gmail"),
+    MAIL_PRUEBA_DIR: z.string().optional(),
   })
   .superRefine((e, ctx) => {
     const prod = e.NODE_ENV === "production";
@@ -63,6 +103,11 @@ const esquema = z
       falta(
         "NEXT_PUBLIC_APP_URL",
         "obligatorio en producción (links de WhatsApp, cookies seguras)",
+      );
+    if (Boolean(e.GMAIL_USER) !== Boolean(e.GMAIL_APP_PASSWORD))
+      falta(
+        e.GMAIL_USER ? "GMAIL_APP_PASSWORD" : "GMAIL_USER",
+        "GMAIL_USER y GMAIL_APP_PASSWORD van juntas (o ninguna)",
       );
     if (e.STORAGE_PROVIDER === "s3") {
       for (const c of [

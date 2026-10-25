@@ -13,6 +13,7 @@ import {
   liquidacionesDe,
   mesActual,
 } from "@/server/services/ganancia-vendedor.service";
+import { obtenerRemito } from "@/server/services/remito-liquidacion.service";
 
 export const metadata: Metadata = { title: "Mi ganancia" };
 
@@ -36,6 +37,10 @@ export default async function MiGananciaPage({
     liquidacionesDe(ctx, ctx.usuarioId),
   ]);
   if (!g) redirect(inicio);
+  const remito =
+    g.liquidacion && g.liquidacion.estado !== "PENDIENTE"
+      ? await obtenerRemito(ctx, g.liquidacion.id)
+      : null;
   const verVentas = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "ver");
   return (
     <div className="flex flex-col gap-4">
@@ -48,6 +53,8 @@ export default async function MiGananciaPage({
         historial={historial}
         slug={ctx.panel.slug}
         dueno={false}
+        remito={remito}
+        usuarioActual={{ id: ctx.usuario.id, nombre: ctx.usuario.nombre }}
         tarifasVigentes={null}
         titulo={`Lo que vas ganando`}
         hrefMes={(m) => rutaPanel(ctx.panel.slug, `/ganancia?mes=${m}`)}

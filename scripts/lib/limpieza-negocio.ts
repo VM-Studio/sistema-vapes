@@ -31,6 +31,8 @@ export const TABLAS_NEGOCIO = [
   "GastoCompra",
   "CostoVarianteHistorial",
   "ComisionPasista",
+  "FirmaRemito",
+  "EnvioRemito",
   "LiquidacionVendedor",
   "TransferenciaItem",
   "Devolucion",
