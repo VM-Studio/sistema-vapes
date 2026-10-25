@@ -279,7 +279,8 @@ Definidas y validadas en `src/env.ts` (las `SEED_*` las lee solo `prisma/seed.ts
 | `AUTH_SECRET`                                                                       | Firma de las sesiones (≥ 32 caracteres)                                          |
 | `CRON_SECRET`                                                                       | `Authorization: Bearer …` de `/api/cron/*` (obligatorio en producción)           |
 | `NEXT_PUBLIC_APP_URL`                                                               | URL pública (cookies seguras, origin check, CSP; obligatorio en producción)      |
-| `STORAGE_PROVIDER`                                                                  | `local` (default, carpeta `STORAGE_DIR` o `.storage/`) o `s3`                    |
+| `STORAGE_PROVIDER`                                                                  | `local` (default, carpeta `STORAGE_DIR` o `.storage/`), `s3` o `blob`            |
+| `BLOB_READ_WRITE_TOKEN`                                                             | Store privado de Vercel Blob (obligatoria con `blob`; la carga Vercel)           |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET` | Storage S3/R2 (obligatorias con `s3`)                                            |
 | `S3_PUBLIC_URL`                                                                     | Dominio público del bucket (opcional)                                            |
 | `S3_BACKUP_BUCKET`                                                                  | Bucket separado para backups                                                     |

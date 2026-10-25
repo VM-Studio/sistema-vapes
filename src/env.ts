@@ -28,7 +28,9 @@ const esquema = z
       .optional(),
     NEXT_PUBLIC_APP_URL: z.string().url().optional(),
 
-    STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
+    STORAGE_PROVIDER: z.enum(["local", "s3", "blob"]).default("local"),
+    /** Store privado de Vercel Blob (lo carga Vercel al conectar el store). */
+    BLOB_READ_WRITE_TOKEN: z.string().optional(),
     STORAGE_DIR: z.string().optional(),
     S3_ENDPOINT: z.string().url().optional(),
     S3_REGION: z.string().default("auto"),
@@ -74,6 +76,8 @@ const esquema = z
         if (!e[c]) falta(c, "obligatorio con STORAGE_PROVIDER=s3");
       }
     }
+    if (e.STORAGE_PROVIDER === "blob" && !e.BLOB_READ_WRITE_TOKEN)
+      falta("BLOB_READ_WRITE_TOKEN", "obligatorio con STORAGE_PROVIDER=blob");
   });
 
 export type Env = z.output<typeof esquema>;

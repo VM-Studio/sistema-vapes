@@ -49,22 +49,23 @@ Nunca apuntes un Preview a la base o al bucket de producción.
 
 Todas están en `.env.example` con su explicación; `src/env.ts` las valida al arrancar y la app no levanta si falta una obligatoria.
 
-| Variable                                                                            | Producción                                                             |
-| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `DATABASE_URL`                                                                      | Pooler con `app_runtime` y `pgbouncer=true&connection_limit=5`         |
-| `DIRECT_URL`                                                                        | Conexión directa con `app_migraciones` (migraciones, pg_dump, restore) |
-| `AUTH_SECRET`                                                                       | `openssl rand -base64 32` (≥ 32 caracteres; se rechaza el de ejemplo)  |
-| `CRON_SECRET`                                                                       | `openssl rand -hex 32` (obligatorio)                                   |
-| `NEXT_PUBLIC_APP_URL`                                                               | `https://tu-dominio`, sin barra final (obligatorio)                    |
-| `STORAGE_PROVIDER`                                                                  | `s3`                                                                   |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET` | Bucket de archivos de R2                                               |
-| `S3_BACKUP_BUCKET`                                                                  | Bucket de backups de R2 (separado)                                     |
-| `S3_PUBLIC_URL`                                                                     | Opcional                                                               |
-| `LOG_LEVEL`, `APP_VERSION`, `RATE_LIMIT_POR_MINUTO`                                 | Opcionales (`info`, SHA del commit en Vercel, `300`)                   |
-| `ALLOW_SEED`                                                                        | `false`, salvo la única corrida intencional del seed                   |
-| `SEED_OWNER1_EMAIL`, `SEED_OWNER1_PASSWORD`                                         | Juan Cruz (dueño): solo para esa corrida del seed                      |
-| `SEED_OWNER2_EMAIL`, `SEED_OWNER2_PASSWORD`                                         | Agustina (dueña)                                                       |
-| `SEED_EMPLEADO1_EMAIL`, `SEED_EMPLEADO1_PASSWORD`                                   | Trinidad (empleada, solo Vapes)                                        |
+| Variable                                                                            | Producción                                                               |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `DATABASE_URL`                                                                      | Pooler con `app_runtime` y `pgbouncer=true&connection_limit=5`           |
+| `DIRECT_URL`                                                                        | Conexión directa con `app_migraciones` (migraciones, pg_dump, restore)   |
+| `AUTH_SECRET`                                                                       | `openssl rand -base64 32` (≥ 32 caracteres; se rechaza el de ejemplo)    |
+| `CRON_SECRET`                                                                       | `openssl rand -hex 32` (obligatorio)                                     |
+| `NEXT_PUBLIC_APP_URL`                                                               | `https://tu-dominio`, sin barra final (obligatorio)                      |
+| `STORAGE_PROVIDER`                                                                  | `blob` (Vercel Blob privado, en uso) o `s3` (R2)                         |
+| `BLOB_READ_WRITE_TOKEN`                                                             | Con `blob`: la crea Vercel al conectar el store `sistema-vapes-archivos` |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET` | Bucket de archivos de R2                                                 |
+| `S3_BACKUP_BUCKET`                                                                  | Bucket de backups de R2 (separado)                                       |
+| `S3_PUBLIC_URL`                                                                     | Opcional                                                                 |
+| `LOG_LEVEL`, `APP_VERSION`, `RATE_LIMIT_POR_MINUTO`                                 | Opcionales (`info`, SHA del commit en Vercel, `300`)                     |
+| `ALLOW_SEED`                                                                        | `false`, salvo la única corrida intencional del seed                     |
+| `SEED_OWNER1_EMAIL`, `SEED_OWNER1_PASSWORD`                                         | Juan Cruz (dueño): solo para esa corrida del seed                        |
+| `SEED_OWNER2_EMAIL`, `SEED_OWNER2_PASSWORD`                                         | Agustina (dueña)                                                         |
+| `SEED_EMPLEADO1_EMAIL`, `SEED_EMPLEADO1_PASSWORD`                                   | Trinidad (empleada, solo Vapes)                                          |
 
 Las `SEED_*` solo las lee `prisma/seed.ts`. Con `NODE_ENV=production` son **obligatorias** (si falta alguna, el seed se detiene y dice cuál); no hace falta cargarlas en Vercel: se pasan en la línea de comando de la corrida del seed. Las contraseñas son iniciales: cada usuario tiene que cambiarla en su primer ingreso, y re-correr el seed no pisa contraseñas ya cambiadas.
 

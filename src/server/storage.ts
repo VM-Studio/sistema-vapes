@@ -15,6 +15,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { BlobNotFoundError, del, get, head, list, put } from "@vercel/blob";
 
 import { obtenerEnv } from "@/env";
 
@@ -23,7 +24,9 @@ import { obtenerEnv } from "@/env";
  * productos, logos e íconos de la app, y backups.
  *
  * `STORAGE_PROVIDER=local` (desarrollo): carpeta `.storage/`.
- * `STORAGE_PROVIDER=s3` (producción): Cloudflare R2 (o cualquier S3).
+ * `STORAGE_PROVIDER=s3`: Cloudflare R2 (o cualquier S3).
+ * `STORAGE_PROVIDER=blob` (producción en Vercel): Vercel Blob privado; la app
+ *   lee y sirve cada archivo (como local), nunca expone la URL del store.
  *
  * Referencias que se guardan en la DB (`pdfUrl`, `imagenUrl`, `logoUrl`):
  *   - privados → `/api/publico/archivos/<clave>`. Esa ruta (sin sesión, pero
@@ -33,7 +36,7 @@ import { obtenerEnv } from "@/env";
  * Para compartir por WhatsApp: `urlCompartible()` → URL firmada de 7 días (S3).
  */
 export interface StorageProvider {
-  readonly nombre: "local" | "s3";
+  readonly nombre: "local" | "s3" | "blob";
   /** Guarda y devuelve la referencia (ver arriba). */
   guardar(
     clave: string,
@@ -247,6 +250,90 @@ export class StorageS3 implements StorageProvider {
 }
 
 // -----------------------------------------------------------------------------
+// Vercel Blob (store privado)
+// -----------------------------------------------------------------------------
+
+/**
+ * Store privado de Vercel Blob (token en BLOB_READ_WRITE_TOKEN). Las claves se
+ * guardan tal cual como pathname, bajo `prefijo` (backups aparte en
+ * `backups-db/`). Como el store es privado, las referencias son siempre las de
+ * la app (`/api/publico/archivos/<clave>`), que lee el blob con el token.
+ */
+export class StorageBlob implements StorageProvider {
+  readonly nombre = "blob" as const;
+  constructor(
+    private readonly token: string,
+    private readonly prefijo = "",
+  ) {}
+
+  private ruta(clave: string): string {
+    assertClave(clave);
+    return `${this.prefijo}${clave}`;
+  }
+
+  async guardar(clave: string, datos: Uint8Array, tipo: string) {
+    await put(this.ruta(clave), Buffer.from(datos), {
+      access: "private",
+      token: this.token,
+      contentType: tipo || tipoDe(clave),
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    return `${PREFIJO_REF}${clave}`;
+  }
+
+  async leer(clave: string) {
+    const r = await get(this.ruta(clave), {
+      access: "private",
+      token: this.token,
+      useCache: false,
+    });
+    if (!r || r.statusCode !== 200) return null;
+    const datos = new Uint8Array(await new Response(r.stream).arrayBuffer());
+    return { datos, tipo: r.blob.contentType || tipoDe(clave) };
+  }
+
+  async existe(clave: string) {
+    try {
+      await head(this.ruta(clave), { token: this.token });
+      return true;
+    } catch (e) {
+      if (e instanceof BlobNotFoundError) return false;
+      throw e;
+    }
+  }
+
+  async eliminar(clave: string) {
+    await del(this.ruta(clave), { token: this.token });
+  }
+
+  async listar(prefijo: string) {
+    const salida: { clave: string; tamanio: number; fecha: Date }[] = [];
+    let cursor: string | undefined;
+    do {
+      const r = await list({ prefix: `${this.prefijo}${prefijo}`, cursor, token: this.token });
+      for (const b of r.blobs)
+        salida.push({
+          clave: b.pathname.slice(this.prefijo.length),
+          tamanio: b.size,
+          fecha: b.uploadedAt,
+        });
+      cursor = r.hasMore ? r.cursor : undefined;
+    } while (cursor);
+    return salida;
+  }
+
+  async urlFirmada(clave: string) {
+    assertClave(clave);
+    return `${PREFIJO_REF}${clave}`;
+  }
+
+  async verificar() {
+    await list({ limit: 1, token: this.token });
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Selección por entorno
 // -----------------------------------------------------------------------------
 
@@ -283,18 +370,26 @@ export function obtenerStorage(): StorageProvider {
   archivos =
     e.STORAGE_PROVIDER === "s3"
       ? new StorageS3(clienteS3(), e.S3_BUCKET!, e.S3_PUBLIC_URL)
-      : new StorageLocal(raizLocal(e.STORAGE_DIR));
+      : e.STORAGE_PROVIDER === "blob"
+        ? new StorageBlob(e.BLOB_READ_WRITE_TOKEN!)
+        : new StorageLocal(raizLocal(e.STORAGE_DIR));
   return archivos;
 }
 
-/** Backups: bucket separado en S3 (S3_BACKUP_BUCKET); en local, `.storage/backups-db/`. */
+/**
+ * Backups: bucket separado en S3 (S3_BACKUP_BUCKET); en Blob, `backups-db/` del
+ * mismo store (la ruta pública de archivos rechaza claves de backups); en
+ * local, `.storage/backups-db/`.
+ */
 export function obtenerStorageBackups(): StorageProvider {
   if (backups) return backups;
   const e = obtenerEnv();
   backups =
     e.STORAGE_PROVIDER === "s3"
       ? new StorageS3(clienteS3(), e.S3_BACKUP_BUCKET ?? e.S3_BUCKET!, undefined)
-      : new StorageLocal(path.join(raizLocal(e.STORAGE_DIR), "backups-db"));
+      : e.STORAGE_PROVIDER === "blob"
+        ? new StorageBlob(e.BLOB_READ_WRITE_TOKEN!, "backups-db/")
+        : new StorageLocal(path.join(raizLocal(e.STORAGE_DIR), "backups-db"));
   return backups;
 }
 

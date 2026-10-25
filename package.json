@@ -49,6 +49,7 @@
     "@hookform/resolvers": "^5.9.1",
     "@prisma/client": "^6.19.3",
     "@serwist/turbopack": "9.5.12",
+    "@vercel/blob": "2.8.1",
     "@zxing/browser": "^0.2.1",
     "@zxing/library": "^0.23.0",
     "bcryptjs": "^3.0.3",

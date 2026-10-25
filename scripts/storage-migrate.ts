@@ -1,6 +1,6 @@
 /**
  * pnpm storage:migrate — copia los archivos de la carpeta local (STORAGE_DIR,
- * por defecto .storage/) al bucket S3/R2 configurado (STORAGE_PROVIDER=s3).
+ * por defecto .storage/) al storage configurado (STORAGE_PROVIDER=s3 o blob).
  *
  * Las referencias guardadas en la DB (`/api/publico/archivos/<clave>`) NO
  * cambian: la misma clave pasa a resolverse contra el bucket. Por eso no se
@@ -18,8 +18,10 @@ import { obtenerStorage, StorageLocal, esClaveValida } from "../src/server/stora
 
 async function main() {
   const env = obtenerEnv();
-  if (env.STORAGE_PROVIDER !== "s3")
-    throw new Error("Configurá STORAGE_PROVIDER=s3 y las variables S3_* del destino.");
+  if (env.STORAGE_PROVIDER === "local")
+    throw new Error(
+      "Configurá el destino: STORAGE_PROVIDER=s3 (con las S3_*) o blob (con BLOB_READ_WRITE_TOKEN).",
+    );
   const origenArg = process.argv.find((a) => a.startsWith("--origen="))?.split("=")[1];
   const seco = process.argv.includes("--dry-run");
   const origen = new StorageLocal(path.resolve(origenArg ?? env.STORAGE_DIR ?? ".storage"));
