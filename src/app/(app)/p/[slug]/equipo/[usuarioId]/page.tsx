@@ -3,6 +3,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { GraficoComparativo } from "@/components/analitica/grafico-comparativo";
+import { TarifasDialog } from "@/components/ganancia/acciones-ganancia";
+import { AvisoLiquidaciones } from "@/components/ganancia/aviso-liquidaciones";
+import { SeccionGanancia } from "@/components/ganancia/seccion-ganancia";
 import { ETIQUETA_ANTERIOR, KpisVendedor } from "@/components/analitica/secciones";
 import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
 import { Avatar } from "@/components/ui/avatar";
@@ -15,6 +18,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero, formatearPesos } from "@/lib/format";
+import { esMes } from "@/lib/ganancia-vendedor";
 import { rutaPanel } from "@/lib/paneles";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import { ETIQUETA_TIPO_VENTA, etiquetaMedioPrincipal } from "@/lib/ventas-ui";
@@ -27,6 +31,15 @@ import {
   ventasDeVendedor,
   type VentaDeVendedor,
 } from "@/server/services/analitica.service";
+
+import {
+  gananciaDelMes,
+  liquidacionesDe,
+  mesActual,
+  obtenerTarifas,
+} from "@/server/services/ganancia-vendedor.service";
+
+import { obtenerRemito } from "@/server/services/remito-liquidacion.service";
 
 import { EstadoPagoBadge } from "../../ventas/_componentes/medio-pago";
 
@@ -74,11 +87,29 @@ export default async function EquipoVendedorPage({
   const periodo = periodoDesdeParams(sp);
   const desc = describirPeriodo(periodo);
   const page = Number(typeof sp.page === "string" ? sp.page : 1) || 1;
-  const d = await ventasDeVendedor(ctx, usuarioId, periodo, page);
+  const mes = esMes(sp.mes) ? sp.mes : mesActual();
+  const [d, ganancia, historial, tarifas] = await Promise.all([
+    ventasDeVendedor(ctx, usuarioId, periodo, page),
+    gananciaDelMes(ctx, usuarioId, mes),
+    liquidacionesDe(ctx, usuarioId),
+    obtenerTarifas(ctx, usuarioId),
+  ]);
+  const remito =
+    ganancia?.liquidacion && ganancia.liquidacion.estado !== "PENDIENTE"
+      ? await obtenerRemito(ctx, ganancia.liquidacion.id)
+      : null;
+  const pendientes = historial.filter((l) => l.estado === "PENDIENTE" && l.mes !== mes);
   const ruta = (r: string) => rutaPanel(ctx.panel.slug, r);
   const qs = queryPeriodo(sp);
   const desdeReportes = sp.origen === "reportes";
   const etiquetaUnidades = ctx.panel.etiquetaUnidades;
+  /** Cambia el mes de la ganancia sin perder el período ni la página. */
+  const hrefMes = (m: string) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) if (typeof v === "string" && k !== "mes") q.set(k, v);
+    q.set("mes", m);
+    return `${ruta(`/equipo/${usuarioId}`)}?${q.toString()}#ganancia`;
+  };
 
   const columnas = [
     {
@@ -192,6 +223,8 @@ export default async function EquipoVendedorPage({
         </div>
       </header>
 
+      <AvisoLiquidaciones pendientes={pendientes} slug={ctx.panel.slug} />
+
       <KpisVendedor r={d} periodo={periodo} etiquetaUnidades={etiquetaUnidades} sinComision />
 
       <section className="bg-card rounded-card flex flex-col gap-4 p-5 md:p-6">
@@ -234,6 +267,34 @@ export default async function EquipoVendedorPage({
           />
         )}
       </div>
+
+      {ganancia ? (
+        <div className="mt-4">
+          <SeccionGanancia
+            g={ganancia}
+            historial={historial}
+            slug={ctx.panel.slug}
+            dueno
+            remito={remito}
+            usuarioActual={{ id: ctx.usuario.id, nombre: ctx.usuario.nombre }}
+            tarifasVigentes={tarifas}
+            hrefMes={hrefMes}
+            rutaVenta={(id) => ruta(`/ventas/${id}`)}
+          />
+        </div>
+      ) : (
+        d.usuario.rol !== "OWNER" && (
+          <section className="bg-card rounded-card mt-4 flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between md:p-6">
+            <div className="flex flex-col gap-0.5">
+              <h2 className="text-h3 font-semibold">Ganancia por vape</h2>
+              <p className="text-muted text-small">
+                {d.usuario.nombre} no tiene ganancia por vape en este panel.
+              </p>
+            </div>
+            <TarifasDialog usuarioId={d.usuario.id} nombre={d.usuario.nombre} tarifas={null} />
+          </section>
+        )
+      )}
 
       <section className="mt-4 flex flex-col gap-4" aria-labelledby="ventas-periodo">
         <div className="flex flex-wrap items-end justify-between gap-3">

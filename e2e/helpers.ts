@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { Modulo, RolUsuario } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -197,4 +197,23 @@ export function linkPublicoPdf(textoWhatsApp: string): string {
   const m = /https?:\/\/[^\s/]+(\/api\/publico\/pdf\/[^\s]+)/.exec(textoWhatsApp);
   if (!m) throw new Error(`El texto no tiene link al PDF: ${textoWhatsApp}`);
   return m[1]!;
+}
+
+/** Dibuja una firma (una curva) en el canvas con el mouse / el dedo. */
+export async function firmarEnCanvas(page: Page, canvas: Locator) {
+  await canvas.scrollIntoViewIfNeeded();
+  const b = (await canvas.boundingBox())!;
+  const x0 = b.x + b.width * 0.12;
+  const y0 = b.y + b.height * 0.65;
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  for (let i = 1; i <= 24; i++) {
+    const t = i / 24;
+    await page.mouse.move(
+      x0 + t * b.width * 0.75,
+      y0 - Math.sin(t * Math.PI * 2.5) * b.height * 0.3,
+      { steps: 2 },
+    );
+  }
+  await page.mouse.up();
 }

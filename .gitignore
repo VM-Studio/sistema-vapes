@@ -54,3 +54,7 @@ test-results/
 playwright-report/
 .storage-e2e/
 .claude/worktrees/
+
+# mails de prueba (MAIL_TRANSPORTE=prueba)
+.mails-prueba/
+.mails-e2e/

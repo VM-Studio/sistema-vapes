@@ -127,6 +127,14 @@ const PERMISOS_TRINIDAD: Omit<PermisoModulo, "panelId">[] = [
   },
 ];
 
+/** $ por vape que gana Trinidad (Reportes → Ventas de Trinidad → Ganancia). */
+const TARIFAS_TRINIDAD = {
+  minorista: "1500",
+  mayorista: "300",
+  minoristaNuevo: "2000",
+  mayoristaNuevo: "500",
+};
+
 function credenciales(u: UsuarioSeed): { email: string; password: string } | null {
   const email = process.env[`${u.prefijoEnv}_EMAIL`]?.trim().toLowerCase();
   const password = process.env[`${u.prefijoEnv}_PASSWORD`];
@@ -198,6 +206,13 @@ async function seedUsuarios(): Promise<{ ownerId: string }> {
           create: { usuarioId: fila.id, panelId, modulo, ...acciones },
         });
       }
+      // Ganancia por vape (A3): la misma que carga la migración 20261025120000
+      // en las bases que ya tenían a Trinidad. update vacío: no pisa lo que cambien los dueños.
+      await dbPara(PANEL_VAPES).tarifaVendedor.upsert({
+        where: { panelId_usuarioId: { panelId: PANEL_VAPES, usuarioId: fila.id } },
+        update: {},
+        create: { usuarioId: fila.id, ...TARIFAS_TRINIDAD },
+      });
     }
   }
   if (!ownerId) throw new Error("Falta un dueño");

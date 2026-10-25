@@ -66,6 +66,8 @@ Todas están en `.env.example` con su explicación; `src/env.ts` las valida al a
 | `SEED_OWNER1_EMAIL`, `SEED_OWNER1_PASSWORD`                                         | Juan Cruz (dueño): solo para esa corrida del seed                        |
 | `SEED_OWNER2_EMAIL`, `SEED_OWNER2_PASSWORD`                                         | Agustina (dueña)                                                         |
 | `SEED_EMPLEADO1_EMAIL`, `SEED_EMPLEADO1_PASSWORD`                                   | Trinidad (empleada, solo Vapes)                                          |
+| `GMAIL_USER`, `GMAIL_APP_PASSWORD`                                                  | Opcionales, van juntas: mails de los remitos (ver [Mails](#mails))       |
+| `MAIL_FROM_NAME`, `MAIL_DUENOS`                                                     | Opcionales: remitente y a quién llega el remito firmado                  |
 
 Las `SEED_*` solo las lee `prisma/seed.ts`. Con `NODE_ENV=production` son **obligatorias** (si falta alguna, el seed se detiene y dice cuál); no hace falta cargarlas en Vercel: se pasan en la línea de comando de la corrida del seed. Las contraseñas son iniciales: cada usuario tiene que cambiarla en su primer ingreso, y re-correr el seed no pisa contraseñas ya cambiadas.
 
@@ -88,7 +90,7 @@ Las `SEED_*` solo las lee `prisma/seed.ts`. Con `NODE_ENV=production` son **obli
    - [ ] Variables de Production (las de la tabla de arriba, sin las `SEED_*`), con `STORAGE_PROVIDER=s3` y `NEXT_PUBLIC_APP_URL=https://tu-dominio`.
    - [ ] Dominio propio con HTTPS. Después de verificarlo, enviar el dominio a [hstspreload.org](https://hstspreload.org) (el header ya incluye `preload`).
    - [ ] Desactivar el deploy automático de Git para `main` (lo hace el job `deploy`, después del release). Los Preview pueden seguir automáticos.
-   - [ ] Cron de Vercel: solo `/api/cron/cambio` una vez por día (09:00 AR), que es lo que permite el plan Hobby. Las cotizaciones cada 15 min las dispara `.github/workflows/cambio.yml` (ver [Cotizaciones](#cotizaciones-dólar-blue-y-usdt)). El backup corre en GitHub Actions.
+   - [ ] Crons de Vercel (una vez por día como máximo, lo que permite el plan Hobby): `/api/cron/cambio` (09:00 AR) y `/api/cron/liquidaciones` el día 1 a las 00:10 AR (cierra el mes de la ganancia por vape de los vendedores; si no corriera, la pantalla de la ganancia cierra lo que falte al abrirse). Las cotizaciones cada 15 min las dispara `.github/workflows/cambio.yml` (ver [Cotizaciones](#cotizaciones-dólar-blue-y-usdt)). El backup corre en GitHub Actions.
 5. **GitHub**
    - [ ] Environment `production` con los secrets: `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `CRON_SECRET`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_BACKUP_BUCKET`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; y la variable `NEXT_PUBLIC_APP_URL`.
    - [ ] Protección de `main`: requiere el check **CI** en verde.
@@ -223,6 +225,28 @@ Es el paso 1 y 2 de [Deploy de la v2](#deploy-de-la-v2-reforma-multipanel-paso-a
   - **Perezosa**: cualquier lectura con la cotización más vieja que `cambio.actualizacionMinutos` (15 por defecto, editable) la refresca en segundo plano (`after()`), sin demorar la respuesta; un lease en `ConfiguracionGlobal` (`cambio.lease`) evita que varias instancias consulten a la vez.
 - **Desactualizada**: más de 2 h sin una actualización correcta → ícono de alerta en el widget de la barra y en `/configuracion/cambio`. Si una fuente cambió de formato, el log dice cuál y qué campo faltó (`Formato inesperado de …`).
 - `CAMBIO_SIN_RED=1` (E2E) apaga la actualización perezosa.
+
+## Mails
+
+Los remitos de pago de la ganancia por vape (Trinidad) salen por **Gmail** (SMTP `smtp.gmail.com:465`, TLS) desde la casilla de los dueños. Sin estas variables la app funciona igual: cada envío queda registrado como «No enviado (mail sin configurar)» y la pantalla ofrece copiar el link de firma o mandarlo por WhatsApp.
+
+1. **Contraseña de aplicación de Gmail** (no es la contraseña de la cuenta):
+   1. Entrar a la cuenta de Google de los dueños → **Seguridad** → activar la **Verificación en 2 pasos** (sin ella Google no deja crear contraseñas de aplicación).
+   2. Ir a <https://myaccount.google.com/apppasswords> (o buscar «Contraseñas de aplicaciones» en la cuenta), poner un nombre (ej. «Sistema de gestión») y **Crear**.
+   3. Google muestra **16 letras** (en grupos de 4). Copiarlas: no se vuelven a mostrar. Con o sin espacios, las dos formas sirven.
+   4. Si se cambia la contraseña de la cuenta, Google revoca las de aplicación: hay que crear una nueva y actualizar Vercel.
+2. **Cargarla en Vercel**: Project → **Settings → Environment Variables**, entorno **Production** (y Preview si se quiere probar ahí):
+   - `GMAIL_USER` = la casilla de Gmail (ej. `duenos@gmail.com`).
+   - `GMAIL_APP_PASSWORD` = las 16 letras. Marcarla como **Sensitive**.
+   - `MAIL_FROM_NAME` (opcional) = el nombre que ve quien recibe (por defecto, el nombre del negocio).
+   - `MAIL_DUENOS` (opcional) = a quién llega el remito firmado, separados por coma. Si falta, llega a `GMAIL_USER` (la casilla de los dueños).
+   - Verificar que `NEXT_PUBLIC_APP_URL` sea el dominio real: con él se arma el link de firma (`https://tu-dominio/firma/…`).
+   - **Redeploy** (las variables se leen al arrancar; `src/env.ts` rechaza un `GMAIL_USER` inválido, una contraseña que no sean 16 letras o una sin la otra).
+3. **Probar**: registrar un pago de prueba; en la liquidación, «Envíos por mail» dice **Enviado** o el error de Gmail (ej. `535 Username and Password not accepted` = contraseña de aplicación mal copiada o revocada).
+
+A quién va cada mail: el remito para firmar, al **email del usuario** del vendedor (Usuarios → su ficha); el remito con las dos firmas, a `MAIL_DUENOS` / `GMAIL_USER`. El mail al vendedor dice qué dueño firmó y mandó el remito (el que estaba logueado) y responde a su email.
+
+En desarrollo y en los E2E: `MAIL_TRANSPORTE=prueba` no manda nada y guarda cada mail como JSON en `MAIL_PRUEBA_DIR` (`.mails-e2e` en Playwright).
 
 ## Rollback
 
