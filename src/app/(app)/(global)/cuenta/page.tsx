@@ -12,7 +12,9 @@ import { requirePaginaUsuario } from "@/server/auth/permissions";
 import { formatearFechaHora } from "@/lib/utils";
 import { listarSesionesActivas } from "@/server/auth/sesiones";
 
-import { CambiarPasswordForm } from "./cambiar-password-form";
+import { mailConfigurado } from "@/server/mail";
+
+import { CambiarPasswordConActual, CambiarPasswordConCodigo } from "./cambiar-password-form";
 import { CerrarTodas } from "./cerrar-todas";
 
 export const metadata: Metadata = { title: "Mi cuenta" };
@@ -20,6 +22,8 @@ export const metadata: Metadata = { title: "Mi cuenta" };
 export default async function CuentaPage() {
   const usuario = await requirePaginaUsuario({ permitirCambioPendiente: true });
   const sesiones = await listarSesionesActivas(usuario.id);
+  // Con mail: código al email (para todos). Sin mail en el servidor: plan B con la actual.
+  const conCodigo = mailConfigurado();
 
   return (
     <>
@@ -36,12 +40,13 @@ export default async function CuentaPage() {
               Tenés que cambiar tu contraseña para continuar.
             </strong>{" "}
             La que usaste es temporal: elegí una nueva que solo sepas vos.
+            {conCodigo && " Te vamos a mandar un código a tu mail para confirmar que es tuyo."}
           </p>
         </div>
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
           <SectionCard title="Datos">
             <div className="flex items-center gap-3">
               <Avatar nombre={usuario.nombre} className="size-12 text-sm" />
@@ -91,10 +96,18 @@ export default async function CuentaPage() {
 
         <SectionCard
           title="Cambiar contraseña"
-          description="Te vamos a pedir la actual para confirmar que sos vos."
+          description={
+            conCodigo
+              ? "Con un código que te mandamos por mail, para confirmar que sos vos."
+              : "Te vamos a pedir la actual para confirmar que sos vos."
+          }
           className={usuario.debeCambiarPassword ? "order-first lg:order-none" : undefined}
         >
-          <CambiarPasswordForm />
+          {conCodigo ? (
+            <CambiarPasswordConCodigo email={usuario.email} />
+          ) : (
+            <CambiarPasswordConActual />
+          )}
         </SectionCard>
       </div>
     </>

@@ -21,6 +21,7 @@ import {
 import { AccesoForm } from "./acceso-form";
 import { CerrarSesiones } from "./cerrar-sesiones";
 import { ComisionForm } from "./comision-form";
+import { ResetearPassword } from "./resetear-password";
 
 export const metadata: Metadata = { title: "Acceso del usuario" };
 
@@ -31,7 +32,7 @@ export default async function UsuarioPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ perfil?: string }>;
 }) {
-  await requirePaginaOwner();
+  const actor = await requirePaginaOwner();
   const { id } = await params;
   const { perfil } = await searchParams;
   const usuario = await obtenerUsuario(id);
@@ -89,7 +90,20 @@ export default async function UsuarioPage({
             <dd className="tabular-nums">
               {usuario.ultimoLogin ? formatearFechaHora(usuario.ultimoLogin) : "Nunca"}
             </dd>
+            <dt className="text-muted">Contraseña</dt>
+            <dd>
+              {usuario.debeCambiarPassword ? (
+                <Badge variant="warning">Temporal</Badge>
+              ) : (
+                <span>Propia</span>
+              )}
+            </dd>
           </dl>
+          {usuario.id !== actor.id && (
+            <div className="mt-5">
+              <ResetearPassword usuarioId={usuario.id} nombre={usuario.nombre} />
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard

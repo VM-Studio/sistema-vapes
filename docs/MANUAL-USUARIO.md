@@ -25,7 +25,7 @@ Los dueños además [comparan proveedores](#comparar-proveedores), miran los [re
 
 1. Entrá a la dirección del sistema (o abrí la app instalada).
 2. Escribí tu **email** y tu **contraseña** y tocá **Ingresar**. Con el ojito del campo de contraseña podés verla mientras la escribís.
-3. **La primera vez** (o cuando un dueño te resetea la contraseña) el sistema te lleva a **Mi cuenta** y no te deja usar nada más hasta que la cambies. Escribí la contraseña temporal que te dieron y la nueva dos veces.
+3. **La primera vez** (o cuando un dueño te resetea la contraseña) el sistema te lleva a **Mi cuenta** y no te deja usar nada más hasta que la cambies. Se cambia con un **código por mail** (ver [Mi cuenta](#mi-cuenta)): así también confirmamos que tu email es el correcto.
 
 Reglas para la contraseña nueva:
 
@@ -340,7 +340,7 @@ Qué nunca ve un empleado, tenga los permisos que tenga: el último costo de los
 Otras acciones sobre un usuario:
 
 - **Editar**: nombre, email y rol. Los **Dueños** tienen acceso total a todos los sistemas; no hace falta marcarles nada.
-- **Resetear contraseña**: genera una temporal nueva (por ejemplo, si se la olvidó).
+- **Resetear contraseña**: genera una temporal nueva (por ejemplo, si se la olvidó o si no le llega el mail con el código). Está en la tarjeta del usuario y en su página de **Acceso**. Se muestra una sola vez y le cierra las sesiones abiertas.
 - **Sesiones activas** y **Cerrar sesiones**: en qué dispositivos está conectado; cerrarlas lo desconecta al instante (por ejemplo, si perdió el celular).
 - **Dar de baja**: ya no puede entrar, pero todo lo que hizo queda registrado con su nombre.
 
@@ -540,7 +540,15 @@ Cada sistema tiene sus propios ajustes, en **Ajustes del panel** (menú lateral,
 En **Mi cuenta** (menú de tu cuenta → **Mi cuenta**) podés:
 
 - Ver tus datos.
-- **Cambiar tu contraseña** (te pide la actual).
+- **Cambiar tu contraseña**, en 3 pasos:
+  1. Tocá **Enviar código**: te llega un mail con un **código de 6 números** al email de tu usuario. Vence a los **10 minutos** y sirve una sola vez. Si no lo ves, revisá en spam.
+  2. Escribí el código y tocá **Verificar código**. Tenés 5 intentos; si te equivocás más, o venció, pedí uno nuevo con **Reenviar código** (se habilita al minuto; como mucho 5 códigos por hora).
+  3. Escribí la contraseña nueva dos veces. Abajo ves en vivo qué requisitos cumple y qué tan fuerte es. Tocá **Guardar contraseña nueva**.
+
+  Al guardarla se cierra tu sesión en los **demás** dispositivos (el que estás usando sigue abierto) y te llega un mail avisando que la contraseña se cambió. Si te llega ese aviso (o un código) y no fuiste vos, avisale ya a un dueño.
+
+  Si aparece «No pudimos mandar el mail», pedile a un dueño que te cambie la contraseña desde **Usuarios** (te da una temporal).
+
 - Ver tus **sesiones abiertas**: en qué dispositivos tenés la sesión abierta, desde qué IP y cuándo se usaron por última vez.
 - **Cerrar sesión en todos los dispositivos** (incluido el que estás usando). Si perdiste el celular o alguien vio tu contraseña, hacé esto y después cambiala.
 
@@ -622,7 +630,10 @@ Es lo esperado: cada sistema tiene su propio catálogo, stock, clientes y provee
 Porque no tenés el acceso o el permiso en ese sistema. Pedíselo a un dueño; el cambio aplica al instante (a lo sumo, recargá la página).
 
 **¿Por qué me pide cambiar la contraseña al entrar?**
-Porque es la primera vez que entrás o un dueño te la reseteó. Hasta que la cambies no podés usar el resto del sistema.
+Porque es la primera vez que entrás o un dueño te la reseteó. Hasta que la cambies (con el código que te llega por mail) no podés usar el resto del sistema.
+
+**No me llega el código para cambiar la contraseña.**
+Revisá spam o correo no deseado y que el email de tu usuario esté bien escrito (lo ves en **Mi cuenta → Datos**). Si sigue sin llegar, pedile a un dueño que te resetee la contraseña desde **Usuarios** o que corrija tu email.
 
 **Perdí el celular con la app abierta. ¿Qué hago?**
 Desde otro dispositivo entrá a **Mi cuenta → Cerrar sesión en todos los dispositivos** y cambiá la contraseña. Si no podés entrar, pedile a un dueño que use **Cerrar sesiones** en **Usuarios**.

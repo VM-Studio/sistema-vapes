@@ -251,6 +251,7 @@ model Usuario {
   cambiosCosto           CostoVarianteHistorial[]
   comisionesPagadas      ComisionPasista[]
   sesiones               Sesion[]                 @relation("SesionUsuario")
+  codigosVerificacion    CodigoVerificacion[]
   sesionesRevocadas      Sesion[]                 @relation("SesionRevocadaPor")
   clientesCreados        Cliente[]                @relation("ClienteCreadoPor")
   tarifasVendedor        TarifaVendedor[]         @relation("TarifaVendedorUsuario")
@@ -283,8 +284,46 @@ model Sesion {
   usuario     Usuario  @relation("SesionUsuario", fields: [usuarioId], references: [id], onDelete: Cascade)
   revocadaPor Usuario? @relation("SesionRevocadaPor", fields: [revocadaPorId], references: [id], onDelete: SetNull)
 
+  codigosVerificacion CodigoVerificacion[]
+
   @@index([usuarioId, revocadaAt])
   @@index([expiraAt])
+}
+
+enum PropositoCodigo {
+  /// Cambio de la propia contraseña desde «Mi cuenta».
+  CAMBIO_PASSWORD
+}
+
+/// Código de 6 dígitos mandado por mail al usuario logueado (cambio de
+/// contraseña). Solo se guarda su HMAC (pepper = AUTH_SECRET); vence a los
+/// 10 minutos, admite 5 intentos y se usa una sola vez. Al validarlo se emite
+/// un token de verificación de corta vida ligado al usuario Y a la sesión que
+/// lo pidió (`tokenHash`), que habilita el paso «contraseña nueva».
+model CodigoVerificacion {
+  id           String          @id @default(cuid())
+  usuarioId    String
+  /// Sesión que lo pidió: el código y el token solo valen desde ella.
+  sesionId     String
+  proposito    PropositoCodigo
+  /// HMAC-SHA256(AUTH_SECRET, proposito:usuarioId:codigo), hex.
+  codigoHash   String
+  venceAt      DateTime
+  intentos     Int             @default(0)
+  /// Código validado (un solo uso) o anulado por uno nuevo.
+  usadoAt      DateTime?
+  /// HMAC del token de verificación emitido al validar el código.
+  tokenHash    String?
+  tokenVenceAt DateTime?
+  /// Token consumido: la contraseña ya se cambió.
+  tokenUsadoAt DateTime?
+  createdAt    DateTime        @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  sesion  Sesion  @relation(fields: [sesionId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, proposito, createdAt])
+  @@index([venceAt])
 }
 
 /// Registro de cada backup (pg_dump) y su verificación.

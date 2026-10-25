@@ -72,6 +72,37 @@ export const cambiarPasswordSchema = z
     path: ["passwordNueva"],
   });
 
+/** Código de 6 dígitos del mail (se toleran espacios o guiones al pegarlo). */
+export const codigoMailSchema = z.object({
+  codigo: z
+    .string()
+    .transform((v) => v.replace(/[\s-]/g, ""))
+    .pipe(z.string().regex(/^\d{6}$/, "Son los 6 números que te llegaron por mail")),
+});
+
+/** Paso 3 del cambio con código: contraseña nueva + repetirla (lo que ve el form). */
+export const passwordNuevaSchema = z
+  .object({
+    passwordNueva: password,
+    confirmacion: z.string().min(1, "Repetí la contraseña nueva"),
+  })
+  .refine((d) => d.passwordNueva === d.confirmacion, {
+    message: "Las contraseñas no coinciden",
+    path: ["confirmacion"],
+  });
+
+/** Lo que recibe la acción: además, el token que emitió el servidor al validar el código. */
+export const cambiarPasswordConCodigoSchema = z
+  .object({
+    token: z.string().min(20, "Verificación inválida").max(200, "Verificación inválida"),
+    passwordNueva: password,
+    confirmacion: z.string().min(1, "Repetí la contraseña nueva"),
+  })
+  .refine((d) => d.passwordNueva === d.confirmacion, {
+    message: "Las contraseñas no coinciden",
+    path: ["confirmacion"],
+  });
+
 /** Acceso de un EMPLEADO: paneles habilitados y, en cada uno, la grilla de permisos. */
 export const actualizarAccesoSchema = z.object({
   usuarioId: id,
@@ -100,4 +131,6 @@ export type ActualizarUsuario = z.output<typeof actualizarUsuarioSchema>;
 export type ActualizarComision = z.output<typeof actualizarComisionSchema>;
 export type ActualizarAcceso = z.output<typeof actualizarAccesoSchema>;
 export type CambiarPassword = z.output<typeof cambiarPasswordSchema>;
+export type CodigoMail = z.output<typeof codigoMailSchema>;
+export type PasswordNueva = z.output<typeof passwordNuevaSchema>;
 export type LoginInput = z.output<typeof loginSchema>;

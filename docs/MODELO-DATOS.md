@@ -127,6 +127,10 @@ Enum Escaneo {
   ESCANEADA [note: 'Todo lo vendido coincidió con lo escaneado: lista para retirar.']
 }
 
+Enum PropositoCodigo {
+  CAMBIO_PASSWORD [note: 'Cambio de la propia contraseña desde «Mi cuenta».']
+}
+
 Enum TipoMovimiento {
   INGRESO_COMPRA
   INGRESO_MANUAL
@@ -271,6 +275,28 @@ Table Sesion {
   }
 
   Note: 'Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso en el próximo request (el middleware la consulta con caché de 60 s).'
+}
+
+Table CodigoVerificacion {
+  id text [pk, default: `cuid()`]
+  usuarioId text [not null]
+  sesionId text [not null, note: 'Sesión que lo pidió: el código y el token solo valen desde ella.']
+  proposito PropositoCodigo [not null]
+  codigoHash text [not null, note: 'HMAC-SHA256(AUTH_SECRET, proposito:usuarioId:codigo). Nunca el código.']
+  venceAt timestamp [not null, note: '10 minutos después del envío.']
+  intentos int [not null, default: 0, note: 'Máximo 5 (CHECK).']
+  usadoAt timestamp [note: 'Validado (un solo uso) o anulado por un código nuevo / un envío fallido.']
+  tokenHash text [note: 'HMAC del token de verificación emitido al validar el código.']
+  tokenVenceAt timestamp
+  tokenUsadoAt timestamp [note: 'La contraseña ya se cambió con ese token.']
+  createdAt timestamp [not null, default: `now()`]
+
+  indexes {
+    (usuarioId, proposito, createdAt)
+    venceAt
+  }
+
+  Note: 'Código de 6 dígitos por mail para cambiar la contraseña. Ver «Usuarios, sesiones y seguridad».'
 }
 
 Table Backup {
@@ -1123,6 +1149,8 @@ Table ProveedorProductoHistorial {
 
 Ref: Sesion.usuarioId > Usuario.id [delete: cascade]
 Ref: Sesion.revocadaPorId > Usuario.id [delete: set null]
+Ref: CodigoVerificacion.usuarioId > Usuario.id [delete: cascade]
+Ref: CodigoVerificacion.sesionId > Sesion.id [delete: cascade]
 Ref: PermisoUsuario.usuarioId > Usuario.id [delete: cascade]
 Ref: PermisoUsuario.panelId > Panel.id [delete: restrict]
 Ref: UsuarioPanel.usuarioId > Usuario.id [delete: cascade]
@@ -1239,6 +1267,7 @@ Ref: ProveedorProductoHistorial.proveedorProductoId > ProveedorProducto.id [dele
 - **UsuarioPanel**: paneles a los que accede un empleado. Sin fila, el empleado no entra a ese panel (el middleware lo manda a `/paneles`).
 - **PermisoUsuario**: una fila por (usuario, panel, módulo) con cuatro banderas: ver, crear, editar, eliminar. Solo módulos de panel (`DASHBOARD` … `FACTURAS`, `ESCANEO`); `USUARIOS` y `CONFIGURACION` son exclusivos de los dueños y no tienen filas. Un EMPLEADO cuyo único módulo visible es `ESCANEO` tiene el **perfil «Escaneo (Charly)»** (`esPerfilEscaneo()`): el middleware lo encierra en `/p/{slug}/escaneo` (más `/cuenta` y salir) y cualquier otra ruta le da "sin acceso". Los dueños no necesitan filas. Los permisos no viajan en el token: se leen de la base, así que un cambio aplica al instante.
 - **Sesion**: cada inicio de sesión. El JWT de la cookie lleva `sid` (id de esta fila) y `tok` (secreto aleatorio del que acá se guarda solo el sha256). Revocarla (`revocadaAt`, `revocadaPorId`) corta el acceso en el próximo request; el middleware cachea la validación 60 s por instancia.
+- **CodigoVerificacion**: código de 6 dígitos (`crypto.randomInt`) que se manda por mail al usuario logueado para cambiar su contraseña desde `/cuenta` (también en el primer ingreso con `debeCambiarPassword`, así se valida el email). Se guarda solo su HMAC-SHA256 con `AUTH_SECRET` como clave (pepper); vence a los 10 minutos, admite 5 intentos (`intentos`, CHECK ≤ 5) y se usa una sola vez (`usadoAt`). Pedir uno nuevo anula los anteriores; entre envíos hay 60 s de espera y como mucho 5 por hora (contados sobre esta tabla, con advisory lock por usuario). Al validarlo se emite un **token de verificación** aleatorio (10 min, `tokenHash` = HMAC ligado a usuario + sesión) que exige el paso «contraseña nueva»; consumirlo (`tokenUsadoAt`) es atómico. El cambio guarda el bcrypt, limpia `debeCambiarPassword`, revoca las demás sesiones del usuario (la actual sigue), audita (`UPDATE`, `metodo: codigo_mail`) y manda el mail «tu contraseña se cambió». Todo atado a `sesionId` (cerrar esa sesión borra sus códigos en cascada). Las filas vencidas hace más de un día se borran perezosamente en cada envío. Si el servidor **no tiene mail configurado**, `/cuenta` ofrece el camino viejo (con la contraseña actual) para que nadie quede trabado; con mail configurado esa acción se rechaza. Preservada por `db:limpiar-negocio`.
 - **IntentoLogin**: registro de cada intento de login (exitoso o no) para el límite de 5 fallidos por email cada 15 minutos. No es FK a `Usuario`: también se registran emails inexistentes.
 - **RateLimit**: contador por clave (`u:<usuarioId>` o `ip:<ip>`) y ventana de un minuto para el rate limit general de `/api/*` y Server Actions.
 - **AuditLog**: registro inmutable de quién hizo qué (altas, cambios, bajas, logins, logouts, cambios de permisos, sesiones revocadas y accesos denegados), con el antes y el después en JSON, IP, user agent y el panel donde ocurrió (`null` para acciones globales). Se consulta en `/configuracion/auditoria`.

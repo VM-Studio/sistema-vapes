@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { Modulo, RolUsuario } from "@prisma/client";
@@ -216,4 +217,37 @@ export async function firmarEnCanvas(page: Page, canvas: Locator) {
     );
   }
   await page.mouse.up();
+}
+
+/** Mails del transporte de prueba (MAIL_TRANSPORTE=prueba → .mails-e2e/*.json), del más viejo al más nuevo. */
+export function mailsPara(email: string): { subject: string; text: string; html?: string }[] {
+  const dir = ".mails-e2e";
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .sort()
+    .map(
+      (f) =>
+        JSON.parse(readFileSync(path.join(dir, f), "utf8")) as {
+          subject: string;
+          text: string;
+          html?: string;
+          to: { address: string }[];
+        },
+    )
+    .filter((m) => m.to.some((t) => t.address === email));
+}
+
+/** Código de 6 dígitos del último mail «… es tu código para cambiar la contraseña». */
+export async function codigoDelMail(email: string, distintoDe?: string): Promise<string> {
+  let codigo = "";
+  await expect
+    .poll(() => {
+      const ultimo = mailsPara(email)
+        .filter((m) => /es tu código para cambiar la contraseña/.test(m.subject))
+        .at(-1);
+      codigo = /^(\d{6}) /.exec(ultimo?.subject ?? "")?.[1] ?? "";
+      return codigo !== "" && codigo !== distintoDe;
+    })
+    .toBe(true);
+  return codigo;
 }

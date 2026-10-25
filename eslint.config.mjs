@@ -56,6 +56,7 @@ const eslintConfig = [
       "src/middleware.ts",
       "src/server/seguridad/rate-limit.ts",
       "src/server/services/auth.service.ts",
+      "src/server/services/codigo-verificacion.service.ts",
       "src/server/services/sesion.service.ts",
       "src/server/services/usuario.service.ts",
       "src/server/services/panel.service.ts",

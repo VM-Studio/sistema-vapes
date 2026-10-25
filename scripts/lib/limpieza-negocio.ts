@@ -64,6 +64,7 @@ export const TABLAS_PRESERVADAS = [
   "UsuarioPanel",
   "PermisoUsuario",
   "Sesion",
+  "CodigoVerificacion",
   "Configuracion",
   "ConfiguracionGlobal",
   "TarifaVendedor",
