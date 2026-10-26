@@ -5,6 +5,26 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.6.0] - 2026-10-25 — Ventas de Trinidad, retiro y compras por recibir (A4)
+
+### Agregado
+
+- **Trinidad vende desde sus cotizaciones**: «Aceptada ✓» en la lista crea la venta pendiente de
+  pago; «Marcar pagada» con el medio de pago desde la venta.
+- **Botón «Retirado»** en la venta y pantalla de Charly; stock con tarjetas **Disponible /
+  Escaneado / Retirado** que filtran, y filtros combinables por modelo, gusto y pitadas.
+- **Movimientos de stock** legibles en Stock, Productos y en el detalle de cada producto.
+- **Compras**: «Confirmar» crea la compra sin sumar stock y «Recibido» la ingresa; costo final por
+  unidad de cada producto (pasista proporcional al precio, gastos por unidad) y tarjeta de detalle
+  con el total en USDT.
+- **Proveedores**: vincular productos escaneando el código.
+- Los dos galpones comparten la lista de productos (los sabores nuevos nacen en 0 en cada galpón).
+
+### Cambiado
+
+- Facturas muestra solo las ventas de Mercado Libre, con tarjetas por cantidad que filtran.
+- Observaciones de la devolución sin mínimo de caracteres.
+
 ## [2.5.0] - 2026-10-25 — Trinidad, Charly y Mercado Libre (A3)
 
 ### Agregado
