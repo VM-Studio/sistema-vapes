@@ -33,7 +33,6 @@ import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
 import { formatearPesos } from "@/lib/format";
-import { OBSERVACION_MINIMA } from "@/lib/validations/devolucion";
 import { mostrarTelefono } from "@/lib/validations/cliente";
 import { cn, formatearFecha } from "@/lib/utils";
 import { ETIQUETA_MEDIO_PAGO, MEDIOS_PAGO } from "@/lib/ventas-ui";
@@ -280,7 +279,6 @@ export function RegistrarDevolucion({
   const montoFinal = bonificar
     ? Math.min(maxMonto, Math.max(0, centavos(montoBonificado.replace(",", ".") || 0)))
     : maxMonto;
-  const observacionOk = observacion.trim().length >= OBSERVACION_MINIMA;
   const pagoOk = montoFinal === 0 || medio !== null;
 
   async function confirmar() {
@@ -345,11 +343,7 @@ export function RegistrarDevolucion({
           </Button>
         )}
         {paso === 4 && (
-          <Button
-            onClick={() => void confirmar()}
-            loading={enviando}
-            disabled={!observacionOk || !pagoOk}
-          >
+          <Button onClick={() => void confirmar()} loading={enviando} disabled={!pagoOk}>
             Confirmar devolución
           </Button>
         )}
@@ -531,15 +525,13 @@ export function RegistrarDevolucion({
         {paso === 4 && (
           <div className="flex flex-col gap-4">
             <Textarea
-              label="Observación"
-              required
+              label="Observación (opcional)"
               rows={3}
               autoFocus
               value={observacion}
               onChange={(e) => setObservacion(e.target.value)}
               maxLength={1000}
               placeholder="¿Qué le pasó al producto? Ej: no carga, luz roja parpadea"
-              hint={`Mínimo ${OBSERVACION_MINIMA} caracteres (${observacion.trim().length}/${OBSERVACION_MINIMA}).`}
             />
 
             {diferencia !== 0 && (

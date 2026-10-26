@@ -125,11 +125,11 @@ test("garantía: 1 sabor desde Mercedes vinculada a la venta, y anularla repone 
   await expect(modal.getByTestId("stock-entrega")).toContainText("Stock en Mercedes");
   await modal.getByRole("button", { name: "Continuar", exact: true }).click();
 
-  // Paso 4: observación obligatoria y confirmar.
+  // Paso 4: observación opcional y sin mínimo (A4); confirmar.
   const confirmar = modal.getByRole("button", { name: "Confirmar devolución" });
-  await modal.getByLabel("Observación").fill("No carga");
-  await expect(confirmar).toBeDisabled();
-  await modal.getByLabel("Observación").fill("No carga, luz roja parpadea");
+  await expect(modal.getByLabel("Observación (opcional)")).toHaveValue("");
+  await expect(confirmar).toBeEnabled();
+  await modal.getByLabel("Observación (opcional)").fill("No carga");
   await confirmar.click();
 
   await page.waitForURL(/\/p\/vapes\/devoluciones\/[^/?]+$/);
@@ -143,7 +143,7 @@ test("garantía: 1 sabor desde Mercedes vinculada a la venta, y anularla repone 
   expect(dev.codigo).toMatch(/^VAP-D-\d{6}$/);
   expect(dev.ventaId).toBe(venta.id);
   expect(dev.depositoId).toBe(depositoId);
-  expect(dev.observacion).toBe("No carga, luz roja parpadea");
+  expect(dev.observacion).toBe("No carga");
   expect(dev.items).toHaveLength(1);
   expect(dev.items[0]).toMatchObject({
     varianteId: variante.id,

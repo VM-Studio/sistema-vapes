@@ -83,7 +83,7 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
         <div className="flex min-w-0 flex-col gap-4">
           <SectionCard title="Observación">
             <p className="text-body whitespace-pre-line" data-testid="observacion-devolucion">
-              {d.observacion}
+              {d.observacion || <span className="text-muted">Sin observación</span>}
             </p>
           </SectionCard>
           <SectionCard

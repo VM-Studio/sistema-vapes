@@ -11,17 +11,13 @@ export function formatearIdDevolucion(slug: string, numero: number): string {
   return `${prefijoPanel(slug)}-D-${String(numero).padStart(6, "0")}`;
 }
 
-/** Mismo mínimo que el CHECK de la DB (Devolucion_observacion_chk). */
-export const OBSERVACION_MINIMA = 10;
-
+/** Observación de la devolución: opcional y sin mínimo (vacía = sin observación). */
 export const observacionDevolucion = z
-  .string({ error: "Contá qué le pasó al producto" })
+  .string()
   .trim()
-  .min(
-    OBSERVACION_MINIMA,
-    `Contá qué le pasó al producto (mínimo ${OBSERVACION_MINIMA} caracteres)`,
-  )
-  .max(1000, "Máximo 1000 caracteres");
+  .max(1000, "Máximo 1000 caracteres")
+  .optional()
+  .default("");
 
 export const itemDevolucionSchema = z.object({
   /** El sabor fallado que trae el cliente. */
