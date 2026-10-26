@@ -150,7 +150,7 @@ test("Mercedes + Charly: pendiente → escaneado (reservado) → «Retirado»; A
   await page.goto("/p/vapes/ventas?retiro=pendiente");
   const filaVenta = page.getByRole("row").filter({ hasText: otro });
   await expect(filaVenta.getByTestId("badge-retiro")).toHaveText("Pendiente de retiro");
-  await filaVenta.getByRole("button", { name: `Marcar la venta ${otro} como retirada` }).click();
+  await filaVenta.getByRole("button", { name: `Retirado (venta ${otro})` }).click();
   await expect(page.getByRole("row").filter({ hasText: otro })).toHaveCount(0);
   await page.goto("/p/vapes/ventas?retiro=retirada&rango=todo");
   await expect(
@@ -171,7 +171,7 @@ test("Mercedes + Charly: pendiente → escaneado (reservado) → «Retirado»; A
   const item = await db.ventaItem.findFirstOrThrow({ where: { ventaId: venta.id } });
   await page.goto(`/p/vapes/productos/${item.productoId}?msabor=${item.varianteId}`);
   const movsProducto = page.getByRole("table", { name: "Movimientos de stock" });
-  await expect(movsProducto.getByText(`Venta ${codigo} a Cliente Retiro`)).toBeVisible();
+  await expect(movsProducto.getByText(`Venta ${codigo} a Cliente Retiro`).first()).toBeVisible();
   await expect(movsProducto.getByText(`Venta ${otro}`, { exact: false })).toHaveCount(0);
 });
 
@@ -182,16 +182,38 @@ test("stock: gusto, modelo y pitadas se combinan con la marca y quedan en la URL
   await loginDueno(page);
   await page.goto("/p/vapes/stock?tab=global");
   const tabla = page.getByTestId("tabla-stock");
-  await page.getByLabel("Gusto", { exact: true }).selectOption({ label: "Mango Ice" });
-  await expect(page).toHaveURL(/gusto=mango\+ice|gusto=mango%20ice/);
   const filas = tabla.locator("tbody tr");
   await expect(filas.first()).toBeVisible();
-  for (const t of await filas.allTextContents()) expect(t).toContain("Mango Ice");
+  const todas = await filas.count();
+
+  // Pitadas: solo los de 8000 (Ignite V80, con todos sus gustos).
   await page.getByLabel("Pitadas", { exact: true }).selectOption({ label: "8000" });
   await expect(page).toHaveURL(/pitadas=8000/);
-  for (const t of await filas.allTextContents()) expect(t).toMatch(/8000.*Mango Ice/);
+  await expect.poll(() => filas.count()).toBeLessThan(todas);
+  await page.waitForLoadState("networkidle");
+  for (const t of await filas.allTextContents()) expect(t).toContain(IGNITE_V80);
+
+  // + gusto: combinados.
+  await page.getByLabel("Gusto", { exact: true }).selectOption({ label: "Mango Ice" });
+  await expect(page).toHaveURL(/gusto=mango(\+|%20)ice/);
+  await expect(page).toHaveURL(/pitadas=8000/);
+  await expect(filas).toHaveCount(1);
+  await expect(filas.first()).toContainText(`${IGNITE_V80} — Mango Ice`);
+  await page.waitForLoadState("networkidle");
+
+  // + marca y modelo (la lista de modelos es la de la marca).
+  await page.getByLabel("Marca", { exact: true }).selectOption({ label: "Ignite" });
+  await expect(page).toHaveURL(/marcaId=/);
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByLabel("Modelo", { exact: true }).locator("option")).toHaveText([
+    "Todos los modelos",
+    "V80",
+  ]);
   await page.getByLabel("Modelo", { exact: true }).selectOption({ label: "V80" });
   await expect(page).toHaveURL(/modelo=v80/);
   await expect(filas).toHaveCount(1);
-  await expect(filas.first()).toContainText(`${IGNITE_V80} — Mango Ice`);
+  // Todo queda en la URL: recargar mantiene los filtros.
+  await page.reload();
+  await expect(page.getByLabel("Gusto", { exact: true })).toHaveValue("mango ice");
+  await expect(filas).toHaveCount(1);
 });

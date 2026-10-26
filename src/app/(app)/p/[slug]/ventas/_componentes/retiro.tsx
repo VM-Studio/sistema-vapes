@@ -82,7 +82,7 @@ export function BotonRetirado({
       }}
       loading={enviando}
       className={className}
-      aria-label={`Marcar la venta ${codigo} como retirada`}
+      aria-label={`Retirado (venta ${codigo})`}
       data-testid="boton-retirado"
     >
       <PackageOpen strokeWidth={1.75} /> Retirado
