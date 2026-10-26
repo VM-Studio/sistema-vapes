@@ -7,6 +7,7 @@ import { z } from "zod";
 import { puede } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
 import {
+  aceptarCotizacionSchema,
   calcularPreciosSchema,
   clienteCotizacionSchema,
   configCotizacionSchema,
@@ -26,6 +27,7 @@ import {
 } from "@/server/services/cliente.service";
 import { guardarConfigCotizacion } from "@/server/services/configuracion.service";
 import {
+  aceptarYVender,
   actualizarCotizacion,
   blueDeCotizacion,
   convertirEnVenta,
@@ -183,6 +185,34 @@ export const convertirCotizacionAction = actionHandler(async (input: unknown) =>
   revalidatePath("/p/[slug]/clientes", "layout");
   revalidatePath("/p/[slug]", "page");
   return venta;
+});
+
+/**
+ * «Aceptada ✓» desde la lista: registra la venta con los ítems, precios y
+ * cliente de la cotización, a nombre de quien la marca, pendiente de pago.
+ * Exige VENTAS "crear" (no FIADOS: la venta no se fía en el mostrador).
+ */
+export const aceptarCotizacionAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.VENTAS, "crear");
+  if (!puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "ver")) {
+    throw new ForbiddenError("No tenés acceso al cotizador");
+  }
+  const datos = aceptarCotizacionSchema
+    .extend({ cliente: clienteCotizacionSchema.unwrap().optional() })
+    .parse(input);
+  const clienteId = datos.cliente ? await resolverCliente(ctx, datos.cliente) : undefined;
+  const venta = await aceptarYVender(ctx, datos.id, {
+    depositoId: datos.depositoId,
+    escaneoRemoto: datos.escaneoRemoto,
+    ...(clienteId ? { clienteId } : {}),
+  });
+  revalidar();
+  revalidatePath("/p/[slug]/ventas", "layout");
+  revalidatePath("/p/[slug]/stock", "layout");
+  revalidatePath("/p/[slug]/clientes", "layout");
+  revalidatePath("/p/[slug]/fiados", "layout");
+  revalidatePath("/p/[slug]", "page");
+  return { id: venta.id, codigo: venta.codigo, total: venta.total };
 });
 
 /** Cliente elegido en el modal: existente, o nuevo (si el teléfono ya es de alguien, ese). */

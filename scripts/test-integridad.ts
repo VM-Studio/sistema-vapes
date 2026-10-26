@@ -798,11 +798,9 @@ async function main() {
       include: { items: true },
     });
   }
-  await rechaza(
-    "observación de devolución con menos de 10 caracteres",
-    () => transaccion(ctxVapes, (tx) => devolucion(tx, "  fallado  ")),
-    "Devolucion_observacion_chk",
-  );
+  // A4: la observación es opcional y sin mínimo (se quitó Devolucion_observacion_chk).
+  const sinObs = await enRollback((tx) => devolucion(tx, ""));
+  check(sinObs?.observacion === "", "devolución sin observación (texto vacío): OK");
   const dev = await enRollback((tx) => devolucion(tx, "No enciende desde el primer día"));
   check(
     dev?.estado === "REGISTRADA" && dev.ventaId === null && dev.items.length === 1,
@@ -1652,14 +1650,20 @@ async function main() {
     }).data?.tipo === "UNITARIA",
     "venta con cliente nuevo y Binance; tipo por defecto UNITARIA",
   );
+  // A4: observación opcional y sin mínimo.
   check(
-    !registrarDevolucionSchema.safeParse({
+    registrarDevolucionSchema.safeParse({
       clienteId: "c",
       depositoId: "d",
       items: [{ varianteId: "a", cantidad: 1 }],
       observacion: "fallado",
-    }).success,
-    "devolución con observación de menos de 10 caracteres es error",
+    }).success &&
+      registrarDevolucionSchema.safeParse({
+        clienteId: "c",
+        depositoId: "d",
+        items: [{ varianteId: "a", cantidad: 1 }],
+      }).data?.observacion === "",
+    "devolución con observación corta o sin observación: OK (vacía = '')",
   );
   check(
     v.formatearIdTransferencia("vapes", 1) === "VAP-T-000001",

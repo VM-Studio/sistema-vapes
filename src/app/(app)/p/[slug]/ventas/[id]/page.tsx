@@ -23,11 +23,15 @@ import {
 } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
-import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
+import {
+  obtenerConfigFacturacion,
+  obtenerConfigVentas,
+} from "@/server/services/configuracion.service";
 import { facturasDeVenta } from "@/server/services/factura.service";
 import { obtenerVenta } from "@/server/services/venta.service";
 
-import { ICONO_MEDIO_PAGO, MedioPagoBadge } from "../_componentes/medio-pago";
+import { ICONO_MEDIO_PAGO, MedioPagoBadge, textoEstadoPago } from "../_componentes/medio-pago";
+import { MarcarPagada } from "../_componentes/marcar-pagada";
 import { EscaneoBadge, EscaneoRemotoVenta } from "../_componentes/escaneo-remoto";
 import { VerificadaBadge } from "../_componentes/verificada-badge";
 import { AnularVenta } from "./acciones-venta";
@@ -61,6 +65,13 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
   const puedeFacturar =
     facturacion && confirmada && !facturaEmitida && puedeHacer(Modulo.FACTURAS, "crear");
   const unidades = v.items.reduce((a, i) => a + i.cantidad, 0);
+  // «Marcar pagada»: VENTAS "editar" o FIADOS "editar" (lo vuelve a validar el servicio).
+  const puedeCobrar =
+    confirmada &&
+    Number(v.saldoPendiente) > 0 &&
+    (puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "editar") ||
+      puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "editar"));
+  const medios = puedeCobrar ? (await obtenerConfigVentas(ctx)).mediosPago : [];
 
   const devolucionesBloquean = confirmada && owner && v.tieneDevolucionesRegistradas;
 
@@ -348,6 +359,17 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                     )}
                   </dd>
                 </div>
+                {confirmada && (
+                  <dd
+                    data-testid="estado-pago-venta"
+                    className={cn(
+                      "font-medium",
+                      v.estadoPago !== "PAGADA" && "text-warning-soft-foreground",
+                    )}
+                  >
+                    {textoEstadoPago(v.estadoPago, v.pagos)}
+                  </dd>
+                )}
                 {v.pagos.length > 0 && (
                   <dd>
                     <ul className="flex flex-col gap-2">
@@ -395,6 +417,12 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                       {formatearPesos(v.saldoPendiente)}
                     </dd>
                   </div>
+                )}
+                {puedeCobrar && (
+                  <MarcarPagada
+                    venta={{ id: v.id, codigo: v.codigo, saldoPendiente: v.saldoPendiente }}
+                    medios={medios}
+                  />
                 )}
                 {confirmada &&
                   puedeHacer(Modulo.FIADOS) &&

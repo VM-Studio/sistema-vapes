@@ -40,7 +40,16 @@ export function FiltrosVentas({
   const ruta = useRutaPanel();
   const { slug } = usePanel();
   // En mobile, fechas y selects van plegados (salvo que ya haya alguno aplicado).
-  const avanzados = ["desde", "hasta", "depositoId", "vendedorId", "medioPago", "tipo", "escaneo"];
+  const avanzados = [
+    "desde",
+    "hasta",
+    "depositoId",
+    "vendedorId",
+    "medioPago",
+    "pago",
+    "tipo",
+    "escaneo",
+  ];
   const activos = avanzados.filter((k) => params[k]).length;
   const [masFiltros, setMasFiltros] = useState(activos > 0);
   const link = (cambios: Record<string, string | null>) =>
@@ -89,8 +98,7 @@ export function FiltrosVentas({
       <div
         id="filtros-ventas-avanzados"
         className={cn(
-          "grid-cols-2 gap-2 md:grid md:grid-cols-3",
-          conEscaneoRemoto ? "lg:grid-cols-4" : "lg:grid-cols-6",
+          "grid-cols-2 gap-2 md:grid md:grid-cols-3 lg:grid-cols-4",
           masFiltros ? "grid" : "hidden",
         )}
       >
@@ -141,6 +149,17 @@ export function FiltrosVentas({
           ]}
           value={params.medioPago ?? ""}
           onChange={(e) => actualizar({ medioPago: e.target.value || null })}
+        />
+        <Select
+          aria-label="Estado de pago"
+          containerClassName="self-end"
+          options={[
+            { value: "", label: "Pagadas y pendientes" },
+            { value: "pendiente", label: "Pendientes de pago" },
+            { value: "pagada", label: "Pagadas" },
+          ]}
+          value={params.pago ?? ""}
+          onChange={(e) => actualizar({ pago: e.target.value || null })}
         />
         <Select
           aria-label="Tipo de venta"

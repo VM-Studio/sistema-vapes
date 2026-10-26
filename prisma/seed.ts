@@ -88,13 +88,17 @@ const USUARIOS: UsuarioSeed[] = [
 
 const PASSWORD_DESARROLLO = "Cambiar123!";
 
-/** Trinidad: solo Vapes; ver/crear en Ventas, Clientes y Cotizador; ver en Productos y Stock. */
+/**
+ * Trinidad: solo Vapes; ver/crear/editar en Ventas (A4: acepta sus cotizaciones
+ * y marca las ventas pagadas), ver/crear en Clientes y Cotizador; ver en
+ * Productos y Stock. En producción: scripts/_prod-permisos-trinidad.ts.
+ */
 const PERMISOS_TRINIDAD: Omit<PermisoModulo, "panelId">[] = [
   {
     modulo: Modulo.VENTAS,
     puedeVer: true,
     puedeCrear: true,
-    puedeEditar: false,
+    puedeEditar: true,
     puedeEliminar: false,
   },
   {

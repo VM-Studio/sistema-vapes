@@ -2,17 +2,15 @@
 
 import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
-import { Select } from "@/components/ui/select";
 import { useUrlParams } from "@/hooks/use-url-params";
-import { ESTADO_FACTURA_ML_UI, ESTADOS_FACTURA_ML } from "@/lib/validations/factura";
 
-/** Filtros de Ventas Mercado Libre (en la URL): período de la venta, estado y texto. */
+/** Filtros de Ventas Mercado Libre (en la URL): período de la venta y texto (el estado, con las tarjetas). */
 export function FiltrosVentasML({ params }: { params: Record<string, string> }) {
   const { actualizar } = useUrlParams();
   return (
     <section
       aria-label="Filtros"
-      className="bg-card rounded-card mb-4 grid gap-3 p-4 md:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]"
+      className="bg-card rounded-card mb-4 grid gap-3 p-4 md:grid-cols-[minmax(0,2fr)_repeat(2,minmax(0,1fr))]"
     >
       <SearchInput placeholder="ID de venta o cliente" />
       <Input
@@ -26,15 +24,6 @@ export function FiltrosVentasML({ params }: { params: Record<string, string> }) 
         aria-label="Hasta"
         value={params.hasta ?? ""}
         onChange={(e) => actualizar({ hasta: e.target.value || null })}
-      />
-      <Select
-        aria-label="Estado de la factura"
-        options={[
-          { value: "", label: "Todas" },
-          ...ESTADOS_FACTURA_ML.map((e) => ({ value: e, label: ESTADO_FACTURA_ML_UI[e].label })),
-        ]}
-        value={params.estado ?? ""}
-        onChange={(e) => actualizar({ estado: e.target.value || null })}
       />
     </section>
   );

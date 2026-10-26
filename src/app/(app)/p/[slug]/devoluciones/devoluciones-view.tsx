@@ -196,16 +196,19 @@ export function DevolucionesView({
           {
             key: "observacion",
             header: "Observación",
-            cell: (d) => (
-              <Tooltip content={d.observacion} className="max-w-56">
-                <span
-                  tabIndex={0}
-                  className="text-muted rounded-inner block min-w-0 truncate focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  {d.observacion}
-                </span>
-              </Tooltip>
-            ),
+            cell: (d) =>
+              !d.observacion ? (
+                <span className="text-subtle">—</span>
+              ) : (
+                <Tooltip content={d.observacion} className="max-w-56">
+                  <span
+                    tabIndex={0}
+                    className="text-muted rounded-inner block min-w-0 truncate focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    {d.observacion}
+                  </span>
+                </Tooltip>
+              ),
           },
           {
             key: "usuario",
@@ -225,9 +228,11 @@ export function DevolucionesView({
             </div>
             <p className="mt-1 text-sm font-medium">{d.cliente.nombre}</p>
             <p className="text-sm">{productos(d)}</p>
-            <p className="text-muted mt-1 truncate text-xs" title={d.observacion}>
-              {d.observacion}
-            </p>
+            {d.observacion && (
+              <p className="text-muted mt-1 truncate text-xs" title={d.observacion}>
+                {d.observacion}
+              </p>
+            )}
             <p className="text-subtle mt-1 text-xs">
               {formatearFechaHora(d.fecha)} · {d.deposito.nombre} · {d.usuario}
             </p>

@@ -7,6 +7,7 @@ import {
   id,
   monto,
   montoOpcional,
+  montoPositivo,
   sinDuplicados,
   texto,
   textoOpcional,
@@ -90,6 +91,14 @@ export const generarVentaSchema = z.object({
 
 export const ventaIdSchema = z.object({ ventaId: id });
 
+/** «Marcar pagada»: cobro (total o parcial) del saldo de UNA venta. */
+export const marcarPagadaSchema = z.object({
+  ventaId: id,
+  monto: montoPositivo,
+  medioPago: medioPagoSchema,
+  referencia: textoOpcional(100),
+});
+
 /** Códigos escaneados por el usuario de escaneo, en orden (se evalúan en el servidor). */
 export const escaneoRemotoSchema = z.object({
   ventaId: id,
@@ -124,6 +133,8 @@ export const listarVentasSchema = z.object({
   estado: z.preprocess(vacioAUndefined, z.enum(EstadoVenta).optional()).catch(undefined),
   /** «Escanea Charly»: esperando escaneo o ya escaneadas. */
   escaneo: z.preprocess(vacioAUndefined, z.enum(Escaneo).optional()).catch(undefined),
+  /** Estado de pago: «pendiente» (debe algo) o «pagada». */
+  pago: z.preprocess(vacioAUndefined, z.enum(["pendiente", "pagada"]).optional()).catch(undefined),
   /** ID de venta (VAP-000123 o 123), nombre o teléfono del cliente. */
   q: z.preprocess(vacioAUndefined, z.string().trim().max(100).optional()).catch(undefined),
   page: z.coerce.number().int().min(1).catch(1),

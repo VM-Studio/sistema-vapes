@@ -153,6 +153,16 @@ export const convertirCotizacionSchema = z.object({
   verificacion: verificacionEscaneoSchema,
 });
 
+/**
+ * «Aceptada ✓» desde la lista: galpón, «Escanea Charly» opcional y el cliente
+ * solo si la cotización no tenía uno. La venta queda pendiente de pago.
+ */
+export const aceptarCotizacionSchema = z.object({
+  id,
+  depositoId: id,
+  escaneoRemoto: z.boolean().default(false),
+});
+
 const fechaISO = z
   .preprocess(
     vacioAUndefined,

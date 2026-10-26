@@ -51,19 +51,29 @@ export type CtxFiados = Ctx & { usuario?: SujetoPermisos };
  * (CtxPanel) se decide en memoria; si no, se leen su rol y permisos de la DB
  * (dentro de la transacción que llama, si la hay).
  */
-export async function puedeFiados(
+export function puedeFiados(
   ctx: CtxFiados,
   accion: Accion,
   db: Tx = dbPara(ctx.panelId),
 ): Promise<boolean> {
-  if (ctx.usuario) return puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, accion);
+  return puedeEnModulo(ctx, Modulo.FIADOS, accion, db);
+}
+
+/** Igual que puedeFiados, para cualquier módulo del panel. */
+export async function puedeEnModulo(
+  ctx: CtxFiados,
+  modulo: Modulo,
+  accion: Accion,
+  db: Tx = dbPara(ctx.panelId),
+): Promise<boolean> {
+  if (ctx.usuario) return puede(ctx.usuario, ctx.panelId, modulo, accion);
   const u = await db.usuario.findUnique({
     where: { id: ctx.usuarioId },
     select: {
       rol: true,
       activo: true,
       deletedAt: true,
-      permisos: { where: { panelId: ctx.panelId, modulo: Modulo.FIADOS } },
+      permisos: { where: { panelId: ctx.panelId, modulo } },
       paneles: { where: { panelId: ctx.panelId }, select: { panelId: true } },
     },
   });
@@ -71,7 +81,7 @@ export async function puedeFiados(
   return puede(
     { rol: u.rol, permisos: u.permisos, paneles: u.paneles.map((p) => p.panelId) },
     ctx.panelId,
-    Modulo.FIADOS,
+    modulo,
     accion,
   );
 }
@@ -416,9 +426,47 @@ function fechaDelCobro(fecha: string | undefined): Date {
  * tocada (el último puede ser parcial), y baja el saldo del cliente. El monto
  * no puede superar la deuda. Todo en una transacción Serializable.
  */
-export async function registrarCobro(
+export function registrarCobro(
   ctx: CtxFiados,
   input: RegistrarCobroInput,
+): Promise<CobroRegistrado> {
+  return cobrar(ctx, input, (tx) =>
+    exigirFiados(ctx, "editar", "No tenés permiso para registrar cobros.", tx),
+  );
+}
+
+/**
+ * «Marcar pagada» desde una venta (detalle o listado de Ventas): un cobro de
+ * cuenta corriente imputado SOLO a esa venta (total o parcial), con la misma
+ * mecánica que registrarCobro (PagoVenta esCobroPosterior, saldo del cliente,
+ * auditoría «Cobro»). Alcanza con VENTAS "editar" o FIADOS "editar".
+ */
+export async function cobrarVenta(
+  ctx: CtxFiados,
+  ventaId: string,
+  input: { monto: number; medioPago: MedioPago; referencia?: string },
+): Promise<CobroRegistrado> {
+  const venta = await dbPara(ctx.panelId).venta.findUnique({
+    where: { id: ventaId },
+    select: { clienteId: true, codigo: true, estado: true, saldoPendiente: true },
+  });
+  if (!venta) throw new NotFoundError("La venta no existe.");
+  if (venta.estado !== EstadoVenta.CONFIRMADA)
+    throw new DomainError(`La venta ${venta.codigo} está anulada.`);
+  if (venta.saldoPendiente.lessThanOrEqualTo(0))
+    throw new DomainError(`La venta ${venta.codigo} ya está pagada.`);
+  return cobrar(ctx, { clienteId: venta.clienteId, ventaIds: [ventaId], ...input }, async (tx) => {
+    const ok =
+      (await puedeEnModulo(ctx, Modulo.VENTAS, "editar", tx)) ||
+      (await puedeEnModulo(ctx, Modulo.FIADOS, "editar", tx));
+    if (!ok) throw new ForbiddenError("No tenés permiso para marcar ventas como pagadas.");
+  });
+}
+
+async function cobrar(
+  ctx: CtxFiados,
+  input: RegistrarCobroInput,
+  exigirPermiso: (tx: Tx) => Promise<void>,
 ): Promise<CobroRegistrado> {
   const monto = D(input.monto).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
   if (monto.lessThanOrEqualTo(0))
@@ -427,7 +475,7 @@ export async function registrarCobro(
   return transaccion(
     ctx,
     async (tx) => {
-      await exigirFiados(ctx, "editar", "No tenés permiso para registrar cobros.", tx);
+      await exigirPermiso(tx);
       const { mediosPago } = await obtenerConfigVentas(ctx, tx);
       if (!mediosPago.includes(input.medioPago))
         throw new DomainError(

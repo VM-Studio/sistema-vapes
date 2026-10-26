@@ -24,6 +24,10 @@ export interface StatCardProps {
   /** Ícono y color del círculo; por defecto salen de la etiqueta (iconoMetrica). */
   icono?: LucideIcon;
   acento?: TonoMetrica;
+  /** Tarjeta que filtra (con href): marca el filtro aplicado. */
+  activo?: boolean;
+  /** Link común (<a>, recarga la página) en vez de next/link: ver ChipLink. */
+  recargar?: boolean;
 }
 
 /**
@@ -44,6 +48,8 @@ export function StatCard({
   deltaPct,
   icono,
   acento,
+  activo = false,
+  recargar = false,
 }: StatCardProps) {
   const conDelta = deltaPct !== undefined;
   const sube = deltaPct != null && deltaPct > 0;
@@ -108,10 +114,18 @@ export function StatCard({
     tono === "alerta" ? "bg-danger-soft" : "bg-card",
     href &&
       "transition-[background-color,box-shadow] duration-150 hover:bg-card-hover hover:shadow-card-hover",
+    activo && "outline-foreground outline-2 outline-offset-2",
     className,
   );
+  const actual = activo ? ("true" as const) : undefined;
+  if (href && recargar)
+    return (
+      <a href={href} className={clase} aria-current={actual}>
+        {contenido}
+      </a>
+    );
   return href ? (
-    <Link href={href} className={clase} scroll={false}>
+    <Link href={href} className={clase} scroll={false} aria-current={actual}>
       {contenido}
     </Link>
   ) : (

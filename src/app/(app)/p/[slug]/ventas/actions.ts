@@ -6,11 +6,17 @@ import { z } from "zod";
 
 import { puede } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
-import { anularVentaSchema, generarVentaSchema, ventaIdSchema } from "@/lib/validations/venta";
+import {
+  anularVentaSchema,
+  generarVentaSchema,
+  marcarPagadaSchema,
+  ventaIdSchema,
+} from "@/lib/validations/venta";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx, requireCtxOwner } from "@/server/auth/permissions";
 import { ClienteDuplicadoError, type ClienteBasico } from "@/server/services/cliente.service";
 import { cancelarEscaneo, pedirEscaneo } from "@/server/services/escaneo-remoto.service";
+import { cobrarVenta } from "@/server/services/fiado.service";
 import {
   anularVenta,
   generarVenta,
@@ -69,6 +75,27 @@ export const anularVentaAction = actionHandler(async (input: unknown) => {
   const r = await anularVenta(ctx, ventaId, motivo);
   revalidar();
   return r;
+});
+
+/**
+ * «Marcar pagada»: cobra el saldo (o parte) de una venta pendiente. Con VENTAS
+ * "editar" o FIADOS "editar" (lo valida el servicio; acá alcanza con ver).
+ */
+export const marcarPagadaAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.VENTAS, "ver");
+  const { ventaId, ...datos } = marcarPagadaSchema.parse(input);
+  const r = await cobrarVenta(ctx, ventaId, datos);
+  revalidatePath("/p/[slug]/ventas", "layout");
+  revalidatePath("/p/[slug]/fiados", "layout");
+  revalidatePath("/p/[slug]/clientes", "layout");
+  revalidatePath("/p/[slug]", "page");
+  const imputada = r.imputaciones[0];
+  return {
+    monto: r.monto,
+    medioPago: r.medioPago,
+    saldoVenta: imputada?.saldoVenta ?? "0.00",
+    estadoPago: imputada?.estadoPago ?? "PAGADA",
+  };
 });
 
 // --- «Escanea Charly» (galpones con escaneo remoto) ---------------------------------

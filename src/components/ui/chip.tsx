@@ -17,17 +17,25 @@ export function ChipLink({
   pestana = false,
   children,
   className,
+  recargar = false,
 }: {
   href: string;
   activo: boolean;
   pestana?: boolean;
   children: ReactNode;
   className?: string;
+  /**
+   * Link común (<a>: recarga la página) en vez de next/link. En Facturas la
+   * navegación del router a la misma página con otro ?estado= a veces quedaba
+   * colgada en producción (Next 15.5): el filtro tiene que andar siempre.
+   */
+  recargar?: boolean;
 }) {
+  const Componente = recargar ? "a" : Link;
   return (
-    <Link
+    <Componente
       href={href}
-      scroll={false}
+      {...(recargar ? {} : { scroll: false })}
       aria-current={activo ? "true" : undefined}
       className={cn(
         base,
@@ -40,7 +48,7 @@ export function ChipLink({
       )}
     >
       {children}
-    </Link>
+    </Componente>
   );
 }
 

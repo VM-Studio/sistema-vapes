@@ -159,7 +159,7 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     grupo: "Operación",
     enBottomBar: false,
     ordenMobile: 11.5,
-    descripcion: "Facturas y comprobantes de las ventas",
+    descripcion: "Facturas de las ventas de Mercado Libre",
     requiereFacturacion: true,
   },
   {

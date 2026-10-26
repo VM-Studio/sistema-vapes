@@ -1158,8 +1158,8 @@ model Devolucion {
   ventaId             String?
   /// De dónde sale la unidad nueva que se entrega.
   depositoId          String
-  /// Por qué se devolvió (mínimo 10 caracteres, CHECK en DB).
-  observacion         String
+  /// Por qué se devolvió (opcional desde A4: vacío = sin observación).
+  observacion         String           @default("")
   usuarioId           String
   estado              EstadoDevolucion @default(REGISTRADA)
   /// Σ (precioEntregado − precioDevuelto) × cantidad de los ítems: > 0 el
