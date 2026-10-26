@@ -10,6 +10,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { formatearPesos } from "@/lib/format";
+import { formatearFechaHora } from "@/lib/utils";
 import { ESTADO_PAGO_UI, ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 
 export const ICONO_MEDIO_PAGO: Record<MedioPago, LucideIcon> = {
@@ -42,4 +43,21 @@ export function EstadoPagoBadge({ estado, saldo }: { estado: EstadoPago; saldo: 
       Debe {formatearPesos(saldo)}
     </Badge>
   );
+}
+
+/**
+ * Estado de pago en palabras: «Pagada con Transferencia el 25/10/2026 14:30»
+ * (medios de los pagos vigentes, fecha del último) o «Pendiente de pago».
+ */
+export function textoEstadoPago(
+  estado: EstadoPago,
+  pagos: { medioPago: MedioPago; fecha: Date; anulado?: boolean }[],
+): string {
+  if (estado === "PENDIENTE") return "Pendiente de pago";
+  if (estado === "PARCIAL") return "Pago parcial · resto pendiente de pago";
+  const vigentes = pagos.filter((p) => !p.anulado);
+  if (vigentes.length === 0) return "Pagada";
+  const medios = [...new Set(vigentes.map((p) => ETIQUETA_MEDIO_PAGO[p.medioPago]))];
+  const ultimo = vigentes.reduce((a, p) => (p.fecha > a.fecha ? p : a));
+  return `Pagada con ${medios.join(" + ")} el ${formatearFechaHora(ultimo.fecha)}`;
 }

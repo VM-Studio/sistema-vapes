@@ -30,3 +30,10 @@ export const esEditable = (estado: EstadoCotizacion) =>
 /** Se puede convertir en venta (VENCIDA pide confirmar los precios de hoy). */
 export const esConvertible = (estado: EstadoCotizacion) =>
   estado === "BORRADOR" || estado === "ENVIADA" || estado === "ACEPTADA" || estado === "VENCIDA";
+
+/**
+ * «Aceptada ✓» desde la lista (venta pendiente de pago): solo vigentes, sin
+ * convertir ni rechazar. Una vencida pide revisar los precios de hoy.
+ */
+export const esAceptable = (estado: EstadoCotizacion) =>
+  estado === "BORRADOR" || estado === "ENVIADA" || estado === "ACEPTADA";

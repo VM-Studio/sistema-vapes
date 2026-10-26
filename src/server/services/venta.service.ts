@@ -85,6 +85,14 @@ export interface PermisosVenta {
    * como venta a cliente nuevo igual que si lo creara ella.
    */
   clienteRecienCreado?: boolean;
+  /**
+   * Cotización aceptada desde la lista del cotizador: la venta queda SIN pagos,
+   * pendiente de pago (saldo = total, a la cuenta del cliente), y se cobra
+   * después con «Marcar pagada». No exige FIADOS "crear": no es fiar en el
+   * mostrador sino registrar una venta acordada que se cobra al entregar.
+   * Solo con `origen: "COTIZACION"` y sin pagos.
+   */
+  pendienteDePago?: boolean;
 }
 
 export interface OpcionesLectura {
@@ -189,10 +197,15 @@ async function generarEnTx(
   if (!input.depositoId) throw new DomainError("Elegí el galpón de la venta.");
   const config = await obtenerConfigVentas(ctx, tx);
   if (input.pagos.length === 0 && !input.fiar) throw new DomainError(elegiMedio(config.mediosPago));
+  if (
+    permisos.pendienteDePago &&
+    (permisos.origen !== "COTIZACION" || input.pagos.length > 0 || !input.fiar)
+  )
+    throw new DomainError("Solo una cotización aceptada queda pendiente de pago, sin pagos.");
   // Pedir fiado (botón «Fiado» = sin pagos, o «Fiar el resto») exige FIADOS
   // "crear" de entrada, aunque el total termine cubierto: el permiso no depende
   // de lo que mande el cliente.
-  if (input.fiar && !(await puedeFiados(ctx, "crear", tx)))
+  if (input.fiar && !permisos.pendienteDePago && !(await puedeFiados(ctx, "crear", tx)))
     throw new ForbiddenError("No tenés permiso para vender fiado.");
   if (input.pagos.some((p) => !MEDIOS.has(p.medioPago) || !config.mediosPago.includes(p.medioPago)))
     throw new DomainError(elegiMedio(config.mediosPago));
@@ -690,6 +703,13 @@ function whereVentas(f: Omit<FiltrosVentas, "page" | "pageSize">): Prisma.VentaW
   if (f.medioPago) where.pagos = { some: { medioPago: f.medioPago } };
   if (f.tipo) where.tipo = f.tipo;
   if (f.escaneo) where.escaneoRemoto = f.escaneo;
+  // Estado de pago: «pendiente» = debe algo (PENDIENTE o PARCIAL), solo confirmadas.
+  if (f.pago === "pendiente") {
+    where.estado = EstadoVenta.CONFIRMADA;
+    where.saldoPendiente = { gt: 0 };
+  } else if (f.pago === "pagada") {
+    where.estadoPago = EstadoPago.PAGADA;
+  }
   if (f.desde || f.hasta) {
     where.fecha = {
       ...(f.desde ? { gte: inicioDelDia(f.desde) } : {}),
@@ -728,6 +748,8 @@ export interface VentaListada {
   medioPago: MedioPago | null;
   estadoPago: EstadoPago;
   saldoPendiente: string;
+  /** Último pago vigente (al vender o cobro posterior): «Pagada con … el …». */
+  ultimoPago: { medioPago: MedioPago; fecha: Date } | null;
   /** null si el usuario no es OWNER. */
   gananciaBruta: string | null;
   /** Todas las unidades se escanearon contra el carrito ("Verificar con pistola"). */
@@ -766,6 +788,12 @@ export async function listarVentas(
         items: { select: { cantidad: true } },
         escaneoPedidoPor: { select: { nombre: true } },
         escaneadaPor: { select: { nombre: true } },
+        pagos: {
+          where: { anulado: false },
+          orderBy: [{ fecha: "desc" }, { createdAt: "desc" }],
+          take: 1,
+          select: { medioPago: true, fecha: true },
+        },
       },
     }),
     db.venta.aggregate({
@@ -790,6 +818,7 @@ export async function listarVentas(
       medioPago: v.medioPago,
       estadoPago: v.estadoPago,
       saldoPendiente: dec(v.saldoPendiente),
+      ultimoPago: v.pagos[0] ?? null,
       gananciaBruta: opciones.verCostos ? dec(v.gananciaBruta) : null,
       verificadaPorEscaneo: v.verificadaPorEscaneo,
       escaneo: estadoEscaneoDe(v),

@@ -9,6 +9,7 @@ import { MenuFila, type AccionFila } from "@/components/ui/menu-fila";
 import { useToast } from "@/components/ui/toast";
 import { rutaPdf } from "@/lib/pdfs";
 
+import { AceptarCotizacion, type GalponAceptar } from "./aceptar-cotizacion";
 import { duplicarCotizacionAction, whatsappCotizacionAction } from "./actions";
 import { abrirEnPestana } from "./compartir";
 
@@ -19,12 +20,15 @@ export function AccionesFila({
   puedeCrear,
   convertible,
   puedeVender,
+  aceptar = null,
 }: {
   id: string;
   codigo: string;
   puedeCrear: boolean;
   convertible: boolean;
   puedeVender: boolean;
+  /** «Aceptada ✓» (registra la venta pendiente de pago); null = no se ofrece. */
+  aceptar?: { total: string; conCliente: boolean; galpones: GalponAceptar[] } | null;
 }) {
   const ruta = useRutaPanel();
   const panel = usePanel();
@@ -76,5 +80,12 @@ export function AccionesFila({
       : []),
   ];
 
-  return <MenuFila acciones={acciones} label={`Acciones de ${codigo}`} />;
+  const menu = <MenuFila acciones={acciones} label={`Acciones de ${codigo}`} />;
+  if (!aceptar) return menu;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <AceptarCotizacion id={id} codigo={codigo} {...aceptar} />
+      {menu}
+    </span>
+  );
 }

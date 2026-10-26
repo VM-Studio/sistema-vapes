@@ -283,61 +283,79 @@ test("Trinidad vende y da de alta al cliente: sin precio especial ni descuento",
 }, info) => {
   test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
   const trinidad = await db.usuario.findFirstOrThrow({ where: { nombre: "Trinidad" } });
-  const mango = await codigoDe(IGNITE_V80, "Mango Ice");
-  const telefono = `11 6${sufijo().slice(0, 3)} ${sufijo().slice(-4)}`;
-  await login(page, trinidad.email, PASSWORD_TRINIDAD);
-  await abrirModal(page);
-  await elegirGalpon(page, "Ayres Plaza");
-  await pistola(page, mango);
-  await expect(modal(page).locator('ul[aria-label="Productos de la venta"] > li')).toHaveCount(1);
-  await expect(modal(page).getByRole("button", { name: "Precio especial" })).toHaveCount(0);
-  await continuar(page).click();
-  await clienteNuevo(page, "Clienta de Trini", telefono);
-  await expect(continuar(page)).toBeEnabled();
-  await continuar(page).click();
-  await expect(modal(page).getByRole("radio", { name: "Efectivo" })).toBeVisible();
-  await expect(modal(page).getByLabel(/Descuento/)).toHaveCount(0);
-  const codigo = await confirmar(page, "Efectivo");
-
-  const venta = await db.venta.findFirstOrThrow({
-    where: { panelId: PANEL_VAPES, codigo },
-    include: { cliente: true, items: true },
-  });
-  expect(venta.vendedorId).toBe(trinidad.id);
-  expect(venta.cliente.nombre).toBe("Clienta de Trini");
-  expect(venta.items[0]!.esPrecioEspecial).toBe(false);
-
-  // Forzar un precio especial (o un descuento) salteando la UI → FORBIDDEN.
-  const v = await db.variante.findFirstOrThrow({
-    where: { panelId: PANEL_VAPES, codigoBarras: mango },
-  });
-  const base = {
-    depositoId: await depositoId("Ayres Plaza"),
-    cliente: { id: venta.clienteId },
-    pagos: [{ medioPago: "EFECTIVO", monto: 1 }],
+  // Desde A4 Trinidad tiene VENTAS "editar" (marca ventas pagadas): para probar
+  // a un vendedor SIN "editar", se lo saca durante este test (workers: 1).
+  const permiso = {
+    usuarioId_panelId_modulo: {
+      usuarioId: trinidad.id,
+      panelId: PANEL_VAPES,
+      modulo: "VENTAS" as const,
+    },
   };
-  const especial = await llamarAccion(
-    page,
-    "generarVentaAction",
-    { ...base, items: [{ varianteId: v.id, cantidad: 1, precioEspecial: 100 }] },
-    "/p/vapes/ventas",
-  );
-  expect(especial).toContain("FORBIDDEN");
-  const descuento = await llamarAccion(
-    page,
-    "generarVentaAction",
-    { ...base, items: [{ varianteId: v.id, cantidad: 1 }], descuento: 1000 },
-    "/p/vapes/ventas",
-  );
-  expect(descuento).toContain("FORBIDDEN");
-  // Anular: solo dueños.
-  const anular = await llamarAccion(
-    page,
-    "anularVentaAction",
-    { ventaId: venta.id, motivo: "Probando" },
-    "/p/vapes/ventas",
-  );
-  expect(anular).toContain("FORBIDDEN");
+  await db.permisoUsuario.update({ where: permiso, data: { puedeEditar: false } });
+  try {
+    await sinEditar();
+  } finally {
+    await db.permisoUsuario.update({ where: permiso, data: { puedeEditar: true } });
+  }
+
+  async function sinEditar() {
+    const mango = await codigoDe(IGNITE_V80, "Mango Ice");
+    const telefono = `11 6${sufijo().slice(0, 3)} ${sufijo().slice(-4)}`;
+    await login(page, trinidad.email, PASSWORD_TRINIDAD);
+    await abrirModal(page);
+    await elegirGalpon(page, "Ayres Plaza");
+    await pistola(page, mango);
+    await expect(modal(page).locator('ul[aria-label="Productos de la venta"] > li')).toHaveCount(1);
+    await expect(modal(page).getByRole("button", { name: "Precio especial" })).toHaveCount(0);
+    await continuar(page).click();
+    await clienteNuevo(page, "Clienta de Trini", telefono);
+    await expect(continuar(page)).toBeEnabled();
+    await continuar(page).click();
+    await expect(modal(page).getByRole("radio", { name: "Efectivo" })).toBeVisible();
+    await expect(modal(page).getByLabel(/Descuento/)).toHaveCount(0);
+    const codigo = await confirmar(page, "Efectivo");
+
+    const venta = await db.venta.findFirstOrThrow({
+      where: { panelId: PANEL_VAPES, codigo },
+      include: { cliente: true, items: true },
+    });
+    expect(venta.vendedorId).toBe(trinidad.id);
+    expect(venta.cliente.nombre).toBe("Clienta de Trini");
+    expect(venta.items[0]!.esPrecioEspecial).toBe(false);
+
+    // Forzar un precio especial (o un descuento) salteando la UI → FORBIDDEN.
+    const v = await db.variante.findFirstOrThrow({
+      where: { panelId: PANEL_VAPES, codigoBarras: mango },
+    });
+    const base = {
+      depositoId: await depositoId("Ayres Plaza"),
+      cliente: { id: venta.clienteId },
+      pagos: [{ medioPago: "EFECTIVO", monto: 1 }],
+    };
+    const especial = await llamarAccion(
+      page,
+      "generarVentaAction",
+      { ...base, items: [{ varianteId: v.id, cantidad: 1, precioEspecial: 100 }] },
+      "/p/vapes/ventas",
+    );
+    expect(especial).toContain("FORBIDDEN");
+    const descuento = await llamarAccion(
+      page,
+      "generarVentaAction",
+      { ...base, items: [{ varianteId: v.id, cantidad: 1 }], descuento: 1000 },
+      "/p/vapes/ventas",
+    );
+    expect(descuento).toContain("FORBIDDEN");
+    // Anular: solo dueños.
+    const anular = await llamarAccion(
+      page,
+      "anularVentaAction",
+      { ventaId: venta.id, motivo: "Probando" },
+      "/p/vapes/ventas",
+    );
+    expect(anular).toContain("FORBIDDEN");
+  }
 });
 
 test("venta en Cosmetic → ID COS-######", async ({ page }, info) => {

@@ -1267,6 +1267,10 @@ export async function convertirEnVenta(
     recalcular?: boolean;
     /** "Verificar con pistola" sobre los ítems de la cotización. */
     verificacion?: { varianteId: string; unidades: number }[];
+    /** «Escanea Charly» al generarla (galpones con escaneo remoto). */
+    escaneoRemoto?: boolean;
+    /** Aceptada desde la lista: sin pagos, pendiente de pago (ver aceptarYVender). */
+    pendienteDePago?: boolean;
   },
 ): Promise<VentaGenerada> {
   return transaccion(
@@ -1336,15 +1340,18 @@ export async function convertirEnVenta(
         {
           depositoId: opciones.depositoId,
           cliente: { id: clienteId },
-          pagos: opciones.pagos.map((p) => ({
-            medioPago: p.medioPago,
-            monto: p.monto,
-            referencia: p.referencia,
-          })),
-          fiar: opciones.fiar ?? false,
+          pagos: opciones.pendienteDePago
+            ? []
+            : opciones.pagos.map((p) => ({
+                medioPago: p.medioPago,
+                monto: p.monto,
+                referencia: p.referencia,
+              })),
+          fiar: opciones.pendienteDePago ? true : (opciones.fiar ?? false),
           tipo: c.tipo === TipoCotizacion.MAYORISTA ? TipoVenta.MAYORISTA : TipoVenta.UNITARIA,
-          // «Escanea Charly» se pide después, desde el detalle de la venta.
-          escaneoRemoto: false,
+          // Desde el modal de Ventas «Escanea Charly» se pide después, desde el
+          // detalle de la venta; al aceptarla desde la lista se puede pedir ya.
+          escaneoRemoto: opciones.escaneoRemoto ?? false,
           descuento: descuento.greaterThan(0) ? descuento.toNumber() : undefined,
           notas: `Cotización ${c.codigo}`,
           verificacion: opciones.verificacion,
@@ -1357,7 +1364,13 @@ export async function convertirEnVenta(
             };
           }),
         },
-        { puedeEditar: false, origen: "COTIZACION", cotizacionId: c.id, clienteRecienCreado },
+        {
+          puedeEditar: false,
+          origen: "COTIZACION",
+          cotizacionId: c.id,
+          clienteRecienCreado,
+          pendienteDePago: opciones.pendienteDePago ?? false,
+        },
         tx,
       );
 
@@ -1377,6 +1390,7 @@ export async function convertirEnVenta(
           ventaId: venta.id,
           venta: venta.codigo,
           recalculada: Boolean(vencida && opciones.recalcular),
+          ...(opciones.pendienteDePago ? { aceptadaDesdeLista: true, pendienteDePago: true } : {}),
           ...(vencida && opciones.recalcular && blueRecalculo
             ? { tipoCambioBlue: blueRecalculo.valor }
             : {}),
@@ -1387,4 +1401,36 @@ export async function convertirEnVenta(
     },
     { maxRetries: 30, timeout: 30_000 },
   );
+}
+
+/**
+ * «Aceptada ✓» desde la lista del cotizador: el cliente aceptó la cotización y
+ * se registra la venta con sus ítems, precios y cliente, vendedor = quien la
+ * marca (su ganancia por vape sale de ahí), descontando stock del galpón
+ * elegido y SIN pagos: queda pendiente de pago (saldo = total en la cuenta del
+ * cliente) hasta que se cobre con «Marcar pagada». La cotización pasa a
+ * CONVERTIDA. Una vencida no: hay que revisar los precios de hoy (Convertir en
+ * venta desde Ventas o duplicarla).
+ */
+export async function aceptarYVender(
+  ctx: CtxFiados,
+  id: string,
+  opciones: { depositoId: string; escaneoRemoto?: boolean; clienteId?: string },
+): Promise<VentaGenerada> {
+  const c = await dbPara(ctx.panelId).cotizacion.findFirst({
+    where: { id, deletedAt: null },
+    select: { codigo: true, estado: true, validaHasta: true },
+  });
+  if (!c) throw new NotFoundError("La cotización no existe.");
+  if (estaVencida(c))
+    throw new DomainError(
+      `La cotización ${c.codigo} está vencida: revisá los precios de hoy con «Convertir en venta» o duplicala.`,
+    );
+  return convertirEnVenta(ctx, id, {
+    depositoId: opciones.depositoId,
+    pagos: [],
+    pendienteDePago: true,
+    escaneoRemoto: opciones.escaneoRemoto ?? false,
+    ...(opciones.clienteId ? { clienteId: opciones.clienteId } : {}),
+  });
 }

@@ -31,7 +31,8 @@ import {
   type VentaListada,
 } from "@/server/services/venta.service";
 
-import { EstadoPagoBadge, MedioPagoBadge } from "./_componentes/medio-pago";
+import { MarcarPagada } from "./_componentes/marcar-pagada";
+import { EstadoPagoBadge, MedioPagoBadge, textoEstadoPago } from "./_componentes/medio-pago";
 import { EscaneoBadge } from "./_componentes/escaneo-remoto";
 import { VerificadaBadge } from "./_componentes/verificada-badge";
 import { FiltrosVentas } from "./filtros-ventas";
@@ -49,8 +50,8 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   // Por defecto: las ventas de hoy (salvo que se busque un ID, un cliente o un
-  // estado de «Escanea Charly», que se buscan en todo el historial).
-  const buscaSinFecha = !!plano.q || !!plano.escaneo;
+  // estado de «Escanea Charly» o de pago, que se buscan en todo el historial).
+  const buscaSinFecha = !!plano.q || !!plano.escaneo || !!plano.pago;
   const sinFechas = !plano.rango && !plano.desde && !plano.hasta && !buscaSinFecha;
   const rango: Rango | null = RANGOS.includes(plano.rango as Rango)
     ? (plano.rango as Rango)
@@ -67,6 +68,25 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
   const filtros = listarVentasSchema.parse({ ...plano, desde: fechas.desde, hasta: fechas.hasta });
   const verGanancia = esOwner(ctx.usuario);
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear");
+  // «Marcar pagada»: VENTAS "editar" o FIADOS "editar".
+  const puedeCobrar =
+    puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "editar") ||
+    puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "editar");
+  const cobrable = (v: VentaListada) =>
+    puedeCobrar && v.estado === "CONFIRMADA" && Number(v.saldoPendiente) > 0;
+  /** Medio(s) del pago: el principal, el del último cobro si se fió y ya pagó, o «Pendiente de pago». */
+  const pago = (v: VentaListada) =>
+    v.medioPago ? (
+      <MedioPagoBadge medio={v.medioPago} />
+    ) : v.estado === "CONFIRMADA" && v.estadoPago === "PAGADA" && v.ultimoPago ? (
+      <span title={textoEstadoPago(v.estadoPago, [v.ultimoPago])}>
+        <MedioPagoBadge medio={v.ultimoPago.medioPago} />
+      </span>
+    ) : v.estado === "CONFIRMADA" ? (
+      <Badge variant="warning">Pendiente de pago</Badge>
+    ) : (
+      <MedioPagoBadge medio={null} />
+    );
   const [r, depositos, vendedores, unidades, configVentas] = await Promise.all([
     listarVentas(ctx, filtros, { verCostos: verGanancia }),
     listarDepositosActivos(ctx),
@@ -223,9 +243,16 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             header: "Pago",
             cell: (v) => (
               <span className="flex flex-wrap items-center gap-1">
-                <MedioPagoBadge medio={v.medioPago} />
+                {pago(v)}
                 {v.estado === "CONFIRMADA" && (
                   <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />
+                )}
+                {cobrable(v) && (
+                  <MarcarPagada
+                    venta={{ id: v.id, codigo: v.codigo, saldoPendiente: v.saldoPendiente }}
+                    medios={configVentas.mediosPago}
+                    size="sm"
+                  />
                 )}
               </span>
             ),
@@ -261,51 +288,66 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
           { key: "estado", header: "Estado", cell: estado },
         ]}
         renderMobile={(v) => (
-          <Link
-            href={href(v)}
-            className={cn(cardVariants({ variant: "clickable" }), "flex flex-col gap-2 p-4")}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono font-semibold">{v.codigo}</span>
-              <span
-                className={cn(
-                  "font-semibold tabular-nums",
-                  v.estado === "ANULADA" && "text-muted line-through",
-                )}
-              >
-                {formatearPesos(v.total)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2 text-sm">
-              <span className="min-w-0 truncate">
-                {v.cliente.nombre}{" "}
-                <span className="text-muted tabular-nums">
-                  · {telefonoVisible(v.cliente.telefono)}
+          <div className="flex flex-col">
+            <Link
+              href={href(v)}
+              className={cn(
+                cardVariants({ variant: "clickable" }),
+                "flex flex-col gap-2 p-4",
+                cobrable(v) && "rounded-b-none",
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-semibold">{v.codigo}</span>
+                <span
+                  className={cn(
+                    "font-semibold tabular-nums",
+                    v.estado === "ANULADA" && "text-muted line-through",
+                  )}
+                >
+                  {formatearPesos(v.total)}
                 </span>
-              </span>
-              <span className="flex shrink-0 items-center gap-1">
-                {v.estado === "CONFIRMADA" && (
-                  <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />
-                )}
-                <MedioPagoBadge medio={v.medioPago} />
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-muted text-small">
-                {formatearFechaHora(v.fecha)} · {v.vendedor} · {v.deposito} · {v.unidades} u.
-                {v.tipo === "MAYORISTA" && " · Mayorista"}
-              </p>
-              <span className="flex shrink-0 items-center gap-1">
-                {v.verificadaPorEscaneo && <VerificadaBadge />}
-                {estado(v)}
-              </span>
-            </div>
-            {v.escaneo.estado && v.estado === "CONFIRMADA" && (
-              <div className="flex">
-                <EscaneoBadge escaneo={v.escaneo} />
+              </div>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate">
+                  {v.cliente.nombre}{" "}
+                  <span className="text-muted tabular-nums">
+                    · {telefonoVisible(v.cliente.telefono)}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  {v.estado === "CONFIRMADA" && (
+                    <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />
+                  )}
+                  {pago(v)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-muted text-small">
+                  {formatearFechaHora(v.fecha)} · {v.vendedor} · {v.deposito} · {v.unidades} u.
+                  {v.tipo === "MAYORISTA" && " · Mayorista"}
+                </p>
+                <span className="flex shrink-0 items-center gap-1">
+                  {v.verificadaPorEscaneo && <VerificadaBadge />}
+                  {estado(v)}
+                </span>
+              </div>
+              {v.escaneo.estado && v.estado === "CONFIRMADA" && (
+                <div className="flex">
+                  <EscaneoBadge escaneo={v.escaneo} />
+                </div>
+              )}
+            </Link>
+            {cobrable(v) && (
+              <div className="bg-card rounded-b-card flex justify-end px-4 pb-3">
+                <MarcarPagada
+                  venta={{ id: v.id, codigo: v.codigo, saldoPendiente: v.saldoPendiente }}
+                  medios={configVentas.mediosPago}
+                  size="sm"
+                />
               </div>
             )}
-          </Link>
+          </div>
         )}
       />
       <Pagination

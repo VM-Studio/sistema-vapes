@@ -7,6 +7,8 @@
  * cuyo precio de lista subió (sin permiso de editar), falta de stock (todo o
  * nada), permisos de Trinidad (precio manual prohibido, vendedorId), Cosmetic
  * sin los defaults de Vapes (COS-Q-000001) y aislamiento entre paneles.
+ * A4: «Aceptada ✓» desde la lista (venta pendiente de pago sin FIADOS, stock,
+ * vencida) y «Marcar pagada» (cobro parcial/total con VENTAS editar).
  * Uso: npx tsx --conditions=react-server scripts/test-cotizador.ts — pensado
  * para una DB recién sembrada (crea datos).
  */
@@ -21,6 +23,7 @@ import {
   obtenerConfigCotizacion,
 } from "../src/server/services/configuracion.service";
 import {
+  aceptarYVender,
   actualizarCotizacion,
   convertirEnVenta,
   crearCotizacion,
@@ -39,6 +42,7 @@ import {
   tablaPreciosProducto,
 } from "../src/server/services/escalon.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
+import { cobrarVenta, puedeFiados } from "../src/server/services/fiado.service";
 import { calcularPrecios } from "../src/server/services/precio.service";
 
 const VAPES = "pnl_vapes";
@@ -575,6 +579,155 @@ async function main() {
     dm.items[0]!.esPrecioManual && dm.items[0]!.precioUnitario === "7777.00",
     "un dueño sí puede poner precio manual",
   );
+
+  // ---------------------------------------------------------------------------
+  console.log("\n7b) «Aceptada ✓» desde la lista y «Marcar pagada» (Trinidad, sin FIADOS)");
+  check(!(await puedeFiados(ctxTri, "crear")), "Trinidad no tiene FIADOS crear");
+  const telA = `11${suf}9`;
+  const qa = await crearCotizacion(
+    ctxTri,
+    {
+      tipo: "UNITARIA",
+      items: [{ varianteId: uva.id, cantidad: 2 }],
+      cliente: { nombre: `Cliente aceptada ${suf}`, telefono: telA },
+    },
+    SIN_EDITAR,
+  );
+  const stockUvaAntes = (await db.stock.findFirstOrThrow({
+    where: { depositoId: g1.id, varianteId: uva.id },
+  }))!.cantidad;
+  const va = await aceptarYVender(ctxTri, qa.id, { depositoId: g1.id });
+  const dva = await db.venta.findUniqueOrThrow({
+    where: { id: va.id },
+    include: { pagos: true, cliente: true, items: true },
+  });
+  check(
+    dva.estadoPago === "PENDIENTE" &&
+      $(dva.saldoPendiente) === $(dva.total) &&
+      $(dva.montoPagado) === "0.00" &&
+      dva.pagos.length === 0 &&
+      dva.medioPago === null,
+    `venta ${va.codigo} pendiente de pago: sin pagos, saldo = total (${$(dva.total)})`,
+  );
+  check(
+    dva.vendedorId === trinidad.id && dva.cotizacionId === qa.id,
+    "vendedora Trinidad y vinculada a la cotización",
+  );
+  check(
+    dva.items.every((i) => i.origenPrecio === "COTIZACION"),
+    "ítems con origenPrecio COTIZACION",
+  );
+  check(
+    dva.cliente.telefono.endsWith(telA) && $(dva.cliente.saldoDeudor) === $(dva.total),
+    "cliente dado de alta con el teléfono de la cotización y la deuda en su cuenta",
+  );
+  const stockUvaDespues = (await db.stock.findFirstOrThrow({
+    where: { depositoId: g1.id, varianteId: uva.id },
+  }))!.cantidad;
+  check(stockUvaDespues === stockUvaAntes - 2, "descuenta el stock del galpón");
+  check(
+    (await obtener(ctx, qa.id)).estado === EstadoCotizacion.CONVERTIDA,
+    "la cotización queda CONVERTIDA",
+  );
+  const deNuevo = await error(() => aceptarYVender(ctxTri, qa.id, { depositoId: g1.id }));
+  check(deNuevo instanceof DomainError, `aceptarla de nuevo → «${msg(deNuevo)}»`);
+
+  const qMucho = await crearCotizacion(
+    ctxTri,
+    {
+      tipo: "UNITARIA",
+      items: [{ varianteId: uva.id, cantidad: 100_000 }],
+      cliente: { nombre: `Cliente aceptada ${suf}`, telefono: telA },
+    },
+    SIN_EDITAR,
+  );
+  const sinStockA = await error(() => aceptarYVender(ctxTri, qMucho.id, { depositoId: g1.id }));
+  check(
+    sinStockA instanceof DomainError &&
+      sinStockA.code === "STOCK_INSUFICIENTE" &&
+      msg(sinStockA).includes("Uva") &&
+      (await obtener(ctx, qMucho.id)).estado !== EstadoCotizacion.CONVERTIDA,
+    `sin stock → error claro por producto y la cotización queda igual («${msg(sinStockA).slice(0, 70)}…»)`,
+  );
+  const qSinCliente = await crearCotizacion(
+    ctxTri,
+    { tipo: "UNITARIA", items: [{ varianteId: uva.id, cantidad: 1 }], cliente: null },
+    SIN_EDITAR,
+  );
+  const sinCliente = await error(() =>
+    aceptarYVender(ctxTri, qSinCliente.id, { depositoId: g1.id }),
+  );
+  check(sinCliente instanceof DomainError, `sin cliente → «${msg(sinCliente)}»`);
+  const vSinCliente = await aceptarYVender(ctxTri, qSinCliente.id, {
+    depositoId: g1.id,
+    clienteId: dva.clienteId,
+  });
+  check(vSinCliente.cliente.id === dva.clienteId, "con el cliente elegido en el modal");
+  await db.cotizacion.update({
+    where: { id: qMucho.id },
+    data: {
+      fecha: new Date(Date.now() - 3 * 86_400_000),
+      validaHasta: new Date(Date.now() - 86_400_000),
+    },
+  });
+  const vencidaA = await error(() => aceptarYVender(ctxTri, qMucho.id, { depositoId: g1.id }));
+  check(
+    vencidaA instanceof DomainError && msg(vencidaA).includes("vencida"),
+    "una vencida no se acepta desde la lista",
+  );
+
+  const charly = await prisma.usuario.findFirst({ where: { email: "charly@negocio.com" } });
+  if (charly) {
+    const sinPermiso = await error(() =>
+      cobrarVenta({ panelId: VAPES, usuarioId: charly.id, meta }, va.id, {
+        monto: 1,
+        medioPago: "EFECTIVO",
+      }),
+    );
+    check(
+      sinPermiso instanceof ForbiddenError,
+      "sin VENTAS editar ni FIADOS editar → no marca pagada",
+    );
+  }
+  const parcial = await cobrarVenta(ctxTri, va.id, {
+    monto: 1000,
+    medioPago: "TRANSFERENCIA",
+    referencia: "op 123",
+  });
+  const tras1 = await db.venta.findUniqueOrThrow({ where: { id: va.id } });
+  check(
+    parcial.imputaciones.length === 1 &&
+      tras1.estadoPago === "PARCIAL" &&
+      $(tras1.saldoPendiente) === $(dva.total.minus(1000)),
+    "pago parcial con VENTAS editar → PARCIAL",
+  );
+  const excede = await error(() =>
+    cobrarVenta(ctxTri, va.id, { monto: Number(tras1.saldoPendiente) + 1, medioPago: "EFECTIVO" }),
+  );
+  check(excede instanceof DomainError, "más que el saldo → error");
+  await cobrarVenta(ctxTri, va.id, {
+    monto: Number(tras1.saldoPendiente),
+    medioPago: "TRANSFERENCIA",
+  });
+  const tras2 = await db.venta.findUniqueOrThrow({
+    where: { id: va.id },
+    include: { pagos: true, cliente: true },
+  });
+  check(
+    tras2.estadoPago === "PAGADA" &&
+      $(tras2.saldoPendiente) === "0.00" &&
+      tras2.pagos.length === 2 &&
+      tras2.pagos.every((p) => p.esCobroPosterior && p.medioPago === "TRANSFERENCIA"),
+    "saldo completo → PAGADA, con sus cobros por Transferencia",
+  );
+  check(
+    $(tras2.cliente.saldoDeudor) === $(vSinCliente.total),
+    "la cuenta del cliente baja (queda solo la otra venta pendiente)",
+  );
+  const yaPagada = await error(() =>
+    cobrarVenta(ctxTri, va.id, { monto: 1, medioPago: "EFECTIVO" }),
+  );
+  check(yaPagada instanceof DomainError, `ya pagada → «${msg(yaPagada)}»`);
 
   // ---------------------------------------------------------------------------
   console.log("\n8) Cosmetic: sin los defaults de Vapes y COS-Q-000001");

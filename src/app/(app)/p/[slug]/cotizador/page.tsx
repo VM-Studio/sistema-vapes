@@ -25,10 +25,16 @@ import { esOwner, puede } from "@/lib/permisos";
 import { formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { listar } from "@/server/services/cotizacion.service";
+import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { vendedoresDelPanel } from "@/server/services/venta.service";
 
 import { AccionesFila } from "./acciones-fila";
-import { esConvertible, ESTADO_COTIZACION_UI, ETIQUETA_TIPO_COTIZACION } from "./estado-cotizacion";
+import {
+  esAceptable,
+  esConvertible,
+  ESTADO_COTIZACION_UI,
+  ETIQUETA_TIPO_COTIZACION,
+} from "./estado-cotizacion";
 import { FiltrosCotizaciones } from "./filtros-cotizaciones";
 
 export const metadata: Metadata = { title: "Cotizador" };
@@ -87,7 +93,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "crear");
   const puedeVender = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear");
 
-  const [r, vendedores] = await Promise.all([
+  const [r, vendedores, galpones] = await Promise.all([
     listar(ctx, {
       tipo,
       estado,
@@ -99,6 +105,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
       page,
     }),
     vendedoresDelPanel(ctx),
+    puedeVender ? listarDepositosActivos(ctx) : Promise.resolve([]),
   ]);
 
   const base = rutaPanel(slug, "/cotizador");
@@ -123,6 +130,15 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
       puedeCrear={puedeCrear}
       convertible={esConvertible(c.estado)}
       puedeVender={puedeVender}
+      aceptar={
+        puedeVender && esAceptable(c.estado) && galpones.length > 0
+          ? {
+              total: c.total,
+              conCliente: !!c.cliente && (!!c.cliente.id || !!c.cliente.telefono),
+              galpones,
+            }
+          : null
+      }
     />
   );
 
@@ -257,7 +273,7 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
           {
             key: "acciones",
             header: <span className="sr-only">Acciones</span>,
-            className: "w-14 text-right",
+            className: "w-14 text-right whitespace-nowrap",
             cell: acciones,
           },
         ]}
