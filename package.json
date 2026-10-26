@@ -31,6 +31,7 @@
     "test:compras": "PRISMA_LOG=silent CAMBIO_SIN_RED=1 tsx --conditions=react-server --env-file=.env scripts/test-compras.ts",
     "test:ventas": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas.ts",
     "test:fiados": "PRISMA_LOG=silent LOG_LEVEL=warn tsx --conditions=react-server --env-file=.env scripts/test-fiados.ts",
+    "test:retiro": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-retiro.ts",
     "test:ventas:concurrencia": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas-concurrentes.ts",
     "iconos": "tsx scripts/generar-iconos.ts",
     "backup": "tsx --env-file-if-exists=.env --conditions=react-server scripts/backup.ts",

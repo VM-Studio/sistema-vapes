@@ -121,6 +121,7 @@ async function bloquearVenta(tx: Tx, ctx: Ctx, id: string) {
       vendedorId: true,
       verificadaPorEscaneo: true,
       escaneoRemoto: true,
+      retiradaAt: true,
       deposito: { select: { nombre: true, escaneoRemoto: true } },
     },
   });
@@ -145,6 +146,8 @@ export function motivoNoEscaneable(v: {
   estado: EstadoVenta;
   verificadaPorEscaneo: boolean;
   escaneoRemoto: Escaneo | null;
+  /** Ya retirada: no tiene sentido escanearla. */
+  retiradaAt?: Date | null;
   deposito: { nombre: string; escaneoRemoto: boolean };
 }): string | null {
   if (!v.deposito.escaneoRemoto)
@@ -153,6 +156,7 @@ export function motivoNoEscaneable(v: {
   if (v.escaneoRemoto === Escaneo.PENDIENTE)
     return `Ya está pedido: la venta espera el escaneo de ${NOMBRE_ESCANEO}.`;
   if (v.escaneoRemoto === Escaneo.ESCANEADA) return `${NOMBRE_ESCANEO} ya la escaneó.`;
+  if (v.retiradaAt) return "La venta ya se retiró.";
   if (v.verificadaPorEscaneo) return "La venta ya está verificada por escaneo.";
   return null;
 }
@@ -433,7 +437,7 @@ export async function confirmarEscaneo(
 // =============================================================================
 
 export interface AvisosEscaneo {
-  /** Escaneadas en las últimas 48 h (las más nuevas primero): "listo para retirar". */
+  /** Escaneadas y todavía no retiradas (las más nuevas primero): "listo para retirar". */
   escaneadas: {
     id: string;
     codigo: string;
@@ -446,8 +450,6 @@ export interface AvisosEscaneo {
   pendientes: number;
 }
 
-const HORAS_AVISO = 48;
-
 /** Para el inicio: las ventas propias (o todas, `soloPropias: false`) que ya escaneó Charly o esperan. */
 export async function avisosEscaneo(
   ctx: Ctx,
@@ -455,17 +457,17 @@ export async function avisosEscaneo(
 ): Promise<AvisosEscaneo> {
   const db = dbPara(ctx.panelId);
   const propias = opciones.soloPropias ? { vendedorId: ctx.usuarioId } : {};
-  const desde = new Date(ahora().getTime() - HORAS_AVISO * 3600 * 1000);
   const [filas, pendientes] = await Promise.all([
     db.venta.findMany({
       where: {
         ...propias,
         estado: EstadoVenta.CONFIRMADA,
         escaneoRemoto: Escaneo.ESCANEADA,
-        escaneadaAt: { gte: desde },
+        // Avisa hasta que se marca «Retirado» (antes: solo las últimas 48 h).
+        retiradaAt: null,
       },
       orderBy: { escaneadaAt: "desc" },
-      take: 5,
+      take: 10,
       select: {
         id: true,
         codigo: true,

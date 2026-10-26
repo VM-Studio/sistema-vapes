@@ -11,15 +11,28 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/select";
 import { useUrlParams } from "@/hooks/use-url-params";
 import { conSigno, formatearPesos } from "@/lib/format";
-import { TIPO_MOVIMIENTO_UI, TIPOS_MOVIMIENTO_FILTRO } from "@/lib/movimientos-ui";
+import { FAMILIAS, FAMILIAS_MOVIMIENTO, TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { MovimientoListado } from "@/server/services/stock.service";
 
 /**
  * Badge del tipo de movimiento: ingresos en verde, salidas en rojo,
  * transferencias en gris oscuro, ajustes en alerta y garantías en gris.
+ * Un retiro (sin cambio de cantidad) va en gris: «Retiro».
  */
-export function BadgeTipoMovimiento({ tipo }: { tipo: TipoMovimiento }) {
+export function BadgeTipoMovimiento({
+  tipo,
+  evento = "MOVIMIENTO",
+}: {
+  tipo: TipoMovimiento;
+  evento?: MovimientoListado["evento"];
+}) {
+  if (evento === "RETIRO")
+    return (
+      <Badge variant="neutral" className="bg-surface-3 text-foreground">
+        Retiro
+      </Badge>
+    );
   const ui = TIPO_MOVIMIENTO_UI[tipo];
   const transferencia =
     tipo === TipoMovimiento.TRANSFERENCIA_SALIDA || tipo === TipoMovimiento.TRANSFERENCIA_ENTRADA;
@@ -34,32 +47,85 @@ export function BadgeTipoMovimiento({ tipo }: { tipo: TipoMovimiento }) {
   );
 }
 
-function Referencia({ m }: { m: MovimientoListado }) {
-  if (!m.referencia) return <span className="text-subtle">—</span>;
-  return m.referencia.href ? (
-    <Link
-      href={m.referencia.href}
-      className="text-foreground font-medium underline underline-offset-4 hover:decoration-2"
+/**
+ * El texto fácil del movimiento ("Venta VAP-000123 a Juan") con el código de
+ * la referencia como link al documento.
+ */
+export function DescripcionMovimiento({ m }: { m: MovimientoListado }) {
+  const ref = m.referencia;
+  const i = ref ? m.descripcion.indexOf(ref.etiqueta) : -1;
+  if (!ref || i < 0 || !ref.href) return <span>{m.descripcion}</span>;
+  return (
+    <span>
+      {m.descripcion.slice(0, i)}
+      <Link
+        href={ref.href}
+        className="text-foreground font-medium underline underline-offset-4 hover:decoration-2"
+      >
+        {ref.etiqueta}
+      </Link>
+      {m.descripcion.slice(i + ref.etiqueta.length)}
+    </span>
+  );
+}
+
+/** Cantidad con signo (verde entra / rojo sale); un retiro muestra las unidades sin signo. */
+export function CantidadMovimiento({
+  m,
+  grande = false,
+}: {
+  m: MovimientoListado;
+  grande?: boolean;
+}) {
+  if (m.evento === "RETIRO")
+    return (
+      <span
+        className={cn("text-muted font-semibold tabular-nums", grande && "text-2xl tracking-tight")}
+        title="No cambia el stock: se descontó al vender"
+      >
+        {m.cantidad} u.
+      </span>
+    );
+  return (
+    <span
+      className={cn(
+        "font-semibold tabular-nums",
+        grande && "text-2xl tracking-tight",
+        m.cantidad > 0 ? "text-success" : "text-danger",
+      )}
     >
-      {m.referencia.etiqueta}
-    </Link>
-  ) : (
-    <span className="text-muted">{m.referencia.etiqueta}</span>
+      {conSigno(m.cantidad)}
+    </span>
+  );
+}
+
+/** Anterior → posterior (un retiro no cambia la cantidad). */
+export function StockAntesDespues({ m }: { m: MovimientoListado }) {
+  if (m.evento === "RETIRO") return <span className="text-subtle">sin cambio</span>;
+  return (
+    <>
+      {m.stockAnterior} → <strong className="text-foreground">{m.stockPosterior}</strong>
+    </>
   );
 }
 
 /**
- * Ledger en tabla (desktop) o cards (mobile): fecha, tipo, producto — sabor,
- * cantidad con signo, anterior → posterior, usuario y referencia con su
- * código visible. `conDeposito`: columna galpón (vista de todos los galpones).
+ * Ledger en tabla (desktop) o cards (mobile): fecha, qué pasó ("Venta
+ * VAP-000123 a Juan", con link), producto — sabor, cantidad con signo,
+ * anterior → posterior, usuario y motivo. `conDeposito`: columna galpón (vista
+ * de todos los galpones). Los retiros (el cliente se llevó lo vendido) se
+ * mezclan por fecha, sin cambio de cantidad.
  */
 export function TablaMovimientos({
   movimientos,
   conDeposito,
+  conProducto = true,
   vacio = "No hay movimientos con esos filtros",
 }: {
   movimientos: MovimientoListado[];
   conDeposito: boolean;
+  /** false: el ledger de un solo producto (se muestra solo el sabor). */
+  conProducto?: boolean;
   vacio?: string;
 }) {
   const ruta = useRutaPanel();
@@ -67,16 +133,17 @@ export function TablaMovimientos({
 
   const encabezados = [
     "Fecha",
-    "Tipo",
-    "Producto",
+    "Movimiento",
+    conProducto ? "Producto" : "Sabor",
     ...(conDeposito ? ["Galpón"] : []),
     "Cantidad",
     "Anterior → posterior",
     "Usuario",
-    "Referencia",
     "Motivo",
   ];
   const aLaDerecha = new Set(["Cantidad", "Anterior → posterior"]);
+  const nombre = (m: MovimientoListado) =>
+    conProducto ? m.nombre : (m.nombre.split(" — ")[1] ?? m.nombre);
 
   return (
     <>
@@ -101,39 +168,40 @@ export function TablaMovimientos({
           </thead>
           <tbody className="divide-border divide-y">
             {movimientos.map((m) => (
-              <tr key={m.id} className="hover:bg-card/60 align-top transition-colors">
+              <tr
+                key={m.id}
+                className={cn(
+                  "hover:bg-card/60 align-top transition-colors",
+                  m.evento === "RETIRO" && "bg-card/40",
+                )}
+                data-evento={m.evento}
+              >
                 <td className="text-muted px-4 py-3 whitespace-nowrap">
                   {formatearFechaHora(m.fecha)}
                 </td>
                 <td className="px-4 py-3">
-                  <BadgeTipoMovimiento tipo={m.tipo} />
+                  <BadgeTipoMovimiento tipo={m.tipo} evento={m.evento} />
+                  <span className="mt-1 block max-w-72 text-sm">
+                    <DescripcionMovimiento m={m} />
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <Link
                     href={ruta(`/productos/${m.productoId}`)}
                     className="font-medium hover:underline"
                   >
-                    {m.nombre}
+                    {nombre(m)}
                   </Link>
                   <span className="text-muted block font-mono text-xs">{m.sku}</span>
                 </td>
                 {conDeposito && <td className="px-4 py-3">{m.deposito}</td>}
-                <td
-                  className={cn(
-                    "px-4 py-3 text-right font-semibold tabular-nums",
-                    m.cantidad > 0 ? "text-success" : "text-danger",
-                  )}
-                >
-                  {conSigno(m.cantidad)}
+                <td className="px-4 py-3 text-right">
+                  <CantidadMovimiento m={m} />
                 </td>
                 <td className="text-muted px-4 py-3 text-right whitespace-nowrap tabular-nums">
-                  {m.stockAnterior} →{" "}
-                  <strong className="text-foreground">{m.stockPosterior}</strong>
+                  <StockAntesDespues m={m} />
                 </td>
                 <td className="px-4 py-3">{m.usuario}</td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <Referencia m={m} />
-                </td>
                 <td className="text-muted max-w-56 px-4 py-3">
                   {m.motivo ?? "—"}
                   {m.costoUnitario && (
@@ -148,40 +216,30 @@ export function TablaMovimientos({
 
       <ul className="flex flex-col gap-2 md:hidden">
         {movimientos.map((m) => (
-          <li key={m.id} className="bg-card rounded-card p-4">
+          <li key={m.id} className="bg-card rounded-card p-4" data-evento={m.evento}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <BadgeTipoMovimiento tipo={m.tipo} />
-                <p className="mt-2 font-medium">{m.nombre}</p>
+                <BadgeTipoMovimiento tipo={m.tipo} evento={m.evento} />
+                <p className="mt-2 text-sm">
+                  <DescripcionMovimiento m={m} />
+                </p>
+                <p className="mt-1 font-medium">{nombre(m)}</p>
                 <p className="text-muted text-xs">
                   {conDeposito && `${m.deposito} · `}
                   {formatearFechaHora(m.fecha)} · {m.usuario}
                 </p>
               </div>
               <div className="text-right">
-                <p
-                  className={cn(
-                    "text-2xl font-semibold tracking-tight tabular-nums",
-                    m.cantidad > 0 ? "text-success" : "text-danger",
-                  )}
-                >
-                  {conSigno(m.cantidad)}
+                <p>
+                  <CantidadMovimiento m={m} grande />
                 </p>
                 <p className="text-muted text-xs tabular-nums">
-                  {m.stockAnterior} → {m.stockPosterior}
+                  <StockAntesDespues m={m} />
                 </p>
               </div>
             </div>
-            {(m.motivo || m.referencia) && (
-              <p className="border-border text-muted mt-3 border-t pt-3 text-sm">
-                {m.referencia && (
-                  <>
-                    <Referencia m={m} />
-                    {m.motivo && " · "}
-                  </>
-                )}
-                {m.motivo}
-              </p>
+            {m.motivo && (
+              <p className="border-border text-muted mt-3 border-t pt-3 text-sm">{m.motivo}</p>
             )}
           </li>
         ))}
@@ -206,12 +264,17 @@ export function FiltrosMovimientosStock() {
       <Select
         aria-label="Tipo de movimiento"
         options={[
-          { value: "", label: "Todos los tipos" },
-          ...TIPOS_MOVIMIENTO_FILTRO.map((t) => ({ value: t, label: TIPO_MOVIMIENTO_UI[t].label })),
+          { value: "", label: "Todos los movimientos" },
+          ...FAMILIAS.map((f) => ({ value: f, label: FAMILIAS_MOVIMIENTO[f].label })),
         ]}
-        value={params.get("mtipo") ?? ""}
+        value={params.get("mfamilia") ?? ""}
         onChange={(e) =>
-          actualizar({ mtipo: e.target.value || null, mpage: null, page: params.get("page") })
+          actualizar({
+            mfamilia: e.target.value || null,
+            mtipo: null,
+            mpage: null,
+            page: params.get("page"),
+          })
         }
         containerClassName="col-span-2 md:w-60"
       />

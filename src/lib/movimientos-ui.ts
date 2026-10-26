@@ -33,6 +33,70 @@ export const TIPOS_MOVIMIENTO_FILTRO: readonly TipoMovimiento[] = Object.values(
   TipoMovimiento,
 ).filter((t) => t !== TipoMovimiento.DEVOLUCION_CLIENTE);
 
+/**
+ * Familias para filtrar el ledger de forma simple. «Retiros» no son
+ * movimientos (no cambian cantidad): son el momento en que el cliente se llevó
+ * lo vendido, y se listan como eventos informativos.
+ */
+export const FAMILIAS_MOVIMIENTO = {
+  entradas: {
+    label: "Entradas",
+    tipos: (Object.keys(TIPO_MOVIMIENTO_UI) as TipoMovimiento[]).filter(
+      (t) => TIPO_MOVIMIENTO_UI[t].signo === 1,
+    ),
+    retiros: false,
+  },
+  salidas: {
+    label: "Salidas",
+    tipos: (Object.keys(TIPO_MOVIMIENTO_UI) as TipoMovimiento[]).filter(
+      (t) => TIPO_MOVIMIENTO_UI[t].signo === -1,
+    ),
+    retiros: false,
+  },
+  ventas: {
+    label: "Ventas (y retiros)",
+    tipos: [TipoMovimiento.VENTA, TipoMovimiento.VENTA_ANULADA],
+    retiros: true,
+  },
+  retiros: { label: "Retiros", tipos: [], retiros: true },
+  compras: {
+    label: "Compras",
+    tipos: [TipoMovimiento.INGRESO_COMPRA, TipoMovimiento.DEVOLUCION_PROVEEDOR],
+    retiros: false,
+  },
+  ajustes: {
+    label: "Ajustes e ingresos manuales",
+    tipos: [
+      TipoMovimiento.AJUSTE_POSITIVO,
+      TipoMovimiento.AJUSTE_NEGATIVO,
+      TipoMovimiento.INGRESO_MANUAL,
+    ],
+    retiros: false,
+  },
+  transferencias: {
+    label: "Transferencias",
+    tipos: [TipoMovimiento.TRANSFERENCIA_SALIDA, TipoMovimiento.TRANSFERENCIA_ENTRADA],
+    retiros: false,
+  },
+  devoluciones: {
+    label: "Devoluciones y garantías",
+    tipos: [
+      TipoMovimiento.GARANTIA,
+      TipoMovimiento.GARANTIA_ANULADA,
+      TipoMovimiento.DEVOLUCION_CLIENTE,
+    ],
+    retiros: false,
+  },
+} as const satisfies Record<
+  string,
+  { label: string; tipos: readonly TipoMovimiento[]; retiros: boolean }
+>;
+
+export type FamiliaMovimiento = keyof typeof FAMILIAS_MOVIMIENTO;
+export const FAMILIAS: readonly FamiliaMovimiento[] = Object.keys(
+  FAMILIAS_MOVIMIENTO,
+) as FamiliaMovimiento[];
+
 export const ESTADO_STOCK_UI = {
   OK: { label: "OK", variante: "success" },
   BAJO: { label: "Bajo mínimo", variante: "warning" },

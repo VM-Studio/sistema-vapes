@@ -49,6 +49,7 @@ export function FiltrosVentas({
     "pago",
     "tipo",
     "escaneo",
+    "retiro",
   ];
   const activos = avanzados.filter((k) => params[k]).length;
   const [masFiltros, setMasFiltros] = useState(activos > 0);
@@ -170,6 +171,17 @@ export function FiltrosVentas({
           ]}
           value={params.tipo ?? ""}
           onChange={(e) => actualizar({ tipo: e.target.value || null })}
+        />
+        <Select
+          aria-label="Retiro"
+          containerClassName="self-end"
+          options={[
+            { value: "", label: "Retiradas y pendientes" },
+            { value: "pendiente", label: "Pendientes de retiro" },
+            { value: "retirada", label: "Retiradas" },
+          ]}
+          value={params.retiro ?? ""}
+          onChange={(e) => actualizar({ retiro: e.target.value || null })}
         />
         {conEscaneoRemoto && (
           <Select

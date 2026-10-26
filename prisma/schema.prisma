@@ -263,6 +263,7 @@ model Usuario {
   enviosRemito           EnvioRemito[]            @relation("EnvioRemitoUsuario")
   escaneosPedidos        Venta[]                  @relation("VentaEscaneoPedidoPor")
   ventasEscaneadas       Venta[]                  @relation("VentaEscaneadaPor")
+  ventasRetiradas        Venta[]                  @relation("VentaRetiradaPor")
   facturasML             FacturaMercadoLibre[]
 }
 
@@ -1038,6 +1039,11 @@ model Venta {
   escaneadaAt          DateTime?
   /// Lo escaneado al confirmar: [{ codigo, varianteId }] (auditoría del escaneo).
   escaneoDetalle       Json?
+  /// «Retirado»: el cliente se llevó la mercadería (null = pendiente de retiro).
+  /// Se marca una sola vez y no se deshace (trigger). Con escaneo PENDIENTE no se
+  /// puede (CHECK): primero lo escanea Charly. No mueve stock: la venta ya lo descontó.
+  retiradaAt           DateTime?
+  retiradaPorId        String?
   /// La cotización de la que salió (trazabilidad).
   cotizacionId         String?     @unique
   anuladaPorId         String?
@@ -1054,6 +1060,7 @@ model Venta {
   anuladaPor       Usuario?             @relation("VentaAnuladaPor", fields: [anuladaPorId], references: [id], onDelete: Restrict)
   escaneoPedidoPor Usuario?             @relation("VentaEscaneoPedidoPor", fields: [escaneoPedidoPorId], references: [id], onDelete: Restrict)
   escaneadaPor     Usuario?             @relation("VentaEscaneadaPor", fields: [escaneadaPorId], references: [id], onDelete: Restrict)
+  retiradaPor      Usuario?             @relation("VentaRetiradaPor", fields: [retiradaPorId], references: [id], onDelete: Restrict)
   items            VentaItem[]
   devoluciones     Devolucion[]
   cotizacionOrigen Cotizacion?          @relation("CotizacionVenta")
@@ -1073,6 +1080,7 @@ model Venta {
   @@index([panelId, tipo, fecha])
   @@index([panelId, depositoId, fecha])
   @@index([panelId, escaneoRemoto])
+  @@index([panelId, depositoId, retiradaAt])
 }
 
 model VentaItem {

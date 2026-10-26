@@ -9,6 +9,8 @@ import {
   Download,
   History,
   Package,
+  PackageCheck,
+  ScanBarcode,
   ScanLine,
   SlidersVertical,
 } from "lucide-react";
@@ -31,7 +33,11 @@ import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatearNumero } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { FilaStock, ResultadoStock } from "@/server/services/inventario.service";
+import type {
+  FilaStock,
+  OpcionesFiltrosStock,
+  ResultadoStock,
+} from "@/server/services/inventario.service";
 import type { ResultadoLedger, ResumenStockPanel } from "@/server/services/stock.service";
 
 import { TabsGalpones } from "./_componentes/tabs-galpones";
@@ -52,9 +58,18 @@ interface Props {
   ledger: ResultadoLedger;
   params: Record<string, string>;
   marcas: OpcionFiltro[];
+  /** Modelos (de la marca elegida), gustos y pitadas del catálogo. */
+  opciones: OpcionesFiltrosStock;
+  /** Tarjeta elegida (null = todas las filas). */
+  ver: TarjetaStock | null;
   /** Exportar CSV: solo dueños. */
   puedeExportar: boolean;
 }
+
+type TarjetaStock = "disponible" | "escaneado" | "retirado";
+
+/** Filtros de la lista que se combinan (y viajan al cambiar de pestaña y al exportar). */
+const FILTROS_LISTA = ["q", "marcaId", "modelo", "gusto", "pitadas", "ver"] as const;
 
 /** Código visible de un sabor: el de barras si tiene, si no el SKU. */
 const codigoDe = (f: FilaStock) => f.codigoBarras ?? f.sku;
@@ -68,6 +83,8 @@ export function StockView({
   ledger,
   params,
   marcas,
+  opciones,
+  ver,
   puedeExportar,
 }: Props) {
   const panel = usePanel();
@@ -80,14 +97,18 @@ export function StockView({
   const depositos = resumen.porDeposito;
   const deposito = depositos.find((d) => d.id === depositoId) ?? null;
   const { filas } = datos;
-  const conFiltros = Boolean(
-    params.q || params.marcaId || params.categoriaId || params.soloBajoMinimo === "1",
-  );
+  const { totales } = datos;
+  const conFiltros =
+    FILTROS_LISTA.some((k) => params[k]) ||
+    Boolean(params.categoriaId || params.soloBajoMinimo === "1");
+  const etiquetaEspec = panel.etiquetaEspecificacion || "Pitadas";
 
   const link = (cambios: Record<string, string | number | null>) =>
     hrefCon(PATH, params, { page: null, ...cambios });
-  /** Cambiar de pestaña conserva la búsqueda y la marca; el resto se reinicia. */
-  const linkTab = (tab: string) => hrefCon(PATH, { q: params.q, marcaId: params.marcaId }, { tab });
+  /** Cambiar de pestaña conserva los filtros de la lista; el resto se reinicia. */
+  const linkTab = (tab: string) =>
+    hrefCon(PATH, Object.fromEntries(FILTROS_LISTA.map((k) => [k, params[k]])), { tab });
+  const linkTarjeta = (t: TarjetaStock) => link({ ver: ver === t ? null : t });
   const exportarHref = hrefCon(`/api/p/${panel.slug}/stock/exportar`, params, {
     formato: "csv",
     page: null,
@@ -177,12 +198,27 @@ export function StockView({
     );
   };
 
-  // Columnas de cantidades: la del galpón, o una por galpón + Total en Global.
-  const columnas = deposito
-    ? [{ id: "cantidad", nombre: "Cantidad" }]
-    : [...depositos.map((d) => ({ id: d.id, nombre: d.nombre })), { id: "total", nombre: "Total" }];
+  // Columnas de cantidades: Disponible del galpón (o una por galpón + Total en
+  // Global), y lo vendido que sigue en el galpón (Escaneado) o ya salió (Retirado).
+  const columnas = [
+    ...(deposito
+      ? [{ id: "cantidad", nombre: "Disponible" }]
+      : [
+          ...depositos.map((d) => ({ id: d.id, nombre: d.nombre })),
+          { id: "total", nombre: "Total" },
+        ]),
+    { id: "escaneado", nombre: "Escaneado" },
+    { id: "retirado", nombre: "Retirado" },
+  ];
   const valor = (f: FilaStock, col: string) =>
-    col === "cantidad" || col === "total" ? f.cantidad : (f.porDeposito[col] ?? 0);
+    col === "cantidad" || col === "total"
+      ? f.cantidad
+      : col === "escaneado"
+        ? f.escaneado
+        : col === "retirado"
+          ? f.retirado
+          : (f.porDeposito[col] ?? 0);
+  const destacada = (col: string) => col === "total" || col === "cantidad";
 
   const filaTabla = (f: FilaStock, anidada = false) => (
     <tr key={f.varianteId} className="hover:bg-card/60 transition-colors">
@@ -197,10 +233,18 @@ export function StockView({
           key={c.id}
           className={cn(
             "px-4 py-3 text-right tabular-nums",
-            c.id === "total" || c.id === "cantidad" ? "text-base font-semibold" : "text-muted",
+            destacada(c.id) ? "text-base font-semibold" : "text-muted",
           )}
         >
           {valor(f, c.id)}
+          {c.id === "escaneado" && f.sinEscanear > 0 && (
+            <span
+              className="text-subtle block text-xs whitespace-nowrap"
+              title="Vendidas sin retirar que todavía no se escanearon"
+            >
+              +{f.sinEscanear} sin escanear
+            </span>
+          )}
         </td>
       ))}
       <td className="text-subtle px-4 py-3 text-right tabular-nums">{f.stockMinimo}</td>
@@ -253,6 +297,63 @@ export function StockView({
         ]}
       />
 
+      <section
+        aria-label="Disponible, escaneado y retirado"
+        className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-3"
+        data-testid="tarjetas-stock"
+      >
+        <StatCard
+          label="Disponible"
+          icono={Boxes}
+          value={formatearNumero(totales.disponible)}
+          href={linkTarjeta("disponible")}
+          className={cn(ver === "disponible" && "ring-foreground ring-2")}
+          hint={
+            ver === "disponible"
+              ? "Tocá para ver todos"
+              : deposito
+                ? `Para vender en ${deposito.nombre}`
+                : "Para vender, en todos los galpones"
+          }
+        />
+        <StatCard
+          label="Escaneado"
+          icono={ScanBarcode}
+          value={formatearNumero(totales.escaneado)}
+          href={linkTarjeta("escaneado")}
+          className={cn(ver === "escaneado" && "ring-foreground ring-2")}
+          hint={
+            ver === "escaneado"
+              ? "Tocá para ver todos"
+              : "Reservado: vendido y escaneado, falta que lo retiren"
+          }
+        />
+        <StatCard
+          label="Retirado"
+          icono={PackageCheck}
+          value={formatearNumero(totales.retirado)}
+          href={linkTarjeta("retirado")}
+          className={cn("max-md:col-span-2", ver === "retirado" && "ring-foreground ring-2")}
+          hint={ver === "retirado" ? "Tocá para ver todos" : "Vendido y entregado: ya salió"}
+        />
+        <p className="text-muted text-small col-span-full -mt-1" data-testid="fisico-stock">
+          Físico en {deposito ? deposito.nombre : "los galpones"}:{" "}
+          <strong className="text-foreground tabular-nums">
+            {formatearNumero(totales.fisico)}
+          </strong>{" "}
+          (disponible + vendido sin retirar)
+          {totales.sinEscanear > 0 && (
+            <>
+              {" · "}Vendidas sin retirar (sin escanear):{" "}
+              <strong className="text-foreground tabular-nums">
+                {formatearNumero(totales.sinEscanear)}
+              </strong>
+            </>
+          )}
+          {conFiltros && " · con los filtros aplicados"}
+        </p>
+      </section>
+
       {deposito ? (
         <section aria-label="Resumen del galpón" className="mb-6 grid grid-cols-2 gap-4">
           <StatCard
@@ -299,7 +400,43 @@ export function StockView({
 
       <FiltrosCatalogo
         marcas={marcas}
-        extras={[{ tipo: "check", param: "soloBajoMinimo", label: "Solo bajo mínimo" }]}
+        dependenDeMarca={["modelo"]}
+        extras={[
+          ...(opciones.modelos.length > 0
+            ? [
+                {
+                  tipo: "select" as const,
+                  param: "modelo",
+                  label: "Modelo",
+                  opciones: [{ value: "", label: "Todos los modelos" }, ...opciones.modelos],
+                },
+              ]
+            : []),
+          ...(opciones.gustos.length > 0
+            ? [
+                {
+                  tipo: "select" as const,
+                  param: "gusto",
+                  label: "Gusto",
+                  opciones: [{ value: "", label: "Todos los gustos" }, ...opciones.gustos],
+                },
+              ]
+            : []),
+          ...(opciones.pitadas.length > 0
+            ? [
+                {
+                  tipo: "select" as const,
+                  param: "pitadas",
+                  label: etiquetaEspec,
+                  opciones: [
+                    { value: "", label: `Todas las ${etiquetaEspec.toLowerCase()}` },
+                    ...opciones.pitadas,
+                  ],
+                },
+              ]
+            : []),
+          { tipo: "check" as const, param: "soloBajoMinimo", label: "Solo bajo mínimo" },
+        ]}
         placeholder="Producto, sabor, SKU o código…"
         inicio={
           !deposito && (
@@ -337,7 +474,11 @@ export function StockView({
             description="Probá quitando algún filtro."
             action={
               <Link
-                href={link({ q: null, marcaId: null, categoriaId: null, soloBajoMinimo: null })}
+                href={link({
+                  ...Object.fromEntries(FILTROS_LISTA.map((k) => [k, null])),
+                  categoriaId: null,
+                  soloBajoMinimo: null,
+                })}
                 className={buttonVariants({ variant: "secondary" })}
               >
                 Limpiar filtros
@@ -458,6 +599,12 @@ export function StockView({
                         <p className="text-subtle mt-1 text-xs">mín. {f.stockMinimo}</p>
                       </div>
                     </div>
+                    <p className="text-muted mt-2 text-xs tabular-nums">
+                      Disponible <strong className="text-foreground">{f.cantidad}</strong> ·
+                      Escaneado <strong className="text-foreground">{f.escaneado}</strong> ·
+                      Retirado <strong className="text-foreground">{f.retirado}</strong>
+                      {f.sinEscanear > 0 && ` · ${f.sinEscanear} sin escanear`}
+                    </p>
                     {!deposito && (
                       <div className="mt-3 flex flex-wrap items-center gap-1.5">
                         {depositos.map((d) => (

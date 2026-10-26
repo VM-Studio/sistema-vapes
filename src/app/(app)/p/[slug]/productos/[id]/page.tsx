@@ -22,9 +22,19 @@ import { SaboresProducto } from "./sabores-producto";
 
 export const metadata: Metadata = { title: "Producto" };
 
-export default async function FichaProductoPage({ params }: { params: Promise<{ id: string }> }) {
+type SP = Record<string, string | string[] | undefined>;
+
+export default async function FichaProductoPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<SP>;
+}) {
   const ctx = await requirePaginaPanel(Modulo.PRODUCTOS, "ver");
   const { id } = await params;
+  const sp = await searchParams;
+  const texto = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : undefined);
   const owner = esOwner(ctx.usuario);
   // Precios de proveedores = costos de compra: solo dueños o quien ve Compras
   // (misma regla que veCostosCompras en proveedores; se decide acá, en el servidor).
@@ -36,9 +46,19 @@ export default async function FichaProductoPage({ params }: { params: Promise<{ 
   });
   // Precios mayoristas (escalones del cotizador): dueños o "editar" en Productos.
   const editaEscalones = owner || puede(ctx.usuario, ctx.panelId, Modulo.PRODUCTOS, "editar");
-  const [depositos, movimientos, proveedores, escalones, blue] = await Promise.all([
-    listarDepositosActivos(ctx),
-    listarMovimientos(ctx, { productoId: id, page: 1, pageSize: 20 }, { incluirCostos: owner }),
+  // Movimientos solo de este producto: por sabor (de este producto) y galpón, paginados.
+  const msabor = producto.sabores.some((s) => s.id === texto("msabor"))
+    ? texto("msabor")
+    : undefined;
+  const mpage = Math.max(1, Number(texto("mpage")) || 1);
+  const depositos = await listarDepositosActivos(ctx);
+  const mgalpon = depositos.some((d) => d.id === texto("mgalpon")) ? texto("mgalpon") : undefined;
+  const [movimientos, proveedores, escalones, blue] = await Promise.all([
+    listarMovimientos(
+      ctx,
+      { productoId: id, varianteId: msabor, depositoId: mgalpon, page: mpage, pageSize: 20 },
+      { incluirCostos: owner },
+    ),
     veProveedores ? proveedoresDeProducto(ctx, id) : Promise.resolve(null),
     editaEscalones ? listarEscalones(ctx, id) : Promise.resolve(null),
     editaEscalones ? obtenerCotizacion("USD_BLUE", "VENTA") : Promise.resolve(null),
@@ -68,14 +88,21 @@ export default async function FichaProductoPage({ params }: { params: Promise<{ 
           </div>
         )}
         <SectionCard
-          title="Últimos movimientos"
-          description="Entradas, salidas y transferencias de todos los sabores."
+          title={<span id="movimientos-producto">Movimientos de este producto</span>}
+          description="Ventas, compras, ajustes, transferencias y retiros de sus sabores: entradas en verde, salidas en rojo."
         >
           <MovimientosProducto
+            productoId={id}
             movimientos={movimientos.movimientos}
             total={movimientos.total}
-            verCostos={owner}
-            hrefTodos={rutaPanel(ctx.panel.slug, `/stock/movimientos?productoId=${id}`)}
+            page={movimientos.page}
+            pageSize={movimientos.pageSize}
+            sabores={
+              producto.sinSabores
+                ? []
+                : producto.sabores.map((s) => ({ id: s.id, nombre: s.sabor ?? s.nombre }))
+            }
+            depositos={depositos.map((d) => ({ id: d.id, nombre: d.nombre }))}
           />
         </SectionCard>
       </div>

@@ -36,6 +36,10 @@ export const confirmarEscaneoAction = actionHandler(async (input: unknown) => {
   const { ventaId, codigos } = escaneoRemotoSchema.parse(input);
   const r = await confirmarEscaneo(ctx, ventaId, codigos);
   revalidatePath("/p/[slug]/ventas", "layout");
+  // Lo escaneado pasa a «Escaneado» (reservado) en las tarjetas de Stock.
+  revalidatePath("/p/[slug]/stock", "layout");
+  revalidatePath("/p/[slug]/productos", "layout");
+  revalidatePath("/p/[slug]/escaneo", "page");
   revalidatePath("/p/[slug]", "page");
   return r;
 });

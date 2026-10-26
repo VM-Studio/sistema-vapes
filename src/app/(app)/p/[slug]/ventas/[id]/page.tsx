@@ -33,6 +33,7 @@ import { obtenerVenta } from "@/server/services/venta.service";
 import { ICONO_MEDIO_PAGO, MedioPagoBadge, textoEstadoPago } from "../_componentes/medio-pago";
 import { MarcarPagada } from "../_componentes/marcar-pagada";
 import { EscaneoBadge, EscaneoRemotoVenta } from "../_componentes/escaneo-remoto";
+import { RetiroBadge, RetiroVenta } from "../_componentes/retiro";
 import { VerificadaBadge } from "../_componentes/verificada-badge";
 import { AnularVenta } from "./acciones-venta";
 
@@ -92,6 +93,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
             </Badge>
             {v.verificadaPorEscaneo && <VerificadaBadge />}
             <EscaneoBadge escaneo={v.escaneo} anulada={!confirmada} />
+            <RetiroBadge retiro={v.retiro} anulada={!confirmada} />
             <span>{formatearFechaHora(v.fecha)}</span>
           </span>
         }
@@ -160,6 +162,20 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
               confirmada &&
               puedeHacer(Modulo.VENTAS, "crear") &&
               (owner || v.vendedor.id === ctx.usuario.id)
+            }
+          />
+        )}
+        {/* «Retirado»: el stock ya se descontó; registra cuándo se llevaron la mercadería. */}
+        {confirmada && (
+          <RetiroVenta
+            ventaId={v.id}
+            codigo={v.codigo}
+            retiro={v.retiro}
+            motivoNoRetirable={v.motivoNoRetirable}
+            deposito={v.deposito.nombre}
+            puedeMarcar={
+              puedeHacer(Modulo.VENTAS, "crear") ||
+              (puedeHacer(Modulo.ESCANEO) && v.escaneo.estado === "ESCANEADA")
             }
           />
         )}

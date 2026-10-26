@@ -1,7 +1,7 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { ChevronDown, ChevronRight, Package, Plus, ScanLine, Tags } from "lucide-react";
+import { ChevronDown, ChevronRight, History, Package, Plus, ScanLine, Tags } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
 
@@ -77,6 +77,12 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
         subtitle={`${formatearNumero(resultado.total)} producto${resultado.total === 1 ? "" : "s"}`}
         actions={
           <>
+            <Link
+              href={ruta("/productos/movimientos")}
+              className={buttonVariants({ variant: "ghost", size: "lg" })}
+            >
+              <History strokeWidth={1.75} /> Movimientos
+            </Link>
             <Link
               href={ruta("/productos/etiquetas")}
               className={buttonVariants({ variant: "ghost", size: "lg" })}

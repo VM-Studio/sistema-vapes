@@ -34,6 +34,8 @@ interface FiltrosCatalogoProps {
   placeholder?: string;
   /** Control extra al principio de la barra (ej: un selector de vista). */
   inicio?: ReactNode;
+  /** Parámetros que dependen de la marca (ej: "modelo"): se limpian al cambiarla. */
+  dependenDeMarca?: string[];
 }
 
 /**
@@ -46,6 +48,7 @@ export function FiltrosCatalogo({
   extras = [],
   placeholder,
   inicio,
+  dependenDeMarca = [],
 }: FiltrosCatalogoProps) {
   const { params, actualizar } = useUrlParams();
   const [abierto, setAbierto] = useState(false);
@@ -67,7 +70,12 @@ export function FiltrosCatalogo({
         aria-label="Marca"
         options={[{ value: "", label: "Todas las marcas" }, ...marcas]}
         value={params.get("marcaId") ?? ""}
-        onChange={(e) => actualizar({ marcaId: e.target.value || null })}
+        onChange={(e) =>
+          actualizar({
+            marcaId: e.target.value || null,
+            ...Object.fromEntries(dependenDeMarca.map((p) => [p, null])),
+          })
+        }
         containerClassName={cn(!enSheet && "w-44")}
       />
       {extras.map((f) =>

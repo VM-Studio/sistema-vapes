@@ -1,19 +1,20 @@
 "use client";
 
+import type { TipoMovimiento } from "@prisma/client";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { VariantePicker } from "@/components/catalogo/variante-picker";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
+import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import { useUrlParams } from "@/hooks/use-url-params";
 import { RANGO_LABEL, RANGOS, type Rango } from "@/lib/fechas";
-import { TIPO_MOVIMIENTO_UI, TIPOS_MOVIMIENTO_FILTRO } from "@/lib/movimientos-ui";
+import { FAMILIAS, FAMILIAS_MOVIMIENTO, TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import type { MovimientoListado } from "@/server/services/stock.service";
 
 import { CampoFecha, TablaMovimientos } from "../tabla-movimientos";
@@ -32,6 +33,8 @@ interface Props {
   usuarios: { id: string; nombre: string; activo: boolean }[];
   varianteFiltro: VarianteEncontrada | null;
   productoFiltro: { id: string; nombre: string } | null;
+  /** Desde qué módulo se ve (la misma vista en Stock y en Productos). */
+  seccion?: "stock" | "productos";
 }
 
 export function LedgerView({
@@ -45,9 +48,10 @@ export function LedgerView({
   usuarios,
   varianteFiltro,
   productoFiltro,
+  seccion = "stock",
 }: Props) {
   const ruta = useRutaPanel();
-  const PATH = ruta("/stock/movimientos");
+  const PATH = ruta(`/${seccion}/movimientos`);
   const { actualizar } = useUrlParams();
   const link = (cambios: Record<string, string | null>) =>
     hrefCon(PATH, params, { page: null, ...cambios });
@@ -57,10 +61,16 @@ export function LedgerView({
     <>
       <PageHeader
         title="Movimientos"
-        subtitle={`${resultado.total} movimientos ${deposito ? `en ${deposito}` : "de todos los galpones"} · historial inmutable del stock`}
+        subtitle={`${resultado.total} movimientos ${deposito ? `en ${deposito}` : "de todos los galpones"} · entradas en verde, salidas en rojo; los retiros no cambian el stock (se descontó al vender)`}
         breadcrumb={
           <Breadcrumb
-            items={[{ label: "Stock", href: ruta("/stock") }, { label: "Movimientos" }]}
+            items={[
+              {
+                label: seccion === "stock" ? "Stock" : "Productos",
+                href: ruta(`/${seccion}`),
+              },
+              { label: "Movimientos" },
+            ]}
           />
         }
       />
@@ -122,14 +132,20 @@ export function LedgerView({
           <Select
             aria-label="Tipo"
             options={[
-              { value: "", label: "Todos los tipos" },
-              ...TIPOS_MOVIMIENTO_FILTRO.map((t) => ({
-                value: t,
-                label: TIPO_MOVIMIENTO_UI[t].label,
-              })),
+              { value: "", label: "Todos los movimientos" },
+              ...FAMILIAS.map((f) => ({ value: f, label: FAMILIAS_MOVIMIENTO[f].label })),
+              // Un tipo puntual que llegó por link (ej: desde otra pantalla).
+              ...(params.tipo && params.tipo in TIPO_MOVIMIENTO_UI
+                ? [
+                    {
+                      value: `tipo:${params.tipo}`,
+                      label: TIPO_MOVIMIENTO_UI[params.tipo as TipoMovimiento].label,
+                    },
+                  ]
+                : []),
             ]}
-            value={params.tipo ?? ""}
-            onChange={(e) => actualizar({ tipo: e.target.value || null })}
+            value={params.tipo ? `tipo:${params.tipo}` : (params.familia ?? "")}
+            onChange={(e) => actualizar({ familia: e.target.value || null, tipo: null })}
             containerClassName="md:w-56"
           />
           <Select
@@ -161,10 +177,7 @@ export function LedgerView({
                 </button>
               </span>
             ) : (
-              <VariantePicker
-                placeholder="Filtrar por producto…"
-                onSelect={(v) => actualizar({ varianteId: v.varianteId })}
-              />
+              <SearchInput placeholder="Buscar producto, sabor o SKU…" />
             )}
           </div>
         </div>

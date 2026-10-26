@@ -1,6 +1,8 @@
 import { TipoMovimiento } from "@prisma/client";
 import { z } from "zod";
 
+import { FAMILIAS, type FamiliaMovimiento } from "@/lib/movimientos-ui";
+
 import {
   enteroNoNegativo,
   enteroPositivo,
@@ -64,6 +66,15 @@ export const listarMovimientosSchema = z.object({
   depositoId: z.preprocess(vacioAUndefined, id.optional()),
   usuarioId: z.preprocess(vacioAUndefined, id.optional()),
   tipo: z.preprocess(vacioAUndefined, z.enum(TipoMovimiento).optional()).catch(undefined),
+  /** Entradas, salidas, ventas (y retiros), compras, ajustes, transferencias, devoluciones, retiros. */
+  familia: z
+    .preprocess(
+      vacioAUndefined,
+      z.enum(FAMILIAS as [FamiliaMovimiento, ...FamiliaMovimiento[]]).optional(),
+    )
+    .catch(undefined),
+  /** Producto, sabor o SKU. */
+  q: z.preprocess(vacioAUndefined, z.string().trim().max(100).optional()).catch(undefined),
   referenciaTipo: z
     .preprocess(
       vacioAUndefined,

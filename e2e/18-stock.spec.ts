@@ -36,7 +36,7 @@ test("stock: pestañas por galpón y Global; transferir 5 desde la fila no cambi
   await expect(tabs.getByRole("link", { name: "Mercedes" })).toBeVisible();
   await expect(tabs.getByRole("link", { name: "Global" })).toBeVisible();
   const tabla = page.getByTestId("tabla-stock");
-  await expect(tabla.getByRole("columnheader", { name: "Cantidad" })).toBeVisible();
+  await expect(tabla.getByRole("columnheader", { name: "Disponible" })).toBeVisible();
   await expect(tabla.getByRole("columnheader", { name: "Mercedes" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Movimientos de Ayres Plaza" })).toBeVisible();
   const movimientos = page.getByRole("table", { name: "Movimientos de stock" });
