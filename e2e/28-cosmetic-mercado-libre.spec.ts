@@ -134,7 +134,8 @@ test("Cosmetic: venta por ML con el precio cargado a mano ($ 15.000)", async ({ 
   // La venta ahora enlaza su factura y el listado la muestra.
   await page.goto(`/p/cosmetic/ventas/${venta.id}`);
   await expect(page.getByTestId("link-factura")).toContainText(factura.codigo);
-  await page.goto("/p/cosmetic/facturas");
+  // A4: Facturas muestra solo las ventas ML; las del sistema quedan en /facturas/comunes.
+  await page.goto("/p/cosmetic/facturas/comunes");
   await expect(page.getByRole("link", { name: factura.codigo }).first()).toBeVisible();
 
   // El reporte "Ventas Mercado Libre".

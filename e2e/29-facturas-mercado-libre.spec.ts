@@ -7,9 +7,10 @@ import { db, llamarAccion, loginDueno, PANEL_COSMETIC, pistola, soltarFoco } fro
 
 /**
  * Cosmetic: una venta cobrada por Mercado Libre lleva el precio de cada
- * producto cargado a mano y aparece sola en Facturas → «Ventas Mercado Libre»
- * como pendiente; «Cargar» (fecha de hoy + archivo opcional) → «Cargado» la
- * pasa a cargada y las tarjetas de totales cambian.
+ * producto cargado a mano y aparece sola en Facturas (A4: el módulo muestra
+ * SOLO las ventas ML) como pendiente; «Cargar» (fecha de hoy + archivo
+ * opcional) → «Cargado» la pasa a cargada y las tarjetas (CANTIDAD de ventas)
+ * cambian. Cada tarjeta filtra el listado (?estado= en la URL).
  */
 test.describe.configure({ mode: "serial" });
 
@@ -124,9 +125,14 @@ test("venta ML con precio a mano → pendiente en Facturas → «Cargar» con ar
 
   // Facturas → Ventas Mercado Libre: aparece sola, pendiente.
   const antes = await totalesEnDb();
-  await page.goto("/p/cosmetic/facturas");
-  await page.getByRole("link", { name: /^Ventas Mercado Libre/ }).click();
-  await page.waitForURL(/\/facturas\/mercado-libre$/);
+  // La ruta vieja redirige a Facturas, que ya no tiene pestañas ni «Nueva factura».
+  await page.goto("/p/cosmetic/facturas/mercado-libre");
+  await page.waitForURL(/\/p\/cosmetic\/facturas$/);
+  await expect(page.getByRole("link", { name: /^Ventas Mercado Libre/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Nueva factura" })).toHaveCount(0);
+  await expect(
+    page.getByTestId("tarjeta-ml-pendientes").getByText(String(antes.pendientes), { exact: true }),
+  ).toBeVisible();
   await expect(page.getByTestId("tarjeta-ml-pendientes")).toContainText(ventas(antes.pendientes));
   await expect(page.getByTestId("tarjeta-ml-cargadas")).toContainText(ventas(antes.cargadas));
   const fila = page.getByRole("row").filter({ hasText: codigo });
@@ -183,16 +189,27 @@ test("venta ML con precio a mano → pendiente en Facturas → «Cargar» con ar
   await detalle.getByRole("button", { name: "Cerrar" }).click();
   await expect(detalle).toBeHidden();
 
-  // Filtro por estado: pendientes no la muestra; cargadas sí.
-  // (El select es controlado por la URL: si un refresh en curso lo pisa, se reintenta.)
-  await expect(async () => {
-    await page.getByLabel("Estado de la factura").selectOption("PENDIENTE");
-    await expect(page).toHaveURL(/estado=PENDIENTE/, { timeout: 3_000 });
-  }).toPass();
+  // Las tarjetas filtran: pendientes no la muestra; cargadas sí; «Todas» limpia.
+  await page.getByTestId("tarjeta-ml-pendientes").getByRole("link").click();
+  await expect(page).toHaveURL(/estado=PENDIENTE/);
+  await page.waitForLoadState("load"); // los filtros recargan la página
+  await expect(page.getByTestId("tarjeta-ml-pendientes")).toHaveAttribute("data-activa", "true");
   await expect(page.getByRole("row").filter({ hasText: codigo })).toHaveCount(0);
-  await expect(page.getByLabel("Estado de la factura")).toHaveValue("PENDIENTE");
-  await page.goto("/p/cosmetic/facturas/mercado-libre?estado=CARGADA");
+  await page.getByTestId("tarjeta-ml-cargadas").getByRole("link").click();
+  await expect(page).toHaveURL(/estado=CARGADA/);
+  await page.waitForLoadState("load"); // los filtros recargan la página
+  await expect(page.getByTestId("tarjeta-ml-cargadas")).toHaveAttribute("data-activa", "true");
   await expect(page.getByRole("row").filter({ hasText: codigo })).toHaveCount(1);
+  await page.reload({ waitUntil: "load" });
+  await expect(page.getByTestId("tarjeta-ml-cargadas")).toHaveAttribute("data-activa", "true");
+  await page
+    .getByRole("group", { name: "Estado de la factura" })
+    .getByRole("link", { name: "Todas" })
+    .click();
+  await expect(page).not.toHaveURL(/estado=/);
+  await page.waitForLoadState("load"); // los filtros recargan la página
+  await expect(page.getByRole("row").filter({ hasText: codigo })).toHaveCount(1);
+  await expect(page.getByTestId("tarjeta-ml-cargadas")).toHaveAttribute("data-activa", "false");
 
   // Auditoría de la carga.
   const audit = await db.auditLog.findFirst({
@@ -221,7 +238,7 @@ test("Ventas Mercado Libre en el celular (375): listado y «Cargar»", async ({ 
   expect(r).toContain('"ok":true');
   const codigo = /"codigo":"(COS-\d{6})"/.exec(r)![1]!;
 
-  await page.goto("/p/cosmetic/facturas/mercado-libre");
+  await page.goto("/p/cosmetic/facturas");
   const tarjeta = page.getByTestId("tarjeta-venta-ml").filter({ hasText: codigo });
   await expect(tarjeta.getByTestId("estado-factura-ml")).toHaveText("Pendiente");
   await page.screenshot({ path: `${CAPTURAS}/bloqueML-facturas-375.png`, fullPage: true });

@@ -53,7 +53,10 @@ export default async function FacturaPage({ params }: { params: Promise<{ id: st
         title={`${TIPO_FACTURA_LABEL[f.tipo]} ${f.codigo}`}
         breadcrumb={
           <Breadcrumb
-            items={[{ label: "Facturas", href: rutaPanel(slug, "/facturas") }, { label: f.codigo }]}
+            items={[
+              { label: "Facturas", href: rutaPanel(slug, "/facturas/comunes") },
+              { label: f.codigo },
+            ]}
           />
         }
         actions={
