@@ -1,117 +1,127 @@
-import { History } from "lucide-react";
+"use client";
+
 import Link from "next/link";
 
-import { Badge } from "@/components/ui/badge";
-import { DataTable } from "@/components/ui/data-table";
-import { EmptyState } from "@/components/ui/empty-state";
-import { conSigno, formatearPesos } from "@/lib/format";
-import { TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
-import { cn, formatearFechaHora } from "@/lib/utils";
+import { useRutaPanel } from "@/components/layout/panel-context";
+import { hrefCon } from "@/components/ui/pagination";
+import { Select } from "@/components/ui/select";
+import { useUrlParams } from "@/hooks/use-url-params";
+import { formatearNumero } from "@/lib/format";
 import type { MovimientoListado } from "@/server/services/movimiento.service";
 
-/** Últimos movimientos de todos los sabores del producto (costos: solo dueños). */
+import { TablaMovimientos } from "../../stock/tabla-movimientos";
+
+/**
+ * Movimientos SOLO de este producto (todos sus sabores), más nuevos primero,
+ * filtrables por sabor y galpón y paginados (parámetros `msabor`, `mgalpon`,
+ * `mpage` para no pisar otros de la ficha). Incluye los retiros de ventas.
+ */
 export function MovimientosProducto({
+  productoId,
   movimientos,
   total,
-  verCostos,
-  hrefTodos,
+  page,
+  pageSize,
+  sabores,
+  depositos,
 }: {
+  productoId: string;
   movimientos: MovimientoListado[];
   total: number;
-  verCostos: boolean;
-  /** Historial completo del producto en Stock → Movimientos. */
-  hrefTodos: string;
+  page: number;
+  pageSize: number;
+  /** Sabores del producto (vacío si no tiene sabores). */
+  sabores: { id: string; nombre: string }[];
+  depositos: { id: string; nombre: string }[];
 }) {
+  const ruta = useRutaPanel();
+  const { params, actualizar } = useUrlParams();
+  const paginas = Math.max(1, Math.ceil(total / pageSize));
+  const actuales = Object.fromEntries(params.entries());
+  const PATH = ruta(`/productos/${productoId}`);
+  const hrefPagina = (p: number) =>
+    `${hrefCon(PATH, actuales, { mpage: p === 1 ? null : p })}#movimientos-producto`;
+  const historial = new URLSearchParams({ productoId });
+  if (params.get("msabor")) historial.set("varianteId", params.get("msabor")!);
+  if (params.get("mgalpon")) historial.set("depositoId", params.get("mgalpon")!);
+
   return (
-    <>
-      <DataTable
-        caption="Últimos movimientos"
-        rows={movimientos}
-        getRowKey={(m) => m.id}
-        empty={
-          <EmptyState
-            icon={History}
-            title="Este producto todavía no tuvo movimientos"
-            description="Acá vas a ver las cargas, ventas, ajustes y transferencias."
-            className="bg-surface py-10 md:py-12"
+    <div className="flex flex-col gap-3">
+      <div
+        role="group"
+        aria-label="Filtros de movimientos"
+        className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center"
+      >
+        {sabores.length > 1 && (
+          <Select
+            aria-label="Sabor"
+            options={[
+              { value: "", label: "Todos los sabores" },
+              ...sabores.map((s) => ({ value: s.id, label: s.nombre })),
+            ]}
+            value={params.get("msabor") ?? ""}
+            onChange={(e) => actualizar({ msabor: e.target.value || null, mpage: null })}
+            containerClassName="md:w-56"
           />
-        }
-        columns={[
-          {
-            key: "fecha",
-            header: "Fecha",
-            cell: (m) => (
-              <span className="text-muted whitespace-nowrap">{formatearFechaHora(m.fecha)}</span>
-            ),
-          },
-          {
-            key: "tipo",
-            header: "Tipo",
-            cell: (m) => (
-              <Badge variant={TIPO_MOVIMIENTO_UI[m.tipo].variante}>
-                {TIPO_MOVIMIENTO_UI[m.tipo].label}
-              </Badge>
-            ),
-          },
-          { key: "sabor", header: "Sabor", cell: (m) => m.nombre },
-          { key: "deposito", header: "Galpón", cell: (m) => m.deposito },
-          {
-            key: "cantidad",
-            header: "Cantidad",
-            className: "text-right",
-            cell: (m) => (
-              <span
-                className={cn(
-                  "font-semibold tabular-nums",
-                  m.cantidad > 0 ? "text-success" : "text-danger",
-                )}
-              >
-                {conSigno(m.cantidad)}
-              </span>
-            ),
-          },
-          {
-            key: "stock",
-            header: "Stock",
-            className: "text-right",
-            cell: (m) => (
-              <span className="tabular-nums">
-                {m.stockAnterior} → {m.stockPosterior}
-              </span>
-            ),
-          },
-          ...(verCostos
-            ? [
-                {
-                  key: "costo",
-                  header: "Costo",
-                  className: "text-right",
-                  cell: (m: MovimientoListado) =>
-                    m.costoUnitario === null ? "—" : formatearPesos(m.costoUnitario),
-                  ocultarEnMobile: true,
-                },
-              ]
-            : []),
-          { key: "usuario", header: "Usuario", cell: (m) => m.usuario, ocultarEnMobile: true },
-          {
-            key: "motivo",
-            header: "Motivo",
-            cell: (m) => <span className="text-muted">{m.motivo ?? "—"}</span>,
-            ocultarEnMobile: true,
-          },
-        ]}
+        )}
+        {depositos.length > 1 && (
+          <Select
+            aria-label="Galpón"
+            options={[
+              { value: "", label: "Todos los galpones" },
+              ...depositos.map((d) => ({ value: d.id, label: d.nombre })),
+            ]}
+            value={params.get("mgalpon") ?? ""}
+            onChange={(e) => actualizar({ mgalpon: e.target.value || null, mpage: null })}
+            containerClassName="md:w-48"
+          />
+        )}
+      </div>
+      <TablaMovimientos
+        movimientos={movimientos}
+        conDeposito={!params.get("mgalpon")}
+        conProducto={false}
+        vacio="Este producto todavía no tuvo movimientos con esos filtros"
       />
-      {total > movimientos.length && (
-        <p className="text-muted mt-4 text-sm">
-          Mostrando los últimos {movimientos.length} de {total}.{" "}
+      <nav
+        aria-label="Paginación de movimientos del producto"
+        className="flex flex-wrap items-center justify-between gap-3 text-sm"
+      >
+        <p className="text-muted">
+          {total > 0
+            ? `Página ${page} de ${paginas} · ${formatearNumero(total)} movimientos`
+            : "Sin movimientos"}{" "}
+          ·{" "}
           <Link
-            href={hrefTodos}
+            href={ruta(`/productos/movimientos?${historial}`)}
             className="text-foreground font-medium underline underline-offset-4"
           >
-            Ver todos en Movimientos
+            Ver en Movimientos
           </Link>
         </p>
-      )}
-    </>
+        {paginas > 1 && (
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link
+                href={hrefPagina(page - 1)}
+                scroll={false}
+                className="text-foreground font-medium underline underline-offset-4"
+              >
+                Anteriores
+              </Link>
+            )}
+            {page < paginas && (
+              <Link
+                href={hrefPagina(page + 1)}
+                scroll={false}
+                className="text-foreground font-medium underline underline-offset-4"
+              >
+                Siguientes
+              </Link>
+            )}
+          </div>
+        )}
+      </nav>
+    </div>
   );
 }

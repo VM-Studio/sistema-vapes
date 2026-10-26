@@ -9,7 +9,8 @@ import {
   RotateCcw,
   ScanBarcode,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useUsuario } from "@/components/layout/usuario-context";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +48,15 @@ const faltanTexto = (n: number) => `${n === 1 ? "Falta" : "Faltan"} ${unidades(n
  * dónde está la diferencia) y «Vape escaneado» se habilita solo cuando todo
  * coincide exacto.
  */
-export function PantallaEscaneo({ inicial }: { inicial: VentaParaEscanear[] }) {
+export function PantallaEscaneo({
+  inicial,
+  pie,
+}: {
+  inicial: VentaParaEscanear[];
+  /** Debajo de la lista (no mientras se escanea): las listas para retirar. */
+  pie?: ReactNode;
+}) {
+  const router = useRouter();
   const toast = useToast();
   const [ventas, setVentas] = useState(inicial);
   const [actualizando, setActualizando] = useState(false);
@@ -88,6 +97,7 @@ export function PantallaEscaneo({ inicial }: { inicial: VentaParaEscanear[] }) {
           setVentas((vs) => vs.filter((v) => v.id !== seleccionada.id));
           setSeleccionada(null);
           void refrescar();
+          router.refresh();
         }}
         onYaNoPendiente={(mensaje) => {
           toast.error("Esta venta ya no está para escanear", mensaje);
@@ -168,6 +178,7 @@ export function PantallaEscaneo({ inicial }: { inicial: VentaParaEscanear[] }) {
           })}
         </ul>
       )}
+      {pie}
     </div>
   );
 }

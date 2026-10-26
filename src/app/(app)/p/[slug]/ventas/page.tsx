@@ -33,6 +33,7 @@ import {
 
 import { EstadoPagoBadge, MedioPagoBadge } from "./_componentes/medio-pago";
 import { EscaneoBadge } from "./_componentes/escaneo-remoto";
+import { BotonRetirado, RetiroBadge } from "./_componentes/retiro";
 import { VerificadaBadge } from "./_componentes/verificada-badge";
 import { FiltrosVentas } from "./filtros-ventas";
 import { GenerarVenta } from "./generar-venta";
@@ -49,8 +50,8 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   // Por defecto: las ventas de hoy (salvo que se busque un ID, un cliente o un
-  // estado de «Escanea Charly», que se buscan en todo el historial).
-  const buscaSinFecha = !!plano.q || !!plano.escaneo;
+  // estado de «Escanea Charly» o las pendientes de retiro, que se buscan en todo el historial).
+  const buscaSinFecha = !!plano.q || !!plano.escaneo || plano.retiro === "pendiente";
   const sinFechas = !plano.rango && !plano.desde && !plano.hasta && !buscaSinFecha;
   const rango: Rango | null = RANGOS.includes(plano.rango as Rango)
     ? (plano.rango as Rango)
@@ -67,6 +68,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
   const filtros = listarVentasSchema.parse({ ...plano, desde: fechas.desde, hasta: fechas.hasta });
   const verGanancia = esOwner(ctx.usuario);
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear");
+  /** «Retirado» desde la lista: confirmadas sin retirar y sin escaneo pendiente. */
+  const retirable = (v: VentaListada) =>
+    puedeCrear &&
+    v.estado === "CONFIRMADA" &&
+    !v.retiro.retiradaAt &&
+    v.escaneo.estado !== "PENDIENTE";
   const [r, depositos, vendedores, unidades, configVentas] = await Promise.all([
     listarVentas(ctx, filtros, { verCostos: verGanancia }),
     listarDepositosActivos(ctx),
@@ -259,6 +266,18 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             ),
           },
           { key: "estado", header: "Estado", cell: estado },
+          {
+            key: "retiro",
+            header: "Retiro",
+            cell: (v) => (
+              <span className="flex flex-col items-start gap-1">
+                <RetiroBadge retiro={v.retiro} anulada={v.estado === "ANULADA"} />
+                {retirable(v) && (
+                  <BotonRetirado ventaId={v.id} codigo={v.codigo} variant="secondary" size="sm" />
+                )}
+              </span>
+            ),
+          },
         ]}
         renderMobile={(v) => (
           <Link
@@ -303,6 +322,14 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             {v.escaneo.estado && v.estado === "CONFIRMADA" && (
               <div className="flex">
                 <EscaneoBadge escaneo={v.escaneo} />
+              </div>
+            )}
+            {v.estado === "CONFIRMADA" && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <RetiroBadge retiro={v.retiro} />
+                {retirable(v) && (
+                  <BotonRetirado ventaId={v.id} codigo={v.codigo} variant="secondary" size="sm" />
+                )}
               </div>
             )}
           </Link>

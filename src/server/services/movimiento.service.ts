@@ -43,15 +43,16 @@ export type { MovimientoListado, ReferenciaMovimiento } from "@/server/services/
 
 /**
  * Ledger del panel paginado, más nuevo primero. Filtrable por galpón (sin
- * galpón = todos), sabor, producto, tipo, usuario, referencia y fechas.
- * El costo unitario solo viaja si `incluirCostos` (dueños).
+ * galpón = todos), sabor, producto, tipo o familia, texto, usuario, referencia
+ * y fechas. El costo unitario solo viaja si `incluirCostos` (dueños). Incluye
+ * los retiros de ventas (eventos sin cambio de cantidad) salvo `incluirRetiros: false`.
  */
 export async function listarMovimientos(
   ctx: Ctx,
   filtros: FiltrosMovimientos,
-  opciones: { incluirCostos?: boolean } = {},
+  opciones: { incluirCostos?: boolean; incluirRetiros?: boolean } = {},
 ): Promise<ResultadoLedger> {
-  return movimientos(ctx, filtros, opciones);
+  return movimientos(ctx, filtros, { incluirRetiros: true, ...opciones });
 }
 
 // =============================================================================

@@ -31,6 +31,7 @@ import {
   motivoNoEscaneable,
   type EstadoEscaneoVenta,
 } from "@/server/services/escaneo-remoto.service";
+import { motivoNoRetirable, type EstadoRetiro } from "@/server/services/retiro.service";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
   bloquearCliente,
@@ -690,6 +691,11 @@ function whereVentas(f: Omit<FiltrosVentas, "page" | "pageSize">): Prisma.VentaW
   if (f.medioPago) where.pagos = { some: { medioPago: f.medioPago } };
   if (f.tipo) where.tipo = f.tipo;
   if (f.escaneo) where.escaneoRemoto = f.escaneo;
+  // «Retirado»: solo confirmadas (una anulada no se retira).
+  if (f.retiro === "pendiente")
+    Object.assign(where, { estado: EstadoVenta.CONFIRMADA, retiradaAt: null });
+  if (f.retiro === "retirada")
+    Object.assign(where, { estado: EstadoVenta.CONFIRMADA, retiradaAt: { not: null } });
   if (f.desde || f.hasta) {
     where.fecha = {
       ...(f.desde ? { gte: inicioDelDia(f.desde) } : {}),
@@ -734,6 +740,8 @@ export interface VentaListada {
   verificadaPorEscaneo: boolean;
   /** «Escanea Charly»: estado del escaneo remoto (null = no se pidió). */
   escaneo: EstadoEscaneoVenta;
+  /** «Retirado»: cuándo y quién (retiradaAt null = pendiente de retiro). */
+  retiro: EstadoRetiro;
 }
 
 export interface ListadoVentas {
@@ -766,6 +774,7 @@ export async function listarVentas(
         items: { select: { cantidad: true } },
         escaneoPedidoPor: { select: { nombre: true } },
         escaneadaPor: { select: { nombre: true } },
+        retiradaPor: { select: { nombre: true } },
       },
     }),
     db.venta.aggregate({
@@ -793,6 +802,7 @@ export async function listarVentas(
       gananciaBruta: opciones.verCostos ? dec(v.gananciaBruta) : null,
       verificadaPorEscaneo: v.verificadaPorEscaneo,
       escaneo: estadoEscaneoDe(v),
+      retiro: { retiradaAt: v.retiradaAt, retiradaPor: v.retiradaPor?.nombre ?? null },
     })),
     total,
     page: f.page,
@@ -828,6 +838,7 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
       deposito: { select: { id: true, nombre: true, escaneoRemoto: true } },
       escaneoPedidoPor: { select: { nombre: true } },
       escaneadaPor: { select: { nombre: true } },
+      retiradaPor: { select: { nombre: true } },
       items: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -884,6 +895,10 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
     escaneo: estadoEscaneoDe(v),
     /** «Escanea Charly»: null si se puede pedir; si no, por qué no. */
     motivoNoEscaneable: motivoNoEscaneable(v),
+    /** «Retirado»: cuándo y quién (retiradaAt null = pendiente de retiro). */
+    retiro: { retiradaAt: v.retiradaAt, retiradaPor: v.retiradaPor?.nombre ?? null },
+    /** null si se puede marcar como retirada; si no, por qué no. */
+    motivoNoRetirable: motivoNoRetirable(v),
     montoPagado: dec(v.montoPagado),
     saldoPendiente: dec(v.saldoPendiente),
     pagos: v.pagos.map((p) => ({

@@ -124,6 +124,10 @@ export const listarVentasSchema = z.object({
   estado: z.preprocess(vacioAUndefined, z.enum(EstadoVenta).optional()).catch(undefined),
   /** «Escanea Charly»: esperando escaneo o ya escaneadas. */
   escaneo: z.preprocess(vacioAUndefined, z.enum(Escaneo).optional()).catch(undefined),
+  /** «Retirado»: confirmadas pendientes de retiro o ya retiradas. */
+  retiro: z
+    .preprocess(vacioAUndefined, z.enum(["pendiente", "retirada"]).optional())
+    .catch(undefined),
   /** ID de venta (VAP-000123 o 123), nombre o teléfono del cliente. */
   q: z.preprocess(vacioAUndefined, z.string().trim().max(100).optional()).catch(undefined),
   page: z.coerce.number().int().min(1).catch(1),

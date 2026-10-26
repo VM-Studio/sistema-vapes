@@ -20,7 +20,7 @@ import {
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { registrarMovimiento } from "@/server/services/stock.service";
+import { crearStockEnCero, registrarMovimiento } from "@/server/services/stock.service";
 
 /**
  * CATÁLOGO DEL PANEL: productos (marca + modelo + especificación, con un
@@ -787,6 +787,7 @@ export async function altaRapida(ctx: Ctx, input: AltaRapida): Promise<VarianteE
         select: { id: true },
       });
       id = v.id;
+      await crearStockEnCero(tx, [id]);
     }
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
@@ -962,6 +963,11 @@ export async function crear(
       },
       select: { id: true, ...selectSnapshot },
     });
+    // La misma lista en todos los galpones: cada sabor nace en 0 en cada uno.
+    await crearStockEnCero(
+      tx,
+      producto.variantes.map((v) => v.id),
+    );
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.CREATE,
@@ -1079,7 +1085,11 @@ export async function actualizar(ctx: Ctx, id: string, input: Producto): Promise
         }
         const sku = await generarSku(tx, reservados);
         reservados.add(sku);
-        await tx.variante.create({ data: { ...datos, productoId: id, sku } });
+        const nueva = await tx.variante.create({
+          data: { ...datos, productoId: id, sku },
+          select: { id: true },
+        });
+        await crearStockEnCero(tx, [nueva.id]);
       }
 
       const despues = await tx.producto.findUniqueOrThrow({

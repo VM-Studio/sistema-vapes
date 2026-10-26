@@ -40,7 +40,16 @@ export function FiltrosVentas({
   const ruta = useRutaPanel();
   const { slug } = usePanel();
   // En mobile, fechas y selects van plegados (salvo que ya haya alguno aplicado).
-  const avanzados = ["desde", "hasta", "depositoId", "vendedorId", "medioPago", "tipo", "escaneo"];
+  const avanzados = [
+    "desde",
+    "hasta",
+    "depositoId",
+    "vendedorId",
+    "medioPago",
+    "tipo",
+    "escaneo",
+    "retiro",
+  ];
   const activos = avanzados.filter((k) => params[k]).length;
   const [masFiltros, setMasFiltros] = useState(activos > 0);
   const link = (cambios: Record<string, string | null>) =>
@@ -90,7 +99,7 @@ export function FiltrosVentas({
         id="filtros-ventas-avanzados"
         className={cn(
           "grid-cols-2 gap-2 md:grid md:grid-cols-3",
-          conEscaneoRemoto ? "lg:grid-cols-4" : "lg:grid-cols-6",
+          conEscaneoRemoto ? "lg:grid-cols-4" : "lg:grid-cols-7",
           masFiltros ? "grid" : "hidden",
         )}
       >
@@ -151,6 +160,17 @@ export function FiltrosVentas({
           ]}
           value={params.tipo ?? ""}
           onChange={(e) => actualizar({ tipo: e.target.value || null })}
+        />
+        <Select
+          aria-label="Retiro"
+          containerClassName="self-end"
+          options={[
+            { value: "", label: "Retiradas y pendientes" },
+            { value: "pendiente", label: "Pendientes de retiro" },
+            { value: "retirada", label: "Retiradas" },
+          ]}
+          value={params.retiro ?? ""}
+          onChange={(e) => actualizar({ retiro: e.target.value || null })}
         />
         {conEscaneoRemoto && (
           <Select
