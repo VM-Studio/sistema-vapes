@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 
 import { hoyAR } from "@/lib/fechas";
 import { requirePaginaPanel } from "@/server/auth/permissions";
+import { cotizacionResumenCompra } from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { obtenerVariantesPorId } from "@/server/services/producto.service";
@@ -23,10 +24,11 @@ type SP = Record<string, string | string[] | undefined>;
 export default async function NuevaCompraPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanel(Modulo.COMPRAS, "crear");
   const params = await searchParams;
-  const [depositos, proveedores, configCompras] = await Promise.all([
+  const [depositos, proveedores, configCompras, cotizacionUsdt] = await Promise.all([
     listarDepositosActivos(ctx),
     listarProveedoresActivos(ctx),
     obtenerConfigCompras(ctx),
+    cotizacionResumenCompra(null),
   ]);
   const depositoId =
     typeof params.deposito === "string" && depositos.some((d) => d.id === params.deposito)
@@ -51,6 +53,7 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
       proveedores={proveedores}
       depositos={depositos}
       comisionDefault={configCompras.comisionPasistaPorcentajeDefault}
+      cotizacionUsdt={cotizacionUsdt}
       inicial={{
         id: null,
         comisionPasistaPorcentaje: null,

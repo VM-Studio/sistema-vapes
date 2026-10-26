@@ -92,13 +92,21 @@ test("compra de 100 u. × $10.000 con 10% de pasista + Valija y Envío → $11.8
   await expect(page.getByLabel("Comisión del pasista", { exact: true })).toHaveText(
     /\$\s*100\.000/,
   );
-  await expect(page.getByLabel("Total de la compra")).toHaveText(/\$\s*1\.100\.000/);
-  await expect(page.getByLabel("Costo final por unidad")).toHaveText(/\$\s*11\.000/);
+  await expect(page.getByLabel("Costo final total", { exact: true })).toHaveText(
+    /\$\s*1\.100\.000/,
+  );
+  await expect(page.getByLabel(`Costo final por unidad de ${nc}`)).toHaveText(/\$\s*11\.000/);
+  await expect(page.getByTestId("cotizacion-resumen")).toBeVisible();
 
-  await page.getByRole("button", { name: "Recibir mercadería" }).click();
-  const dialogo = page.getByRole("dialog", { name: "Recibir mercadería" });
-  await dialogo.getByRole("button", { name: "Recibir", exact: true }).click();
-  await page.waitForURL((u) => /^\/p\/vapes\/compras\/[a-z0-9]+$/.test(u.pathname));
+  // Confirmar (queda pendiente de recibir) y después «Recibido» en el detalle.
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  await page.waitForURL(
+    (u) => /^\/p\/vapes\/compras\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nueva"),
+  );
+  await page.getByRole("button", { name: /^Recibido/ }).click();
+  const dialogo = page.getByRole("dialog", { name: "¿Llegó la mercadería?" });
+  await dialogo.getByRole("button", { name: "Recibido", exact: true }).click();
+  await expect(page.getByText("Recibida", { exact: true })).toBeVisible();
 
   const compra = await db.compra.findFirstOrThrow({
     where: { panelId: PANEL_VAPES, proveedorId: proveedor.id },
@@ -128,13 +136,12 @@ test("compra de 100 u. × $10.000 con 10% de pasista + Valija y Envío → $11.8
   const variante = await db.variante.findUniqueOrThrow({ where: { id: mango.id } });
   expect(variante.ultimoCosto?.toFixed(0)).toBe("11800");
 
-  // Detalle: desglose de costo.
+  // Detalle: tarjeta grande y costo final por unidad de cada modelo.
   await page.goto(`/p/vapes/compras/${compra.id}`);
-  const desglose = page
-    .getByRole("region", { name: "Desglose de costo" })
-    .or(page.locator("section", { hasText: "Desglose de costo" }));
-  await expect(desglose.first()).toContainText(/Total final\s*\$\s*1\.180\.000/);
-  await expect(desglose.first()).toContainText(/Costo final por unidad\s*\$\s*11\.800/);
+  await expect(page.getByLabel("Costo final total", { exact: true })).toHaveText(
+    /\$\s*1\.180\.000/,
+  );
+  await expect(page.getByLabel(`Costo final por unidad de ${nc}`)).toHaveText(/\$\s*11\.800/);
 
   // Pasista: pendiente $100.000 en el mes → marcar pagada.
   await page.goto("/p/vapes/pasista");
@@ -268,14 +275,16 @@ test("Pasista en Cosmetic: la comisión de la compra con su detalle, el cálculo
   await hoja.getByRole("button", { name: /Agregar 10 u\./ }).click();
   await page.getByRole("checkbox", { name: /Comisión del/ }).check();
   await expect(page.getByLabel("Comisión del pasista", { exact: true })).toHaveText(/\$\s*2\.500/);
-  await page.getByRole("button", { name: "Recibir mercadería" }).click();
-  await page
-    .getByRole("dialog", { name: "Recibir mercadería" })
-    .getByRole("button", { name: "Recibir", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
   await page.waitForURL(
     (u) => /^\/p\/cosmetic\/compras\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nueva"),
   );
+  await page.getByRole("button", { name: /^Recibido/ }).click();
+  await page
+    .getByRole("dialog", { name: "¿Llegó la mercadería?" })
+    .getByRole("button", { name: "Recibido", exact: true })
+    .click();
+  await expect(page.getByText("Recibida", { exact: true })).toBeVisible();
   const compra = await db.compra.findFirstOrThrow({
     where: { panelId: PANEL_COSMETIC, items: { some: { productoId: producto.id } } },
   });

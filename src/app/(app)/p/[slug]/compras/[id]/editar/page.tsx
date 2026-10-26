@@ -5,7 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
-import { obtenerCompra } from "@/server/services/compra.service";
+import { cotizacionResumenCompra, obtenerCompra } from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { listarProveedoresActivos } from "@/server/services/proveedor.service";
@@ -25,11 +25,12 @@ export default async function EditarCompraPage({ params }: { params: Promise<{ i
     if (e instanceof NotFoundError) notFound();
     throw e;
   });
-  // Solo el borrador se edita: una compra recibida o anulada queda congelada.
+  // Solo se edita la pendiente de recibir: una compra recibida o anulada queda congelada.
   if (c.estado !== "BORRADOR") redirect(rutaPanel(ctx.panel.slug, `/compras/${id}`));
-  const [depositos, proveedores] = await Promise.all([
+  const [depositos, proveedores, cotizacionUsdt] = await Promise.all([
     listarDepositosActivos(ctx),
     listarProveedoresActivos(ctx),
+    cotizacionResumenCompra(c.tipoCambioUSDT),
   ]);
   const configCompras = await obtenerConfigCompras(ctx);
 
@@ -38,6 +39,7 @@ export default async function EditarCompraPage({ params }: { params: Promise<{ i
       proveedores={proveedores}
       depositos={depositos}
       comisionDefault={configCompras.comisionPasistaPorcentajeDefault}
+      cotizacionUsdt={cotizacionUsdt}
       inicial={{
         id: c.id,
         comisionPasistaPorcentaje: c.comisionPasistaPorcentaje,

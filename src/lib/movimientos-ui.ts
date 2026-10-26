@@ -55,7 +55,8 @@ export const ESTADO_TRANSFERENCIA_UI = {
 } as const;
 
 export const ESTADO_COMPRA_UI = {
-  BORRADOR: { label: "Borrador", variante: "warning" },
+  /** «Confirmada · pendiente de recibir»: todavía no sumó stock (ver compra.service). */
+  BORRADOR: { label: "Pendiente de recibir", variante: "warning" },
   RECIBIDA: { label: "Recibida", variante: "success" },
   ANULADA: { label: "Anulada", variante: "neutral" },
 } as const;

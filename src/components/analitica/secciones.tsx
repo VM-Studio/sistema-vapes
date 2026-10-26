@@ -864,9 +864,10 @@ export async function SeccionPendientes({
                   <ClipboardList className="size-5" strokeWidth={1.75} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1 text-sm font-medium">
-                  {p.comprasBorrador} {p.comprasBorrador === 1 ? "compra" : "compras"} en borrador
+                  {p.comprasBorrador} {p.comprasBorrador === 1 ? "compra" : "compras"} pendiente
+                  {p.comprasBorrador === 1 ? "" : "s"} de recibir
                 </span>
-                <Badge variant="warning">Borrador</Badge>
+                <Badge variant="warning">Sin recibir</Badge>
                 <ChevronRight className="text-subtle size-5" strokeWidth={1.75} aria-hidden />
               </Link>
             </li>

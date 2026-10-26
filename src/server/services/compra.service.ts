@@ -7,6 +7,8 @@ import {
   TipoMovimiento,
 } from "@prisma/client";
 
+import type { CotizacionResumen } from "@/components/compras/resumen-compra-card";
+import { fechaHoraCotizacion } from "@/lib/cambio";
 import { calcularCostosFinales, type CostosFinales } from "@/lib/costos-compra";
 import { finDelDia, hoyAR, inicioDelDia } from "@/lib/fechas";
 import { formatearIdCompra } from "@/lib/paneles";
@@ -30,6 +32,11 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  *   la DB además verifica subtotal = Σ ítems y total = subtotal − descuento.
  * - Cada ítem es un SABOR (varianteId) y lleva su productoId (= variante.productoId,
  *   lo verifica un trigger).
+ * - Estados: «Confirmar» crea la compra en BORRADOR, que la UI muestra como
+ *   «Pendiente de recibir» (confirmada, todavía sin stock; se puede editar).
+ *   «Recibido» (recibirCompra) la pasa a RECIBIDA. Se reusa BORRADOR en vez
+ *   de sumar un estado al enum: CHECKs, triggers de ítems editables,
+ *   reportes, pasista y proveedores ya lo tratan como "sin stock todavía".
  * - El stock entra solo al RECIBIR (INGRESO_COMPRA, vía el motor de stock) y
  *   sale solo al ANULAR una recibida (DEVOLUCION_PROVEEDOR).
  * - Recibir actualiza `Variante.ultimoCosto` con el costo de la compra. Cada
@@ -46,10 +53,16 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  *   crearla y conservado al editar el borrador) y, para los productos que el
  *   proveedor cotiza en USDT, el costo en USDT (CompraItem.costoUnitarioUSDT =
  *   costo en pesos ÷ snapshot) para trazabilidad. Todo se calcula acá.
- * - COSTO FINAL (Bloque 6): comisión del pasista (% sobre el total, tick en la
- *   compra) + gastos extras (GastoCompra: valija, envío…) se prorratean POR
- *   UNIDAD (calcularCostosFinales en src/lib/costos-compra.ts, ahí está el
- *   porqué) → CompraItem.costoUnitarioFinal. `recalcularCostosFinales` corre
+ * - COSTO FINAL (Bloque 6, A4): a cada ítem se le suma la comisión del
+ *   pasista PROPORCIONAL A SU PRECIO (costo × factor de descuento × %) y los
+ *   gastos extras (GastoCompra: valija, envío…) PAREJOS POR UNIDAD
+ *   (calcularCostosFinales en src/lib/costos-compra.ts, ahí están la fórmula,
+ *   el porqué y el reparto del residuo de redondeo) → CompraItem.costoUnitarioFinal.
+ *   Las compras recibidas antes de A4 conservan el costo final con el criterio
+ *   anterior (recargo parejo): no se recalculan en masa; se pasan al nuevo
+ *   criterio solo cuando algo dispara `recalcularCostosFinales` (tick, %, gastos).
+ * - Comisión del pasista: se genera al CONFIRMAR (crear) la compra, como
+ *   siempre; recibirla no la cambia. `recalcularCostosFinales` corre
  *   al crear/editar, al cambiar el tick y al agregar/anular gastos; en una
  *   compra RECIBIDA además pasa el costo final a `Variante.ultimoCosto` de los
  *   sabores cuya última compra recibida es esta (historial en
@@ -194,6 +207,21 @@ function columnasCostos(c: CostosFinales) {
   };
 }
 
+/**
+ * Cotización para los equivalentes en USDT del resumen de una compra: la
+ * guardada en la compra (snapshot) si tiene; si no, la vigente (cambio.service).
+ * null sin ninguna (la UI lo indica sin romper).
+ */
+export async function cotizacionResumenCompra(
+  tipoCambioUSDT: string | null,
+): Promise<CotizacionResumen | null> {
+  if (tipoCambioUSDT) return { valor: Number(tipoCambioUSDT), origen: "guardada en la compra" };
+  const vigente = await obtenerCotizacion("USDT").catch(() => null);
+  return vigente
+    ? { valor: vigente.valor, origen: `vigente ${fechaHoraCotizacion(vigente.obtenidoAt)}` }
+    : null;
+}
+
 /** Pesos por USDT con 2 decimales, o null sin cotización. */
 async function cotizacionUsdtActual(): Promise<Prisma.Decimal | null> {
   const c = await obtenerCotizacion("USDT");
@@ -239,7 +267,7 @@ function conUsdt(items: ReturnType<typeof itemsParaCrear>, usdtDe: Map<string, P
 // Escritura
 // =============================================================================
 
-/** Crea la compra en BORRADOR (no mueve stock). */
+/** «Confirmar»: crea la compra en BORRADOR = pendiente de recibir (no mueve stock). */
 export async function crearCompra(
   ctx: Ctx,
   datos: Compra,
@@ -300,7 +328,7 @@ export async function actualizarCompra(
     if (antes.estado !== EstadoCompra.BORRADOR) {
       const idVisible = formatearIdCompra(await slugDelPanel(tx, ctx.panelId), antes.numero);
       throw new DomainError(
-        `La compra ${idVisible} está ${antes.estado.toLowerCase()}: solo se editan los borradores.`,
+        `La compra ${idVisible} está ${antes.estado.toLowerCase()}: solo se editan las pendientes de recibir.`,
       );
     }
     const productoDe = await validarReferencias(tx, datos);
@@ -669,6 +697,10 @@ export async function recibirCompra(
       if (!compra.deposito.activo)
         throw new DomainError(`El galpón "${compra.deposito.nombre}" está inactivo`);
       if (compra.items.length === 0) throw new DomainError("La compra no tiene productos.");
+      // Costo final con el criterio vigente (pasista proporcional al precio): una
+      // compra confirmada antes de A4 todavía tiene el recargo parejo guardado.
+      await recalcularCostosFinales(tx, ctx, id);
+      compra.items = await tx.compraItem.findMany({ where: { compraId: id } });
 
       const cambios =
         opciones.actualizarPrecioProveedor && compra.proveedorId

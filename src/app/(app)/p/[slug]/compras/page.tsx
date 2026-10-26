@@ -3,6 +3,7 @@ import { Plus, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { BotonRecibido } from "@/components/compras/boton-recibido";
 import { BotonGastosCompra } from "@/components/compras/gastos-compra-sheet";
 import { Badge } from "@/components/ui/badge";
 import { BarraAccion } from "@/components/ui/barra-accion";
@@ -53,6 +54,18 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
   const puedeEditar = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "editar");
   const owner = esOwner(ctx.usuario);
   const conGastos = (c: CompraListada) => puedeEditar && c.estado !== "ANULADA";
+  const conRecibido = (c: CompraListada) => puedeEditar && c.estado === "BORRADOR";
+  const botonRecibido = (c: CompraListada, className?: string) => (
+    <BotonRecibido
+      compraId={c.id}
+      idVisible={idDe(c)}
+      unidades={c.unidades}
+      deposito={c.deposito}
+      proveedor={c.proveedor ?? "el proveedor"}
+      size="sm"
+      className={className}
+    />
+  );
   const botonGastos = (c: CompraListada, className?: string) => (
     <BotonGastosCompra
       compraId={c.id}
@@ -71,7 +84,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
     <>
       <PageHeader
         title="Compras"
-        subtitle="Mercadería recibida de proveedores. El stock entra al recibir la compra."
+        subtitle="Compras a proveedores. «Confirmar» la registra pendiente de recibir; el stock entra recién al tocar «Recibido»."
         actions={puedeCrear && <div className="hidden md:flex">{botonNueva}</div>}
       />
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -221,13 +234,14 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
             ocultarEnMobile: true,
             cell: (c: CompraListada) => (
               <span className="flex items-center justify-end gap-1">
+                {conRecibido(c) && botonRecibido(c)}
                 {conGastos(c) && botonGastos(c)}
                 <MenuFila
                   label={`Acciones de la compra ${idDe(c)}`}
                   acciones={[
                     { label: "Ver detalle", href: `${PATH}/${c.id}` },
                     ...(c.estado === "BORRADOR" && puedeEditar
-                      ? [{ label: "Editar borrador", href: `${PATH}/${c.id}/editar` }]
+                      ? [{ label: "Editar compra", href: `${PATH}/${c.id}/editar` }]
                       : []),
                   ]}
                 />
@@ -267,7 +281,12 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                 </p>
               )}
             </Link>
-            {conGastos(c) && botonGastos(c, "self-end")}
+            {(conRecibido(c) || conGastos(c)) && (
+              <div className="flex flex-wrap justify-end gap-2">
+                {conRecibido(c) && botonRecibido(c)}
+                {conGastos(c) && botonGastos(c)}
+              </div>
+            )}
           </div>
         )}
       />

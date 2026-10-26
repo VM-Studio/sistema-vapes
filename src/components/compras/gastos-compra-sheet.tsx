@@ -243,8 +243,8 @@ export function GastosCompraSheet({
               />
               <Fila label="Gastos extras" valor={formatearPesos(calculo.gastos)} />
               <Fila
-                label={`Recargo por unidad (${formatearNumero(calculo.unidades)} u.)`}
-                valor={formatearPesos(Math.round(calculo.recargoPorUnidad * 100) / 100)}
+                label={`Gastos por unidad (${formatearNumero(calculo.unidades)} u.)`}
+                valor={formatearPesos(calculo.gastosPorUnidad)}
               />
               <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
                 <span className="font-semibold">Costo final total</span>

@@ -71,7 +71,7 @@ async function preparar(sufijo: string) {
   return { producto, proveedor, codigos, mango: variante("Mango"), uva: variante("Uva") };
 }
 
-test("compra a Lucas: 10 + 10 de dos sabores con costo sugerido, recibir actualizando su precio", async ({
+test("compra a Lucas: 10 + 10 de dos sabores, Confirmar (sin stock) y después Recibido actualizando su precio", async ({
   page,
 }) => {
   const sufijo = String(Date.now()).slice(-6);
@@ -100,14 +100,34 @@ test("compra a Lucas: 10 + 10 de dos sabores con costo sugerido, recibir actuali
   await page.getByLabel(`Cantidad de ${nc} — Uva`).fill("10");
   await costoUva.fill("7500");
 
-  await page.getByRole("button", { name: "Recibir mercadería" }).click();
-  const dialogo = page.getByRole("dialog", { name: "Recibir mercadería" });
+  // Resumen grande y costo final por unidad, en vivo.
+  await expect(page.getByLabel("Costo final total", { exact: true })).toContainText(/145\.000/);
+  await expect(page.getByTestId("fila-costo-final")).toHaveCount(2);
+
+  // «Confirmar»: la compra queda pendiente de recibir y NO suma stock.
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  await page.waitForURL(
+    (u) => /^\/p\/vapes\/compras\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nueva"),
+  );
+  await expect(page.getByText("Pendiente de recibir", { exact: true }).first()).toBeVisible();
+  const pendiente = await db.compra.findFirstOrThrow({
+    where: { panelId: PANEL_VAPES, proveedorId: proveedor.id },
+  });
+  expect(pendiente.estado).toBe("BORRADOR");
+  expect(
+    await db.movimientoStock.count({
+      where: { referenciaTipo: "COMPRA", referenciaId: pendiente.id },
+    }),
+  ).toBe(0);
+
+  // «Recibido» (con confirmación): recién ahí entra el stock.
+  await page.getByRole("button", { name: /^Recibido/ }).click();
+  const dialogo = page.getByRole("dialog", { name: "¿Llegó la mercadería?" });
   await expect(dialogo.getByText("¿Actualizar el precio de Lucas con estos costos?")).toBeVisible();
   await expect(dialogo.getByRole("list", { name: "Precios que cambian" })).toContainText(
     /de \$\s*7\.000 a \$\s*7\.500/,
   );
-  await dialogo.getByRole("button", { name: "Sí, recibir y actualizar" }).click();
-  await page.waitForURL((u) => /^\/p\/vapes\/compras\/[a-z0-9]+$/.test(u.pathname));
+  await dialogo.getByRole("button", { name: "Recibido y actualizar precios" }).click();
   await expect(page.getByText("Recibida", { exact: true })).toBeVisible();
 
   const compra = await db.compra.findFirstOrThrow({
@@ -244,7 +264,7 @@ test("catálogo del proveedor y comparador: agregar sabores con su precio y pasa
   await expect(page.getByRole("list", { name: "Productos de Ana" })).toBeVisible();
   await captura(page, "bloqueA-cambio-proveedor", page.getByTestId("pista-comparador"));
 
-  await page.getByRole("button", { name: "Guardar borrador" }).click();
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
   await page.waitForURL(
     (u) => /^\/p\/vapes\/compras\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nueva"),
   );

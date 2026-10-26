@@ -292,7 +292,7 @@ async function assertSinBorradores(tx: Tx, proveedorId: string) {
   });
   if (borradores > 0) {
     throw new DomainError(
-      `Tiene ${borradores} compra${borradores === 1 ? "" : "s"} en borrador: recibila${borradores === 1 ? "" : "s"} o anulala${borradores === 1 ? "" : "s"} antes de desactivarlo.`,
+      `Tiene ${borradores} compra${borradores === 1 ? "" : "s"} pendiente${borradores === 1 ? "" : "s"} de recibir: recibila${borradores === 1 ? "" : "s"} o anulala${borradores === 1 ? "" : "s"} antes de desactivarlo.`,
     );
   }
 }

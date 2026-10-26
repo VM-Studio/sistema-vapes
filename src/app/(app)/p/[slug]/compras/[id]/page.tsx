@@ -5,13 +5,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EditarComisionPasista } from "@/components/compras/comision-pasista";
+import { CostoFinalPorUnidad } from "@/components/compras/costo-final-por-unidad";
 import { BotonGastosCompra } from "@/components/compras/gastos-compra-sheet";
+import { ResumenCompraCard } from "@/components/compras/resumen-compra-card";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
+import { calcularCostosFinales } from "@/lib/costos-compra";
 import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
@@ -19,7 +22,11 @@ import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
-import { obtenerCompra, preciosQueCambian } from "@/server/services/compra.service";
+import {
+  cotizacionResumenCompra,
+  obtenerCompra,
+  preciosQueCambian,
+} from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { comisionesDeCompra } from "@/server/services/pasista.service";
 import { veCostosCompras } from "@/server/services/proveedor.service";
@@ -52,6 +59,16 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
   const verPasista = puede(usuario, panelId, Modulo.PASISTA, "ver");
   const comisiones = verPasista ? await comisionesDeCompra(ctx, c.id) : [];
   const comisionPagada = comisiones.length > 0 && comisiones.every((x) => x.estado === "PAGADA");
+  // Costo final por modelo (misma función que el servidor) y equivalentes en USDT:
+  // con la cotización guardada en la compra; si no tiene, con la vigente.
+  const costos = calcularCostosFinales({
+    items: c.items.map((i) => ({ cantidad: i.cantidad, costoUnitario: i.costoUnitario })),
+    descuento: c.descuento,
+    comisionPorcentaje: c.comisionPasistaPorcentaje,
+    gastos: gastosVigentes.map((g) => g.monto),
+  });
+  const cotizacion = verCostos ? await cotizacionResumenCompra(c.tipoCambioUSDT) : null;
+  const pendiente = c.estado === "BORRADOR";
 
   return (
     <>
@@ -84,6 +101,21 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
           />
         }
       />
+      {pendiente && (
+        <p className="bg-warning-soft text-warning-soft-foreground rounded-card text-small mb-4 px-4 py-3">
+          Compra confirmada, <strong>pendiente de recibir</strong>: todavía no sumó stock. Cuando
+          llegue la mercadería tocá «Recibido» y ahí ingresa a {c.deposito}.
+        </p>
+      )}
+      {verCostos && (
+        <ResumenCompraCard
+          className="mb-4"
+          costos={costos}
+          sabores={c.items.length}
+          modelos={new Set(c.items.map((i) => i.productoId)).size}
+          cotizacion={cotizacion}
+        />
+      )}
       <div className="grid items-start gap-4 lg:grid-cols-3">
         <SectionCard
           title="Productos"
@@ -192,54 +224,22 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
         </SectionCard>
 
         <div className="flex flex-col gap-4">
-          {verCostos && (
+          {verCostos && (comisiones[0] || (editaCostos && configCompras)) && (
             <SectionCard
-              title="Desglose de costo"
-              description="Lo que costó la mercadería puesta en el galpón."
+              title="Comisión y gastos"
+              description="Cambiarlos recalcula el costo final de cada modelo."
               contentClassName="flex flex-col gap-4"
             >
-              <dl className="flex flex-col gap-2 text-sm">
-                <Linea label="Subtotal" valor={formatearPesos(c.subtotal)} />
-                {Number(c.descuento) > 0 && (
-                  <Linea label="Descuento" valor={`− ${formatearPesos(c.descuento)}`} />
-                )}
-                <Linea
-                  label={
-                    c.comisionPasistaPorcentaje
-                      ? `Comisión pasista (${formatearNumero(Number(c.comisionPasistaPorcentaje))}%)`
-                      : "Comisión pasista"
-                  }
-                  valor={
-                    c.comisionPasistaPorcentaje
-                      ? formatearPesos(c.comisionPasistaMonto)
-                      : "Sin comisión"
-                  }
-                />
-                <Linea label="Gastos extras" valor={formatearPesos(c.gastosExtrasTotal)} />
-                {gastosVigentes.length > 0 && (
-                  <ul className="text-subtle flex flex-col gap-1 pl-3 text-xs">
-                    {gastosVigentes.map((g) => (
-                      <li key={g.id} className="flex justify-between gap-3">
-                        <span className="truncate">{g.motivo}</span>
-                        <span className="tabular-nums">{formatearPesos(g.monto)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
-                  <dt className="font-semibold">Total final</dt>
-                  <dd className="text-h3 font-semibold tabular-nums">
-                    {formatearPesos(c.costoFinalTotal)}
-                  </dd>
-                </div>
-                <Linea label="Unidades" valor={formatearNumero(c.unidades)} />
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="font-semibold">Costo final por unidad</dt>
-                  <dd className="font-semibold tabular-nums">
-                    {formatearPesos(c.costoUnitarioFinalPromedio)}
-                  </dd>
-                </div>
-              </dl>
+              {gastosVigentes.length > 0 && (
+                <ul className="text-muted flex flex-col gap-1 text-sm">
+                  {gastosVigentes.map((g) => (
+                    <li key={g.id} className="flex justify-between gap-3">
+                      <span className="truncate">{g.motivo}</span>
+                      <span className="tabular-nums">{formatearPesos(g.monto)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {comisiones[0] && (
                 <Link
                   href={ruta(`/pasista/${comisiones[0].id}`)}
@@ -320,6 +320,18 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
+      {verCostos && (
+        <CostoFinalPorUnidad
+          className="mt-4"
+          items={c.items.map((i) => ({
+            key: i.varianteId,
+            nombreCompleto: i.nombreCompleto,
+            sabor: i.sabor,
+          }))}
+          costos={costos}
+          finalesGuardados={c.items.map((i) => i.costoUnitarioFinal)}
+        />
+      )}
       {barraMobile && <div className="h-[4.5rem] md:hidden" aria-hidden />}
     </>
   );
@@ -338,15 +350,6 @@ function Dato({
     <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
       <dt className="text-muted text-small">{label}</dt>
       <dd>{children}</dd>
-    </div>
-  );
-}
-
-function Linea({ label, valor }: { label: string; valor: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-muted">{label}</dt>
-      <dd className="tabular-nums">{valor}</dd>
     </div>
   );
 }

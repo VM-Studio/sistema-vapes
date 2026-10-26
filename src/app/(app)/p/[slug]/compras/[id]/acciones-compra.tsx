@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { DialogoRecibir } from "@/components/compras/dialogo-recibir";
+import { BotonRecibido } from "@/components/compras/boton-recibido";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -14,7 +14,7 @@ import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { formatearNumero } from "@/lib/format";
 import type { CambioPrecioProveedor } from "@/server/services/compra.service";
 
-import { anularCompraAction, recibirCompraAction } from "../actions";
+import { anularCompraAction } from "../actions";
 
 export function AccionesCompra({
   id,
@@ -40,27 +40,12 @@ export function AccionesCompra({
   const router = useRouter();
   const ruta = useRutaPanel();
   const toast = useToast();
-  const [recibiendo, setRecibiendo] = useState(false);
   const [anulando, setAnulando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [errorMotivo, setErrorMotivo] = useState<string>();
   const [enviando, setEnviando] = useState(false);
 
   if (estado === "ANULADA" || (!puedeEditar && !puedeAnular)) return null;
-
-  async function recibir(actualizarPrecioProveedor: boolean) {
-    setEnviando(true);
-    const r = await recibirCompraAction({ id, actualizarPrecioProveedor });
-    setEnviando(false);
-    setRecibiendo(false);
-    if (!r.ok) return toast.error("No se pudo recibir", r.error.message);
-    invalidarResoluciones();
-    toast.success(
-      `Compra ${idVisible} recibida`,
-      `Ingresaron ${formatearNumero(r.data.unidades)} unidades a ${deposito}${r.data.preciosActualizados ? ` · ${r.data.preciosActualizados} precio(s) de ${proveedor} actualizado(s)` : ""}.`,
-    );
-    router.refresh();
-  }
 
   async function anular() {
     setEnviando(true);
@@ -97,30 +82,31 @@ export function AccionesCompra({
             href={ruta(`/compras/${id}/editar`)}
             className={buttonVariants({ variant: "secondary" })}
           >
-            Editar borrador
+            Editar compra
           </Link>
-          <Button className="max-md:hidden" onClick={() => setRecibiendo(true)}>
-            Recibir mercadería
-          </Button>
+          <BotonRecibido
+            compraId={id}
+            idVisible={idVisible}
+            unidades={unidades}
+            deposito={deposito}
+            proveedor={proveedor}
+            cambios={cambios}
+            className="max-md:hidden"
+          />
           {/* Mobile: la acción principal queda fija abajo, arriba de la bottom bar. */}
           <div className="border-border bg-surface fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:hidden">
-            <Button fullWidth onClick={() => setRecibiendo(true)}>
-              Recibir mercadería
-            </Button>
+            <BotonRecibido
+              compraId={id}
+              idVisible={idVisible}
+              unidades={unidades}
+              deposito={deposito}
+              proveedor={proveedor}
+              cambios={cambios}
+              fullWidth
+            />
           </div>
         </>
       )}
-
-      <DialogoRecibir
-        abierto={recibiendo}
-        onCerrar={() => setRecibiendo(false)}
-        proveedor={proveedor}
-        deposito={deposito}
-        unidades={unidades}
-        cambios={cambios}
-        enviando={enviando}
-        onConfirmar={(a) => void recibir(a)}
-      />
 
       <Dialog
         open={anulando}
@@ -129,7 +115,7 @@ export function AccionesCompra({
         description={
           estado === "RECIBIDA"
             ? `Se registra una devolución al proveedor por cada producto: salen ${formatearNumero(unidades)} unidades de ${deposito}. Si alguna ya no está en stock, no se anula nada.`
-            : "Es un borrador: no mueve stock, solo lo descarta."
+            : "Todavía no se recibió: no mueve stock, solo la descarta."
         }
         footer={
           <>

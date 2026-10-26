@@ -8,7 +8,7 @@ import { formatearMonto, formatearNumero } from "@/lib/format";
 import type { CambioPrecioProveedor } from "@/server/services/compra.service";
 
 /**
- * Confirmación de "Recibir mercadería". Si hay productos cuyo precio del
+ * Confirmación de «Recibido» (la mercadería llegó: recién ahí entra el stock). Si hay productos cuyo precio del
  * proveedor cambiaría con los costos de esta compra, pregunta si
  * actualizarlo (listando "de $X a $Y"); si no, solo confirma.
  * `cambios === null`: todavía se están calculando.
@@ -37,16 +37,16 @@ export function DialogoRecibir({
     <Dialog
       open={abierto}
       onOpenChange={(o) => !o && !enviando && onCerrar()}
-      title="Recibir mercadería"
-      description={`Ingresan ${formatearNumero(unidades)} unidades a ${deposito}.`}
+      title="¿Llegó la mercadería?"
+      description={`Al marcarla como recibida ingresan ${formatearNumero(unidades)} unidades a ${deposito}: recién ahí se suma el stock.`}
       footer={
         hayCambios ? (
           <>
             <Button variant="secondary" onClick={() => onConfirmar(false)} disabled={enviando}>
-              No, recibir sin actualizar
+              Recibido sin actualizar precios
             </Button>
             <Button onClick={() => onConfirmar(true)} loading={enviando}>
-              Sí, recibir y actualizar
+              Recibido y actualizar precios
             </Button>
           </>
         ) : (
@@ -59,7 +59,7 @@ export function DialogoRecibir({
               loading={enviando}
               disabled={cambios === null}
             >
-              Recibir
+              Recibido
             </Button>
           </>
         )

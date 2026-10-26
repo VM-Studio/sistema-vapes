@@ -1123,6 +1123,80 @@ async function main() {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  console.log("\n13) Confirmar → pendiente de recibir; Recibido → stock; costo final por modelo");
+  {
+    const stockDe = async (varianteId: string) =>
+      (await db.stock.findFirst({ where: { varianteId, depositoId: g2.id } }))?.cantidad ?? 0;
+    const [uvaAntes, duraznoAntes] = [await stockDe(uva.id), await stockDe(durazno.id)];
+    const conf = await crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: prov.id,
+        depositoId: g2.id,
+        comisionPasistaPorcentaje: "10",
+        items: [
+          { varianteId: uva.id, cantidad: 10, costoUnitario: "10000" },
+          { varianteId: durazno.id, cantidad: 10, costoUnitario: "20000" },
+        ],
+      }),
+    );
+    await agregarGastosCompra(actor, conf.id, [{ motivo: "Valija", monto: 30_000 }]);
+    let c = await obtenerCompra(actor, conf.id);
+    const finales = () => c.items.map((i) => i.costoUnitarioFinal).join(" / ");
+    check(
+      c.estado === EstadoCompra.BORRADOR &&
+        (await stockDe(uva.id)) === uvaAntes &&
+        (await stockDe(durazno.id)) === duraznoAntes &&
+        c.movimientos === 0,
+      "confirmar crea la compra pendiente de recibir sin tocar el stock",
+    );
+    check(
+      finales() === "12500.00 / 23500.00" && c.costoFinalTotal === "360000.00",
+      `pasista proporcional al precio + gastos parejos: finales ${finales()}, total ${c.costoFinalTotal}`,
+    );
+    const comisionConf = await db.comisionPasista.findMany({ where: { compraId: conf.id } });
+    check(
+      comisionConf.length === 1 && comisionConf[0]!.monto.toFixed(2) === "30000.00",
+      `la comisión del pasista se genera al confirmar (criterio de siempre): ${comisionConf[0]?.monto.toFixed(2)}`,
+    );
+    await recibirCompra(actor, conf.id, { actualizarPrecioProveedor: false });
+    c = await obtenerCompra(actor, conf.id);
+    const [vUva, vDurazno] = await Promise.all([
+      db.variante.findUniqueOrThrow({ where: { id: uva.id } }),
+      db.variante.findUniqueOrThrow({ where: { id: durazno.id } }),
+    ]);
+    check(
+      c.estado === EstadoCompra.RECIBIDA &&
+        (await stockDe(uva.id)) === uvaAntes + 10 &&
+        (await stockDe(durazno.id)) === duraznoAntes + 10,
+      "«Recibido» suma el stock al galpón",
+    );
+    check(
+      vUva.ultimoCosto?.toFixed(2) === "12500.00" &&
+        vDurazno.ultimoCosto?.toFixed(2) === "23500.00",
+      `ultimoCosto por modelo: ${vUva.ultimoCosto?.toFixed(2)} / ${vDurazno.ultimoCosto?.toFixed(2)}`,
+    );
+    const suma = c.items.reduce((a, i) => a + Number(i.costoUnitarioFinal) * i.cantidad, 0);
+    check(
+      suma.toFixed(2) === c.costoFinalTotal,
+      `Σ final × cantidad = costo final total (${suma})`,
+    );
+    await cambiarComisionPasista(actor, conf.id, 5);
+    c = await obtenerCompra(actor, conf.id);
+    const vUva2 = await db.variante.findUniqueOrThrow({ where: { id: uva.id } });
+    check(
+      finales() === "12000.00 / 22500.00" && vUva2.ultimoCosto?.toFixed(2) === "12000.00",
+      `bajar a 5% recalcula por modelo: ${finales()}, ultimoCosto Uva ${vUva2.ultimoCosto?.toFixed(2)}`,
+    );
+    check(
+      (await error(() =>
+        recibirCompra(actor, conf.id, { actualizarPrecioProveedor: false }),
+      )) instanceof DomainError,
+      "«Recibido» dos veces no duplica el stock",
+    );
+  }
+
   console.log(fallos === 0 ? "\nTodo OK" : `\n${fallos} verificación(es) fallaron`);
   process.exitCode = fallos === 0 ? 0 : 1;
 }

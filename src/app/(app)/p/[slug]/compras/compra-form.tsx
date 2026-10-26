@@ -19,13 +19,17 @@ import { AltaRapidaSheet } from "@/components/catalogo/alta-rapida-sheet";
 import { SelectorGalpon } from "@/components/catalogo/selector-galpon";
 import { BuscadorRemoto } from "@/components/compras/buscador-remoto";
 import { CatalogoProveedor } from "@/components/compras/catalogo-proveedor";
-import { DialogoRecibir } from "@/components/compras/dialogo-recibir";
 import { CheckComisionPasista } from "@/components/compras/comision-pasista";
+import { CostoFinalPorUnidad } from "@/components/compras/costo-final-por-unidad";
 import {
   ProductoCompraSheet,
   type SaborAgregado,
 } from "@/components/compras/producto-compra-sheet";
 import { ProveedorForm, soloDecimal } from "@/components/compras/proveedor-form";
+import {
+  ResumenCompraCard,
+  type CotizacionResumen,
+} from "@/components/compras/resumen-compra-card";
 import { usePanel, useRutaPanel } from "@/components/layout/panel-context";
 import { usePuede } from "@/components/layout/usuario-context";
 import { BarraAccion } from "@/components/ui/barra-accion";
@@ -52,10 +56,7 @@ import { hoyAR } from "@/lib/fechas";
 import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ComparacionCompra } from "@/server/reportes/comparador";
-import type {
-  CambioPrecioProveedor,
-  ProductoCatalogoCompra,
-} from "@/server/services/compra.service";
+import type { ProductoCatalogoCompra } from "@/server/services/compra.service";
 
 import {
   buscarSaboresCompraAction,
@@ -63,8 +64,6 @@ import {
   costoSugeridoAction,
   guardarCompraAction,
   ofertasCompraAction,
-  preciosQueCambianAction,
-  recibirCompraAction,
   type SaborBuscado,
 } from "./actions";
 
@@ -116,27 +115,31 @@ type Paso = 1 | 2 | 3;
  * 2. galpón destino (SelectorGalpon: nunca se confirma solo),
  * 3. ítems con la pistola/cámara activas y buscador manual. Cada sabor trae
  *    el costo sugerido (precio del proveedor o último costo), editable.
- * "Recibir mercadería" guarda el borrador y pregunta si actualizar el precio
- * del proveedor con los costos que cambian.
+ * «Confirmar» registra la compra pendiente de recibir (NO suma stock): el
+ * stock entra después, con «Recibido» en el listado o el detalle. Abajo, la
+ * tarjeta grande con el detalle (y su equivalente en USDT) y el costo final
+ * por unidad de cada modelo, en vivo con la misma función que el servidor.
  */
 export function CompraForm({
   inicial,
   proveedores: proveedoresIniciales,
   depositos,
   comisionDefault,
+  cotizacionUsdt,
 }: {
   inicial: CompraInicial;
   proveedores: ProveedorOpcion[];
   depositos: { id: string; nombre: string; esPrincipal: boolean }[];
   /** % del pasista que propone el tick (configuración del panel). */
   comisionDefault: number;
+  /** Cotización USDT para los equivalentes del resumen (la de la compra o la vigente). */
+  cotizacionUsdt: CotizacionResumen | null;
 }) {
   const router = useRouter();
   const ruta = useRutaPanel();
   const panel = usePanel();
   const toast = useToast();
   const feedback = useScanFeedback();
-  const puedeRecibir = usePuede(Modulo.COMPRAS, "editar");
   const puedeCrearProveedor = usePuede(Modulo.PROVEEDORES, "crear");
 
   const [compraId, setCompraId] = useState(inicial.id);
@@ -160,14 +163,13 @@ export function CompraForm({
     ).replace(".", ","),
   );
   const [errores, setErrores] = useState<Record<string, string>>({});
-  const [enviando, setEnviando] = useState<"borrador" | "recibir" | null>(null);
+  const [enviando, setEnviando] = useState(false);
   const [nuevoProveedor, setNuevoProveedor] = useState(false);
   const [creandoProveedor, setCreandoProveedor] = useState(false);
   const [filtroProveedor, setFiltroProveedor] = useState("");
   const [camara, setCamara] = useState(false);
   const [mensaje, setMensaje] = useState<MensajeCamara | null>(null);
   const [desconocido, setDesconocido] = useState<string | null>(null);
-  const [recibir, setRecibir] = useState<{ cambios: CambioPrecioProveedor[] | null } | null>(null);
   const clave = useRef(0);
   // Catálogo del proveedor (null = cargando) y comparador por producto.
   const [catalogo, setCatalogo] = useState<{
@@ -416,11 +418,9 @@ export function CompraForm({
   // Pistola activa en el paso de ítems (pausada con el alta rápida o el diálogo abiertos).
   useBarcodeScanner({
     onScan: (c) => void procesar(c),
-    enabled:
-      paso === 3 && desconocido === null && recibir === null && !nuevoProveedor && enFoco === null,
+    enabled: paso === 3 && desconocido === null && !nuevoProveedor && enFoco === null,
   });
 
-  const unidades = items.reduce((a, i) => a + num(i.cantidad), 0);
   // Resumen en vivo; el servidor recalcula y guarda los números definitivos.
   const costos = calcularCostosFinales({
     items: items.map((i) => ({ cantidad: num(i.cantidad), costoUnitario: i.costo })),
@@ -436,7 +436,7 @@ export function CompraForm({
   const actualizar = (id: string, cambios: Partial<ItemCompraForm>) =>
     setItems((its) => its.map((i) => (i.varianteId === id ? { ...i, ...cambios } : i)));
 
-  /** Guarda el borrador (crea o actualiza). Devuelve el id o null si hubo errores. */
+  /** Guarda la compra pendiente de recibir (crea o actualiza). Devuelve el id o null si hubo errores. */
   async function guardarBorrador(): Promise<{ id: string; idVisible: string } | null> {
     setErrores({});
     const r = await guardarCompraAction({
@@ -474,47 +474,18 @@ export function CompraForm({
     return { id: r.data.id, idVisible: r.data.idVisible };
   }
 
-  async function onGuardarBorrador() {
-    setEnviando("borrador");
-    const g = await guardarBorrador();
-    setEnviando(null);
-    if (!g) return;
-    toast.success(`Compra ${g.idVisible} guardada como borrador`);
-    router.push(ruta(`/compras/${g.id}`));
-  }
+  const editando = Boolean(compraId && inicial.id);
 
-  async function onRecibir() {
-    setEnviando("recibir");
+  async function onConfirmar() {
+    setEnviando(true);
     const g = await guardarBorrador();
-    setEnviando(null);
+    setEnviando(false);
     if (!g) return;
-    setRecibir({ cambios: null });
-    const r = await preciosQueCambianAction({ id: g.id });
-    if (!r.ok) {
-      setRecibir(null);
-      toast.error("No se pudieron comparar los precios", r.error.message);
-      return;
-    }
-    setRecibir({ cambios: r.data });
-  }
-
-  async function confirmarRecibir(actualizarPrecioProveedor: boolean) {
-    if (!compraId) return;
-    setEnviando("recibir");
-    const r = await recibirCompraAction({ id: compraId, actualizarPrecioProveedor });
-    setEnviando(null);
-    if (!r.ok) {
-      setRecibir(null);
-      toast.error(`La compra ${idVisible ?? ""} quedó como borrador`, r.error.message);
-      return;
-    }
-    setRecibir(null);
-    invalidarResoluciones();
     toast.success(
-      `Compra ${r.data.idVisible} recibida`,
-      `Ingresaron ${formatearNumero(r.data.unidades)} unidades a ${deposito?.nombre ?? "el galpón"}${r.data.preciosActualizados ? ` · ${r.data.preciosActualizados} precio(s) de ${proveedor?.nombre ?? "proveedor"} actualizado(s)` : ""}.`,
+      editando ? `Compra ${g.idVisible} actualizada` : `Compra ${g.idVisible} confirmada`,
+      "Queda pendiente de recibir: el stock se suma cuando toques «Recibido».",
     );
-    router.push(ruta(`/compras/${compraId}`));
+    router.push(ruta(`/compras/${g.id}`));
   }
 
   const titulo = compraId && inicial.id ? `Editar compra ${idVisible ?? ""}` : "Nueva compra";
@@ -936,85 +907,54 @@ export function CompraForm({
         </Card>
 
         <Card>
-          <CardContent className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="flex flex-col gap-3">
-              <h2 className="text-h3 font-semibold">Costos finales</h2>
-              <CheckComisionPasista
-                activa={comisionActiva}
-                porcentaje={comisionPct}
-                onActiva={setComisionActiva}
-                onPorcentaje={setComisionPct}
-                error={errores.comisionPasistaPorcentaje}
-              />
-              <p className="text-muted text-small">
-                La comisión y los gastos extras (valija, envío…) se reparten por unidad: el costo
-                final es el que toman las ventas para calcular la ganancia. Los gastos se cargan
-                desde el listado de compras.
-              </p>
-            </div>
-            <dl
-              className="flex flex-col justify-end gap-1.5 text-sm"
-              aria-label="Resumen de costos"
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-muted">Subtotal</dt>
-                <dd className="tabular-nums">{formatearPesos(costos.subtotal)}</dd>
-              </div>
-              {costos.comisionPorcentaje !== null && (
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-muted">
-                    Comisión pasista ({formatearNumero(costos.comisionPorcentaje)}%)
-                  </dt>
-                  <dd className="tabular-nums" aria-label="Comisión del pasista">
-                    {formatearPesos(costos.comision)}
-                  </dd>
-                </div>
-              )}
-              {costos.gastos > 0 && (
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-muted">Gastos extras</dt>
-                  <dd className="tabular-nums">{formatearPesos(costos.gastos)}</dd>
-                </div>
-              )}
-              <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
-                <dt className="text-h3 font-semibold">Total</dt>
-                <dd className="text-h2 font-semibold tabular-nums" aria-label="Total de la compra">
-                  {formatearPesos(costos.costoFinalTotal)}
-                </dd>
-              </div>
-              <p className="flex items-baseline justify-between gap-3">
-                <span className="text-muted">
-                  Costo final por unidad ({formatearNumero(unidades)} u.)
-                </span>
-                <strong className="tabular-nums" aria-label="Costo final por unidad">
-                  {formatearPesos(costos.costoUnitarioFinalPromedio)}
-                </strong>
-              </p>
-            </dl>
+          <CardContent className="flex flex-col gap-3">
+            <h2 className="text-h3 font-semibold">Comisión del pasista</h2>
+            <CheckComisionPasista
+              activa={comisionActiva}
+              porcentaje={comisionPct}
+              onActiva={setComisionActiva}
+              onPorcentaje={setComisionPct}
+              error={errores.comisionPasistaPorcentaje}
+            />
+            <p className="text-muted text-small">
+              La comisión se suma a cada modelo según su precio y los gastos extras (valija, envío…)
+              se reparten parejo por unidad: el costo final es el que toman las ventas para calcular
+              la ganancia. Los gastos se cargan desde el listado o el detalle de la compra.
+            </p>
           </CardContent>
         </Card>
+
+        <ResumenCompraCard
+          costos={costos}
+          sabores={items.length}
+          modelos={unidadesPorProducto.size}
+          cotizacion={cotizacionUsdt}
+        />
+
+        <CostoFinalPorUnidad
+          items={items.map((i) => ({
+            key: i.varianteId,
+            nombreCompleto: i.nombreCompleto,
+            sabor: i.sabor,
+          }))}
+          costos={costos}
+        />
 
         <div className="md:flex md:justify-end">
           <BarraAccion>
             <Button
-              variant="secondary"
-              onClick={() => void onGuardarBorrador()}
-              loading={enviando === "borrador"}
-              disabled={items.length === 0 || enviando !== null}
+              onClick={() => void onConfirmar()}
+              loading={enviando}
+              disabled={items.length === 0 || enviando}
             >
-              Guardar borrador
+              {editando ? "Guardar cambios" : "Confirmar"}
             </Button>
-            {puedeRecibir && (
-              <Button
-                onClick={() => void onRecibir()}
-                loading={enviando === "recibir" && recibir === null}
-                disabled={items.length === 0 || enviando !== null}
-              >
-                Recibir mercadería
-              </Button>
-            )}
           </BarraAccion>
         </div>
+        <p className="text-muted text-small md:text-right">
+          {editando ? "Sigue" : "Queda"} pendiente de recibir: el stock se suma recién cuando toques
+          «Recibido».
+        </p>
       </div>
 
       <CameraScanner
@@ -1054,19 +994,6 @@ export function CompraForm({
           if (p) agregarDesdeHoja(p, sabores, costo);
         }}
         onCambiarProveedor={cambiarProveedor}
-      />
-      <DialogoRecibir
-        abierto={recibir !== null}
-        onCerrar={() => {
-          setRecibir(null);
-          if (idVisible) toast.info(`La compra ${idVisible} quedó guardada como borrador`);
-        }}
-        proveedor={proveedor?.nombre ?? "el proveedor"}
-        deposito={deposito?.nombre ?? "el galpón"}
-        unidades={unidades}
-        cambios={recibir?.cambios ?? null}
-        enviando={enviando === "recibir"}
-        onConfirmar={(a) => void confirmarRecibir(a)}
       />
     </>
   );
