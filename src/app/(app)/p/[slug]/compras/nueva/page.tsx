@@ -1,8 +1,10 @@
 import { Modulo } from "@prisma/client";
 import type { Metadata } from "next";
 
-import { hoyAR } from "@/lib/fechas";
+import { esFechaISO, hoyAR } from "@/lib/fechas";
 import { requirePaginaPanel } from "@/server/auth/permissions";
+import { NotFoundError } from "@/server/errors";
+import { obtenerBorradorCompra } from "@/server/services/borrador-compra.service";
 import { cotizacionResumenCompra } from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
@@ -19,7 +21,8 @@ type SP = Record<string, string | string[] | undefined>;
  * ?proveedor=id preselecciona el proveedor (desde su ficha) · ?deposito=id
  * preselecciona el galpón · ?items=varianteId:cantidad,… precarga ítems
  * (ítems precargados por URL). El costo sugerido se
- * completa en el cliente apenas hay proveedor.
+ * completa en el cliente apenas hay proveedor. ?borrador=id retoma un
+ * borrador guardado (si ya no existe, arranca de cero).
  */
 export default async function NuevaCompraPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanel(Modulo.COMPRAS, "crear");
@@ -47,6 +50,38 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
     }
   }
   const variantes = await obtenerVariantesPorId(ctx, [...pedidos.keys()]);
+  const borrador =
+    typeof params.borrador === "string"
+      ? await obtenerBorradorCompra(ctx, params.borrador).catch((e: unknown) => {
+          if (e instanceof NotFoundError) return null;
+          throw e;
+        })
+      : null;
+
+  if (borrador) {
+    const d = borrador.datos;
+    return (
+      <CompraForm
+        key={borrador.id}
+        proveedores={proveedores}
+        depositos={depositos}
+        comisionDefault={configCompras.comisionPasistaPorcentajeDefault}
+        cotizacionUsdt={cotizacionUsdt}
+        inicial={{
+          id: null,
+          borrador: { id: borrador.id, updatedAt: borrador.updatedAt },
+          comisionPasistaPorcentaje: null,
+          comision: { activa: d.comisionActiva, porcentaje: d.comisionPct },
+          gastos: [],
+          proveedorId: proveedores.some((p) => p.id === d.proveedorId) ? d.proveedorId : "",
+          depositoId: depositos.some((x) => x.id === d.depositoId) ? d.depositoId : "",
+          fecha: esFechaISO(d.fecha) ? d.fecha : hoyAR(),
+          notas: d.notas,
+          items: d.items.map((i) => ({ ...i, detalleUsdt: i.detalleUsdt ?? null })),
+        }}
+      />
+    );
+  }
 
   return (
     <CompraForm

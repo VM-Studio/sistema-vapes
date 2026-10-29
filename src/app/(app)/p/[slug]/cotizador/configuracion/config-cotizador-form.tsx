@@ -33,6 +33,7 @@ export function ConfigCotizadorForm({
   const [validez, setValidez] = useState(String(config.validezDias));
   const [leyenda, setLeyenda] = useState(config.leyenda);
   const [mostrarStock, setMostrarStock] = useState(config.mostrarStock);
+  const [pedidoSurtido, setPedidoSurtido] = useState(config.pedidoSurtido);
   const [filas, setFilas] = useState<FilaEscalon[]>(() =>
     escalones.map((e) =>
       nuevaFila(String(e.cantidadMinima), String(Number(e.porcentajeDescuento)), e.activo),
@@ -47,6 +48,7 @@ export function ConfigCotizadorForm({
         validezDias: Number(validez),
         leyenda,
         mostrarStock,
+        pedidoSurtido,
       }),
       guardarEscalonesDefaultAction({
         escalones: filas.map((f) => ({
@@ -72,7 +74,7 @@ export function ConfigCotizadorForm({
           />
         }
         title="Configuración del cotizador"
-        subtitle="Validez, escalones por defecto y lo que muestra el PDF."
+        subtitle="Validez, pedido surtido, escalones por defecto y lo que muestra el PDF."
         actions={
           <Button onClick={() => void guardar()} loading={guardando} className="max-md:hidden">
             {!guardando && <Save strokeWidth={1.75} />} Guardar
@@ -85,8 +87,7 @@ export function ConfigCotizadorForm({
             <CardTitle>Escalones por defecto</CardTitle>
             <CardDescription>
               Para productos sin precios mayoristas propios: % de descuento sobre la lista desde
-              cierta cantidad (redondeado a $10). El escalón se define siempre por producto: suman
-              todos sus sabores.
+              cierta cantidad (redondeado a $10).
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -121,6 +122,18 @@ export function ConfigCotizadorForm({
               checked={mostrarStock}
               onCheckedChange={setMostrarStock}
             />
+            <div className="flex flex-col gap-1">
+              <Switch
+                label="Pedido surtido"
+                checked={pedidoSurtido}
+                onCheckedChange={setPedidoSurtido}
+              />
+              <p className="text-muted text-small">
+                {pedidoSurtido
+                  ? "El escalón mayorista sale del total del pedido, mezclando modelos: 10 de un modelo + 20 de otro = 30 → cada uno a su precio de 30 u."
+                  : "El escalón mayorista se define por producto: para el precio de 30 u. hay que llevar 30 del mismo modelo (suman sus sabores)."}
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

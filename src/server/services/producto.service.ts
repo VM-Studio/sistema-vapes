@@ -17,7 +17,7 @@ import {
   type FiltrosProductos,
   type Producto,
 } from "@/lib/validations/producto";
-import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
+import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import { crearStockEnCero, registrarMovimiento } from "@/server/services/stock.service";
@@ -919,16 +919,19 @@ function mapearUnico(error: unknown): never {
 
 /**
  * Crea producto + sabores. Una sola fila sin sabor = producto sin sabores
- * (variante "Único"). La marca se crea si no existe. SKU automático.
+ * (variante "Único"). La marca se crea si no existe. SKU automático. Acepta
+ * el `tx` de otra operación (alta desde la ficha de un proveedor, que en la
+ * misma transacción le carga el precio del proveedor).
  */
 export async function crear(
   ctx: Ctx,
   input: Producto,
+  txExterna?: Tx,
 ): Promise<{
   id: string;
   variantes: { id: string; nombre: string; codigoBarras: string | null }[];
 }> {
-  return transaccion(ctx, async (tx) => {
+  return enTransaccion(ctx, txExterna, async (tx) => {
     const marca = await marcaPorNombre(tx, ctx, input.marca);
     await assertCategoria(tx, input.categoriaId);
     await assertClaveLibre(tx, marca.id, input);

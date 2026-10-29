@@ -10,7 +10,7 @@ import type { TablaPreciosProducto } from "@/server/services/escalon.service";
 import { tablaPreciosAction } from "./actions";
 
 const ORIGEN: Record<TablaPreciosProducto["origen"], string> = {
-  PROPIOS: "Escalones propios del producto (suman todos sus sabores)",
+  PROPIOS: "Escalones propios del producto",
   DEFAULT: "Escalones por defecto del panel (% sobre la lista)",
   LISTA: "Sin escalones: siempre precio de lista",
 };

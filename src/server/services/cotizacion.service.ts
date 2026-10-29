@@ -42,6 +42,7 @@ import {
 } from "@/server/pdf";
 import { clavePdf, pdfCacheado, rutaPublicaPdf } from "@/server/pdf-http";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { carteraDeVendedor } from "@/server/services/cartera-clientes.service";
 import { ClienteDuplicadoError, crearCliente } from "@/server/services/cliente.service";
 import { obtenerConfigCotizacion } from "@/server/services/configuracion.service";
 import { nombreNegocio } from "@/server/services/identidad.service";
@@ -263,6 +264,7 @@ export async function crearCotizacion(
           total: subtotal.minus(descuento),
           notas: input.notas?.trim() || null,
           aPrecioML: precios.aPrecioML,
+          pedidoSurtido: precios.surtido,
           ...snapshotBlue(precios),
           items: { create: itemsParaCrear(precios) },
         },
@@ -390,6 +392,7 @@ export async function actualizarCotizacion(
           total: subtotal.minus(descuento),
           notas: input.notas?.trim() || null,
           aPrecioML: precios.aPrecioML,
+          pedidoSurtido: precios.surtido,
           pdfUrl: null,
           ...snapshotBlue(precios),
           items: { create: itemsParaCrear(precios) },
@@ -605,6 +608,8 @@ export async function obtener(ctx: Ctx, id: string) {
     notas: c.notas,
     /** Unitaria cotizada a precio Mercado Libre. */
     aPrecioML: c.aPrecioML,
+    /** Mayorista como pedido surtido (escalón por las unidades de todo el pedido). */
+    pedidoSurtido: c.pedidoSurtido,
     motivoRechazo: c.motivoRechazo,
     venta: c.venta,
     unidades: totalUnidades,
@@ -819,6 +824,9 @@ export async function textoWhatsApp(
       (i) => `• ${i.cantidad} × ${i.titulo}: ${precioFila(i)} c/u = ${formatearPesos(i.subtotal)}`,
     ),
     "",
+    ...(mayorista && c.pedidoSurtido
+      ? [`Pedido surtido: ${c.unidades} u. en total (cada modelo al precio de ese escalón).`]
+      : []),
     ...(mayorista
       ? c.resumenEscalones.map(
           (r) =>
@@ -1096,7 +1104,9 @@ async function dibujarPdfCotizacion(
   if (c.aPrecioML) parrafo(null, ["Precios Mercado Libre."]);
   if (mayorista && c.resumenEscalones.length) {
     parrafo(
-      "Resumen de escalones (por producto: suman todos sus sabores)",
+      c.pedidoSurtido
+        ? `Pedido surtido: ${c.unidades} u. en total, mezclando modelos (cada uno a su precio de ese escalón)`
+        : "Resumen de escalones (por producto: suman todos sus sabores)",
       c.resumenEscalones.map(
         (r) =>
           `${r.nombreCompleto}: ${r.unidades} u. — ${
@@ -1293,7 +1303,9 @@ export async function convertirEnVenta(
           throw new DomainError("Elegí el cliente de la venta.");
         try {
           clienteId = (
-            await crearCliente(ctx, { nombre: c.clienteNombre, telefono: c.clienteTelefono }, tx)
+            await crearCliente(ctx, { nombre: c.clienteNombre, telefono: c.clienteTelefono }, tx, {
+              vendedorId: await carteraDeVendedor(tx, ctx.usuarioId),
+            })
           ).id;
           clienteRecienCreado = true;
         } catch (e) {

@@ -26,6 +26,7 @@ import { siguienteNumero } from "@/server/db/secuencia";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { medir } from "@/server/log";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { carteraDeVendedor } from "@/server/services/cartera-clientes.service";
 import { crearCliente } from "@/server/services/cliente.service";
 import {
   motivoNoEscaneable,
@@ -392,7 +393,10 @@ async function generarEnTx(
   let cliente: { id: string; nombre: string; telefono: string };
   let clienteNuevo = false;
   if ("nuevo" in input.cliente) {
-    cliente = await crearCliente(ctx, input.cliente.nuevo, tx);
+    // Se suma a la cartera del vendedor como cliente nuevo («Mis clientes»).
+    cliente = await crearCliente(ctx, input.cliente.nuevo, tx, {
+      vendedorId: await carteraDeVendedor(tx, ctx.usuarioId),
+    });
     clienteNuevo = true;
   } else {
     const c = await tx.cliente.findFirst({

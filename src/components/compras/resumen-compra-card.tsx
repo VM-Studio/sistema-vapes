@@ -17,6 +17,42 @@ export function pesosAUsdt(pesos: number, cotizacion: CotizacionResumen | null):
 }
 
 /**
+ * Equivalente en USDT, chiquito y en gris, debajo de un monto en pesos
+ * ("≈ 145,20 USDT"). Sin cotización (o sin monto) no muestra nada. En Compras
+ * va debajo de TODOS los pesos: es para tener los valores también en USDT.
+ */
+export function EnUsdt({
+  pesos,
+  cotizacion,
+  prefijo = "",
+  className,
+}: {
+  pesos: number | string | null | undefined;
+  cotizacion: CotizacionResumen | null;
+  /** "+ " / "− " para acompañar al monto en pesos. */
+  prefijo?: string;
+  className?: string;
+}) {
+  const n = typeof pesos === "number" ? pesos : Number(pesos);
+  if (pesos === null || pesos === undefined || pesos === "" || !Number.isFinite(n)) return null;
+  const u = pesosAUsdt(Math.abs(n), cotizacion);
+  if (u === null) return null;
+  return (
+    <span
+      className={cn(
+        "text-subtle block text-xs font-normal whitespace-nowrap tabular-nums",
+        className,
+      )}
+      data-testid="en-usdt"
+    >
+      ≈ {prefijo}
+      {n < 0 && !prefijo ? "− " : ""}
+      {formatearUsdt(u)}
+    </span>
+  );
+}
+
+/**
  * Tarjeta grande con el detalle de la compra: ítems y unidades, subtotal,
  * descuento, comisión del pasista, gastos extras, total de mercadería y el
  * COSTO FINAL TOTAL, cada monto con su equivalente en USDT y la cotización

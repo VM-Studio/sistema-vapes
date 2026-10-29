@@ -16,6 +16,8 @@ import { formatearNumero, formatearPesos } from "@/lib/format";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { CostosCompra } from "@/server/services/compra.service";
 
+import { EnUsdt, type CotizacionResumen } from "./resumen-compra-card";
+
 import {
   agregarGastosCompraAction,
   anularGastoCompraAction,
@@ -89,6 +91,7 @@ export function GastosCompraSheet({
         gastos: [...vigentes.map((g) => g.monto), ...nuevos.map((f) => f.monto)],
       })
     : null;
+  const cot = datos?.cotizacionUsdt ?? null;
 
   async function guardar() {
     setGuardando(true);
@@ -201,6 +204,14 @@ export function GastosCompraSheet({
                       )
                     }
                     error={errorDe(i, "monto")}
+                    hint={
+                      f.monto ? (
+                        <EnUsdt
+                          pesos={Number(f.monto.replace(",", "."))}
+                          cotizacion={datos.cotizacionUsdt}
+                        />
+                      ) : undefined
+                    }
                   />
                   <IconButton
                     variant="ghost"
@@ -232,31 +243,39 @@ export function GastosCompraSheet({
               aria-label="Recálculo del costo"
               className="bg-surface-2 rounded-card flex flex-col gap-2 p-4 text-sm"
             >
-              <Fila label="Total de la compra" valor={formatearPesos(calculo.total)} />
+              <Fila label="Total de la compra" pesos={calculo.total} cotizacion={cot} />
               <Fila
                 label={
                   calculo.comisionPorcentaje === null
                     ? "Comisión pasista (sin comisión)"
                     : `Comisión pasista (${formatearNumero(calculo.comisionPorcentaje)}%)`
                 }
-                valor={formatearPesos(calculo.comision)}
+                pesos={calculo.comision}
+                cotizacion={cot}
               />
-              <Fila label="Gastos extras" valor={formatearPesos(calculo.gastos)} />
+              <Fila label="Gastos extras" pesos={calculo.gastos} cotizacion={cot} />
               <Fila
                 label={`Gastos por unidad (${formatearNumero(calculo.unidades)} u.)`}
-                valor={formatearPesos(calculo.gastosPorUnidad)}
+                pesos={calculo.gastosPorUnidad}
+                cotizacion={cot}
               />
               <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
                 <span className="font-semibold">Costo final total</span>
-                <strong className="tabular-nums" aria-label="Costo final total">
-                  {formatearPesos(calculo.costoFinalTotal)}
-                </strong>
+                <span className="flex flex-col items-end">
+                  <strong className="tabular-nums" aria-label="Costo final total">
+                    {formatearPesos(calculo.costoFinalTotal)}
+                  </strong>
+                  <EnUsdt pesos={calculo.costoFinalTotal} cotizacion={cot} />
+                </span>
               </div>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="font-semibold">Costo final por unidad</span>
-                <strong className="text-h3 tabular-nums" aria-label="Costo final por unidad">
-                  {formatearPesos(calculo.costoUnitarioFinalPromedio)}
-                </strong>
+                <span className="flex flex-col items-end">
+                  <strong className="text-h3 tabular-nums" aria-label="Costo final por unidad">
+                    {formatearPesos(calculo.costoUnitarioFinalPromedio)}
+                  </strong>
+                  <EnUsdt pesos={calculo.costoUnitarioFinalPromedio} cotizacion={cot} />
+                </span>
               </div>
             </section>
           )}
@@ -288,7 +307,10 @@ export function GastosCompraSheet({
                         {g.anulado ? (
                           <Badge variant="neutral">Anulado</Badge>
                         ) : (
-                          <strong className="tabular-nums">{formatearPesos(g.monto)}</strong>
+                          <span className="flex flex-col items-end">
+                            <strong className="tabular-nums">{formatearPesos(g.monto)}</strong>
+                            <EnUsdt pesos={g.monto} cotizacion={cot} />
+                          </span>
                         )}
                         {puedeAnular && !g.anulado && anulando?.id !== g.id && (
                           <Button
@@ -336,11 +358,22 @@ export function GastosCompraSheet({
   );
 }
 
-function Fila({ label, valor }: { label: string; valor: string }) {
+function Fila({
+  label,
+  pesos,
+  cotizacion,
+}: {
+  label: string;
+  pesos: number;
+  cotizacion: CotizacionResumen | null;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-muted">{label}</span>
-      <span className="tabular-nums">{valor}</span>
+      <span className="flex flex-col items-end tabular-nums">
+        {formatearPesos(pesos)}
+        <EnUsdt pesos={pesos} cotizacion={cotizacion} />
+      </span>
     </div>
   );
 }

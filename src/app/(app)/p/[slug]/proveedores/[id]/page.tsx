@@ -24,6 +24,8 @@ import { formatearFechaHora } from "@/lib/utils";
 import { enlaceWhatsApp, formatearTelefono } from "@/lib/validations/proveedor";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
+import { listarCategoriasActivas } from "@/server/services/categoria.service";
+import { listarMarcasActivas } from "@/server/services/marca.service";
 import { obtener, veCostosCompras } from "@/server/services/proveedor.service";
 
 import { AccionesProveedor } from "./acciones-proveedor";
@@ -43,6 +45,18 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
   const p = d.proveedor;
   const verPrecios = veCostosCompras(ctx);
   const verCompras = puede(usuario, panelId, Modulo.COMPRAS, "ver");
+  const puedeEditarProveedor = puede(usuario, panelId, Modulo.PROVEEDORES, "editar");
+  // «Nuevo producto» desde la lista del proveedor: hace falta poder crear productos y cargar precios.
+  const altaProducto =
+    verPrecios && puedeEditarProveedor && puede(usuario, panelId, Modulo.PRODUCTOS, "crear")
+      ? await Promise.all([listarCategoriasActivas(ctx), listarMarcasActivas(ctx)]).then(
+          ([categorias, marcas]) => ({
+            proveedor: p.nombreTienda || p.nombre,
+            categorias: categorias.map((c) => ({ value: c.id, label: c.nombre })),
+            marcas: marcas.map((m) => m.nombre),
+          }),
+        )
+      : null;
 
   const puedeNuevaCompra = p.activo && puede(usuario, panelId, Modulo.COMPRAS, "crear");
   const nuevaCompra = (
@@ -163,8 +177,9 @@ export default async function ProveedorPage({ params }: { params: Promise<{ id: 
           proveedorId={p.id}
           productos={d.productos}
           verPrecios={verPrecios}
-          puedeEditar={puede(usuario, panelId, Modulo.PROVEEDORES, "editar")}
+          puedeEditar={puedeEditarProveedor}
           cotizacionUsdt={d.cotizacionUsdt}
+          altaProducto={altaProducto}
         />
 
         <SectionCard

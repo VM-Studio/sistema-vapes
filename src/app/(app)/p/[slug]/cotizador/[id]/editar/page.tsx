@@ -85,6 +85,7 @@ export default async function EditarCotizacionPage({
       validezDefault={config.validezDias}
       blueInicial={blueInicial}
       mostrarStock={config.mostrarStock}
+      pedidoSurtido={config.pedidoSurtido}
       puedeEditar={puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "editar")}
       esOwner={esOwner(ctx.usuario)}
       puedeVender={puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear")}

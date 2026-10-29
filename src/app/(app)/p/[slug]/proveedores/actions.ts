@@ -8,12 +8,16 @@ import { id } from "@/lib/validations/common";
 import {
   actualizarProveedorSchema,
   asignarProductoSchema,
+  crearProductoDeProveedorSchema,
   crearProveedorSchema,
   quitarProductoSchema,
 } from "@/lib/validations/proveedor";
 import { actionHandler } from "@/server/action-handler";
+import { puede } from "@/lib/permisos";
 import { requireCtx } from "@/server/auth/permissions";
+import { transaccion } from "@/server/db/panel-scoped";
 import { ForbiddenError } from "@/server/errors";
+import { crear as crearProducto } from "@/server/services/producto.service";
 import {
   actualizar,
   asignarProducto,
@@ -68,6 +72,29 @@ export const asignarProductoAction = actionHandler(async (input: unknown) => {
   await asignarProducto(ctx, proveedorId, datos);
   revalidar();
   return null;
+});
+
+/**
+ * «Nuevo producto» desde la ficha del proveedor (mientras se actualizan sus
+ * precios): crea el producto con sus sabores y, en la MISMA transacción, le
+ * carga el precio de este proveedor. Exige PROVEEDORES editar + ver costos y
+ * PRODUCTOS crear.
+ */
+export const crearProductoDeProveedorAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.PROVEEDORES, "editar");
+  if (!veCostosCompras(ctx)) throw new ForbiddenError(SIN_PRECIOS);
+  if (!puede(ctx.usuario, ctx.panelId, Modulo.PRODUCTOS, "crear"))
+    throw new ForbiddenError("No tenés permiso para crear productos.");
+  const { proveedorId, precio, moneda, producto } = crearProductoDeProveedorSchema.parse(input);
+  const r = await transaccion(ctx, async (tx) => {
+    const p = await crearProducto(ctx, producto, tx);
+    await asignarProducto(ctx, proveedorId, { productoId: p.id, precio, moneda }, tx);
+    return p;
+  });
+  revalidar();
+  revalidatePath("/p/[slug]/productos", "layout");
+  revalidatePath("/p/[slug]/stock", "layout");
+  return { id: r.id };
 });
 
 export const quitarProductoAction = actionHandler(async (input: unknown) => {

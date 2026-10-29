@@ -103,12 +103,14 @@ export interface CrearClienteInput {
 /**
  * Alta de cliente. Acepta el `tx` de otra operación (ej: generarVenta crea el
  * cliente nuevo en la misma transacción que la venta). Teléfono repetido en el
- * panel → ClienteDuplicadoError con el cliente existente.
+ * panel → ClienteDuplicadoError con el cliente existente. `vendedorId`: la
+ * cartera en la que queda (ver cartera-clientes.service).
  */
 export async function crearCliente(
   ctx: Ctx,
   input: CrearClienteInput,
   tx?: Tx,
+  opciones: { vendedorId?: string | null } = {},
 ): Promise<ClienteBasico> {
   const nombre = exigirNombre(input.nombre);
   const telefono = exigirTelefono(input.telefono);
@@ -118,7 +120,13 @@ export async function crearCliente(
       const otro = await duplicadoDe(t, telefono);
       if (otro) throw new ClienteDuplicadoError(otro);
       const c = await t.cliente.create({
-        data: { nombre, telefono, notas, creadoPorId: ctx.usuarioId },
+        data: {
+          nombre,
+          telefono,
+          notas,
+          creadoPorId: ctx.usuarioId,
+          vendedorId: opciones.vendedorId ?? null,
+        },
         select: { id: true, nombre: true, telefono: true },
       });
       await registrarAuditoria(t, {
@@ -126,7 +134,12 @@ export async function crearCliente(
         accion: AccionAuditoria.CREATE,
         entidad: "Cliente",
         entidadId: c.id,
-        datosDespues: { nombre, telefono, notas },
+        datosDespues: {
+          nombre,
+          telefono,
+          notas,
+          ...(opciones.vendedorId ? { vendedorId: opciones.vendedorId } : {}),
+        },
         meta: ctx.meta,
       });
       return c;
@@ -355,7 +368,13 @@ export async function clientesNuevosDelMes(ctx: Ctx): Promise<number> {
 /** Ficha: datos + historial de ventas y devoluciones. */
 export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCliente) {
   const db = dbPara(ctx.panelId);
-  const c = await db.cliente.findFirst({ where: { id, deletedAt: null } });
+  const c = await db.cliente.findFirst({
+    where: { id, deletedAt: null },
+    include: {
+      vendedor: { select: { id: true, nombre: true } },
+      creadoEnVenta: { select: { id: true, codigo: true, fecha: true, vendedorId: true } },
+    },
+  });
   if (!c) throw new NotFoundError("El cliente no existe");
   const [ventas, resumen, devoluciones] = await Promise.all([
     db.venta.findMany({
@@ -407,6 +426,22 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
       createdAt: c.createdAt,
       /** Deuda de cuenta corriente (ventas fiadas sin cobrar). */
       saldoDeudor: dec(c.saldoDeudor),
+      /** Cartera del vendedor en la que está («Mis clientes»), si está en alguna. */
+      cartera: c.vendedor
+        ? {
+            vendedorId: c.vendedor.id,
+            vendedor: c.vendedor.nombre,
+            /** La venta con la que se sumó como cliente nuevo; null = ya lo tenía. */
+            ventaAlta:
+              c.creadoEnVenta && c.creadoEnVenta.vendedorId === c.vendedor.id
+                ? {
+                    id: c.creadoEnVenta.id,
+                    codigo: c.creadoEnVenta.codigo,
+                    fecha: c.creadoEnVenta.fecha,
+                  }
+                : null,
+          }
+        : null,
     },
     compras: {
       cantidad: r?.cantidad ?? 0,

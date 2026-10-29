@@ -1,7 +1,8 @@
 /**
  * Cotizador a nivel servicios + DB (panel Vapes): escalones mezclando sabores,
- * defaults del panel, escalón SIEMPRE por producto (dos productos de 30 u. no
- * suman 60), escalones en dólares con el blue venta y su snapshot (la
+ * defaults del panel, escalón por producto con el surtido apagado (dos
+ * productos de 30 u. no suman 60) y PEDIDO SURTIDO (sí suman: cada uno a su
+ * precio del escalón del total, y la cotización lo guarda), escalones en dólares con el blue venta y su snapshot (la
  * cotización vigente no cambia sus pesos si cambia el blue; vencida se
  * recalcula con el de hoy), conversión en venta de una mayorista
  * cuyo precio de lista subió (sin permiso de editar), falta de stock (todo o
@@ -139,6 +140,8 @@ async function main() {
     { cantidadMinima: 50, porcentajeDescuento: "12", activo: true },
   ]);
   const configOriginal = await obtenerConfigCotizacion(ctx);
+  // Los casos de abajo son por producto; el pedido surtido se prueba aparte (4c).
+  await guardarConfigCotizacion(ctx, { ...configOriginal, pedidoSurtido: false });
   // Blue venta fijo para el test (override manual; se quita al final).
   const actor = { id: owner.id, meta };
   const overrideAntes = await prisma.configuracionGlobal.findUnique({
@@ -218,7 +221,7 @@ async function main() {
   check(unit.items[0]!.precioUnitario === "10000.00", "unitaria: siempre precio de lista");
 
   // ---------------------------------------------------------------------------
-  console.log("\n4) Escalón SIEMPRE por producto: 30 Elf + 30 Otro (escalón 50 en los dos)");
+  console.log("\n4) Surtido apagado, por producto: 30 Elf + 30 Otro (escalón 50 en los dos)");
   await guardarEscalones(
     ctx,
     otro.id,
@@ -248,6 +251,55 @@ async function main() {
     dos.resumenEscalones.map((r) => r.unidades).join() === "30,30",
     "resumen de escalones por producto: 30 y 30",
   );
+  check(!dos.surtido && dos.unidadesPedido === 60, "sin surtido: surtido=false, 60 en el pedido");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n4c) Pedido surtido: 30 Elf + 30 Otro = 60 → los dos al escalón 50");
+  await guardarConfigCotizacion(ctx, { ...configOriginal, pedidoSurtido: true });
+  const surtido = await calcularPrecios(
+    ctx,
+    {
+      tipo: "MAYORISTA",
+      items: [
+        { varianteId: mango.id, cantidad: 30 },
+        { varianteId: uva.id, cantidad: 30 },
+      ],
+    },
+    DUENO,
+  );
+  check(
+    surtido.surtido && surtido.items.every((i) => i.escalonAplicado === 50),
+    "60 unidades mezclando modelos: los dos al escalón 50",
+  );
+  check(
+    surtido.items[0]!.precioUnitario === "8200.00" &&
+      surtido.items[1]!.precioUnitario === "7000.00",
+    `cada uno a SU precio de 50: Elf $8.200, Otro $7.000 (${surtido.items.map((i) => i.precioUnitario).join(" / ")})`,
+  );
+  check(
+    surtido.items[0]!.proximoEscalon?.faltan === 40,
+    "próximo escalón de Elf (100): faltan 40 al pedido",
+  );
+  const qSurtido = await crearCotizacion(
+    ctx,
+    {
+      tipo: "MAYORISTA",
+      cliente: null,
+      items: [
+        { varianteId: mango.id, cantidad: 30 },
+        { varianteId: uva.id, cantidad: 30 },
+      ],
+    },
+    DUENO,
+  );
+  const guardadaSurtido = await obtener(ctx, qSurtido.id);
+  check(
+    guardadaSurtido.pedidoSurtido &&
+      guardadaSurtido.items.every((i) => i.escalonAplicado === 50) &&
+      guardadaSurtido.total === "456000.00",
+    `la cotización guarda el surtido y sus precios (total ${guardadaSurtido.total})`,
+  );
+  await guardarConfigCotizacion(ctx, { ...configOriginal, pedidoSurtido: false });
   await guardarEscalones(ctx, otro.id, [], "ARS");
 
   // ---------------------------------------------------------------------------

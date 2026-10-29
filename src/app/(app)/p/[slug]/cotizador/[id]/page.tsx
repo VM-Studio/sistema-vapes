@@ -240,7 +240,11 @@ export default async function DetalleCotizacionPage({
             <Card className="flex flex-col gap-3 p-5">
               <div className="flex flex-col gap-0.5">
                 <h2 className="text-h3 font-semibold">Resumen de escalones</h2>
-                <p className="text-muted text-xs">Por producto: suman todos sus sabores.</p>
+                <p className="text-muted text-xs">
+                  {c.pedidoSurtido
+                    ? `Pedido surtido: ${c.unidades} u. en total. Cada modelo va a su precio de ese escalón.`
+                    : "Por producto: suman todos sus sabores."}
+                </p>
               </div>
               <ul className="border-border bg-surface divide-border rounded-card flex flex-col divide-y border text-sm tabular-nums">
                 {c.resumenEscalones.map((r) => (

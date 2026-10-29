@@ -14,6 +14,7 @@ import {
   catalogoCompraSchema,
   comisionPasistaSchema,
   costoSugeridoSchema,
+  guardarBorradorCompraSchema,
   guardarCompraSchema,
   ofertasCompraSchema,
   recibirCompraSchema,
@@ -34,6 +35,10 @@ import {
   preciosQueCambian,
   recibirCompra,
 } from "@/server/services/compra.service";
+import {
+  descartarBorradorCompra,
+  guardarBorradorCompra,
+} from "@/server/services/borrador-compra.service";
 import { buscarVariantes } from "@/server/services/producto.service";
 import { ofertasParaCompra } from "@/server/services/proveedor.service";
 
@@ -51,13 +56,31 @@ function revalidar() {
   revalidatePath("/p/[slug]/productos", "layout");
 }
 
-/** Crea o actualiza el borrador. */
+/** Confirma la compra nueva (y borra su borrador) o actualiza una pendiente de recibir. */
 export const guardarCompraAction = actionHandler(async (input: unknown) => {
-  const { id: compraId, datos } = guardarCompraSchema.parse(input);
+  const { id: compraId, datos, borradorId } = guardarCompraSchema.parse(input);
   const ctx = await requireCtx(Modulo.COMPRAS, compraId ? "editar" : "crear");
   const r = compraId ? await actualizarCompra(ctx, compraId, datos) : await crearCompra(ctx, datos);
+  if (!compraId && borradorId) await descartarBorradorCompra(ctx, borradorId);
   revalidar();
   return { ...r, idVisible: formatearIdCompra(ctx.panel.slug, r.numero) };
+});
+
+/**
+ * Guardado automático de «Nueva compra» (lo tipeado, a medias): crea el
+ * borrador o lo pisa. No revalida: el listado lo lee al entrar.
+ */
+export const guardarBorradorCompraAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "crear");
+  return guardarBorradorCompra(ctx, guardarBorradorCompraSchema.parse(input));
+});
+
+export const descartarBorradorCompraAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COMPRAS, "crear");
+  const { id: borradorId } = z.object({ id }).parse(input);
+  await descartarBorradorCompra(ctx, borradorId);
+  revalidatePath("/p/[slug]/compras", "page");
+  return null;
 });
 
 export const preciosQueCambianAction = actionHandler(async (input: unknown) => {

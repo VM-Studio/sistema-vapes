@@ -463,6 +463,7 @@ Table Proveedor {
   activo boolean [not null, default: true]
   creadoPorId text [note: 'Quién lo dio de alta (null en los cargados por seed o importación sin rastro).']
   creadoEnVentaId text [unique, note: 'La venta en la que se dio de alta (null si se cargó desde Clientes o el cotizador).']
+  vendedorId text [note: 'Cartera del vendedor («Mis clientes»): los que ya tenía (sin venta de alta, no son nuevos) y los nuevos de sus ventas. null = sin cartera.']
   createdAt timestamp [not null, default: `now()`]
   updatedAt timestamp [not null]
   deletedAt timestamp
@@ -676,6 +677,18 @@ Table CompraItem {
   }
 
   Note: 'Se compra por sabor (el stock es por sabor); productoId desnormalizado (= variante.productoId, lo verifica un trigger) para precios por proveedor.'
+}
+
+Table BorradorCompra {
+  id text [pk]
+  panelId text [not null]
+  usuarioId text [not null, note: 'Quién la empezó.']
+  proveedorId text [note: 'SET NULL si se borra el proveedor.']
+  datos jsonb [not null, note: 'Lo tipeado en «Nueva compra» (sin validar como compra). Se borra al confirmar.']
+  items int [not null, default: 0]
+  unidades int [not null, default: 0]
+  createdAt timestamp [not null]
+  updatedAt timestamp [not null]
 }
 
 Table GastoCompra {
@@ -1097,6 +1110,7 @@ Table Cotizacion {
   motivoRechazo text
   tipoCambioBlue decimal(14,2) [note: 'Snapshot del blue venta usado para los precios en USD (mayorista).']
   aPrecioML boolean [not null, default: false, note: 'Unitaria cotizada a precio Mercado Libre.']
+  pedidoSurtido boolean [not null, default: false, note: 'Mayorista calculada como pedido surtido (escalón por el total del pedido). Snapshot al guardar.']
   tipoCambioObtenidoAt timestamp [note: 'Cuándo se obtuvo ese blue (CHECK: los dos o ninguno).']
   ventaId text [unique, note: 'La venta generada al convertir.']
   pdfUrl text
@@ -1201,6 +1215,9 @@ Ref: FirmaRemito.liquidacionId > LiquidacionVendedor.id [delete: restrict]
 Ref: FirmaRemito.usuarioId > Usuario.id [delete: restrict]
 Ref: EnvioRemito.liquidacionId > LiquidacionVendedor.id [delete: restrict]
 Ref: EnvioRemito.enviadoPorId > Usuario.id [delete: restrict]
+Ref: BorradorCompra.usuarioId > Usuario.id [delete: restrict]
+Ref: BorradorCompra.proveedorId > Proveedor.id [delete: set null]
+Ref: Cliente.vendedorId > Usuario.id [delete: restrict]
 Ref: GastoCompra.compraId > Compra.id [delete: restrict]
 Ref: GastoCompra.usuarioId > Usuario.id [delete: restrict]
 Ref: GastoCompra.anuladoPorId > Usuario.id [delete: restrict]
@@ -1338,7 +1355,7 @@ Vistas SQL (no son modelos de Prisma), ambas con `panel_id` para filtrar por pan
 - **EscalonPrecioDefault**: escalones del panel como % de descuento sobre la lista (0–100), para productos sin escalones propios activos. El precio resultante se redondea a 10 pesos.
 - **Cotizacion**: código `VAP-Q-000001` (secuencia `COTIZACION`, `formatearIdCotizacion()` en `src/lib/validations/cotizacion.ts`), `tipo` `UNITARIA` / `MAYORISTA`, `validaHasta`, cliente opcional (o nombre y teléfono de alguien que todavía no es cliente), `vendedorId`, totales (`total = subtotal − descuento`, CHECK) y estado `BORRADOR` → `ENVIADA` → `ACEPTADA` / `RECHAZADA`; las borrador/enviadas pasan a `VENCIDA` al pasar la validez; `CONVERTIDA` ⇔ tiene `ventaId` (CHECK) y desde ahí no se modifica (trigger `trg_cotizacion_convertida`). No se borra físicamente.
 - **CotizacionItem**: sabor, producto (verificado por trigger), cantidad, `precioLista`, `precioUnitario` cotizado en pesos (lista, escalón o manual), `precioUnitarioUSD` (si salió de un escalón o precio manual en dólares), `escalonAplicado` y `esPrecioManual`; subtotal = cantidad × precio (CHECK).
-- Motor de precios (`precio.service.ts`): unitaria = lista (en pesos), o precio Mercado Libre guardado si se cotiza "a precio Mercado Libre" (`aPrecioML`: desde v2.5 solo lo conservan las cotizaciones viejas; las nuevas no lo ofrecen); mayorista = escalón **siempre por producto** (marca + modelo + especificación): suman las unidades de todos sus sabores, nunca las del total de la cotización (dos productos de 30 u. no entran en el escalón de 50). Escalones en USD → pesos con el blue venta (`cambio.service`), redondeado a 10. La cotización guarda el **snapshot** del blue (`tipoCambioBlue`, `tipoCambioObtenidoAt`): mientras está vigente sus pesos no cambian aunque cambie el blue; creada, duplicada, editada después de vencer o convertida vencida con "recalcular" usa el blue de hoy. La configuración `cotizacion` del panel guarda `validezDias`, `leyenda` y `mostrarStock` (el modo `POR_TOTAL` se eliminó en v2.4). El precio manual (en pesos, o en USD en mayorista) y el descuento exigen `editar` en `COTIZADOR`.
+- Motor de precios (`precio.service.ts`): unitaria = lista (en pesos), o precio Mercado Libre guardado si se cotiza "a precio Mercado Libre" (`aPrecioML`: desde v2.5 solo lo conservan las cotizaciones viejas; las nuevas no lo ofrecen); mayorista = con **pedido surtido** (`pedidoSurtido` de la configuración `cotizacion`, default true desde v2.7) el escalón sale de las unidades de **todo el pedido** mezclando modelos, y cada producto va a su propio precio de ese escalón; con el surtido apagado, **por producto** (marca + modelo + especificación): suman solo sus sabores (dos productos de 30 u. no entran en el escalón de 50). Escalones en USD → pesos con el blue venta (`cambio.service`), redondeado a 10. La cotización guarda el **snapshot** del blue (`tipoCambioBlue`, `tipoCambioObtenidoAt`): mientras está vigente sus pesos no cambian aunque cambie el blue; creada, duplicada, editada después de vencer o convertida vencida con "recalcular" usa el blue de hoy. La configuración `cotizacion` del panel guarda `validezDias`, `leyenda`, `mostrarStock` y `pedidoSurtido` (el modo `POR_TOTAL` se eliminó en v2.4). El precio manual (en pesos, o en USD en mayorista) y el descuento exigen `editar` en `COTIZADOR`.
 - Convertir (`convertirEnVenta()`) crea la venta (con `Venta.cotizacionId`, precios cotizados como precio especial, tipo de la cotización) y marca la cotización `CONVERTIDA` en una sola transacción: si falta stock no cambia nada.
 
 ## Invariantes garantizadas por la base

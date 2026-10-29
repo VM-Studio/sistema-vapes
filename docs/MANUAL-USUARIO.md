@@ -237,7 +237,8 @@ En **Cotizar por unidad**: escaneá, buscá o tocá un más vendido. Cada rengl�
 
 En **Cotizar por mayor** cargás cantidades grandes y el precio baja por **escalones**:
 
-- Los escalones son **por producto** y valen para todos sus sabores: 20 de Mango + 35 de Frutilla del mismo producto suman 55 y entran en el escalón de 50.
+- **Pedido surtido** (así viene configurado): el escalón sale del **total del pedido**, mezclando modelos. 10 de un modelo + 20 de otro = 30 unidades → cada modelo va a **su** precio del escalón de 30.
+- Si un dueño apaga «Pedido surtido» en la configuración, el escalón es **por producto** y vale para todos sus sabores: 20 de Mango + 35 de Frutilla del mismo producto suman 55 y entran en el escalón de 50, pero dos modelos distintos no se suman.
 - Cada renglón muestra el precio de lista tachado, el del escalón, la etiqueta **Escalón desde 50 u.** y cuánto falta para el siguiente («Agregá 45 más y baja a $11.000 c/u»). **Ver tabla de precios** muestra todos los escalones del producto.
 - Si un producto no tiene escalones propios, usa los **escalones por defecto** del sistema (un % de descuento sobre la lista desde cierta cantidad).
 
@@ -247,7 +248,7 @@ En **Cotizar por mayor** cargás cantidades grandes y el precio baja por **escal
 - En **Cotizaciones** ves todas (pestañas Todas / Unitarias / Mayoristas), las filtrás por estado, vendedor y fechas, y desde el detalle las marcás como **Enviada**, **Aceptada** o **Rechazada**, o las **duplicás**. Las que pasan la validez sin cerrarse quedan **Vencidas**.
 - **Convertir en venta**: se abre la venta con los productos, precios y cliente ya fijos; solo elegís **galpón** y **medio de pago** y confirmás. La cotización queda **Convertida** con el ID de su venta. Si venció, primero te muestra qué precios cambiaron y se vende a los de hoy. Si falta stock, no se hace nada.
 - Precio manual y descuento: solo con permiso para editar en el Cotizador.
-- **Dueños**: **Configuración** del cotizador (escalones por defecto, validez, modo de escalón por producto o por total, leyenda del PDF y si se muestra el stock) y, en la ficha de cada producto, **Precios mayoristas** (sus escalones propios).
+- **Dueños**: **Configuración** del cotizador (escalones por defecto, validez, pedido surtido (escalón por el total del pedido) o por producto, leyenda del PDF y si se muestra el stock) y, en la ficha de cada producto, **Precios mayoristas** (sus escalones propios).
 
 ## Leer el dashboard
 
@@ -290,6 +291,16 @@ Un vendedor puede ganar un monto fijo **por cada vape vendido**, según el tipo 
 - **Pago con remito firmado:** en **Registrar pago** el dueño revisa el monto (viene el total), elige cómo se pagó y la fecha, **firma con el dedo o el mouse** y toca **Firmar y registrar pago**. A Trinidad le llega un mail (al email de su usuario) con el remito en PDF, que dice qué dueño lo firmó y lo mandó, y un link para firmar. Si el mail no está configurado (o falla), la pantalla muestra el link para **copiarlo** o **mandarlo por WhatsApp**. El link sirve una sola vez y vence a los 14 días; **Reenviar a Trinidad** manda uno nuevo (el anterior deja de servir).
 - **Trinidad firma** desde el celular: abre el link, ve el remito y la firma del dueño, firma y toca **Firmado**. Si está logueada, también le aparece en su inicio «Tenés un remito para firmar». Al firmar, el remito con las dos firmas les llega por mail a los dueños y la liquidación queda **Firmada**: en la sección se ven las dos firmas (quién y cuándo), los envíos por mail, el **PDF final** y **Reenviar a los dueños**.
 - **Trinidad** ve lo mismo de lo suyo: en su inicio, la tarjeta **Mi ganancia** con lo que lleva del mes, y tocándola **Mi ganancia** con el detalle y sus liquidaciones. No ve costos ni ganancias del negocio.
+
+## Mis clientes (cartera del vendedor)
+
+Para que la ganancia por **cliente nuevo** sea justa desde el primer día, cada vendedor (por ejemplo Trinidad) tiene **Mis clientes** en el menú: su cartera de clientes.
+
+- **Antes de empezar a vender con el sistema**, cargá los clientes que **ya tenés**: con **Agregar cliente** (uno por uno; **Guardar y cargar otro** deja el formulario listo para el siguiente) o con **Cargar varios**, pegando la lista entera, una línea por cliente con nombre y teléfono (separados por coma, punto y coma o tabulador; sirve copiar de una planilla). Esos quedan como **Ya lo tenía**: venderles **no** cuenta como cliente nuevo.
+- Si el teléfono ya es de un cliente del negocio, al guardar se **suma a tu cartera** (tampoco es nuevo). Si está en la cartera de otro vendedor, no se puede.
+- **Al vender**, si elegís **Cliente nuevo** el cliente se crea con esa venta y **se suma solo** a tu cartera como **Nuevo · VAP-000123**: esa venta es la de cliente nuevo para tu ganancia.
+- Las tarjetas de arriba (**En la cartera**, **Ya los tenía**, **Nuevos por ventas**, **Nuevos este mes**) filtran la lista. Tocando un cliente ves su ficha: cómo entró a la cartera (la venta que lo trajo, con su link) y tus ventas a ese cliente. Desde ahí editás sus datos o, si lo cargaste por error, **Quitar de mi cartera** (los que se sumaron con una venta no se quitan).
+- **Dueños:** en Equipo → el vendedor → **Cartera de clientes** ven lo mismo de cada uno (con el link a la venta de cada cliente nuevo), y la ficha de cada cliente en **Clientes** dice en qué cartera está y si es nuevo de qué venta.
 
 ## Reportes
 
@@ -452,7 +463,9 @@ Con **Nueva compra** (permiso para crear en Compras) se arma en tres pasos:
 
 Abajo ves el subtotal de cada renglón y el **total de la compra**. En **Notas** podés anotar el número de remito o factura.
 
-Con **Guardar borrador** la compra queda guardada sin mover stock; la podés seguir editando mientras esté en borrador.
+**Todos los montos en pesos** de Compras (costos, subtotales, comisión, gastos, costo final y promedios, en el armado, el listado y el detalle) muestran abajo, chiquito, su **equivalente en USDT** con la cotización guardada en la compra (o la vigente si no tiene).
+
+**Borrador automático**: mientras armás una compra nueva, lo que cargás se guarda solo como **borrador** (abajo de los pasos dice «Borrador guardado …»). Si salís a otra sección o se cierra la pantalla, no se pierde: en **Compras** aparece arriba **Compras en curso**, con **Continuar** (sigue donde la dejaste) y **Descartar**. Al **Confirmar** la compra, el borrador se borra solo. Los borradores no mueven stock ni costos.
 
 ### Recibir mercadería
 
@@ -509,6 +522,7 @@ El listado muestra una tarjeta por proveedor con la tienda, el teléfono y un bo
 
 - Sus datos y, si tenés permiso para ver Compras, el **total comprado**.
 - **Productos del proveedor**: la lista de productos que vende, cada uno con su **precio** y su **moneda** (pesos o dólares) y la fecha en que se actualizó. Con **Agregar producto que vende** (permiso para editar en Proveedores) buscás el producto por marca y modelo y le ponés el precio. Al agregarlo, el cursor queda en el precio: escribilo y apretá Enter para guardar. Si cambiaste varios precios, **Guardar los N precios** los guarda todos juntos; con muchos productos aparece un filtro arriba de la lista. Para cambiar un precio, escribí el nuevo y tocá guardar: el precio anterior queda en el historial (lo ves en Reportes). También se actualiza solo al recibir una compra si elegís «actualizar» (ver [Recibir mercadería](#recibir-mercaderia)). El precio es por producto, sin importar el sabor.
+- **Nuevo producto** (con permiso para crear productos): mientras actualizás la lista del proveedor, si ves un producto que todavía no existe en el sistema lo das de alta ahí mismo, sin salir de la ficha: se abre el mismo formulario de Productos (marca, modelo, pitadas, precio de venta, sabores) más el **precio de este proveedor** y su moneda. Al crearlo queda en Productos y en la lista del proveedor con su precio; los precios que estabas editando sin guardar no se pierden.
 - **Compras del proveedor** (las últimas 50), si tenés permiso para ver Compras, y el botón **Nueva compra a este proveedor**.
 
 Con esos precios, la ficha de cada producto muestra **Proveedores que lo venden** ordenados del más barato al más caro (ver [Productos](#productos)), y los dueños tienen el [comparador de proveedores](#comparar-proveedores).

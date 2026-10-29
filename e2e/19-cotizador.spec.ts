@@ -68,7 +68,7 @@ test("mayorista: 20 + 35 de dos sabores → escalón 50 en ambas filas y hint al
   await escalones10_50_100();
   await loginDueno(page);
   await page.goto("/p/vapes/cotizador/mayorista/nueva");
-  await expect(page.getByTestId("modo-escalon")).toContainText("por producto");
+  await expect(page.getByTestId("modo-escalon")).toContainText("pedido surtido");
 
   await agregar(page, "Watermelon Ice");
   const cantWater = page.getByLabel(`Cantidad de ${ELF_BAR_BC5000} — Watermelon Ice`);
@@ -82,7 +82,7 @@ test("mayorista: 20 + 35 de dos sabores → escalón 50 en ambas filas y hint al
     await expect(fila(page, sabor).getByTestId("precio-lista")).toContainText("14.500");
     await expect(fila(page, sabor).getByTestId("chip-escalon")).toHaveText("Escalón desde 50 u.");
     await expect(fila(page, sabor).getByTestId("hint-escalon")).toContainText(
-      "Agregá 45 más del producto y baja a",
+      "Agregá 45 más al pedido y baja a",
     );
     await expect(fila(page, sabor).getByTestId("hint-escalon")).toContainText("11.000");
   }
@@ -129,10 +129,62 @@ async function escalonesUSD(producto: string, filas: [number, string][]) {
   return p.id;
 }
 
-test("mayorista en dólares: escalón por modelo (30 + 30 de dos productos no suman), 20 + 35 del mismo sí; USD y pesos con snapshot del blue", async ({
+/** Configuración del cotizador de Vapes: pedido surtido prendido (default) o apagado. */
+async function pedidoSurtido(valor: boolean) {
+  const actual = await db.configuracion.findUnique({
+    where: { panelId_clave: { panelId: PANEL_VAPES, clave: "cotizacion" } },
+  });
+  const v = {
+    ...((actual?.valor as Record<string, unknown> | null) ?? {}),
+    pedidoSurtido: valor,
+  };
+  await db.configuracion.upsert({
+    where: { panelId_clave: { panelId: PANEL_VAPES, clave: "cotizacion" } },
+    update: { valor: v },
+    create: { panelId: PANEL_VAPES, clave: "cotizacion", valor: v },
+  });
+}
+
+test("pedido surtido: 30 + 30 de dos productos distintos → los dos al escalón 50, cada uno a su precio", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
+  const ignite = await escalonesUSD(IGNITE_V80, [
+    [10, "9"],
+    [50, "7"],
+  ]);
+  const elf10 = await escalonesUSD(ELF_BAR_BC10000, [[50, "8"]]);
+  const filaDe = (producto: string, sabor: string) =>
+    page.getByTestId("fila-cotizacion").filter({ hasText: `${producto} — ${sabor}` });
+
+  await loginDueno(page);
+  await page.goto("/p/vapes/cotizador/mayorista/nueva");
+  await expect(page.getByTestId("modo-escalon")).toContainText("pedido surtido");
+  await soltarFoco(page);
+  await pistola(page, await codigoDe(IGNITE_V80, "Mango Ice"));
+  await page.getByLabel(`Cantidad de ${IGNITE_V80} — Mango Ice`).fill("30");
+  await soltarFoco(page);
+  await pistola(page, await codigoDe(ELF_BAR_BC10000, "Watermelon Ice"));
+  await page.getByLabel(`Cantidad de ${ELF_BAR_BC10000} — Watermelon Ice`).fill("30");
+  const mango = filaDe(IGNITE_V80, "Mango Ice");
+  const water = filaDe(ELF_BAR_BC10000, "Watermelon Ice");
+  await expect(mango.getByTestId("chip-escalon")).toHaveText("Escalón desde 50 u.");
+  await expect(mango.getByTestId("precio-unitario-usd")).toHaveText("U$D 7 c/u");
+  await expect(water.getByTestId("chip-escalon")).toHaveText("Escalón desde 50 u.");
+  await expect(water.getByTestId("precio-unitario-usd")).toHaveText("U$D 8 c/u");
+  await expect(page.getByTestId("resumen-escalones").first()).toContainText(
+    "Pedido surtido: 60 u. en total",
+  );
+  mkdirSync("verificacion/pedido-1029", { recursive: true });
+  await page.screenshot({ path: "verificacion/pedido-1029/surtido-1440.png", fullPage: true });
+  await db.escalonPrecio.deleteMany({ where: { productoId: { in: [ignite, elf10] } } });
+});
+
+test("mayorista en dólares con el surtido apagado: escalón por modelo (30 + 30 de dos productos no suman), 20 + 35 del mismo sí; USD y pesos con snapshot del blue", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "chromium-desktop", "flujo de escritorio");
+  await pedidoSurtido(false);
   const ignite = await escalonesUSD(IGNITE_V80, [
     [10, "9"],
     [50, "7"],
@@ -162,6 +214,7 @@ test("mayorista en dólares: escalón por modelo (30 + 30 de dos productos no su
   await expect(water.getByTestId("chip-escalon")).toHaveCount(0);
   await expect(water.getByTestId("precio-unitario")).toContainText("19.000");
   await expect(water.getByTestId("hint-escalon")).toContainText("Agregá 20 más del producto");
+  await expect(page.getByTestId("modo-escalon")).toContainText("por producto");
   const resumen = page.getByTestId("resumen-escalones").first();
   await expect(resumen).toContainText("30 u. · escalón 10+");
   await expect(resumen).toContainText("30 u. · precio de lista");
@@ -217,6 +270,7 @@ test("mayorista en dólares: escalón por modelo (30 + 30 de dos productos no su
   await page.screenshot({ path: "verificacion/a2/bloque5-detalle-1440.png", fullPage: true });
 
   await db.escalonPrecio.deleteMany({ where: { productoId: { in: [ignite, elf10] } } });
+  await pedidoSurtido(true);
 });
 
 test("unitaria de 3 sabores: PDF y link de WhatsApp", async ({ page }, info) => {

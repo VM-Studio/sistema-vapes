@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Package, Search, Trash2 } from "lucide-react";
+import { Check, Package, PackagePlus, Search, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { controlClass } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionCard } from "@/components/ui/section-card";
+import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { cn, formatearFecha } from "@/lib/utils";
 import { CameraScanner, type MensajeCamara } from "@/features/scanner/CameraScanner";
@@ -24,6 +25,7 @@ import { useBarcodeScanner } from "@/features/scanner/useBarcodeScanner";
 import { useScanFeedback } from "@/features/scanner/useScanFeedback";
 import type { ProductoDeProveedorDTO } from "@/server/services/proveedor.service";
 
+import { ProductoForm } from "../../productos/producto-form";
 import {
   asignarProductoAction,
   buscarProductosProveedorAction,
@@ -67,6 +69,12 @@ const aFila = (p: ProductoDeProveedorDTO): Fila => ({
  * si no, agrega la fila y el foco va al precio. Se puede escanear varios
  * seguidos (la ráfaga de la pistola no ensucia el precio con foco: ver
  * capturador). La carga manual (buscador) sigue igual.
+ *
+ * «Nuevo producto» (con PRODUCTOS crear): mientras se actualiza la lista del
+ * proveedor, se da de alta un producto que todavía no existe en el sistema
+ * sin salir de acá (hoja con el mismo formulario de Productos + el precio de
+ * este proveedor); queda vinculado con su precio. Lo editado sin guardar en
+ * la lista se conserva.
  */
 export function ProductosProveedor({
   proveedorId,
@@ -74,12 +82,19 @@ export function ProductosProveedor({
   verPrecios,
   puedeEditar,
   cotizacionUsdt,
+  altaProducto,
 }: {
   proveedorId: string;
   productos: ProductoDeProveedorDTO[];
   verPrecios: boolean;
   puedeEditar: boolean;
   cotizacionUsdt: CotizacionVigente | null;
+  /** Para «Nuevo producto» (null = sin permiso para crear productos). */
+  altaProducto: {
+    proveedor: string;
+    categorias: { value: string; label: string }[];
+    marcas: string[];
+  } | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -102,6 +117,7 @@ export function ProductosProveedor({
   const [resaltado, setResaltado] = useState<string | null>(null);
   const filasRef = useRef(filas);
   filasRef.current = filas;
+  const [nuevoProducto, setNuevoProducto] = useState(false);
 
   /** Escaneo (pistola, cámara o tipeado): preselecciona el producto y pasa el foco al precio. */
   async function procesarCodigo(codigo: string) {
@@ -156,7 +172,8 @@ export function ProductosProveedor({
 
   useBarcodeScanner({
     onScan: (c) => void procesarCodigo(c),
-    enabled: editable && !camara,
+    // Con la hoja «Nuevo producto» abierta, la pistola es para su código de barras.
+    enabled: editable && !camara && !nuevoProducto,
   });
 
   const [previos, setPrevios] = useState(productos);
@@ -499,6 +516,41 @@ export function ProductosProveedor({
             );
           }}
         />
+      )}
+      {editable && altaProducto && (
+        <>
+          <Button
+            variant="secondary"
+            className="self-start max-md:w-full"
+            onClick={() => setNuevoProducto(true)}
+          >
+            <PackagePlus strokeWidth={1.75} /> Nuevo producto
+          </Button>
+          <Sheet
+            open={nuevoProducto}
+            onOpenChange={setNuevoProducto}
+            title="Nuevo producto"
+            description={`Se crea en Productos y queda en la lista de ${altaProducto.proveedor} con su precio.`}
+            className="md:w-[min(64rem,100vw)]"
+          >
+            <ProductoForm
+              producto={null}
+              categorias={altaProducto.categorias}
+              marcas={altaProducto.marcas}
+              proveedor={{
+                id: proveedorId,
+                nombre: altaProducto.proveedor,
+                onCancelar: () => setNuevoProducto(false),
+                onCreado: (p) => {
+                  setNuevoProducto(false);
+                  setResaltado(p.id);
+                  setEscaneo({ tipo: "ok", texto: `${p.nombreCompleto}: creado y vinculado.` });
+                  router.refresh();
+                },
+              }}
+            />
+          </Sheet>
+        </>
       )}
       {editable && (
         <CameraScanner

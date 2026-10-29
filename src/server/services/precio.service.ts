@@ -6,18 +6,24 @@ import { nombreConSabor } from "@/lib/ventas-ui";
 import { dbPara, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { obtenerCotizacion } from "@/server/services/cambio.service";
-import { obtenerConfigVentas } from "@/server/services/configuracion.service";
+import {
+  obtenerConfigCotizacion,
+  obtenerConfigVentas,
+} from "@/server/services/configuracion.service";
 
 /**
  * MOTOR DE PRECIOS DEL COTIZADOR
  *
  * - UNITARIA: cada sabor a su precio de lista (precioVentaEfectivo), en pesos.
- * - MAYORISTA: el escalón se determina SIEMPRE POR PRODUCTO (marca + modelo +
- *   especificación): se suman las unidades de todos sus sabores dentro de la
- *   cotización (20 Mango + 35 Frutilla = 55 del producto → los dos sabores al
- *   escalón de 50). Nunca por el total de la cotización: dos productos
- *   distintos de 30 u. cada uno NO entran en el escalón de 50. El escalón es el
- *   de mayor cantidadMinima ≤ unidades del producto:
+ * - MAYORISTA: el escalón sale de las unidades que cuentan para cada producto:
+ *   · PEDIDO SURTIDO (`surtido`, el default del panel: Configuración del
+ *     cotizador): las del pedido entero, mezclando modelos. 10 Elf Bar + 20
+ *     Ignite = 30 → cada producto a SU precio del escalón de 30 (cada uno con
+ *     su propia tabla de escalones).
+ *   · POR PRODUCTO (surtido apagado): solo las de sus sabores (20 Mango + 35
+ *     Frutilla = 55 del producto → los dos al escalón de 50); dos productos
+ *     distintos de 30 u. cada uno NO entran en el escalón de 50.
+ *   El escalón es el de mayor cantidadMinima ≤ esas unidades:
  *     1. escalones propios activos del producto → su precio, en su moneda:
  *        USD (dólar blue venta, el default) → pesos = USD × blue, redondeado a
  *        10 pesos; ARS → tal cual;
@@ -93,6 +99,8 @@ export interface DatosResolverPrecios {
   defaults: { cantidadMinima: number; porcentajeDescuento: Monto; activo?: boolean }[];
   /** Dólar blue venta (pesos por dólar). Hace falta si aplica algún precio en USD. */
   blue?: Monto | null;
+  /** Pedido surtido: el escalón lo definen las unidades de TODO el pedido (default false). */
+  surtido?: boolean;
 }
 
 export interface ProximoEscalon {
@@ -124,7 +132,7 @@ export interface ItemPrecio {
 export interface ResumenEscalon {
   productoId: string;
   nombreCompleto: string;
-  /** Unidades del producto (todos sus sabores) que definen su escalón. */
+  /** Unidades del producto (todos sus sabores). Sin surtido son las que definen su escalón. */
   unidades: number;
   escalonAplicado: number | null;
   precioUnitario: string;
@@ -145,6 +153,10 @@ export interface ResultadoPrecios {
   /** Equivalente en dólares del subtotal (mayorista con blue): USD exactos + pesos ÷ blue. */
   subtotalUSD: string | null;
   resumenEscalones: ResumenEscalon[];
+  /** Mayorista como pedido surtido: el escalón lo definen las unidades de todo el pedido. */
+  surtido: boolean;
+  /** Unidades de todo el pedido. */
+  unidadesPedido: number;
   /** Blue usado (solo mayorista). */
   tipoCambioBlue: TipoCambioUsado | null;
   /** Unitaria cotizada a precio Mercado Libre. */
@@ -203,15 +215,20 @@ export function resolverPrecios(
   datos: DatosResolverPrecios,
 ): Omit<ResultadoPrecios, "tipoCambioBlue" | "aPrecioML"> {
   const mayorista = datos.tipo === "MAYORISTA";
+  const surtido = mayorista && datos.surtido === true;
   const blue =
     datos.blue !== undefined && datos.blue !== null && D(datos.blue).greaterThan(0)
       ? D(datos.blue)
       : null;
-  // Unidades POR PRODUCTO (todos sus sabores): lo único que define el escalón.
+  // Unidades POR PRODUCTO (todos sus sabores) y del pedido entero (surtido).
   const porProducto = new Map<string, number>();
   for (const i of datos.items)
     porProducto.set(i.productoId, (porProducto.get(i.productoId) ?? 0) + i.cantidad);
+  const unidadesPedido = datos.items.reduce((a, i) => a + i.cantidad, 0);
   const unidadesDe = (productoId: string) => porProducto.get(productoId) ?? 0;
+  /** Las que definen el escalón del producto. */
+  const unidadesEscalon = (productoId: string) =>
+    surtido ? unidadesPedido : unidadesDe(productoId);
 
   const items: ItemPrecio[] = datos.items.map((i) => {
     const lista = D(i.precioLista);
@@ -232,7 +249,7 @@ export function resolverPrecios(
         precio = valor;
       }
     } else if (mayorista) {
-      const unidades = unidadesDe(i.productoId);
+      const unidades = unidadesEscalon(i.productoId);
       const { escalones } = tablaEfectiva(
         i.productoId,
         lista,
@@ -295,6 +312,8 @@ export function resolverPrecios(
     subtotal: dec(subtotal),
     subtotalUSD: mayorista && blue ? dec(totalEnUSD(items, blue)) : null,
     resumenEscalones,
+    surtido,
+    unidadesPedido,
   };
 }
 
@@ -387,6 +406,7 @@ export async function calcularPrecios(
         throw new DomainError("En la cotización por unidad los precios son en pesos.");
     }
   }
+  const surtido = mayorista && (await obtenerConfigCotizacion(ctx, tx)).pedidoSurtido;
   const tipoCambioBlue: TipoCambioUsado | null = !mayorista
     ? null
     : opciones.tipoCambioBlue
@@ -403,6 +423,8 @@ export async function calcularPrecios(
       subtotal: "0.00",
       subtotalUSD: mayorista && tipoCambioBlue ? "0.00" : null,
       resumenEscalones: [],
+      surtido,
+      unidadesPedido: 0,
       tipoCambioBlue,
       aPrecioML,
     };
@@ -480,6 +502,7 @@ export async function calcularPrecios(
       escalones,
       defaults,
       blue: tipoCambioBlue?.valor ?? null,
+      surtido,
     }),
     tipoCambioBlue,
     aPrecioML,

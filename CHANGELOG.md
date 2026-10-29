@@ -5,6 +5,22 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.7.0] - 2026-10-29 — Pedido de los dueños: cartera, surtido, borradores y USDT
+
+### Agregado
+
+- **Mis clientes** (cartera del vendedor): Trinidad carga los clientes que ya tenía (uno por uno o
+  pegando la lista) y venderles no cuenta como cliente nuevo; el cliente nuevo de una venta se suma
+  solo a su cartera atado a esa venta (ficha con el link). Los dueños ven la cartera de cada
+  vendedor en Equipo y en la ficha del cliente.
+- **Pedido surtido** en el cotizador mayorista (default): el escalón sale del total del pedido
+  mezclando modelos, cada producto a su propio precio de ese escalón. Se apaga en Configuración
+  del cotizador; la cotización guarda con qué modo se calculó.
+- **Borrador automático de compras**: la compra que se está armando se guarda sola y se retoma
+  desde «Compras en curso».
+- **Nuevo producto desde la ficha del proveedor**, con su precio de ese proveedor en el mismo paso.
+- **Equivalente en USDT** debajo de todos los montos en pesos de Compras.
+
 ## [2.6.0] - 2026-10-25 — Ventas de Trinidad, retiro y compras por recibir (A4)
 
 ### Agregado

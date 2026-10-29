@@ -27,6 +27,7 @@ import {
 } from "@/components/compras/producto-compra-sheet";
 import { ProveedorForm, soloDecimal } from "@/components/compras/proveedor-form";
 import {
+  EnUsdt,
   ResumenCompraCard,
   type CotizacionResumen,
 } from "@/components/compras/resumen-compra-card";
@@ -54,7 +55,7 @@ import type { CotizacionVigente } from "@/lib/cambio";
 import { calcularCostosFinales } from "@/lib/costos-compra";
 import { hoyAR } from "@/lib/fechas";
 import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, formatearFechaHora } from "@/lib/utils";
 import type { ComparacionCompra } from "@/server/reportes/comparador";
 import type { ProductoCatalogoCompra } from "@/server/services/compra.service";
 
@@ -62,6 +63,8 @@ import {
   buscarSaboresCompraAction,
   catalogoProveedorCompraAction,
   costoSugeridoAction,
+  descartarBorradorCompraAction,
+  guardarBorradorCompraAction,
   guardarCompraAction,
   ofertasCompraAction,
   type SaborBuscado,
@@ -100,6 +103,10 @@ export interface CompraInicial {
   /** Montos de los gastos extras vigentes (solo al editar un borrador que ya tiene). */
   gastos: string[];
   items: ItemCompraForm[];
+  /** Compra nueva retomada de un borrador guardado (BorradorCompra). */
+  borrador?: { id: string; updatedAt: Date | string } | null;
+  /** Del borrador: comisión tildada y % tipeado (aunque no sea válido todavía). */
+  comision?: { activa: boolean; porcentaje: string };
 }
 
 const num = (s: string) => Number(s.replace(",", ".")) || 0;
@@ -148,19 +155,23 @@ export function CompraForm({
   const [proveedorId, setProveedorId] = useState(inicial.proveedorId);
   const [depositoId, setDepositoId] = useState(inicial.depositoId);
   // Una compra nueva siempre pasa por el galpón (aunque venga preseleccionado): nunca se confirma solo.
+  // Un borrador retomado con el galpón ya elegido vuelve directo a los ítems.
   const [paso, setPaso] = useState<Paso>(
-    !inicial.proveedorId ? 1 : inicial.id && inicial.depositoId ? 3 : 2,
+    !inicial.proveedorId ? 1 : (inicial.id || inicial.borrador) && inicial.depositoId ? 3 : 2,
   );
   const [fecha, setFecha] = useState(inicial.fecha);
   const [notas, setNotas] = useState(inicial.notas);
   const [items, setItems] = useState<ItemCompraForm[]>(inicial.items);
-  const [comisionActiva, setComisionActiva] = useState(inicial.comisionPasistaPorcentaje !== null);
+  const [comisionActiva, setComisionActiva] = useState(
+    inicial.comision?.activa ?? inicial.comisionPasistaPorcentaje !== null,
+  );
   const [comisionPct, setComisionPct] = useState(
-    String(
-      inicial.comisionPasistaPorcentaje !== null
-        ? Number(inicial.comisionPasistaPorcentaje)
-        : comisionDefault,
-    ).replace(".", ","),
+    inicial.comision?.porcentaje ??
+      String(
+        inicial.comisionPasistaPorcentaje !== null
+          ? Number(inicial.comisionPasistaPorcentaje)
+          : comisionDefault,
+      ).replace(".", ","),
   );
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [enviando, setEnviando] = useState(false);
@@ -441,6 +452,7 @@ export function CompraForm({
     setErrores({});
     const r = await guardarCompraAction({
       id: compraId ?? undefined,
+      borradorId: compraId ? undefined : (borradorIdRef.current ?? undefined),
       datos: {
         proveedorId,
         depositoId,
@@ -478,15 +490,177 @@ export function CompraForm({
 
   async function onConfirmar() {
     setEnviando(true);
+    // Que el guardado automático no pise ni recree el borrador mientras se confirma.
+    confirmandoRef.current = true;
+    await esperarAutoguardado();
     const g = await guardarBorrador();
     setEnviando(false);
-    if (!g) return;
+    if (!g) {
+      confirmandoRef.current = false;
+      return;
+    }
     toast.success(
       editando ? `Compra ${g.idVisible} actualizada` : `Compra ${g.idVisible} confirmada`,
       "Queda pendiente de recibir: el stock se suma cuando toques «Recibido».",
     );
     router.push(ruta(`/compras/${g.id}`));
   }
+
+  // ---------------------------------------------------------------------------
+  // Borrador automático (solo compra nueva): lo tipeado se guarda solo, un
+  // segundo y medio después del último cambio, para retomarlo desde Compras si se sale
+  // de la pantalla. Al confirmar, el servidor lo borra.
+  // ---------------------------------------------------------------------------
+  const autoguarda = !inicial.id;
+  const [borradorId, setBorradorId] = useState<string | null>(inicial.borrador?.id ?? null);
+  const borradorIdRef = useRef(borradorId);
+  borradorIdRef.current = borradorId;
+  const [estadoBorrador, setEstadoBorrador] = useState<
+    { tipo: "guardando" } | { tipo: "guardado"; at: Date } | { tipo: "error" } | null
+  >(inicial.borrador ? { tipo: "guardado", at: new Date(inicial.borrador.updatedAt) } : null);
+  const [descartando, setDescartando] = useState<"preguntar" | "enviando" | null>(null);
+  const confirmandoRef = useRef(false);
+  const datosBorrador = useMemo(
+    () =>
+      JSON.stringify({
+        proveedorId,
+        depositoId,
+        fecha,
+        notas,
+        comisionActiva,
+        comisionPct,
+        items: items.map((i) => ({
+          varianteId: i.varianteId,
+          productoId: i.productoId,
+          nombreCompleto: i.nombreCompleto,
+          sabor: i.sabor,
+          sku: i.sku,
+          cantidad: i.cantidad,
+          costo: i.costo,
+          origenCosto: i.origenCosto === "cargando" ? null : i.origenCosto,
+          detalleUsdt: i.detalleUsdt ?? null,
+        })),
+      }),
+    [proveedorId, depositoId, fecha, notas, comisionActiva, comisionPct, items],
+  );
+  const datosBorradorRef = useRef(datosBorrador);
+  datosBorradorRef.current = datosBorrador;
+  /** Lo último que quedó guardado (lo inicial cuenta como guardado: no se crea un borrador vacío). */
+  const guardadoRef = useRef(datosBorrador);
+  const colaRef = useRef<Promise<void>>(Promise.resolve());
+
+  /** Guarda lo tipeado si cambió (en cola: nunca dos a la vez, así no se crean dos borradores). */
+  const autoguardar = useCallback(() => {
+    colaRef.current = colaRef.current.then(async () => {
+      const datos = datosBorradorRef.current;
+      if (confirmandoRef.current || datos === guardadoRef.current) return;
+      setEstadoBorrador({ tipo: "guardando" });
+      const r = await guardarBorradorCompraAction({
+        id: borradorIdRef.current ?? undefined,
+        datos: JSON.parse(datos) as unknown,
+      });
+      if (!r.ok) {
+        setEstadoBorrador({ tipo: "error" });
+        return;
+      }
+      guardadoRef.current = datos;
+      // Sin tocar la URL (el router re-renderiza y la pistola puede perder teclas):
+      // el borrador se retoma desde «Compras en curso».
+      if (borradorIdRef.current !== r.data.id) {
+        borradorIdRef.current = r.data.id;
+        setBorradorId(r.data.id);
+      }
+      setEstadoBorrador({ tipo: "guardado", at: new Date(r.data.updatedAt) });
+    });
+    return colaRef.current;
+  }, []);
+
+  const esperarAutoguardado = () => colaRef.current;
+
+  useEffect(() => {
+    if (!autoguarda || datosBorrador === guardadoRef.current) return;
+    // Después de una pausa: no durante una ráfaga de escaneos.
+    const t = setTimeout(() => void autoguardar(), 1500);
+    return () => clearTimeout(t);
+  }, [autoguarda, datosBorrador, autoguardar]);
+
+  // Al salir de la pantalla (otro menú, otra pestaña, cerrar): guardar ya lo pendiente.
+  useEffect(() => {
+    if (!autoguarda) return;
+    const alOcultar = () => {
+      if (document.visibilityState === "hidden") void autoguardar();
+    };
+    document.addEventListener("visibilitychange", alOcultar);
+    window.addEventListener("pagehide", autoguardar);
+    return () => {
+      document.removeEventListener("visibilitychange", alOcultar);
+      window.removeEventListener("pagehide", autoguardar);
+      void autoguardar();
+    };
+  }, [autoguarda, autoguardar]);
+
+  async function descartarBorrador() {
+    setDescartando("enviando");
+    confirmandoRef.current = true;
+    await esperarAutoguardado();
+    const id = borradorIdRef.current;
+    if (id) {
+      const r = await descartarBorradorCompraAction({ id });
+      if (!r.ok) {
+        confirmandoRef.current = false;
+        setDescartando(null);
+        return toast.error("No se pudo descartar el borrador", r.error.message);
+      }
+    }
+    toast.success("Borrador descartado");
+    router.push(ruta("/compras"));
+  }
+
+  const avisoBorrador = autoguarda && (borradorId || estadoBorrador) && (
+    <div
+      className="text-small -mt-3 mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1"
+      data-testid="estado-borrador"
+    >
+      <span
+        aria-live="polite"
+        className={estadoBorrador?.tipo === "error" ? "text-danger" : "text-muted"}
+      >
+        {estadoBorrador?.tipo === "guardando"
+          ? "Guardando borrador…"
+          : estadoBorrador?.tipo === "error"
+            ? "No se pudo guardar el borrador: revisá la conexión (se reintenta con el próximo cambio)."
+            : estadoBorrador?.tipo === "guardado"
+              ? `Borrador guardado ${formatearFechaHora(estadoBorrador.at)} · lo retomás desde Compras`
+              : null}
+      </span>
+      {borradorId &&
+        (descartando === null ? (
+          <Button variant="ghost" size="sm" onClick={() => setDescartando("preguntar")}>
+            Descartar borrador
+          </Button>
+        ) : (
+          <span className="flex items-center gap-2">
+            <span>¿Descartar lo cargado?</span>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={descartando === "enviando"}
+              onClick={() => void descartarBorrador()}
+            >
+              Sí, descartar
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={descartando === "enviando"}
+              onClick={() => setDescartando(null)}
+            >
+              No
+            </Button>
+          </span>
+        ))}
+    </div>
+  );
 
   const titulo = compraId && inicial.id ? `Editar compra ${idVisible ?? ""}` : "Nueva compra";
   const migas = (
@@ -503,11 +677,14 @@ export function CompraForm({
     />
   );
   const pasos = (
-    <Stepper
-      pasos={["Proveedor", "Galpón", "Ítems"]}
-      actual={paso - 1}
-      className="bg-card rounded-card mb-6 px-4 py-3 md:px-5"
-    />
+    <>
+      <Stepper
+        pasos={["Proveedor", "Galpón", "Ítems"]}
+        actual={paso - 1}
+        className="bg-card rounded-card mb-6 px-4 py-3 md:px-5"
+      />
+      {avisoBorrador}
+    </>
   );
 
   // ---------------------------------------------------------------------------
@@ -866,15 +1043,26 @@ export function CompraForm({
                           sugerido && "text-muted",
                         )}
                       />
+                      <EnUsdt
+                        pesos={it.costo === "" ? null : num(it.costo)}
+                        cotizacion={cotizacionUsdt}
+                        className="text-right"
+                      />
                       {errorDe("costoUnitario") && (
                         <span className="text-danger">{errorDe("costoUnitario")}</span>
                       )}
                     </label>
                     <p className="col-span-2 flex items-baseline justify-between gap-2 md:col-span-1 md:block md:text-right">
                       <span className="text-muted text-small md:hidden">Subtotal</span>
-                      <strong className="font-semibold tabular-nums">
-                        {formatearPesos(num(it.cantidad) * num(it.costo))}
-                      </strong>
+                      <span className="flex flex-col items-end">
+                        <strong className="font-semibold tabular-nums">
+                          {formatearPesos(num(it.cantidad) * num(it.costo))}
+                        </strong>
+                        <EnUsdt
+                          pesos={num(it.cantidad) * num(it.costo)}
+                          cotizacion={cotizacionUsdt}
+                        />
+                      </span>
                     </p>
                     <IconButton
                       variant="ghost"
@@ -938,6 +1126,7 @@ export function CompraForm({
             sabor: i.sabor,
           }))}
           costos={costos}
+          cotizacion={cotizacionUsdt}
         />
 
         <div className="md:flex md:justify-end">

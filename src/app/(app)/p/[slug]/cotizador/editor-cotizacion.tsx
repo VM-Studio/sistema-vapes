@@ -121,9 +121,10 @@ const clienteParaGuardar = (c: ClienteElegido | null) =>
  * Armado de una cotización en UNA pantalla (sin pasos): cliente opcional y
  * validez, ítems (pistola, cámara, buscador o más vendidos), descuento y
  * notas, y un pie fijo con el total y Guardar / WhatsApp / PDF / Convertir.
- * Cada acción guarda antes. En mayorista el escalón es POR PRODUCTO (suman
- * todos sus sabores: cambiar la cantidad de un sabor recalcula las filas de
- * todo el producto), cada fila muestra el precio en dólares y en pesos (blue
+ * Cada acción guarda antes. En mayorista el escalón sale del PEDIDO SURTIDO
+ * (las unidades de toda la cotización, mezclando modelos: cambiar una cantidad
+ * recalcula todas las filas) o, con el surtido apagado, POR PRODUCTO (suman
+ * todos sus sabores), cada fila muestra el precio en dólares y en pesos (blue
  * venta de la cabecera), el escalón que aplica y cuánto falta para el siguiente.
  */
 export function EditorCotizacion({
@@ -132,6 +133,7 @@ export function EditorCotizacion({
   validezDefault,
   blueInicial,
   mostrarStock,
+  pedidoSurtido,
   puedeEditar,
   esOwner,
   puedeVender,
@@ -139,6 +141,8 @@ export function EditorCotizacion({
 }: {
   tipo: TipoCotizacionUI;
   mostrarStock: boolean;
+  /** Mayorista: escalón por las unidades de todo el pedido (configuración del cotizador). */
+  pedidoSurtido: boolean;
   inicial: CotizacionInicial | null;
   validezDefault: number;
   /** Mayorista: blue con que se va a cotizar (el de hoy o el snapshot de la cotización). */
@@ -392,6 +396,9 @@ export function EditorCotizacion({
 
   const yaAgregadas = new Set(items.map((i) => i.varianteId));
 
+  // El del último cálculo (lo decide el servidor) o, antes de calcular, el de la configuración.
+  const surtido = calculo ? calculo.surtido : pedidoSurtido;
+
   const resumen = mayorista && calculo && calculo.resumenEscalones.length > 0 && (
     <ResumenEscalones
       calculo={calculo}
@@ -442,7 +449,9 @@ export function EditorCotizacion({
                   <span>
                     Escalón{" "}
                     <strong className="text-foreground font-medium">
-                      por producto (suman todos los sabores del producto)
+                      {surtido
+                        ? "por pedido surtido (suman todas las unidades, mezclando modelos)"
+                        : "por producto (suman todos los sabores del producto)"}
                     </strong>
                   </span>
                   {esOwner && (
@@ -609,6 +618,7 @@ export function EditorCotizacion({
                     mayorista={mayorista}
                     blue={blue}
                     mostrarStock={mostrarStock}
+                    surtido={surtido}
                     puedeEditar={puedeEditar}
                     enfocar={enfocar === i.varianteId}
                     onEnfocado={() => setEnfocar(null)}
@@ -822,6 +832,7 @@ function FilaCotizacion({
   mayorista,
   blue,
   mostrarStock,
+  surtido,
   puedeEditar,
   enfocar,
   onEnfocado,
@@ -836,6 +847,7 @@ function FilaCotizacion({
   mayorista: boolean;
   blue: BlueUI | null;
   mostrarStock: boolean;
+  surtido: boolean;
   puedeEditar: boolean;
   enfocar: boolean;
   onEnfocado: () => void;
@@ -1012,7 +1024,7 @@ function FilaCotizacion({
               data-testid="hint-escalon"
             >
               <TrendingDown className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-              Agregá {c.proximoEscalon.faltan} más del producto y baja a{" "}
+              Agregá {c.proximoEscalon.faltan} más {surtido ? "al pedido" : "del producto"} y baja a{" "}
               {c.proximoEscalon.precioUnitarioUSD
                 ? `${formatearUSD({ usd: Number(c.proximoEscalon.precioUnitarioUSD), aproximado: false })}${
                     c.proximoEscalon.precioUnitario
@@ -1113,7 +1125,11 @@ function ResumenEscalones({
         <h2 id="resumen-escalones" className="text-h3 font-semibold">
           Resumen de escalones
         </h2>
-        <p className="text-muted text-xs">Por producto: suman todos sus sabores.</p>
+        <p className="text-muted text-xs">
+          {calculo.surtido
+            ? `Pedido surtido: ${calculo.unidadesPedido} u. en total. Cada modelo va a su precio de ese escalón.`
+            : "Por producto: suman todos sus sabores."}
+        </p>
       </div>
       <ul className="border-border bg-surface divide-border rounded-card flex flex-col divide-y border text-sm">
         {calculo.resumenEscalones.map((r) => (

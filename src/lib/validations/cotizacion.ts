@@ -32,14 +32,20 @@ export const configCotizacionSchema = z.object({
     .default(7),
   leyenda: z.string().trim().max(500, "Máximo 500 caracteres").default(LEYENDA_COTIZACION_DEFAULT),
   mostrarStock: z.boolean().default(true),
+  /**
+   * Pedido surtido: en mayorista el escalón lo definen las unidades de TODO el
+   * pedido (mezclando modelos), cada producto a su propio precio de ese
+   * escalón. Apagado: por producto (suman solo sus sabores).
+   */
+  pedidoSurtido: z.boolean().default(true),
 });
 
 export type ConfigCotizacion = z.output<typeof configCotizacionSchema>;
 export type ConfigCotizacionInput = z.input<typeof configCotizacionSchema>;
 
 // --- Escalones -------------------------------------------------------------------
-// El escalón mayorista se determina SIEMPRE por producto (todos sus sabores
-// suman). Los escalones propios de un producto van en dólares (blue venta, el
+// El escalón mayorista sale de las unidades del pedido entero (pedido surtido,
+// el default) o de las del producto (todos sus sabores). Los escalones propios de un producto van en dólares (blue venta, el
 // default) o en pesos; todos los del producto en la misma moneda.
 
 export const MONEDAS_PRECIO = ["USD", "ARS"] as const;

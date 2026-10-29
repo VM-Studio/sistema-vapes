@@ -84,7 +84,8 @@ export function PreciosMayoristas({
       title="Precios mayoristas"
       description={
         <>
-          Precio por unidad desde cierta cantidad (suman todos los sabores). Lista:{" "}
+          Precio por unidad desde cierta cantidad (con pedido surtido cuenta el total del pedido,
+          mezclando modelos; si no, suman los sabores del producto). Lista:{" "}
           {formatearPesos(precioLista)}. Sin escalones propios se usan los del panel.
         </>
       }

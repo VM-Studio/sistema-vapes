@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { BotonRecibido } from "@/components/compras/boton-recibido";
 import { BotonGastosCompra } from "@/components/compras/gastos-compra-sheet";
+import { EnUsdt } from "@/components/compras/resumen-compra-card";
 import { Badge } from "@/components/ui/badge";
 import { BarraAccion } from "@/components/ui/barra-accion";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,9 +23,16 @@ import { esOwner, puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
 import { listarComprasSchema } from "@/lib/validations/compra";
 import { requirePaginaPanel } from "@/server/auth/permissions";
-import { listarCompras, type CompraListada } from "@/server/services/compra.service";
+import {
+  cotizacionResumenCompra,
+  listarCompras,
+  type CompraListada,
+} from "@/server/services/compra.service";
 import { listarProveedoresActivos, veCostosCompras } from "@/server/services/proveedor.service";
 
+import { listarBorradoresCompra } from "@/server/services/borrador-compra.service";
+
+import { BorradoresCompra } from "./borradores-compra";
 import { FiltrosCompras } from "./filtros-compras";
 
 export const metadata: Metadata = { title: "Compras" };
@@ -44,7 +52,19 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
   ]);
 
   const verCostos = veCostosCompras(ctx);
+  // Equivalentes en USDT: con la cotización guardada en cada compra; si no tiene, la vigente.
+  const vigente = verCostos ? await cotizacionResumenCompra(null) : null;
+  const cotizacionDe = (c: CompraListada) =>
+    c.tipoCambioUSDT ? { valor: Number(c.tipoCambioUSDT), origen: "guardada" } : vigente;
+  /** Pesos con su equivalente en USDT debajo. */
+  const conUsdt = (c: CompraListada, pesos: string) => (
+    <span className="flex flex-col items-end">
+      {formatearPesos(pesos)}
+      <EnUsdt pesos={pesos} cotizacion={cotizacionDe(c)} />
+    </span>
+  );
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "crear");
+  const borradores = puedeCrear ? await listarBorradoresCompra(ctx) : [];
   const conFiltros = Object.entries(plano).some(([k, v]) => k !== "page" && v !== "");
   const idDe = (c: CompraListada) => formatearIdCompra(ctx.panel.slug, c.numero);
   const estadoBadge = (c: CompraListada) => (
@@ -87,6 +107,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         subtitle="Compras a proveedores. «Confirmar» la registra pendiente de recibir; el stock entra recién al tocar «Recibido»."
         actions={puedeCrear && <div className="hidden md:flex">{botonNueva}</div>}
       />
+      {borradores.length > 0 && <BorradoresCompra borradores={borradores} />}
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <ChipRow ariaLabel="Estado" className="lg:pb-0.5">
           <ChipLink
@@ -179,7 +200,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   key: "total",
                   header: "Total",
                   className: "text-right font-medium",
-                  cell: (c: CompraListada) => formatearPesos(c.total),
+                  cell: (c: CompraListada) => conUsdt(c, c.total),
                 },
               ]
             : []),
@@ -193,6 +214,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                     c.comisionPasistaPorcentaje ? (
                       <span className="flex flex-col items-end">
                         <span>{formatearPesos(c.comisionPasistaMonto)}</span>
+                        <EnUsdt pesos={c.comisionPasistaMonto} cotizacion={cotizacionDe(c)} />
                         <span className="text-subtle text-xs">
                           {formatearNumero(Number(c.comisionPasistaPorcentaje))}%
                         </span>
@@ -207,7 +229,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   className: "text-right",
                   cell: (c: CompraListada) =>
                     Number(c.gastosExtrasTotal) > 0 ? (
-                      formatearPesos(c.gastosExtrasTotal)
+                      conUsdt(c, c.gastosExtrasTotal)
                     ) : (
                       <span className="text-subtle">—</span>
                     ),
@@ -216,13 +238,13 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   key: "costoFinal",
                   header: "Costo final",
                   className: "text-right font-medium",
-                  cell: (c: CompraListada) => formatearPesos(c.costoFinalTotal),
+                  cell: (c: CompraListada) => conUsdt(c, c.costoFinalTotal),
                 },
                 {
                   key: "costoUnidad",
                   header: "Final / unidad",
                   className: "text-right",
-                  cell: (c: CompraListada) => formatearPesos(c.costoUnitarioFinalPromedio),
+                  cell: (c: CompraListada) => conUsdt(c, c.costoUnitarioFinalPromedio),
                 },
               ]
             : []),
@@ -268,7 +290,10 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
                 </p>
                 {verCostos && (
-                  <p className="shrink-0 font-semibold tabular-nums">{formatearPesos(c.total)}</p>
+                  <p className="flex shrink-0 flex-col items-end font-semibold tabular-nums">
+                    {formatearPesos(c.total)}
+                    <EnUsdt pesos={c.total} cotizacion={cotizacionDe(c)} />
+                  </p>
                 )}
               </div>
               {owner && (
@@ -276,8 +301,12 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   <span>
                     Costo final{" "}
                     <strong className="text-foreground">{formatearPesos(c.costoFinalTotal)}</strong>
+                    <EnUsdt pesos={c.costoFinalTotal} cotizacion={cotizacionDe(c)} />
                   </span>
-                  <span>{formatearPesos(c.costoUnitarioFinalPromedio)} / u.</span>
+                  <span className="text-right">
+                    {formatearPesos(c.costoUnitarioFinalPromedio)} / u.
+                    <EnUsdt pesos={c.costoUnitarioFinalPromedio} cotizacion={cotizacionDe(c)} />
+                  </span>
                 </p>
               )}
             </Link>

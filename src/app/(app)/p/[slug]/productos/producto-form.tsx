@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { productoSchema, type Producto, type ProductoInput } from "@/lib/validations/producto";
 import type { ProductoDetalle } from "@/server/services/producto.service";
 
+import { crearProductoDeProveedorAction } from "../proveedores/actions";
 import {
   actualizarProductoAction,
   crearProductoAction,
@@ -304,20 +305,88 @@ function EditorSabores({ form, ocupados }: { form: FormProducto; ocupados: Codig
   );
 }
 
+/** Marca, modelo, especificación, precio, categoría, imagen y activo (dentro del <Form>). */
+function CamposProducto({
+  marcas,
+  categorias,
+}: {
+  marcas: string[];
+  categorias: { value: string; label: string }[];
+}) {
+  const panel = usePanel();
+  const idMarcas = useId();
+  return (
+    <SectionCard title="Datos del producto" contentClassName="grid gap-4 md:grid-cols-3">
+      <FormInput
+        name="marca"
+        label="Marca"
+        required
+        list={idMarcas}
+        placeholder="Ej: Elf Bar"
+        autoComplete="off"
+        hint="Si no existe, se crea."
+      />
+      <datalist id={idMarcas}>
+        {marcas.map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
+      <FormInput name="modelo" label="Modelo" required placeholder="Ej: BC" autoComplete="off" />
+      <FormInput
+        name="especificacion"
+        label={panel.etiquetaEspecificacion || "Especificación"}
+        placeholder="Ej: 5000"
+        autoComplete="off"
+      />
+      <FormInput
+        name="precioVenta"
+        label="Precio de venta"
+        required
+        inputMode="decimal"
+        placeholder="Ej: 10000"
+        hint="Para todos los sabores (salvo los que tengan precio propio)."
+      />
+      <FormSelect
+        name="categoriaId"
+        label="Categoría"
+        options={[{ value: "", label: "Sin categoría" }, ...categorias]}
+      />
+      <FormInput
+        name="imagenUrl"
+        label="URL de imagen"
+        type="url"
+        inputMode="url"
+        placeholder="https://…"
+      />
+      <FormSwitch name="activo" label="Activo" />
+    </SectionCard>
+  );
+}
+
+/** Alta desde la ficha de un proveedor: además del producto, su precio de ese proveedor. */
+export interface AltaDesdeProveedor {
+  id: string;
+  /** "Juan (Tienda X)". */
+  nombre: string;
+  onCreado: (p: { id: string; nombreCompleto: string }) => void;
+  onCancelar: () => void;
+}
+
 export function ProductoForm({
   producto,
   categorias,
   marcas,
+  proveedor,
 }: {
   producto: ProductoDetalle | null;
   categorias: { value: string; label: string }[];
   marcas: string[];
+  /** Dentro de la hoja «Nuevo producto» del proveedor (sin cabecera ni pantalla de éxito). */
+  proveedor?: AltaDesdeProveedor;
 }) {
   const router = useRouter();
   const toast = useToast();
   const ruta = useRutaPanel();
-  const panel = usePanel();
-  const idMarcas = useId();
   const ocupados = useRef<CodigosOcupados>(new Map()).current;
   const [creado, setCreado] = useState<{ id: string; nombre: string } | null>(null);
   const form = useZodForm(productoSchema, {
@@ -335,8 +404,46 @@ export function ProductoForm({
     },
   });
   const esNuevo = producto === null;
+  const [precioProveedor, setPrecioProveedor] = useState("");
+  const [monedaProveedor, setMonedaProveedor] = useState<"USDT" | "ARS">("USDT");
+  const [errorPrecio, setErrorPrecio] = useState<string | null>(null);
 
   async function onSubmit(datos: Producto) {
+    if (proveedor) {
+      if (!precioProveedor.trim()) {
+        setErrorPrecio("Ingresá el precio del proveedor");
+        return;
+      }
+      setErrorPrecio(null);
+      const r = await crearProductoDeProveedorAction({
+        proveedorId: proveedor.id,
+        precio: precioProveedor.replace(",", "."),
+        moneda: monedaProveedor,
+        producto: datos,
+      });
+      if (!r.ok) {
+        const campos = r.error.fields ?? {};
+        if (campos.precio?.[0]) setErrorPrecio(campos.precio[0]);
+        // Los errores del producto vienen como "producto.marca" (zod) o "marca" (servicio).
+        const delProducto = Object.fromEntries(
+          Object.entries(campos)
+            .filter(([k]) => k !== "precio" && k !== "moneda")
+            .map(([k, v]) => [k.replace(/^producto\./, ""), v]),
+        );
+        if (Object.keys(delProducto).length > 0 || !campos.precio)
+          mostrarError({ ...r.error, fields: delProducto });
+        return;
+      }
+      const nombreCompleto = [datos.marca, datos.modelo, datos.especificacion]
+        .filter(Boolean)
+        .join(" ");
+      toast.success(
+        "Producto creado",
+        `${nombreCompleto} · precio de ${proveedor.nombre} guardado`,
+      );
+      proveedor.onCreado({ id: r.data.id, nombreCompleto });
+      return;
+    }
     if (esNuevo) {
       const r = await crearProductoAction(datos);
       if (!r.ok) return mostrarError(r.error);
@@ -401,6 +508,62 @@ export function ProductoForm({
 
   const enviando = form.formState.isSubmitting;
 
+  if (proveedor) {
+    return (
+      <Form form={form} onSubmit={onSubmit} className="gap-4">
+        <SectionCard
+          title={`Precio de ${proveedor.nombre}`}
+          description="Lo que te cobra este proveedor por unidad (todos los sabores)."
+          contentClassName="grid grid-cols-[minmax(0,1fr)_7rem] gap-3"
+        >
+          <div className="flex flex-col gap-1">
+            <label htmlFor="precio-proveedor" className="text-sm font-medium">
+              Precio <span className="text-danger">*</span>
+            </label>
+            <input
+              id="precio-proveedor"
+              inputMode="decimal"
+              placeholder="Ej: 4,50"
+              value={precioProveedor}
+              onChange={(e) => setPrecioProveedor(e.target.value.replace(/[^\d.,]/g, ""))}
+              aria-invalid={errorPrecio ? true : undefined}
+              className={cn(controlClass, "h-11 text-right tabular-nums md:h-10")}
+            />
+            {errorPrecio && (
+              <p className="text-danger text-xs" role="alert">
+                {errorPrecio}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="moneda-proveedor" className="text-sm font-medium">
+              Moneda
+            </label>
+            <select
+              id="moneda-proveedor"
+              value={monedaProveedor}
+              onChange={(e) => setMonedaProveedor(e.target.value as "USDT" | "ARS")}
+              className={cn(controlClass, "h-11 md:h-10")}
+            >
+              <option value="USDT">USDT</option>
+              <option value="ARS">ARS</option>
+            </select>
+          </div>
+        </SectionCard>
+        <CamposProducto marcas={marcas} categorias={categorias} />
+        <EditorSabores form={form} ocupados={ocupados} />
+        <div className="grid grid-cols-2 gap-2 md:flex md:justify-end">
+          <Button variant="secondary" onClick={proveedor.onCancelar} disabled={enviando}>
+            Cancelar
+          </Button>
+          <Button type="submit" loading={enviando}>
+            Crear producto
+          </Button>
+        </div>
+      </Form>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -425,56 +588,7 @@ export function ProductoForm({
         }
       />
       <Form form={form} onSubmit={onSubmit} className="gap-4 pb-24 md:pb-0">
-        <SectionCard title="Datos del producto" contentClassName="grid gap-4 md:grid-cols-3">
-          <FormInput
-            name="marca"
-            label="Marca"
-            required
-            list={idMarcas}
-            placeholder="Ej: Elf Bar"
-            autoComplete="off"
-            hint="Si no existe, se crea."
-          />
-          <datalist id={idMarcas}>
-            {marcas.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-          <FormInput
-            name="modelo"
-            label="Modelo"
-            required
-            placeholder="Ej: BC"
-            autoComplete="off"
-          />
-          <FormInput
-            name="especificacion"
-            label={panel.etiquetaEspecificacion || "Especificación"}
-            placeholder="Ej: 5000"
-            autoComplete="off"
-          />
-          <FormInput
-            name="precioVenta"
-            label="Precio de venta"
-            required
-            inputMode="decimal"
-            placeholder="Ej: 10000"
-            hint="Para todos los sabores (salvo los que tengan precio propio)."
-          />
-          <FormSelect
-            name="categoriaId"
-            label="Categoría"
-            options={[{ value: "", label: "Sin categoría" }, ...categorias]}
-          />
-          <FormInput
-            name="imagenUrl"
-            label="URL de imagen"
-            type="url"
-            inputMode="url"
-            placeholder="https://…"
-          />
-          <FormSwitch name="activo" label="Activo" />
-        </SectionCard>
+        <CamposProducto marcas={marcas} categorias={categorias} />
 
         <EditorSabores form={form} ocupados={ocupados} />
 

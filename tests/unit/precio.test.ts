@@ -165,7 +165,79 @@ describe("motor de precios del cotizador", () => {
     expect(r.items[1]!.precioUnitario).toBe("8800.00");
   });
 
-  it("escalón SIEMPRE por producto: dos productos distintos de 30 u. con escalón 50 → ninguno entra", () => {
+  describe("pedido surtido (escalón por el total del pedido)", () => {
+    const ign: DatosResolverPrecios["escalones"] = [
+      { productoId: IGN, cantidadMinima: 30, precioUnitario: "7000.00" },
+      { productoId: IGN, cantidadMinima: 50, precioUnitario: "6500.00" },
+    ];
+    const otro = (v: string, n: number) =>
+      item(v, n, { productoId: IGN, nombreCompleto: "Ignite V80" });
+
+    it("10 de un modelo + 20 de otro = 30 → cada uno a SU precio del escalón de 30", () => {
+      const escalones: DatosResolverPrecios["escalones"] = [
+        { productoId: ELF, cantidadMinima: 10, precioUnitario: "9000.00" },
+        { productoId: ELF, cantidadMinima: 30, precioUnitario: "8500.00" },
+        ...ign,
+      ];
+      const r = mayorista([item("Mango", 10), otro("I1", 20)], { escalones, surtido: true });
+      expect(r.surtido).toBe(true);
+      expect(r.unidadesPedido).toBe(30);
+      expect(r.items.map((i) => [i.escalonAplicado, i.precioUnitario])).toEqual([
+        [30, "8500.00"],
+        [30, "7000.00"],
+      ]);
+      // El resumen sigue mostrando las unidades de cada producto.
+      expect(r.resumenEscalones.map((x) => x.unidades)).toEqual([10, 20]);
+    });
+
+    it("cada producto usa su tabla: el escalón es el mayor de SU tabla ≤ total del pedido", () => {
+      // 60 en total: Elf tiene 10/50/100 → 50; Ignite 30/50 → 50.
+      const r = mayorista([item("Mango", 30), otro("I1", 30)], {
+        escalones: [...ESCALONES_ELF, ...ign],
+        surtido: true,
+      });
+      expect(r.items.map((i) => [i.escalonAplicado, i.precioUnitario])).toEqual([
+        [50, "8200.00"],
+        [50, "6500.00"],
+      ]);
+      // Próximo escalón de Elf: 100, faltan 40 unidades AL PEDIDO.
+      expect(r.items[0]!.proximoEscalon?.faltan).toBe(40);
+      expect(r.items[1]!.proximoEscalon).toBeUndefined();
+    });
+
+    it("con defaults del panel: el % se aplica por el total del pedido", () => {
+      const r = mayorista([item("Mango", 25), otro("I1", 25)], {
+        defaults: DEFAULTS,
+        surtido: true,
+      });
+      // 50 en total → 12 % para los dos.
+      expect(r.items.map((i) => i.precioUnitario)).toEqual(["8800.00", "8800.00"]);
+    });
+
+    it("los precios manuales también suman unidades al pedido", () => {
+      const r = mayorista([item("Mango", 45, { precioManual: "5000" }), otro("I1", 5)], {
+        escalones: ign,
+        surtido: true,
+      });
+      expect(r.items[0]!.precioUnitario).toBe("5000.00");
+      expect(r.items[1]!.escalonAplicado).toBe(50);
+      expect(r.items[1]!.precioUnitario).toBe("6500.00");
+    });
+
+    it("unitaria ignora el surtido", () => {
+      const r = resolverPrecios({
+        tipo: "UNITARIA",
+        items: [item("Mango", 60)],
+        escalones: ESCALONES_ELF,
+        defaults: DEFAULTS,
+        surtido: true,
+      });
+      expect(r.surtido).toBe(false);
+      expect(r.items[0]!.precioUnitario).toBe("10000.00");
+    });
+  });
+
+  it("surtido apagado: dos productos distintos de 30 u. con escalón 50 → ninguno entra", () => {
     const ign: DatosResolverPrecios["escalones"] = [
       { productoId: IGN, cantidadMinima: 50, precioUnitario: "7000.00" },
     ];

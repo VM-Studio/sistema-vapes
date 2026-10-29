@@ -6,6 +6,7 @@ import {
   Building2,
   FileSpreadsheet,
   Calculator,
+  Contact,
   HandCoins,
   Home,
   Package,
@@ -22,7 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { esOwner, puede, type SujetoPermisos } from "@/lib/permisos";
+import { esOwner, puede, tieneCarteraClientes, type SujetoPermisos } from "@/lib/permisos";
 import { rutaPanel } from "@/lib/paneles";
 
 /**
@@ -48,8 +49,9 @@ export interface ItemNavegacion {
    * Módulo que hay que poder "ver". null = siempre visible (Inicio).
    * Array = alcanza con poder ver cualquiera de los módulos.
    * "OWNER" = solo dueños (configuración del panel).
+   * "CARTERA" = vendedores con cartera de clientes (tieneCarteraClientes).
    */
-  modulo: Modulo | readonly Modulo[] | "OWNER" | null;
+  modulo: Modulo | readonly Modulo[] | "OWNER" | "CARTERA" | null;
   label: string;
   /** Relativo al panel ("/" = inicio del panel), o absoluto si `global`. */
   href: string;
@@ -140,6 +142,16 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     enBottomBar: false,
     ordenMobile: 10,
     descripcion: "Clientes y sus compras",
+  },
+  {
+    modulo: "CARTERA",
+    label: "Mis clientes",
+    href: "/mis-clientes",
+    icon: Contact,
+    grupo: "Operación",
+    enBottomBar: false,
+    ordenMobile: 10,
+    descripcion: "Tu cartera: los que ya tenías y los nuevos",
   },
   {
     modulo: Modulo.FIADOS,
@@ -285,6 +297,7 @@ export function puedeVerItem(
 ): boolean {
   if (item.modulo === null) return true;
   if (item.modulo === "OWNER") return esOwner(usuario);
+  if (item.modulo === "CARTERA") return tieneCarteraClientes(usuario, panelId);
   const modulos: readonly Modulo[] = Array.isArray(item.modulo)
     ? item.modulo
     : [item.modulo as Modulo];

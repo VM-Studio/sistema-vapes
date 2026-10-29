@@ -135,6 +135,16 @@ export function esOwner(usuario: Pick<SujetoPermisos, "rol">): boolean {
   return usuario.rol === RolUsuario.OWNER;
 }
 
+/**
+ * «Mis clientes»: tiene cartera de clientes en el panel el EMPLEADO que vende
+ * (VENTAS crear). Los clientes que da de alta al vender se suman a su cartera
+ * como nuevos; los que ya tenía los carga antes desde «Mis clientes». Los
+ * dueños no tienen cartera: ven la de cada vendedor en Equipo.
+ */
+export function tieneCarteraClientes(usuario: SujetoPermisos, panelId: string): boolean {
+  return !esOwner(usuario) && puede(usuario, panelId, Modulo.VENTAS, "crear");
+}
+
 /** ¿Accede al panel? OWNER: a todos. EMPLEADO: solo a los habilitados. */
 export function accedeAPanel(
   usuario: Pick<SujetoPermisos, "rol" | "paneles">,

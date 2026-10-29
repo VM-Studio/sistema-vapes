@@ -10,6 +10,7 @@ import {
   crearClienteSchema,
   telefonoConsultaSchema,
 } from "@/lib/validations/cliente";
+import { tieneCarteraClientes } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx, requireCtxAlguno } from "@/server/auth/permissions";
@@ -29,7 +30,10 @@ const MODULOS_SELECTOR = [Modulo.CLIENTES, Modulo.VENTAS, Modulo.DEVOLUCIONES, M
 
 export const crearClienteAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.CLIENTES, "crear");
-  const r = await crearCliente(ctx, crearClienteSchema.parse(input));
+  // Un vendedor que carga un cliente desde Clientes lo suma a su cartera (ya lo tenía: no es nuevo).
+  const r = await crearCliente(ctx, crearClienteSchema.parse(input), undefined, {
+    vendedorId: tieneCarteraClientes(ctx.usuario, ctx.panelId) ? ctx.usuarioId : null,
+  });
   revalidatePath("/p/[slug]/clientes", "page");
   return r;
 });

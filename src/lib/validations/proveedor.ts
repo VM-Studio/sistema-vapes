@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { id, monto, sinDuplicados, texto, textoOpcional } from "./common";
 import { normalizarTelefono, TELEFONO_NORMALIZADO } from "./cliente";
+import { productoSchema } from "./producto";
 
 /** Teléfono opcional, normalizado a "+54…" (mismo CHECK que la DB). */
 const telefonoProveedor = z
@@ -52,6 +53,14 @@ export const actualizarProveedorSchema = z.object({
 });
 
 export const asignarProductoSchema = productoDeProveedorSchema.extend({ proveedorId: id });
+
+/** Alta de un producto nuevo desde la ficha del proveedor, con su precio de ese proveedor. */
+export const crearProductoDeProveedorSchema = z.object({
+  proveedorId: id,
+  precio: monto,
+  moneda: monedaSchema,
+  producto: productoSchema,
+});
 
 export const quitarProductoSchema = z.object({ proveedorId: id, productoId: id });
 

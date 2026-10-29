@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 import { EditarComisionPasista } from "@/components/compras/comision-pasista";
 import { CostoFinalPorUnidad } from "@/components/compras/costo-final-por-unidad";
 import { BotonGastosCompra } from "@/components/compras/gastos-compra-sheet";
-import { ResumenCompraCard } from "@/components/compras/resumen-compra-card";
+import { EnUsdt, pesosAUsdt, ResumenCompraCard } from "@/components/compras/resumen-compra-card";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { cardVariants } from "@/components/ui/card";
@@ -69,6 +69,11 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
   });
   const cotizacion = verCostos ? await cotizacionResumenCompra(c.tipoCambioUSDT) : null;
   const pendiente = c.estado === "BORRADOR";
+  /** " (≈ 1,20 USDT)" para los textos de la vista mobile. */
+  const textoUsdt = (pesos: string) => {
+    const u = pesosAUsdt(Number(pesos), cotizacion);
+    return u === null ? "" : ` (≈ ${formatearUsdt(u)})`;
+  };
 
   return (
     <>
@@ -156,10 +161,12 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                       cell: (i: (typeof c.items)[number]) => (
                         <span className="flex flex-col items-end">
                           <span className="text-muted">{formatearPesos(i.costoUnitario)}</span>
-                          {i.costoUnitarioUSDT && (
+                          {i.costoUnitarioUSDT ? (
                             <span className="text-subtle text-xs">
                               {formatearUsdt(i.costoUnitarioUSDT)}
                             </span>
+                          ) : (
+                            <EnUsdt pesos={i.costoUnitario} cotizacion={cotizacion} />
                           )}
                         </span>
                       ),
@@ -169,13 +176,16 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                       header: "Costo final",
                       className: "text-right",
                       cell: (i: (typeof c.items)[number]) => (
-                        <span
-                          className={cn(
-                            "tabular-nums",
-                            i.costoUnitarioFinal !== i.costoUnitario && "font-medium",
-                          )}
-                        >
-                          {formatearPesos(i.costoUnitarioFinal)}
+                        <span className="flex flex-col items-end">
+                          <span
+                            className={cn(
+                              "tabular-nums",
+                              i.costoUnitarioFinal !== i.costoUnitario && "font-medium",
+                            )}
+                          >
+                            {formatearPesos(i.costoUnitarioFinal)}
+                          </span>
+                          <EnUsdt pesos={i.costoUnitarioFinal} cotizacion={cotizacion} />
                         </span>
                       ),
                     },
@@ -183,7 +193,12 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                       key: "subtotal",
                       header: "Subtotal",
                       className: "text-right font-medium",
-                      cell: (i: (typeof c.items)[number]) => formatearPesos(i.subtotal),
+                      cell: (i: (typeof c.items)[number]) => (
+                        <span className="flex flex-col items-end">
+                          {formatearPesos(i.subtotal)}
+                          <EnUsdt pesos={i.subtotal} cotizacion={cotizacion} />
+                        </span>
+                      ),
                     },
                   ]
                 : []),
@@ -196,17 +211,22 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                     {i.sabor ? `${i.sabor} · ` : ""}
                     {i.sku} · {i.cantidad} u.
                     {verCostos && ` × ${formatearPesos(i.costoUnitario)}`}
-                    {verCostos && i.costoUnitarioUSDT && ` (${formatearUsdt(i.costoUnitarioUSDT)})`}
+                    {verCostos &&
+                      (i.costoUnitarioUSDT
+                        ? ` (${formatearUsdt(i.costoUnitarioUSDT)})`
+                        : textoUsdt(i.costoUnitario))}
                   </p>
                   {verCostos && i.costoUnitarioFinal !== i.costoUnitario && (
                     <p className="text-small">
                       Costo final <strong>{formatearPesos(i.costoUnitarioFinal)}</strong>
+                      <span className="text-subtle text-xs">{textoUsdt(i.costoUnitarioFinal)}</span>
                     </p>
                   )}
                 </div>
                 {verCostos && (
-                  <p className="shrink-0 font-semibold tabular-nums">
+                  <p className="flex shrink-0 flex-col items-end font-semibold tabular-nums">
                     {formatearPesos(i.subtotal)}
+                    <EnUsdt pesos={i.subtotal} cotizacion={cotizacion} />
                   </p>
                 )}
               </div>
@@ -218,7 +238,12 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
               <span className="text-muted text-small font-normal">({c.unidades} unidades)</span>
             </span>
             {verCostos && (
-              <span className="text-h2 font-semibold tabular-nums">{formatearPesos(c.total)}</span>
+              <span className="flex flex-col items-end">
+                <span className="text-h2 font-semibold tabular-nums">
+                  {formatearPesos(c.total)}
+                </span>
+                <EnUsdt pesos={c.total} cotizacion={cotizacion} className="text-small" />
+              </span>
             )}
           </div>
         </SectionCard>
@@ -235,7 +260,10 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                   {gastosVigentes.map((g) => (
                     <li key={g.id} className="flex justify-between gap-3">
                       <span className="truncate">{g.motivo}</span>
-                      <span className="tabular-nums">{formatearPesos(g.monto)}</span>
+                      <span className="flex flex-col items-end tabular-nums">
+                        {formatearPesos(g.monto)}
+                        <EnUsdt pesos={g.monto} cotizacion={cotizacion} />
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -330,6 +358,7 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
           }))}
           costos={costos}
           finalesGuardados={c.items.map((i) => i.costoUnitarioFinal)}
+          cotizacion={cotizacion}
         />
       )}
       {barraMobile && <div className="h-[4.5rem] md:hidden" aria-hidden />}

@@ -1,8 +1,9 @@
-import { FileSpreadsheet, Receipt } from "lucide-react";
+import { Contact, FileSpreadsheet, Receipt } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { GraficoComparativo } from "@/components/analitica/grafico-comparativo";
+import { TarjetasCartera } from "@/components/clientes/lista-cartera";
 import { TarifasDialog } from "@/components/ganancia/acciones-ganancia";
 import { AvisoLiquidaciones } from "@/components/ganancia/aviso-liquidaciones";
 import { SeccionGanancia } from "@/components/ganancia/seccion-ganancia";
@@ -40,6 +41,7 @@ import {
 } from "@/server/services/ganancia-vendedor.service";
 
 import { obtenerRemito } from "@/server/services/remito-liquidacion.service";
+import { resumenCartera } from "@/server/services/cartera-clientes.service";
 
 import { EstadoPagoBadge } from "../../ventas/_componentes/medio-pago";
 
@@ -88,11 +90,12 @@ export default async function EquipoVendedorPage({
   const desc = describirPeriodo(periodo);
   const page = Number(typeof sp.page === "string" ? sp.page : 1) || 1;
   const mes = esMes(sp.mes) ? sp.mes : mesActual();
-  const [d, ganancia, historial, tarifas] = await Promise.all([
+  const [d, ganancia, historial, tarifas, cartera] = await Promise.all([
     ventasDeVendedor(ctx, usuarioId, periodo, page),
     gananciaDelMes(ctx, usuarioId, mes),
     liquidacionesDe(ctx, usuarioId),
     obtenerTarifas(ctx, usuarioId),
+    resumenCartera(ctx, usuarioId),
   ]);
   const remito =
     ganancia?.liquidacion && ganancia.liquidacion.estado !== "PENDIENTE"
@@ -294,6 +297,35 @@ export default async function EquipoVendedorPage({
             <TarifasDialog usuarioId={d.usuario.id} nombre={d.usuario.nombre} tarifas={null} />
           </section>
         )
+      )}
+
+      {d.usuario.rol !== "OWNER" && (
+        <section className="mt-4 flex flex-col gap-3" aria-labelledby="cartera-vendedor">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <h2 id="cartera-vendedor" className="text-h2 font-semibold">
+                Cartera de clientes
+              </h2>
+              <p className="text-muted text-small">
+                Los que {d.usuario.nombre} ya tenía (cargados en «Mis clientes») y los nuevos que
+                sumó con cada venta.
+              </p>
+            </div>
+            <Link
+              href={ruta(`/equipo/${d.usuario.id}/clientes`)}
+              className={buttonVariants({ variant: "secondary" })}
+            >
+              <Contact strokeWidth={1.75} aria-hidden /> Ver cartera
+            </Link>
+          </div>
+          <TarjetasCartera
+            r={cartera}
+            filtro="todos"
+            hrefFiltro={(f) =>
+              ruta(`/equipo/${d.usuario.id}/clientes${f === "todos" ? "" : `?filtro=${f}`}`)
+            }
+          />
+        </section>
       )}
 
       <section className="mt-4 flex flex-col gap-4" aria-labelledby="ventas-periodo">

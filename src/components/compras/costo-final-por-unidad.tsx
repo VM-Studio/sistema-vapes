@@ -1,6 +1,8 @@
 import type { CostosFinales } from "@/lib/costos-compra";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+import { EnUsdt, pesosAUsdt, type CotizacionResumen } from "./resumen-compra-card";
 
 export interface ItemCostoFinalVista {
   key: string;
@@ -25,13 +27,19 @@ export function CostoFinalPorUnidad({
   items,
   costos,
   finalesGuardados,
+  cotizacion,
   className,
 }: {
   items: ItemCostoFinalVista[];
   costos: CostosFinales;
   finalesGuardados?: string[];
+  /** Para el equivalente en USDT debajo de cada monto (null = solo pesos). */
+  cotizacion: CotizacionResumen | null;
   className?: string;
 }) {
+  const usdt = (pesos: number, prefijo?: string) => (
+    <EnUsdt pesos={pesos} cotizacion={cotizacion} prefijo={prefijo} />
+  );
   const conGuardado = items.map((it, n) => {
     const c = costos.items[n]!;
     const guardado = finalesGuardados?.[n] !== undefined ? Number(finalesGuardados[n]) : null;
@@ -69,8 +77,9 @@ export function CostoFinalPorUnidad({
           Cada modelo y sabor con su propio costo: precio unitario
           {pct !== null ? ` + ${formatearNumero(pct)}% de pasista sobre ese precio` : ""} + gastos
           extras ÷ {formatearNumero(costos.unidades)} unidades (
-          {formatearPesos(costos.gastosPorUnidad)} c/u). El pasista se lleva más en los modelos más
-          caros; los gastos son iguales para todas las unidades.
+          {formatearPesos(costos.gastosPorUnidad)} c/u
+          {pesosUsdtTexto(costos.gastosPorUnidad, cotizacion)}). El pasista se lleva más en los
+          modelos más caros; los gastos son iguales para todas las unidades.
         </p>
       </header>
 
@@ -111,17 +120,35 @@ export function CostoFinalPorUnidad({
                         {it.sabor ?? "Único"}
                       </span>
                       <Celda label="Cantidad">{formatearNumero(c.cantidad)}</Celda>
-                      <Celda label="Precio unitario">{formatearPesos(c.costoUnitario)}</Celda>
+                      <Celda label="Precio unitario">
+                        {formatearPesos(c.costoUnitario)}
+                        {usdt(c.costoUnitario)}
+                      </Celda>
                       <Celda label="Pasista por unidad">
-                        {pct === null ? "—" : `+ ${formatearPesos(c.comisionPorUnidad)}`}
+                        {pct === null ? (
+                          "—"
+                        ) : (
+                          <>
+                            + {formatearPesos(c.comisionPorUnidad)}
+                            {usdt(c.comisionPorUnidad, "+ ")}
+                          </>
+                        )}
                       </Celda>
                       <Celda label="Gastos por unidad">
-                        {c.gastosPorUnidad > 0 ? `+ ${formatearPesos(c.gastosPorUnidad)}` : "—"}
+                        {c.gastosPorUnidad > 0 ? (
+                          <>
+                            + {formatearPesos(c.gastosPorUnidad)}
+                            {usdt(c.gastosPorUnidad, "+ ")}
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </Celda>
                       <Celda label="Costo final por unidad" fuerte>
                         <span aria-label={`Costo final por unidad de ${tituloItem(it)}`}>
                           {formatearPesos(final)}
                         </span>
+                        {usdt(final)}
                         {c.ajustePorUnidad !== 0 && !distinto && (
                           <span className="text-subtle block text-xs font-normal">
                             incl. {c.ajustePorUnidad > 0 ? "+" : "−"}
@@ -134,7 +161,10 @@ export function CostoFinalPorUnidad({
                           </span>
                         )}
                       </Celda>
-                      <Celda label="Subtotal final">{formatearPesos(subtotalFinal)}</Celda>
+                      <Celda label="Subtotal final">
+                        {formatearPesos(subtotalFinal)}
+                        {usdt(subtotalFinal)}
+                      </Celda>
                     </li>
                   ))}
                 </ul>
@@ -148,9 +178,12 @@ export function CostoFinalPorUnidad({
             )}
           >
             <span className="font-semibold md:col-span-6">Suma de costos finales</span>
-            <strong className="text-right tabular-nums" aria-label="Suma de costos finales">
-              {formatearPesos(totalFinal)}
-            </strong>
+            <span className="text-right">
+              <strong className="tabular-nums" aria-label="Suma de costos finales">
+                {formatearPesos(totalFinal)}
+              </strong>
+              {usdt(totalFinal)}
+            </span>
           </div>
         </div>
       )}
@@ -176,6 +209,12 @@ export function CostoFinalPorUnidad({
   );
 }
 
+/** " ≈ 1,20 USDT" para meter en un texto (vacío sin cotización). */
+function pesosUsdtTexto(pesos: number, cotizacion: CotizacionResumen | null): string {
+  const u = pesosAUsdt(pesos, cotizacion);
+  return u === null ? "" : ` ≈ ${formatearUsdt(u)}`;
+}
+
 const tituloItem = (i: ItemCostoFinalVista) =>
   i.sabor ? `${i.nombreCompleto} — ${i.sabor}` : i.nombreCompleto;
 
@@ -191,7 +230,9 @@ function Celda({
   return (
     <span className="flex items-baseline justify-between gap-2 md:block md:text-right">
       <span className="text-subtle text-xs md:hidden">{label}</span>
-      <span className={cn("tabular-nums", fuerte && "font-semibold")}>{children}</span>
+      <span className={cn("flex flex-col items-end tabular-nums", fuerte && "font-semibold")}>
+        {children}
+      </span>
     </span>
   );
 }

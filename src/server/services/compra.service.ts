@@ -1147,6 +1147,8 @@ export interface CostosCompra {
   /** Para recalcular en vivo con calcularCostosFinales. */
   items: { cantidad: number; costoUnitario: string }[];
   gastos: GastoCompraDetalle[];
+  /** Para los equivalentes en USDT (la guardada en la compra o la vigente). */
+  cotizacionUsdt: CotizacionResumen | null;
 }
 
 export async function obtenerCostosCompra(ctx: Ctx, compraId: string): Promise<CostosCompra> {
@@ -1187,6 +1189,7 @@ export async function obtenerCostosCompra(ctx: Ctx, compraId: string): Promise<C
       anulado: g.anulado,
       motivoAnulacion: g.motivoAnulacion,
     })),
+    cotizacionUsdt: await cotizacionResumenCompra(c.tipoCambioUSDT ? dec(c.tipoCambioUSDT) : null),
   };
 }
 
@@ -1221,6 +1224,8 @@ export interface CompraListada {
   gastosExtrasTotal: string;
   costoFinalTotal: string;
   costoUnitarioFinalPromedio: string;
+  /** Cotización USDT guardada en la compra (null si no tiene). */
+  tipoCambioUSDT: string | null;
 }
 
 export async function listarCompras(
@@ -1272,6 +1277,7 @@ export async function listarCompras(
       gastosExtrasTotal: dec(c.gastosExtrasTotal),
       costoFinalTotal: dec(c.costoFinalTotal),
       costoUnitarioFinalPromedio: dec(c.costoUnitarioFinalPromedio),
+      tipoCambioUSDT: c.tipoCambioUSDT ? dec(c.tipoCambioUSDT) : null,
     })),
     total,
     page: f.page,

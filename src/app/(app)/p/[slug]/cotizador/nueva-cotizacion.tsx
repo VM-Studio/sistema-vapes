@@ -25,6 +25,7 @@ export async function NuevaCotizacion({ tipo }: { tipo: TipoCotizacionUI }) {
       validezDefault={config.validezDias}
       blueInicial={blue ? { valor: blue.valor.toFixed(2), obtenidoAt: blue.obtenidoAt } : null}
       mostrarStock={config.mostrarStock}
+      pedidoSurtido={config.pedidoSurtido}
       puedeEditar={puede(ctx.usuario, ctx.panelId, Modulo.COTIZADOR, "editar")}
       esOwner={esOwner(ctx.usuario)}
       puedeVender={puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear")}

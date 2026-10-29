@@ -265,6 +265,8 @@ model Usuario {
   ventasEscaneadas       Venta[]                  @relation("VentaEscaneadaPor")
   ventasRetiradas        Venta[]                  @relation("VentaRetiradaPor")
   facturasML             FacturaMercadoLibre[]
+  carteraClientes        Cliente[]                @relation("ClienteCartera")
+  borradoresCompra       BorradorCompra[]
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -470,6 +472,7 @@ model Panel {
   firmasRemito              FirmaRemito[]
   enviosRemito              EnvioRemito[]
   secuencias                Secuencia[]
+  borradoresCompra          BorradorCompra[]
   auditLogs                 AuditLog[]
 
   @@index([activo, orden])
@@ -563,6 +566,7 @@ model Proveedor {
 
   panel            Panel                        @relation(fields: [panelId], references: [id], onDelete: Restrict)
   compras          Compra[]
+  borradoresCompra BorradorCompra[]
   productos        ProveedorProducto[]
   historialPrecios ProveedorProductoHistorial[]
 
@@ -612,6 +616,10 @@ model Cliente {
   creadoPorId     String?
   /// La venta en la que se dio de alta (null si se cargó desde Clientes o el cotizador).
   creadoEnVentaId String?   @unique
+  /// Vendedor en cuya cartera está («Mis clientes»): los que ya tenía cargados
+  /// antes de vender (no cuentan como nuevos) y los que se sumaron con una
+  /// venta suya (creadoEnVentaId). null = cliente del negocio, sin cartera.
+  vendedorId      String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
@@ -619,6 +627,7 @@ model Cliente {
   panel         Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
   creadoPor     Usuario?     @relation("ClienteCreadoPor", fields: [creadoPorId], references: [id], onDelete: Restrict)
   creadoEnVenta Venta?       @relation("ClienteCreadoEnVenta", fields: [creadoEnVentaId], references: [id], onDelete: Restrict)
+  vendedor      Usuario?     @relation("ClienteCartera", fields: [vendedorId], references: [id], onDelete: Restrict)
   ventas        Venta[]
   devoluciones  Devolucion[]
   cotizaciones  Cotizacion[]
@@ -627,6 +636,7 @@ model Cliente {
   @@index([panelId, nombre])
   @@index([panelId, saldoDeudor])
   @@index([panelId, creadoPorId, createdAt])
+  @@index([panelId, vendedorId, nombre])
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_nombre_trgm")
   @@index([telefono(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_telefono_trgm")
 }
@@ -851,6 +861,31 @@ model Compra {
   @@index([panelId, proveedorId])
   @@index([panelId, depositoId])
   @@index([usuarioId])
+}
+
+/// Compra que se está armando en «Nueva compra» y todavía no se confirmó: se
+/// guarda sola mientras se carga (proveedor, galpón, ítems, notas, comisión)
+/// para retomarla después aunque se cierre la pantalla. Al confirmar la compra
+/// se borra. No mueve stock ni costos: es solo lo tipeado.
+model BorradorCompra {
+  id          String   @id @default(cuid())
+  panelId     String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Quién la empezó.
+  usuarioId   String
+  proveedorId String?
+  /// Lo del formulario, tal cual (ver lib/validations/compra: borradorCompraSchema).
+  datos       Json
+  /// Resumen para el listado.
+  items       Int      @default(0)
+  unidades    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  panel     Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  usuario   Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  proveedor Proveedor? @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+
+  @@index([panelId, updatedAt])
 }
 
 /// Se compra por sabor (el stock es por sabor); productoId desnormalizado
@@ -1428,6 +1463,9 @@ model Cotizacion {
   total                Decimal          @db.Decimal(12, 2)
   /// Unitaria cotizada a precio Mercado Libre (cada sabor a su precio ML, si lo tiene).
   aPrecioML            Boolean          @default(false)
+  /// Mayorista calculada como pedido surtido: el escalón lo definieron las
+  /// unidades de todo el pedido (no las de cada producto). Snapshot al guardar.
+  pedidoSurtido        Boolean          @default(false)
   notas                String?
   motivoRechazo        String?
   /// Snapshot del dólar blue venta usado para los precios en USD (mayorista):

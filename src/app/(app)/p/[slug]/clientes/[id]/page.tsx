@@ -123,6 +123,38 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
               <dd className="text-right">{formatearFecha(c.createdAt)}</dd>
               <dt className="text-muted">Estado</dt>
               <dd className="text-right">{c.activo ? "Activo" : "Desactivado"}</dd>
+              {c.cartera && (
+                <>
+                  <dt className="text-muted">Cartera</dt>
+                  <dd className="text-right" data-testid="cartera-cliente">
+                    {verTotales ? (
+                      <Link
+                        href={rutaPanel(slug, `/equipo/${c.cartera.vendedorId}/clientes`)}
+                        className="text-foreground font-medium underline-offset-4 hover:underline"
+                      >
+                        {c.cartera.vendedor}
+                      </Link>
+                    ) : (
+                      c.cartera.vendedor
+                    )}
+                    <span className="text-muted block text-xs">
+                      {c.cartera.ventaAlta ? (
+                        <>
+                          Nuevo con la venta{" "}
+                          <Link
+                            href={rutaPanel(slug, `/ventas/${c.cartera.ventaAlta.id}`)}
+                            className="font-mono underline-offset-4 hover:underline"
+                          >
+                            {c.cartera.ventaAlta.codigo}
+                          </Link>
+                        </>
+                      ) : (
+                        "Ya lo tenía (no es nuevo)"
+                      )}
+                    </span>
+                  </dd>
+                </>
+              )}
               {verFiados && (
                 <>
                   <dt className="text-muted">Cuenta corriente</dt>

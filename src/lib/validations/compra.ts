@@ -64,6 +64,45 @@ export const compraSchema = z.object({
 export const guardarCompraSchema = z.object({
   id: z.preprocess(vacioAUndefined, id.optional()),
   datos: compraSchema,
+  /** Borrador del que salió (se borra al confirmar la compra nueva). */
+  borradorId: z.preprocess(vacioAUndefined, id.optional()),
+});
+
+// --- Borrador de «Nueva compra» ---------------------------------------------------
+// Lo tipeado, sin validar como compra (puede estar a medias): solo forma y límites.
+
+const textoCorto = (max: number) => z.string().max(max).default("");
+
+export const itemBorradorSchema = z.object({
+  varianteId: id,
+  productoId: id,
+  nombreCompleto: textoCorto(300),
+  sabor: z.string().max(200).nullable().default(null),
+  sku: textoCorto(100),
+  cantidad: textoCorto(12),
+  costo: textoCorto(20),
+  origenCosto: z
+    .enum(["PROVEEDOR", "PROVEEDOR_USDT", "ULTIMO_COSTO", "manual"])
+    .nullable()
+    .catch(null)
+    .default(null),
+  detalleUsdt: z.string().max(200).nullable().optional(),
+});
+
+export const datosBorradorSchema = z.object({
+  proveedorId: textoCorto(40),
+  depositoId: textoCorto(40),
+  fecha: textoCorto(10),
+  notas: textoCorto(1000),
+  comisionActiva: z.boolean().default(false),
+  comisionPct: textoCorto(10),
+  items: z.array(itemBorradorSchema).max(500).default([]),
+});
+export type DatosBorradorCompra = z.output<typeof datosBorradorSchema>;
+
+export const guardarBorradorCompraSchema = z.object({
+  id: z.preprocess(vacioAUndefined, id.optional()),
+  datos: datosBorradorSchema,
 });
 
 export const recibirCompraSchema = z.object({
