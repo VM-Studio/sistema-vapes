@@ -289,7 +289,7 @@ function Requisitos({ nueva, repetida }: { nueva: string; repetida: string }) {
             <span
               className={cn(
                 "rounded-circle flex size-4 shrink-0 items-center justify-center",
-                r.cumple ? "bg-success text-background" : "border-border border",
+                r.cumple ? "bg-success text-primary-foreground" : "border-border border",
               )}
               aria-hidden
             >

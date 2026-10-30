@@ -112,7 +112,9 @@ export function accionesDe(modulo: Modulo): readonly Accion[] {
 /** Aclaración que se muestra en la grilla de permisos. */
 export const MODULO_AYUDA: Partial<Record<Modulo, string>> = {
   STOCK: "Stock por depósito, movimientos, ingresos, ajustes y transferencias.",
-  COTIZADOR: "Cotizador unitario y mayorista.",
+  VENTAS:
+    "Crear: vender · Editar: precio especial, descuento y marcar pagadas · Eliminar: anular ventas (el stock vuelve al galpón).",
+  COTIZADOR: "Cotizador unitario y mayorista. Crear: armar, editar, cambiar estado y anular.",
   REPORTES: "Solo «Ver». Los costos y ganancias los ven únicamente los dueños.",
   FIADOS:
     "Cuenta corriente. Ver: deudas de los clientes · Crear: vender fiado · Editar: registrar cobros.",
@@ -143,6 +145,20 @@ export function esOwner(usuario: Pick<SujetoPermisos, "rol">): boolean {
  */
 export function tieneCarteraClientes(usuario: SujetoPermisos, panelId: string): boolean {
   return !esOwner(usuario) && puede(usuario, panelId, Modulo.VENTAS, "crear");
+}
+
+/**
+ * ¿Ve lo FACTURADO (totales de lo vendido: tarjetas, totales de pie, gráficos,
+ * reportes y exportaciones)? Los dueños, siempre. Un vendedor con ganancia por
+ * vape (tarifas o liquidaciones en el panel) no: en todo el sistema ve solo su
+ * ganancia. El resto de los empleados, según sus permisos de siempre.
+ * El dato `conGananciaVendedor` lo resuelve el servidor (veFacturadoCtx).
+ */
+export function veFacturado(
+  usuario: Pick<SujetoPermisos, "rol">,
+  conGananciaVendedor: boolean,
+): boolean {
+  return esOwner(usuario) || !conGananciaVendedor;
 }
 
 /** ¿Accede al panel? OWNER: a todos. EMPLEADO: solo a los habilitados. */

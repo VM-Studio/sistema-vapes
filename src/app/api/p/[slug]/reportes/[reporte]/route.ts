@@ -21,7 +21,7 @@ export const runtime = "nodejs";
 export async function GET(req: Request, { params }: { params: Promise<{ reporte: string }> }) {
   try {
     const ctx = await requireCtx(Modulo.REPORTES, "ver");
-    const clave = exigirAccesoReporte(ctx, (await params).reporte);
+    const clave = await exigirAccesoReporte(ctx, (await params).reporte);
     const query = paramsComoObjeto(req.url);
     const cab: CabeceraPanel = {
       negocio: await nombreNegocio(),

@@ -31,7 +31,9 @@ import { vendedoresDelPanel } from "@/server/services/venta.service";
 import { AccionesFila } from "./acciones-fila";
 import {
   esAceptable,
+  esAnulable,
   esConvertible,
+  esEditable,
   ESTADO_COTIZACION_UI,
   ETIQUETA_TIPO_COTIZACION,
 } from "./estado-cotizacion";
@@ -130,6 +132,8 @@ export default async function CotizadorPage({ searchParams }: { searchParams: Pr
       puedeCrear={puedeCrear}
       convertible={esConvertible(c.estado)}
       puedeVender={puedeVender}
+      editable={puedeCrear && esEditable(c.estado)}
+      anulable={puedeCrear && esAnulable(c.estado)}
       aceptar={
         puedeVender && esAceptable(c.estado) && galpones.length > 0
           ? {

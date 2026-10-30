@@ -9,7 +9,16 @@ import {
 
 import type { CotizacionResumen } from "@/components/compras/resumen-compra-card";
 import { fechaHoraCotizacion } from "@/lib/cambio";
-import { calcularCostosFinales, type CostosFinales } from "@/lib/costos-compra";
+import {
+  calcularCostosCompraUsdt,
+  calcularCostosFinales,
+  pesosAMoneda,
+  usdtAPesos,
+  vistaCostosUsdt,
+  type CostosCompraUsdt,
+  type CostosFinales,
+  type VistaCostosUsdt,
+} from "@/lib/costos-compra";
 import { finDelDia, hoyAR, inicioDelDia } from "@/lib/fechas";
 import { formatearIdCompra } from "@/lib/paneles";
 import type { Compra, FiltrosCompras } from "@/lib/validations/compra";
@@ -47,12 +56,16 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  *   (ProveedorProducto) con el costo pagado. El precio del proveedor es POR
  *   PRODUCTO: si la compra trae varios sabores del mismo producto con costos
  *   distintos, gana el costo del ÚLTIMO ítem de ese producto (orden de carga).
- * - Proveedores en USDT: el costo (CompraItem.costoUnitario) es SIEMPRE en
- *   pesos. El sugerido sale de precio USDT × cotización USDT vigente; la
- *   compra guarda esa cotización (Compra.tipoCambioUSDT, snapshot tomado al
- *   crearla y conservado al editar el borrador) y, para los productos que el
- *   proveedor cotiza en USDT, el costo en USDT (CompraItem.costoUnitarioUSDT =
- *   costo en pesos ÷ snapshot) para trazabilidad. Todo se calcula acá.
+ * - MONEDA PRINCIPAL: USDT (desde 2026-10-30, Compra.costosEnUsdt). El costo
+ *   de cada ítem (CompraItem.costoUnitarioUSDT) y los gastos extras
+ *   (GastoCompra.montoUSDT) se cargan en USDT y el costo final se calcula en
+ *   USDT (calcularCostosCompraUsdt). Los pesos (lo que contabilizan stock y
+ *   ganancia) se derivan una sola vez con la cotización USDT de la compra
+ *   (Compra.tipoCambioUSDT: snapshot al crearla, conservado al editarla).
+ *   Sin cotización USDT no se puede guardar. También se guarda el dólar blue
+ *   (Compra.tipoCambioUSD) para mostrar el costo final en dólares.
+ *   Las compras anteriores (costosEnUsdt = false) siguen calculándose en
+ *   pesos; sus USDT se muestran como aproximados.
  * - COSTO FINAL (Bloque 6, A4): a cada ítem se le suma la comisión del
  *   pasista PROPORCIONAL A SU PRECIO (costo × factor de descuento × %) y los
  *   gastos extras (GastoCompra: valija, envío…) PAREJOS POR UNIDAD
@@ -91,7 +104,10 @@ export interface TotalesCompra {
   items: {
     varianteId: string;
     cantidad: number;
+    /** En pesos = ROUND(costoUnitarioUSDT × cotización, 2). */
     costoUnitario: Prisma.Decimal;
+    /** Lo cargado. */
+    costoUnitarioUSDT: Prisma.Decimal;
     subtotal: Prisma.Decimal;
   }[];
   subtotal: Prisma.Decimal;
@@ -100,14 +116,24 @@ export interface TotalesCompra {
 
 export { calcularCostosFinales };
 
-/** subtotal ítem = cantidad × costo · total = Σ ítems. */
-export function calcularTotalesCompra(datos: Pick<Compra, "items">): TotalesCompra {
+/**
+ * Ítems cargados en USDT → costo en pesos con la cotización de la compra.
+ * subtotal ítem = cantidad × costo en pesos · total = Σ ítems (en pesos).
+ */
+export function calcularTotalesCompra(
+  datos: Pick<Compra, "items">,
+  tipoCambioUSDT: Prisma.Decimal,
+): TotalesCompra {
   const items = datos.items.map((i) => {
-    const costoUnitario = new Prisma.Decimal(i.costoUnitario).toDecimalPlaces(2);
+    const costoUnitarioUSDT = new Prisma.Decimal(i.costoUnitarioUSDT).toDecimalPlaces(2);
+    const costoUnitario = decimal(
+      usdtAPesos(costoUnitarioUSDT.toFixed(2), tipoCambioUSDT.toFixed(2)),
+    );
     return {
       varianteId: i.varianteId,
       cantidad: i.cantidad,
       costoUnitario,
+      costoUnitarioUSDT,
       subtotal: costoUnitario.mul(i.cantidad),
     };
   });
@@ -158,6 +184,7 @@ function snapshot(datos: Compra, t: TotalesCompra): Prisma.InputJsonObject {
     items: t.items.map((i) => ({
       varianteId: i.varianteId,
       cantidad: i.cantidad,
+      costoUnitarioUSDT: dec(i.costoUnitarioUSDT),
       costoUnitario: dec(i.costoUnitario),
     })),
   };
@@ -167,31 +194,55 @@ function snapshot(datos: Compra, t: TotalesCompra): Prisma.InputJsonObject {
  * createdAt escalonado (1 ms por ítem): conserva el orden de carga, que
  * define qué costo gana como precio del proveedor (el del último ítem).
  */
-function itemsParaCrear(t: TotalesCompra, productoDe: Map<string, string>, costos: CostosFinales) {
+function itemsParaCrear(
+  t: TotalesCompra,
+  productoDe: Map<string, string>,
+  costos: CostosCompraUsdt,
+) {
   const base = Date.now();
   return t.items.map((i, n) => ({
     ...i,
     productoId: productoDe.get(i.varianteId)!,
-    costoUnitarioFinal: decimal(costos.items[n]!.costoUnitarioFinal),
+    costoUnitarioFinal: decimal(costos.itemsPesos[n]!.costoUnitarioFinal),
     createdAt: new Date(base + n),
   }));
 }
 
 const decimal = (n: number) => new Prisma.Decimal(n.toFixed(2));
 
-/** Costos finales de los ítems ya calculados (`t`), con el % y los gastos vigentes. */
+interface GastoVigente {
+  monto: Prisma.Decimal;
+  montoUSDT: Prisma.Decimal | null;
+}
+
+/**
+ * Gastos de una compra para el cálculo en USDT: el monto cargado en USDT y el
+ * guardado en pesos. Un gasto anterior a las compras en USDT (sin montoUSDT)
+ * se toma por su equivalente con la cotización de la compra.
+ */
+const gastosParaUsdt = (gastos: GastoVigente[], tipoCambio: Prisma.Decimal) =>
+  gastos.map((g) => ({
+    montoUSDT: g.montoUSDT
+      ? g.montoUSDT.toFixed(2)
+      : pesosAMoneda(g.monto.toFixed(2), tipoCambio.toFixed(2)),
+    monto: g.monto.toFixed(2),
+  }));
+
+/** Costos finales (en USDT y pasados a pesos) de los ítems de `t`, con el % y los gastos vigentes. */
 function costosDe(
   t: TotalesCompra,
   comisionPorcentaje: number | Prisma.Decimal | null,
-  gastos: Prisma.Decimal[],
-): CostosFinales {
-  return calcularCostosFinales({
+  gastos: GastoVigente[],
+  tipoCambio: Prisma.Decimal,
+): CostosCompraUsdt {
+  return calcularCostosCompraUsdt({
     items: t.items.map((i) => ({
       cantidad: i.cantidad,
-      costoUnitario: i.costoUnitario.toFixed(2),
+      costoUnitarioUSDT: i.costoUnitarioUSDT.toFixed(2),
     })),
     comisionPorcentaje: comisionPorcentaje === null ? null : Number(comisionPorcentaje),
-    gastos: gastos.map((g) => g.toFixed(2)),
+    gastos: gastosParaUsdt(gastos, tipoCambio),
+    tipoCambioUSDT: tipoCambio.toFixed(2),
   });
 }
 
@@ -222,6 +273,54 @@ export async function cotizacionResumenCompra(
     : null;
 }
 
+/**
+ * Dólar blue para mostrar el costo final por unidad en dólares: el guardado
+ * en la compra o, si no tiene (compra anterior), el vigente.
+ */
+export async function cotizacionUsdCompra(
+  tipoCambioUSD: string | null,
+): Promise<CotizacionResumen | null> {
+  if (tipoCambioUSD) return { valor: Number(tipoCambioUSD), origen: "guardada en la compra" };
+  const vigente = await obtenerCotizacion("USD_BLUE").catch(() => null);
+  return vigente
+    ? { valor: vigente.valor, origen: `vigente ${fechaHoraCotizacion(vigente.obtenidoAt)}` }
+    : null;
+}
+
+/** Datos guardados de una compra que hacen falta para mostrarla en USDT. */
+interface CompraParaVista {
+  costosEnUsdt: boolean;
+  descuento: Prisma.Decimal;
+  comisionPasistaPorcentaje: Prisma.Decimal | null;
+  items: {
+    cantidad: number;
+    costoUnitario: Prisma.Decimal;
+    costoUnitarioUSDT: Prisma.Decimal | null;
+    costoUnitarioFinal: Prisma.Decimal;
+  }[];
+  gastos: { monto: Prisma.Decimal; montoUSDT: Prisma.Decimal | null; anulado: boolean }[];
+}
+
+/** Costos en USDT de una compra guardada (null sin ninguna cotización USDT). */
+function vistaDe(c: CompraParaVista, cotizacion: CotizacionResumen | null): VistaCostosUsdt | null {
+  if (!cotizacion) return null;
+  return vistaCostosUsdt({
+    costosEnUsdt: c.costosEnUsdt,
+    tipoCambioUSDT: cotizacion.valor.toFixed(2),
+    comisionPorcentaje: c.comisionPasistaPorcentaje?.toFixed(2) ?? null,
+    descuento: c.descuento.toFixed(2),
+    items: c.items.map((i) => ({
+      cantidad: i.cantidad,
+      costoUnitario: i.costoUnitario.toFixed(2),
+      costoUnitarioUSDT: i.costoUnitarioUSDT?.toFixed(2) ?? null,
+      costoUnitarioFinal: i.costoUnitarioFinal.toFixed(2),
+    })),
+    gastos: c.gastos
+      .filter((g) => !g.anulado)
+      .map((g) => ({ monto: g.monto.toFixed(2), montoUSDT: g.montoUSDT?.toFixed(2) ?? null })),
+  });
+}
+
 /** Pesos por USDT con 2 decimales, o null sin cotización. */
 async function cotizacionUsdtActual(): Promise<Prisma.Decimal | null> {
   const c = await obtenerCotizacion("USDT");
@@ -229,38 +328,27 @@ async function cotizacionUsdtActual(): Promise<Prisma.Decimal | null> {
 }
 
 /**
- * Snapshot USDT de la compra: `tipoCambio` (el que ya tenía el borrador o el
- * vigente) y el costo en USDT de cada ítem cuyo producto el proveedor cotiza
- * en USDT. Sin productos en USDT no guarda cotización.
+ * Cotizaciones de una compra al guardarla: la USDT (obligatoria: con ella se
+ * derivan los pesos) y el dólar blue (opcional, solo para mostrar). Si la
+ * compra ya tenía, se conservan; si no, las vigentes.
  */
-async function snapshotUsdt(
-  tx: Tx,
-  proveedorId: string,
-  items: { varianteId: string; costoUnitario: Prisma.Decimal }[],
-  productoDe: Map<string, string>,
-  tipoCambioPrevio: Prisma.Decimal | null,
-): Promise<{ tipoCambio: Prisma.Decimal | null; usdtDe: Map<string, Prisma.Decimal> }> {
-  const enUsdt = await tx.proveedorProducto.findMany({
-    where: {
-      proveedorId,
-      moneda: Moneda.USDT,
-      productoId: { in: [...new Set(productoDe.values())] },
-    },
-    select: { productoId: true },
-  });
-  const usdtDe = new Map<string, Prisma.Decimal>();
-  if (enUsdt.length === 0) return { tipoCambio: null, usdtDe };
-  const tipoCambio = tipoCambioPrevio ?? (await cotizacionUsdtActual());
-  if (!tipoCambio) return { tipoCambio: null, usdtDe };
-  const productos = new Set(enUsdt.map((p) => p.productoId));
-  for (const i of items)
-    if (productos.has(productoDe.get(i.varianteId)!))
-      usdtDe.set(i.varianteId, i.costoUnitario.div(tipoCambio).toDecimalPlaces(2));
-  return { tipoCambio, usdtDe };
-}
-
-function conUsdt(items: ReturnType<typeof itemsParaCrear>, usdtDe: Map<string, Prisma.Decimal>) {
-  return items.map((i) => ({ ...i, costoUnitarioUSDT: usdtDe.get(i.varianteId) ?? null }));
+async function cotizacionesCompra(previas: {
+  tipoCambioUSDT: Prisma.Decimal | null;
+  tipoCambioUSD: Prisma.Decimal | null;
+}): Promise<{ usdt: Prisma.Decimal; usd: Prisma.Decimal | null }> {
+  const usdt = previas.tipoCambioUSDT ?? (await cotizacionUsdtActual().catch(() => null));
+  if (!usdt)
+    throw new DomainError(
+      "No hay cotización USDT para pasar la compra a pesos. Cargala a mano en la barra de cotizaciones y volvé a intentar.",
+      "SIN_COTIZACION",
+      409,
+    );
+  const usd =
+    previas.tipoCambioUSD ??
+    (await obtenerCotizacion("USD_BLUE")
+      .then((c) => (c ? new Prisma.Decimal(c.valor).toDecimalPlaces(2) : null))
+      .catch(() => null));
+  return { usdt, usd };
 }
 
 // =============================================================================
@@ -274,9 +362,9 @@ export async function crearCompra(
 ): Promise<{ id: string; numero: number }> {
   return transaccion(ctx, async (tx) => {
     const productoDe = await validarReferencias(tx, datos);
-    const t = calcularTotalesCompra(datos);
-    const usdt = await snapshotUsdt(tx, datos.proveedorId, t.items, productoDe, null);
-    const costos = costosDe(t, datos.comisionPasistaPorcentaje, []);
+    const tc = await cotizacionesCompra({ tipoCambioUSDT: null, tipoCambioUSD: null });
+    const t = calcularTotalesCompra(datos, tc.usdt);
+    const costos = costosDe(t, datos.comisionPasistaPorcentaje, [], tc.usdt);
     const numero = await siguienteNumero(tx, ctx.panelId, "COMPRA");
     const compra = await tx.compra.create({
       data: {
@@ -289,10 +377,12 @@ export async function crearCompra(
         descuento: 0,
         total: t.total,
         notas: datos.notas ?? null,
-        tipoCambioUSDT: usdt.tipoCambio,
-        ...columnasCostos(costos),
+        costosEnUsdt: true,
+        tipoCambioUSDT: tc.usdt,
+        tipoCambioUSD: tc.usd,
+        ...columnasCostos(costos.pesos),
         usuarioId: ctx.usuarioId,
-        items: { create: conUsdt(itemsParaCrear(t, productoDe, costos), usdt.usdtDe) },
+        items: { create: itemsParaCrear(t, productoDe, costos) },
       },
     });
     await sincronizarComisionPasista(tx, ctx, compra.id);
@@ -304,6 +394,7 @@ export async function crearCompra(
       datosDespues: {
         numero: compra.numero,
         ...snapshot(datos, t),
+        tipoCambioUSDT: dec(tc.usdt),
         comisionPasistaPorcentaje: datos.comisionPasistaPorcentaje,
       },
       meta: ctx.meta,
@@ -322,7 +413,10 @@ export async function actualizarCompra(
     await bloquearCompra(tx, ctx, id);
     const antes = await tx.compra.findUnique({
       where: { id },
-      include: { items: true, gastos: { where: { anulado: false }, select: { monto: true } } },
+      include: {
+        items: true,
+        gastos: { where: { anulado: false }, select: { monto: true, montoUSDT: true } },
+      },
     });
     if (!antes) throw new NotFoundError("La compra no existe");
     if (antes.estado !== EstadoCompra.BORRADOR) {
@@ -332,20 +426,10 @@ export async function actualizarCompra(
       );
     }
     const productoDe = await validarReferencias(tx, datos);
-    const t = calcularTotalesCompra(datos);
-    // Mismo proveedor → conserva la cotización del borrador (coherente con los costos sugeridos).
-    const usdt = await snapshotUsdt(
-      tx,
-      datos.proveedorId,
-      t.items,
-      productoDe,
-      antes.proveedorId === datos.proveedorId ? antes.tipoCambioUSDT : null,
-    );
-    const costos = costosDe(
-      t,
-      datos.comisionPasistaPorcentaje,
-      antes.gastos.map((g) => g.monto),
-    );
+    // Conserva la cotización de la compra: los costos sugeridos y lo que se vio salió de ella.
+    const tc = await cotizacionesCompra(antes);
+    const t = calcularTotalesCompra(datos, tc.usdt);
+    const costos = costosDe(t, datos.comisionPasistaPorcentaje, antes.gastos, tc.usdt);
     await tx.compraItem.deleteMany({ where: { compraId: id } });
     await tx.compra.update({
       where: { id },
@@ -358,9 +442,11 @@ export async function actualizarCompra(
         descuento: 0,
         total: t.total,
         notas: datos.notas ?? null,
-        tipoCambioUSDT: usdt.tipoCambio,
-        ...columnasCostos(costos),
-        items: { create: conUsdt(itemsParaCrear(t, productoDe, costos), usdt.usdtDe) },
+        costosEnUsdt: true,
+        tipoCambioUSDT: tc.usdt,
+        tipoCambioUSD: tc.usd,
+        ...columnasCostos(costos.pesos),
+        items: { create: itemsParaCrear(t, productoDe, costos) },
       },
     });
     await sincronizarComisionPasista(tx, ctx, id);
@@ -374,14 +460,17 @@ export async function actualizarCompra(
         comisionPasistaPorcentaje: antes.comisionPasistaPorcentaje
           ? dec(antes.comisionPasistaPorcentaje)
           : null,
+        tipoCambioUSDT: antes.tipoCambioUSDT ? dec(antes.tipoCambioUSDT) : null,
         items: antes.items.map((i) => ({
           varianteId: i.varianteId,
           cantidad: i.cantidad,
+          costoUnitarioUSDT: i.costoUnitarioUSDT ? dec(i.costoUnitarioUSDT) : null,
           costoUnitario: dec(i.costoUnitario),
         })),
       },
       datosDespues: {
         ...snapshot(datos, t),
+        tipoCambioUSDT: dec(tc.usdt),
         comisionPasistaPorcentaje: datos.comisionPasistaPorcentaje,
       },
       meta: ctx.meta,
@@ -393,20 +482,44 @@ export async function actualizarCompra(
 export type FuenteCostoSugerido = "PROVEEDOR" | "PROVEEDOR_USDT" | "ULTIMO_COSTO";
 
 export interface CostoSugerido {
-  /** En pesos. */
+  /** En USDT (moneda de Compras). */
   costo: string | null;
   fuente: FuenteCostoSugerido | null;
-  /** Solo PROVEEDOR_USDT: precio del proveedor en USDT y la cotización usada. */
-  precioUsdt?: string;
+  /**
+   * Solo si salió de un monto en pesos (precio del proveedor en pesos o
+   * último costo): ese monto y la cotización con la que se pasó a USDT.
+   */
+  pesos?: string;
   tipoCambio?: string;
 }
 
 /**
- * Costo sugerido (en pesos) por sabor para una compra a `proveedorId`: el
- * precio que ese proveedor tiene cargado para el producto (si es en USDT,
- * × la cotización USDT: la del borrador `compraId` si ya tiene, si no la
- * vigente, redondeado a pesos enteros); si no tiene precio (o no hay
- * cotización), el último costo del sabor; si tampoco, null.
+ * Cotización USDT para sugerir costos: la de la compra `compraId` si ya
+ * tiene (borrador en edición), si no la vigente.
+ */
+async function cotizacionParaSugerir(
+  ctx: Ctx,
+  compraId: string | undefined,
+): Promise<Prisma.Decimal | null> {
+  const compra = compraId
+    ? await dbPara(ctx.panelId).compra.findFirst({
+        where: { id: compraId },
+        select: { tipoCambioUSDT: true },
+      })
+    : null;
+  return compra?.tipoCambioUSDT ?? (await cotizacionUsdtActual().catch(() => null));
+}
+
+/** Monto en pesos → USDT con la cotización (null sin cotización). */
+const enUsdt = (pesos: Prisma.Decimal, tipoCambio: Prisma.Decimal | null) =>
+  tipoCambio ? pesosAMoneda(pesos.toFixed(2), tipoCambio.toFixed(2)).toFixed(2) : null;
+
+/**
+ * Costo sugerido EN USDT por sabor para una compra a `proveedorId`: el precio
+ * que ese proveedor tiene cargado para el producto (en USDT tal cual; en
+ * pesos, ÷ la cotización USDT de la compra o la vigente); si no tiene
+ * precio, el último costo del sabor (en pesos ÷ cotización); si tampoco (o
+ * no hay cotización para pasar pesos a USDT), null.
  */
 export async function costoSugerido(
   ctx: Ctx,
@@ -420,42 +533,35 @@ export async function costoSugerido(
     where: { id: { in: varianteIds }, deletedAt: null },
     select: { id: true, productoId: true, ultimoCosto: true },
   });
-  const [precios, borrador] = await Promise.all([
-    db.proveedorProducto.findMany({
-      where: {
-        proveedorId,
-        productoId: { in: [...new Set(variantes.map((v) => v.productoId))] },
-      },
-      select: { productoId: true, precio: true, moneda: true },
-    }),
-    compraId
-      ? db.compra.findFirst({
-          where: { id: compraId, proveedorId },
-          select: { tipoCambioUSDT: true },
-        })
-      : null,
-  ]);
+  const precios = await db.proveedorProducto.findMany({
+    where: {
+      proveedorId,
+      productoId: { in: [...new Set(variantes.map((v) => v.productoId))] },
+    },
+    select: { productoId: true, precio: true, moneda: true },
+  });
   const precioDe = new Map(precios.map((p) => [p.productoId, p]));
-  const tipoCambio = precios.some((p) => p.moneda === Moneda.USDT)
-    ? (borrador?.tipoCambioUSDT ?? (await cotizacionUsdtActual()))
-    : null;
+  const necesitaCotizacion = variantes.some(
+    (v) => precioDe.get(v.productoId)?.moneda !== Moneda.USDT,
+  );
+  const tipoCambio = necesitaCotizacion ? await cotizacionParaSugerir(ctx, compraId) : null;
   return Object.fromEntries(
     variantes.map((v): [string, CostoSugerido] => {
       const precio = precioDe.get(v.productoId);
-      if (precio?.moneda === Moneda.ARS)
-        return [v.id, { costo: dec(precio.precio), fuente: "PROVEEDOR" }];
-      if (precio?.moneda === Moneda.USDT && tipoCambio)
-        return [
-          v.id,
-          {
-            costo: dec(precio.precio.mul(tipoCambio).toDecimalPlaces(0)),
-            fuente: "PROVEEDOR_USDT",
-            precioUsdt: dec(precio.precio),
-            tipoCambio: dec(tipoCambio),
-          },
-        ];
-      if (v.ultimoCosto) return [v.id, { costo: dec(v.ultimoCosto), fuente: "ULTIMO_COSTO" }];
-      return [v.id, { costo: null, fuente: null }];
+      if (precio?.moneda === Moneda.USDT)
+        return [v.id, { costo: dec(precio.precio), fuente: "PROVEEDOR_USDT" }];
+      const pesos = precio?.precio ?? v.ultimoCosto;
+      const costo = pesos ? enUsdt(pesos, tipoCambio) : null;
+      if (!pesos || !costo || !tipoCambio) return [v.id, { costo: null, fuente: null }];
+      return [
+        v.id,
+        {
+          costo,
+          fuente: precio ? "PROVEEDOR" : "ULTIMO_COSTO",
+          pesos: dec(pesos),
+          tipoCambio: dec(tipoCambio),
+        },
+      ];
     }),
   );
 }
@@ -477,30 +583,20 @@ export interface ProductoCatalogoCompra {
   precio: string;
   moneda: Moneda;
   /**
-   * Costo en pesos que se precarga al agregarlo (igual que `costoSugerido`):
-   * ARS tal cual; USDT × cotización (la del borrador o la vigente),
-   * redondeado a pesos. null = está en USDT y no hay cotización.
+   * Costo EN USDT que se precarga al agregarlo (igual que `costoSugerido`):
+   * USDT tal cual; pesos ÷ cotización (la de la compra o la vigente).
+   * null = está en pesos y no hay cotización.
    */
-  costoArs: string | null;
-  /** Solo USDT con cotización: la cotización usada. */
+  costoUsdt: string | null;
+  /** Solo precio en pesos con cotización: la cotización usada. */
   tipoCambio: string | null;
   actualizadoAt: Date;
   sabores: SaborCatalogoCompra[];
 }
 
-/** Precio del proveedor → costo en pesos para la compra (ver `costoSugerido`). */
-function costoEnPesos(
-  precio: Prisma.Decimal,
-  moneda: Moneda,
-  tipoCambio: Prisma.Decimal | null,
-): Prisma.Decimal | null {
-  if (moneda === Moneda.ARS) return precio;
-  return tipoCambio ? precio.mul(tipoCambio).toDecimalPlaces(0) : null;
-}
-
 /**
  * Catálogo del proveedor para el formulario de compra: los productos que
- * vende (activos y no borrados) con su precio, el costo en pesos que se
+ * vende (activos y no borrados) con su precio, el costo en USDT que se
  * precarga y sus sabores activos (con el stock del galpón destino si se
  * indica). Orden por marca y modelo. Solo para quien tiene `ver` en COMPRAS.
  */
@@ -510,7 +606,7 @@ export async function catalogoParaCompra(
   opciones: { compraId?: string; depositoId?: string } = {},
 ): Promise<ProductoCatalogoCompra[]> {
   const db = dbPara(ctx.panelId);
-  const [filas, borrador] = await Promise.all([
+  const [filas] = await Promise.all([
     db.proveedorProducto.findMany({
       where: {
         proveedorId,
@@ -548,26 +644,20 @@ export async function catalogoParaCompra(
         },
       },
     }),
-    opciones.compraId
-      ? db.compra.findFirst({
-          where: { id: opciones.compraId, proveedorId },
-          select: { tipoCambioUSDT: true },
-        })
-      : null,
   ]);
-  const tipoCambio = filas.some((f) => f.moneda === Moneda.USDT)
-    ? (borrador?.tipoCambioUSDT ?? (await cotizacionUsdtActual()))
+  const tipoCambio = filas.some((f) => f.moneda !== Moneda.USDT)
+    ? await cotizacionParaSugerir(ctx, opciones.compraId)
     : null;
   return filas.map((f) => {
-    const costo = costoEnPesos(f.precio, f.moneda, tipoCambio);
+    const enPesos = f.moneda !== Moneda.USDT;
     return {
       productoId: f.producto.id,
       nombreCompleto: f.producto.nombreCompleto,
       marca: f.producto.marca.nombre,
       precio: dec(f.precio),
       moneda: f.moneda,
-      costoArs: costo ? dec(costo) : null,
-      tipoCambio: f.moneda === Moneda.USDT && tipoCambio ? dec(tipoCambio) : null,
+      costoUsdt: enPesos ? enUsdt(f.precio, tipoCambio) : dec(f.precio),
+      tipoCambio: enPesos && tipoCambio ? dec(tipoCambio) : null,
       actualizadoAt: f.actualizadoAt,
       sabores: f.producto.variantes.map((v) => ({
         varianteId: v.id,
@@ -637,11 +727,13 @@ async function calcularCambiosDePrecio(tx: Tx, compraId: string): Promise<Cambio
   return [...porProducto.entries()]
     .flatMap(([productoId, item]) => {
       const actual = actualDe.get(productoId);
-      // Si el proveedor cotiza en USDT y la compra tiene el costo en USDT, el
-      // precio se actualiza en USDT; si no, en pesos.
-      const enUsdt = actual?.moneda === Moneda.USDT && item.costoUnitarioUSDT !== null;
-      const costo = enUsdt ? item.costoUnitarioUSDT! : item.costoUnitario;
-      const moneda = enUsdt ? Moneda.USDT : Moneda.ARS;
+      // El precio queda en la moneda en que ya lo tenía el proveedor; si no
+      // tenía, en USDT (moneda de Compras). En USDT, el costo tal como se
+      // cargó; en pesos (o compra anterior sin costo en USDT), el de pesos.
+      const usdt =
+        (actual?.moneda ?? Moneda.USDT) === Moneda.USDT && item.costoUnitarioUSDT !== null;
+      const costo = usdt ? item.costoUnitarioUSDT! : item.costoUnitario;
+      const moneda = usdt ? Moneda.USDT : Moneda.ARS;
       if (actual && actual.moneda === moneda && actual.precio.equals(costo)) return [];
       return [
         {
@@ -908,6 +1000,8 @@ export async function recalcularCostosFinales(
       estado: true,
       descuento: true,
       comisionPasistaPorcentaje: true,
+      costosEnUsdt: true,
+      tipoCambioUSDT: true,
       items: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
@@ -915,29 +1009,50 @@ export async function recalcularCostosFinales(
           varianteId: true,
           cantidad: true,
           costoUnitario: true,
+          costoUnitarioUSDT: true,
           costoUnitarioFinal: true,
         },
       },
-      gastos: { where: { anulado: false }, select: { monto: true } },
+      gastos: { where: { anulado: false }, select: { monto: true, montoUSDT: true } },
     },
   });
   if (!compra) throw new NotFoundError("La compra no existe");
-  const costos = calcularCostosFinales({
-    items: compra.items.map((i) => ({
-      cantidad: i.cantidad,
-      costoUnitario: i.costoUnitario.toFixed(2),
-    })),
-    descuento: compra.descuento.toFixed(2),
-    comisionPorcentaje:
-      opciones.comisionPorcentaje !== undefined
-        ? opciones.comisionPorcentaje
-        : (compra.comisionPasistaPorcentaje?.toFixed(2) ?? null),
-    gastos: compra.gastos.map((g) => g.monto.toFixed(2)),
-  });
+  const comisionPorcentaje =
+    opciones.comisionPorcentaje !== undefined
+      ? opciones.comisionPorcentaje
+      : (compra.comisionPasistaPorcentaje?.toFixed(2) ?? null);
+  // Compra en USDT: se calcula en USDT y se pasa a pesos. Anterior: en pesos, como siempre.
+  const usdt =
+    compra.costosEnUsdt && compra.tipoCambioUSDT
+      ? calcularCostosCompraUsdt({
+          items: compra.items.map((i) => ({
+            cantidad: i.cantidad,
+            costoUnitarioUSDT: i.costoUnitarioUSDT
+              ? i.costoUnitarioUSDT.toFixed(2)
+              : pesosAMoneda(i.costoUnitario.toFixed(2), compra.tipoCambioUSDT!.toFixed(2)),
+          })),
+          comisionPorcentaje,
+          gastos: gastosParaUsdt(compra.gastos, compra.tipoCambioUSDT),
+          tipoCambioUSDT: compra.tipoCambioUSDT.toFixed(2),
+        })
+      : null;
+  const costos =
+    usdt?.pesos ??
+    calcularCostosFinales({
+      items: compra.items.map((i) => ({
+        cantidad: i.cantidad,
+        costoUnitario: i.costoUnitario.toFixed(2),
+      })),
+      descuento: compra.descuento.toFixed(2),
+      comisionPorcentaje,
+      gastos: compra.gastos.map((g) => g.monto.toFixed(2)),
+    });
   await tx.compra.update({ where: { id: compraId }, data: columnasCostos(costos) });
   const finalDe = new Map<string, Prisma.Decimal>();
   for (const [n, item] of compra.items.entries()) {
-    const final = decimal(costos.items[n]!.costoUnitarioFinal);
+    const final = decimal(
+      usdt ? usdt.itemsPesos[n]!.costoUnitarioFinal : costos.items[n]!.costoUnitarioFinal,
+    );
     finalDe.set(item.varianteId, final);
     if (!item.costoUnitarioFinal.equals(final))
       await tx.compraItem.update({ where: { id: item.id }, data: { costoUnitarioFinal: final } });
@@ -987,6 +1102,7 @@ async function compraParaCostos(tx: Tx, ctx: Ctx, id: string) {
       comisionPasistaMonto: true,
       gastosExtrasTotal: true,
       costoFinalTotal: true,
+      tipoCambioUSDT: true,
     },
   });
   if (!compra) throw new NotFoundError("La compra no existe");
@@ -1040,18 +1156,27 @@ export async function cambiarComisionPasista(
 export async function agregarGastosCompra(
   ctx: Ctx,
   compraId: string,
-  gastos: { motivo: string; monto: number }[],
+  /** Montos EN USDT. */
+  gastos: { motivo: string; montoUSDT: number }[],
 ): Promise<{ idVisible: string; costos: CostosFinales }> {
   if (gastos.length === 0) throw new DomainError("Cargá al menos un gasto");
   return transaccion(ctx, async (tx) => {
     const antes = await compraParaCostos(tx, ctx, compraId);
+    // Los gastos se pasan a pesos con la cotización de la compra; una compra
+    // anterior sin cotización guarda la vigente (y queda fija para la próxima).
+    let tipoCambio = antes.tipoCambioUSDT;
+    if (!tipoCambio) {
+      tipoCambio = (await cotizacionesCompra({ tipoCambioUSDT: null, tipoCambioUSD: null })).usdt;
+      await tx.compra.update({ where: { id: compraId }, data: { tipoCambioUSDT: tipoCambio } });
+    }
     const ahora = new Date();
     for (const g of gastos) {
       await tx.gastoCompra.create({
         data: {
           compraId,
           motivo: g.motivo.trim(),
-          monto: decimal(g.monto),
+          montoUSDT: decimal(g.montoUSDT),
+          monto: decimal(usdtAPesos(g.montoUSDT.toFixed(2), tipoCambio.toFixed(2))),
           fecha: ahora,
           usuarioId: ctx.usuarioId,
         },
@@ -1065,7 +1190,8 @@ export async function agregarGastosCompra(
       entidadId: compraId,
       datosAntes: resumenCostos(antes),
       datosDespues: {
-        gastos: gastos.map((g) => ({ motivo: g.motivo, monto: g.monto.toFixed(2) })),
+        tipoCambioUSDT: dec(tipoCambio),
+        gastos: gastos.map((g) => ({ motivo: g.motivo, montoUSDT: g.montoUSDT.toFixed(2) })),
         gastosExtrasTotal: costos.gastos.toFixed(2),
         costoFinalTotal: costos.costoFinalTotal.toFixed(2),
       },
@@ -1084,7 +1210,14 @@ export async function anularGastoCompra(
   return transaccion(ctx, async (tx) => {
     const gasto = await tx.gastoCompra.findUnique({
       where: { id: gastoId },
-      select: { id: true, compraId: true, anulado: true, motivo: true, monto: true },
+      select: {
+        id: true,
+        compraId: true,
+        anulado: true,
+        motivo: true,
+        monto: true,
+        montoUSDT: true,
+      },
     });
     if (!gasto) throw new NotFoundError("El gasto no existe");
     const antes = await compraParaCostos(tx, ctx, gasto.compraId);
@@ -1108,6 +1241,7 @@ export async function anularGastoCompra(
         anulado: false,
         motivo: gasto.motivo,
         monto: dec(gasto.monto),
+        montoUSDT: gasto.montoUSDT ? dec(gasto.montoUSDT) : null,
         ...resumenCostos(antes),
       },
       datosDespues: {
@@ -1124,7 +1258,10 @@ export async function anularGastoCompra(
 export interface GastoCompraDetalle {
   id: string;
   motivo: string;
+  /** En pesos. */
   monto: string;
+  /** Como se cargó en USDT (null = gasto anterior, cargado en pesos). */
+  montoUSDT: string | null;
   fecha: Date;
   usuario: string;
   anulado: boolean;
@@ -1144,10 +1281,17 @@ export interface CostosCompra {
   costoFinalTotal: string;
   unidades: number;
   costoUnitarioFinalPromedio: string;
-  /** Para recalcular en vivo con calcularCostosFinales. */
-  items: { cantidad: number; costoUnitario: string }[];
+  /** true = compra cargada en USDT (ver Compra.costosEnUsdt). */
+  costosEnUsdt: boolean;
+  /** Para recalcular en vivo con vistaCostosUsdt. */
+  items: {
+    cantidad: number;
+    costoUnitario: string;
+    costoUnitarioUSDT: string | null;
+    costoUnitarioFinal: string;
+  }[];
   gastos: GastoCompraDetalle[];
-  /** Para los equivalentes en USDT (la guardada en la compra o la vigente). */
+  /** Con la que se pasan los gastos a pesos (la guardada en la compra o la vigente). */
   cotizacionUsdt: CotizacionResumen | null;
 }
 
@@ -1156,7 +1300,12 @@ export async function obtenerCostosCompra(ctx: Ctx, compraId: string): Promise<C
     where: { id: compraId },
     include: {
       items: {
-        select: { cantidad: true, costoUnitario: true },
+        select: {
+          cantidad: true,
+          costoUnitario: true,
+          costoUnitarioUSDT: true,
+          costoUnitarioFinal: true,
+        },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       },
       gastos: {
@@ -1179,11 +1328,18 @@ export async function obtenerCostosCompra(ctx: Ctx, compraId: string): Promise<C
     costoFinalTotal: dec(c.costoFinalTotal),
     unidades: c.unidadesTotal,
     costoUnitarioFinalPromedio: dec(c.costoUnitarioFinalPromedio),
-    items: c.items.map((i) => ({ cantidad: i.cantidad, costoUnitario: dec(i.costoUnitario) })),
+    costosEnUsdt: c.costosEnUsdt,
+    items: c.items.map((i) => ({
+      cantidad: i.cantidad,
+      costoUnitario: dec(i.costoUnitario),
+      costoUnitarioUSDT: i.costoUnitarioUSDT ? dec(i.costoUnitarioUSDT) : null,
+      costoUnitarioFinal: dec(i.costoUnitarioFinal),
+    })),
     gastos: c.gastos.map((g) => ({
       id: g.id,
       motivo: g.motivo,
       monto: dec(g.monto),
+      montoUSDT: g.montoUSDT ? dec(g.montoUSDT) : null,
       fecha: g.fecha,
       usuario: g.usuario.nombre,
       anulado: g.anulado,
@@ -1226,6 +1382,8 @@ export interface CompraListada {
   costoUnitarioFinalPromedio: string;
   /** Cotización USDT guardada en la compra (null si no tiene). */
   tipoCambioUSDT: string | null;
+  /** Los costos en USDT (moneda de Compras); null sin ninguna cotización USDT. */
+  usdt: VistaCostosUsdt | null;
 }
 
 export async function listarCompras(
@@ -1253,10 +1411,20 @@ export async function listarCompras(
         proveedor: { select: { nombre: true, nombreTienda: true } },
         deposito: { select: { nombre: true } },
         usuario: { select: { nombre: true } },
-        items: { select: { cantidad: true } },
+        items: {
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: {
+            cantidad: true,
+            costoUnitario: true,
+            costoUnitarioUSDT: true,
+            costoUnitarioFinal: true,
+          },
+        },
+        gastos: { select: { monto: true, montoUSDT: true, anulado: true } },
       },
     }),
   ]);
+  const vigente = filas.some((c) => !c.tipoCambioUSDT) ? await cotizacionResumenCompra(null) : null;
   return {
     compras: filas.map((c) => ({
       id: c.id,
@@ -1278,6 +1446,10 @@ export async function listarCompras(
       costoFinalTotal: dec(c.costoFinalTotal),
       costoUnitarioFinalPromedio: dec(c.costoUnitarioFinalPromedio),
       tipoCambioUSDT: c.tipoCambioUSDT ? dec(c.tipoCambioUSDT) : null,
+      usdt: vistaDe(
+        c,
+        c.tipoCambioUSDT ? { valor: Number(c.tipoCambioUSDT), origen: "guardada" } : vigente,
+      ),
     })),
     total,
     page: f.page,
@@ -1295,14 +1467,18 @@ export interface ItemCompraDetalle {
   codigoBarras: string | null;
   cantidad: number;
   costoUnitario: string;
-  /** Solo si el proveedor cotiza ese producto en USDT (ver snapshotUsdt). */
+  /** Lo cargado en USDT (null en compras anteriores con el producto en pesos). */
   costoUnitarioUSDT: string | null;
   subtotal: string;
   /** Costo con la comisión y los gastos prorrateados por unidad. */
   costoUnitarioFinal: string;
 }
 
-export interface CompraDetalle extends Omit<CompraListada, "items"> {
+export interface CompraDetalle extends Omit<CompraListada, "items" | "usdt"> {
+  /** true = compra cargada en USDT (ver Compra.costosEnUsdt). */
+  costosEnUsdt: boolean;
+  /** Dólar blue guardado en la compra (null = compra anterior). */
+  tipoCambioUSD: string | null;
   depositoId: string;
   proveedorNombre: string | null;
   proveedorTienda: string | null;
@@ -1374,13 +1550,16 @@ export async function obtenerCompra(ctx: Ctx, id: string): Promise<CompraDetalle
       id: g.id,
       motivo: g.motivo,
       monto: dec(g.monto),
+      montoUSDT: g.montoUSDT ? dec(g.montoUSDT) : null,
       fecha: g.fecha,
       usuario: g.usuario.nombre,
       anulado: g.anulado,
       motivoAnulacion: g.motivoAnulacion,
     })),
     notas: c.notas,
+    costosEnUsdt: c.costosEnUsdt,
     tipoCambioUSDT: c.tipoCambioUSDT ? dec(c.tipoCambioUSDT) : null,
+    tipoCambioUSD: c.tipoCambioUSD ? dec(c.tipoCambioUSD) : null,
     movimientos,
     items: c.items.map((i) => ({
       varianteId: i.varianteId,

@@ -214,15 +214,19 @@ test("Trinidad (REPORTES ver) no accede a lo de dueños: 403 en exportaciones y 
   try {
     await login(page, trinidad.email, PASSWORD_TRINIDAD);
     await page.goto("/p/vapes/reportes");
-    await expect(page.getByTestId("reporte-ventas")).toBeVisible();
-    for (const clave of ["comparador", "empresa", "vendedores", "compras", "resumen-mensual"]) {
+    // Tampoco el reporte de ventas: Trinidad no ve lo facturado (solo su ganancia).
+    for (const clave of [
+      "ventas",
+      "comparador",
+      "empresa",
+      "vendedores",
+      "compras",
+      "resumen-mensual",
+    ]) {
       await expect(page.getByTestId(`reporte-${clave}`)).toHaveCount(0);
       const r = await page.request.get(`/api/p/vapes/reportes/${clave}?formato=pdf`);
       expect(r.status(), clave).toBe(403);
     }
-    const ok = await page.request.get("/api/p/vapes/reportes/ventas?formato=pdf");
-    expect(ok.status()).toBe(200);
-    expect(ok.headers()["content-type"]).toBe("application/pdf");
     await page.goto(`/p/vapes/reportes/comparador?productoId=${productoId}`);
     await expect(page).toHaveURL(/sin-acceso/);
   } finally {

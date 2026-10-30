@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { BotonRecibido } from "@/components/compras/boton-recibido";
 import { BotonGastosCompra } from "@/components/compras/gastos-compra-sheet";
-import { EnUsdt } from "@/components/compras/resumen-compra-card";
+import { textoUsdt } from "@/components/compras/resumen-compra-card";
 import { Badge } from "@/components/ui/badge";
 import { BarraAccion } from "@/components/ui/barra-accion";
 import { buttonVariants } from "@/components/ui/button";
@@ -16,18 +16,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { MenuFila } from "@/components/ui/menu-fila";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
 import { listarComprasSchema } from "@/lib/validations/compra";
 import { requirePaginaPanel } from "@/server/auth/permissions";
-import {
-  cotizacionResumenCompra,
-  listarCompras,
-  type CompraListada,
-} from "@/server/services/compra.service";
+import { listarCompras, type CompraListada } from "@/server/services/compra.service";
 import { listarProveedoresActivos, veCostosCompras } from "@/server/services/proveedor.service";
 
 import { listarBorradoresCompra } from "@/server/services/borrador-compra.service";
@@ -52,16 +48,14 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
   ]);
 
   const verCostos = veCostosCompras(ctx);
-  // Equivalentes en USDT: con la cotización guardada en cada compra; si no tiene, la vigente.
-  const vigente = verCostos ? await cotizacionResumenCompra(null) : null;
-  const cotizacionDe = (c: CompraListada) =>
-    c.tipoCambioUSDT ? { valor: Number(c.tipoCambioUSDT), origen: "guardada" } : vigente;
-  /** Pesos con su equivalente en USDT debajo. */
-  const conUsdt = (c: CompraListada, pesos: string) => (
-    <span className="flex flex-col items-end">
-      {formatearPesos(pesos)}
-      <EnUsdt pesos={pesos} cotizacion={cotizacionDe(c)} />
-    </span>
+  // Montos EN USDT (moneda de Compras), calculados por el servicio con la
+  // cotización de cada compra; "≈" en compras anteriores cargadas en pesos.
+  type CampoUsdt =
+    "total" | "comision" | "gastos" | "costoFinalTotal" | "costoUnitarioFinalPromedio";
+  const usdt = (c: CompraListada, campo: CampoUsdt) =>
+    c.usdt ? textoUsdt(c.usdt.costos[campo], c.usdt.aproximado) : "—";
+  const conUsdt = (c: CompraListada, campo: CampoUsdt) => (
+    <span className="whitespace-nowrap tabular-nums">{usdt(c, campo)}</span>
   );
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "crear");
   const borradores = puedeCrear ? await listarBorradoresCompra(ctx) : [];
@@ -200,7 +194,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   key: "total",
                   header: "Total",
                   className: "text-right font-medium",
-                  cell: (c: CompraListada) => conUsdt(c, c.total),
+                  cell: (c: CompraListada) => conUsdt(c, "total"),
                 },
               ]
             : []),
@@ -213,8 +207,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   cell: (c: CompraListada) =>
                     c.comisionPasistaPorcentaje ? (
                       <span className="flex flex-col items-end">
-                        <span>{formatearPesos(c.comisionPasistaMonto)}</span>
-                        <EnUsdt pesos={c.comisionPasistaMonto} cotizacion={cotizacionDe(c)} />
+                        {conUsdt(c, "comision")}
                         <span className="text-subtle text-xs">
                           {formatearNumero(Number(c.comisionPasistaPorcentaje))}%
                         </span>
@@ -229,7 +222,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   className: "text-right",
                   cell: (c: CompraListada) =>
                     Number(c.gastosExtrasTotal) > 0 ? (
-                      conUsdt(c, c.gastosExtrasTotal)
+                      conUsdt(c, "gastos")
                     ) : (
                       <span className="text-subtle">—</span>
                     ),
@@ -238,13 +231,13 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   key: "costoFinal",
                   header: "Costo final",
                   className: "text-right font-medium",
-                  cell: (c: CompraListada) => conUsdt(c, c.costoFinalTotal),
+                  cell: (c: CompraListada) => conUsdt(c, "costoFinalTotal"),
                 },
                 {
                   key: "costoUnidad",
                   header: "Final / unidad",
                   className: "text-right",
-                  cell: (c: CompraListada) => conUsdt(c, c.costoUnitarioFinalPromedio),
+                  cell: (c: CompraListada) => conUsdt(c, "costoUnitarioFinalPromedio"),
                 },
               ]
             : []),
@@ -290,23 +283,16 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
                   {c.deposito} · {c.unidades} u. · {formatearFechaHora(c.fecha)}
                 </p>
                 {verCostos && (
-                  <p className="flex shrink-0 flex-col items-end font-semibold tabular-nums">
-                    {formatearPesos(c.total)}
-                    <EnUsdt pesos={c.total} cotizacion={cotizacionDe(c)} />
-                  </p>
+                  <p className="shrink-0 font-semibold tabular-nums">{usdt(c, "total")}</p>
                 )}
               </div>
               {owner && (
                 <p className="text-muted text-small flex flex-wrap justify-between gap-x-3">
                   <span>
                     Costo final{" "}
-                    <strong className="text-foreground">{formatearPesos(c.costoFinalTotal)}</strong>
-                    <EnUsdt pesos={c.costoFinalTotal} cotizacion={cotizacionDe(c)} />
+                    <strong className="text-foreground">{usdt(c, "costoFinalTotal")}</strong>
                   </span>
-                  <span className="text-right">
-                    {formatearPesos(c.costoUnitarioFinalPromedio)} / u.
-                    <EnUsdt pesos={c.costoUnitarioFinalPromedio} cotizacion={cotizacionDe(c)} />
-                  </span>
+                  <span className="text-right">{usdt(c, "costoUnitarioFinalPromedio")} / u.</span>
                 </p>
               )}
             </Link>

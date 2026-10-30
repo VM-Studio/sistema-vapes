@@ -268,16 +268,21 @@ test("dueño: tarjeta de una vendedora con unitarias, mayoristas y comisión est
   expect(descarga.suggestedFilename()).toMatch(/^ventas-vendedora-dashboard-.*\.xlsx$/);
 });
 
-test("Trinidad ve Mi rendimiento, sin ganancia ni equipo; el export le da 403", async ({
+test("Trinidad (ganancia por vape) ve su ganancia, no lo facturado ni el equipo; el export le da 403", async ({
   page,
 }) => {
   const t = await trinidad();
   await login(page, "trinidad@negocio.com", PASSWORD_TRINIDAD);
   await page.goto("/p/vapes");
-  await expect(page.getByTestId("tarjeta-mi-rendimiento")).toContainText("Comisión estimada");
-  await expect(
-    page.getByRole("region", { name: "Indicadores" }).getByTestId("kpi-Facturado"),
-  ).toBeVisible();
+  // Vendedora con ganancia por vape: con DASHBOARD ve su rendimiento en cantidades y «Mi ganancia»,
+  // nunca lo facturado (ni total vendido, ticket o comisión).
+  await expect(page.getByTestId("tarjeta-mi-ganancia")).toBeVisible();
+  const mio = page.getByTestId("tarjeta-mi-rendimiento");
+  await expect(mio.getByTestId("kpi-Ventas")).toBeVisible();
+  await expect(mio).not.toContainText("Comisión estimada");
+  await expect(page.getByTestId("kpi-Facturado")).toHaveCount(0);
+  await expect(page.getByTestId("kpi-Total vendido")).toHaveCount(0);
+  await expect(page.getByTestId("kpi-Ticket promedio")).toHaveCount(0);
   await expect(page.getByTestId("kpi-Ganancia")).toHaveCount(0);
   // Sin FIADOS: ni lo cobrado ni la deuda de los clientes.
   await expect(page.getByTestId("kpi-Cobrado")).toHaveCount(0);

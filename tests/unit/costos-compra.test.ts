@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { calcularCostosFinales } from "@/lib/costos-compra";
+import {
+  calcularCostosCompraUsdt,
+  calcularCostosFinales,
+  pesosAMoneda,
+  usdtAPesos,
+  vistaCostosUsdt,
+} from "@/lib/costos-compra";
 
 describe("calcularCostosFinales", () => {
   it("100 u. × $10.000 con 10% de pasista y $80.000 de gastos → $1.180.000 y $11.800 por unidad", () => {
@@ -204,5 +210,108 @@ describe("calcularCostosFinales", () => {
       gastos: [],
     });
     for (const i of r.items) expect(i.costoUnitarioFinal).toBeGreaterThanOrEqual(i.costoUnitario);
+  });
+});
+
+describe("compras en USDT", () => {
+  it("USDT → pesos a centavos, sin redondear a pesos enteros", () => {
+    expect(usdtAPesos("8.3", "1641.40")).toBe(13_623.62);
+    expect(usdtAPesos(5.7, 1641.4)).toBe(9_355.98); // antes se redondeaba a $ 9.356
+    expect(usdtAPesos("0.01", "1641.40")).toBe(16.41);
+    expect(usdtAPesos(0, 1641.4)).toBe(0);
+  });
+
+  it("pesos → USDT/dólar a centavos; ida y vuelta devuelve lo cargado", () => {
+    expect(pesosAMoneda(9356, 1641.4)).toBe(5.7);
+    expect(pesosAMoneda(10_000, 1300)).toBe(7.69);
+    for (const u of [0.01, 5.7, 8.3, 9.33, 123.45, 9_999.99])
+      expect(pesosAMoneda(usdtAPesos(u, 1641.4), 1641.4)).toBe(u);
+  });
+
+  it("caso de la captura: 10 u. × 5,70 USDT + 10% pasista + gastos 33,60 USDT en 120 u.", () => {
+    const r = calcularCostosCompraUsdt({
+      items: [
+        { cantidad: 10, costoUnitarioUSDT: "5.70" },
+        { cantidad: 110, costoUnitarioUSDT: "8.40" },
+      ],
+      comisionPorcentaje: 10,
+      gastos: [{ montoUSDT: "33.60" }],
+      tipoCambioUSDT: "1641.40",
+    });
+    // En USDT: pasista 0,57 / 0,84 · gastos 33,60 ÷ 120 = 0,28 c/u.
+    expect(r.usdt.gastosPorUnidad).toBe(0.28);
+    expect(r.usdt.items[0]!.comisionPorUnidad).toBe(0.57);
+    expect(r.usdt.items[0]!.costoUnitarioFinal).toBe(6.55);
+    expect(r.usdt.items[1]!.costoUnitarioFinal).toBe(9.52);
+    expect(r.usdt.costoFinalTotal).toBe(1112.7);
+    expect(r.usdt.diferenciaRedondeo).toBe(0);
+    // Pesos: base exacta + extras convertidos; el final nunca queda por debajo del base.
+    expect(r.itemsPesos[0]).toEqual({
+      costoUnitario: 9_355.98,
+      costoUnitarioFinal: 9_355.98 + usdtAPesos(0.85, 1641.4), // 0,57 + 0,28
+    });
+    for (const [n, i] of r.itemsPesos.entries()) {
+      expect(i.costoUnitarioFinal).toBeGreaterThanOrEqual(i.costoUnitario);
+      // = final USDT × cotización (± 1 centavo).
+      expect(
+        Math.abs(i.costoUnitarioFinal - usdtAPesos(r.usdt.items[n]!.costoUnitarioFinal, 1641.4)),
+      ).toBeLessThanOrEqual(0.01);
+    }
+    // Columnas en pesos de la compra: total + comisión + gastos (CHECK de la DB).
+    expect(r.pesos.gastos).toBe(usdtAPesos(33.6, 1641.4));
+    expect(r.pesos.costoFinalTotal).toBeCloseTo(
+      r.pesos.total + r.pesos.comision + r.pesos.gastos,
+      2,
+    );
+  });
+
+  it("el gasto ya guardado en pesos manda en las columnas en pesos", () => {
+    const r = calcularCostosCompraUsdt({
+      items: [{ cantidad: 1, costoUnitarioUSDT: 10 }],
+      comisionPorcentaje: null,
+      gastos: [{ montoUSDT: 1, monto: "1300.00" }],
+      tipoCambioUSDT: 1641.4,
+    });
+    expect(r.pesos.gastos).toBe(1300);
+    expect(r.usdt.gastos).toBe(1);
+  });
+
+  it("vista: compra en USDT exacta; compra anterior en pesos, aproximada", () => {
+    const enUsdt = vistaCostosUsdt({
+      costosEnUsdt: true,
+      tipoCambioUSDT: 1300,
+      comisionPorcentaje: null,
+      items: [
+        {
+          cantidad: 3,
+          costoUnitario: "10790.00",
+          costoUnitarioUSDT: "8.30",
+          costoUnitarioFinal: "10790.00",
+        },
+      ],
+      gastos: [],
+    });
+    expect(enUsdt.aproximado).toBe(false);
+    expect(enUsdt.costos.total).toBe(24.9);
+    expect(enUsdt.finalesUsdt).toEqual([8.3]);
+
+    const anterior = vistaCostosUsdt({
+      costosEnUsdt: false,
+      tipoCambioUSDT: 1300,
+      comisionPorcentaje: "10",
+      items: [
+        {
+          cantidad: 2,
+          costoUnitario: "13000.00",
+          costoUnitarioUSDT: null,
+          costoUnitarioFinal: "14300.00",
+        },
+      ],
+      gastos: [{ monto: "2600.00", montoUSDT: null }],
+    });
+    expect(anterior.aproximado).toBe(true);
+    expect(anterior.costos.total).toBe(20);
+    expect(anterior.costos.gastos).toBe(2);
+    expect(anterior.finalesUsdt).toEqual([11]);
   });
 });

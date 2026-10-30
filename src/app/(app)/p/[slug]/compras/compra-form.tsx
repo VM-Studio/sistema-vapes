@@ -22,12 +22,12 @@ import { CatalogoProveedor } from "@/components/compras/catalogo-proveedor";
 import { CheckComisionPasista } from "@/components/compras/comision-pasista";
 import { CostoFinalPorUnidad } from "@/components/compras/costo-final-por-unidad";
 import {
+  montoCompraEnUsdt,
   ProductoCompraSheet,
   type SaborAgregado,
 } from "@/components/compras/producto-compra-sheet";
 import { ProveedorForm, soloDecimal } from "@/components/compras/proveedor-form";
 import {
-  EnUsdt,
   ResumenCompraCard,
   type CotizacionResumen,
 } from "@/components/compras/resumen-compra-card";
@@ -52,9 +52,9 @@ import { ScanInput } from "@/features/scanner/ScanInput";
 import { useBarcodeScanner } from "@/features/scanner/useBarcodeScanner";
 import { useScanFeedback } from "@/features/scanner/useScanFeedback";
 import type { CotizacionVigente } from "@/lib/cambio";
-import { calcularCostosFinales } from "@/lib/costos-compra";
+import { calcularCostosCompraUsdt, calcularCostosFinales, pesosAMoneda } from "@/lib/costos-compra";
 import { hoyAR } from "@/lib/fechas";
-import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { ComparacionCompra } from "@/server/reportes/comparador";
 import type { ProductoCatalogoCompra } from "@/server/services/compra.service";
@@ -78,10 +78,14 @@ export interface ItemCompraForm {
   sabor: string | null;
   sku: string;
   cantidad: string;
+  /** Costo unitario EN USDT (moneda de Compras). */
   costo: string;
   /** De dónde salió el costo sugerido (o "manual" si lo editaron). */
   origenCosto: "PROVEEDOR" | "PROVEEDOR_USDT" | "ULTIMO_COSTO" | "manual" | "cargando" | null;
-  /** Solo PROVEEDOR_USDT: "150 USDT × $ 1.350" (de dónde salió el costo en pesos). */
+  /**
+   * Si el costo salió de un monto en pesos (precio del proveedor en pesos o
+   * último costo): "$ 9.356 ÷ $ 1.641,40" (cómo se pasó a USDT).
+   */
   detalleUsdt?: string | null;
 }
 
@@ -100,8 +104,8 @@ export interface CompraInicial {
   notas: string;
   /** null = sin comisión del pasista. */
   comisionPasistaPorcentaje: string | null;
-  /** Montos de los gastos extras vigentes (solo al editar un borrador que ya tiene). */
-  gastos: string[];
+  /** Gastos extras vigentes (solo al editar una compra que ya tiene): en pesos y en USDT. */
+  gastos: { monto: string; montoUSDT: string | null }[];
   items: ItemCompraForm[];
   /** Compra nueva retomada de un borrador guardado (BorradorCompra). */
   borrador?: { id: string; updatedAt: Date | string } | null;
@@ -110,6 +114,9 @@ export interface CompraInicial {
 }
 
 const num = (s: string) => Number(s.replace(",", ".")) || 0;
+/** cantidad × costo en USDT, a centavos (sin errores de coma flotante). */
+const subtotalUsdt = (cantidad: string, costo: string) =>
+  (num(cantidad) * Math.round(num(costo) * 100)) / 100;
 const soloEntero = (s: string) => s.replace(/\D/g, "");
 const tituloItem = (i: { nombreCompleto: string; sabor: string | null }) =>
   i.sabor ? `${i.nombreCompleto} — ${i.sabor}` : i.nombreCompleto;
@@ -122,6 +129,9 @@ type Paso = 1 | 2 | 3;
  * 2. galpón destino (SelectorGalpon: nunca se confirma solo),
  * 3. ítems con la pistola/cámara activas y buscador manual. Cada sabor trae
  *    el costo sugerido (precio del proveedor o último costo), editable.
+ * TODO EN USDT (moneda principal de Compras): el costo se tipea en USDT y el
+ * costo final se calcula en USDT; los pesos los deriva el servidor con la
+ * cotización de la compra (acá se muestran solo en «= Final u.»).
  * «Confirmar» registra la compra pendiente de recibir (NO suma stock): el
  * stock entra después, con «Recibido» en el listado o el detalle. Abajo, la
  * tarjeta grande con el detalle (y su equivalente en USDT) y el costo final
@@ -133,14 +143,17 @@ export function CompraForm({
   depositos,
   comisionDefault,
   cotizacionUsdt,
+  cotizacionUsd,
 }: {
   inicial: CompraInicial;
   proveedores: ProveedorOpcion[];
   depositos: { id: string; nombre: string; esPrincipal: boolean }[];
   /** % del pasista que propone el tick (configuración del panel). */
   comisionDefault: number;
-  /** Cotización USDT para los equivalentes del resumen (la de la compra o la vigente). */
+  /** Cotización USDT con la que se pasan los costos a pesos (la de la compra o la vigente). */
   cotizacionUsdt: CotizacionResumen | null;
+  /** Dólar blue para el costo final por unidad en dólares (el de la compra o el vigente). */
+  cotizacionUsd: CotizacionResumen | null;
 }) {
   const router = useRouter();
   const ruta = useRutaPanel();
@@ -227,8 +240,8 @@ export function CompraForm({
           costo: s.costo === null ? "" : String(Number(s.costo)),
           origenCosto: s.fuente,
           detalleUsdt:
-            s.fuente === "PROVEEDOR_USDT" && s.precioUsdt && s.tipoCambio
-              ? `${formatearUsdt(s.precioUsdt)} × ${formatearPesos(s.tipoCambio)}`
+            s.pesos && s.tipoCambio
+              ? `${formatearPesos(s.pesos)} ÷ ${formatearPesos(s.tipoCambio)}`
               : null,
         };
       }),
@@ -344,8 +357,8 @@ export function CompraForm({
         ? "PROVEEDOR_USDT"
         : "PROVEEDOR";
     const detalleUsdt =
-      origen === "PROVEEDOR_USDT" && p.tipoCambio
-        ? `${formatearUsdt(p.precio)} × ${formatearPesos(p.tipoCambio)}`
+      origen === "PROVEEDOR" && p.tipoCambio
+        ? `${formatearPesos(p.precio)} ÷ ${formatearPesos(p.tipoCambio)}`
         : null;
     const valor = String(Number(costo.valor) || "");
     setItems((its) => {
@@ -380,7 +393,7 @@ export function CompraForm({
     const unidades = sabores.reduce((a, s) => a + s.cantidad, 0);
     toast.success(
       `${formatearNumero(unidades)} u. agregadas`,
-      `${p.nombreCompleto} a ${formatearPesos(valor)} c/u`,
+      `${p.nombreCompleto} a ${formatearUsdt(valor)} c/u`,
     );
     setEnFoco(null);
   }
@@ -432,12 +445,29 @@ export function CompraForm({
     enabled: paso === 3 && desconocido === null && !nuevoProveedor && enFoco === null,
   });
 
-  // Resumen en vivo; el servidor recalcula y guarda los números definitivos.
-  const costos = calcularCostosFinales({
-    items: items.map((i) => ({ cantidad: num(i.cantidad), costoUnitario: i.costo })),
-    comisionPorcentaje: comisionActiva ? comisionPct : null,
-    gastos: inicial.gastos,
-  });
+  // Resumen en vivo EN USDT (misma función que el servidor); el servidor
+  // recalcula y guarda los números definitivos. Los pesos del costo final
+  // salen de la cotización de la compra (sin cotización no se muestran).
+  const comisionVigente = comisionActiva ? comisionPct : null;
+  const gastosUsdt = inicial.gastos.map((g) => ({
+    montoUSDT: g.montoUSDT ?? (cotizacionUsdt ? pesosAMoneda(g.monto, cotizacionUsdt.valor) : 0),
+    monto: g.monto,
+  }));
+  const conPesos = cotizacionUsdt
+    ? calcularCostosCompraUsdt({
+        items: items.map((i) => ({ cantidad: num(i.cantidad), costoUnitarioUSDT: i.costo })),
+        comisionPorcentaje: comisionVigente,
+        gastos: gastosUsdt,
+        tipoCambioUSDT: cotizacionUsdt.valor,
+      })
+    : null;
+  const costos =
+    conPesos?.usdt ??
+    calcularCostosFinales({
+      items: items.map((i) => ({ cantidad: num(i.cantidad), costoUnitario: i.costo })),
+      comisionPorcentaje: comisionVigente,
+      gastos: gastosUsdt.map((g) => g.montoUSDT),
+    });
   const unidadesPorProducto = new Map<string, number>();
   for (const i of items)
     unidadesPorProducto.set(
@@ -462,7 +492,7 @@ export function CompraForm({
         items: items.map((i) => ({
           varianteId: i.varianteId,
           cantidad: i.cantidad,
-          costoUnitario: i.costo.replace(",", "."),
+          costoUnitarioUSDT: i.costo.replace(",", "."),
         })),
       },
     });
@@ -529,6 +559,7 @@ export function CompraForm({
         notas,
         comisionActiva,
         comisionPct,
+        moneda: "USDT",
         items: items.map((i) => ({
           varianteId: i.varianteId,
           productoId: i.productoId,
@@ -962,7 +993,7 @@ export function CompraForm({
             >
               <span>Producto</span>
               <span className="text-right">Cantidad</span>
-              <span className="text-right">Costo unitario</span>
+              <span className="text-right">Costo unitario (USDT)</span>
               <span className="text-right">Subtotal</span>
               <span />
             </div>
@@ -984,15 +1015,20 @@ export function CompraForm({
                       <p className="text-subtle text-xs">
                         {it.sabor ? `${it.sabor} · ` : ""}
                         {it.sku}
-                        {it.origenCosto === "PROVEEDOR" && " · costo del proveedor"}
-                        {it.origenCosto === "PROVEEDOR_USDT" &&
-                          ` · costo del proveedor: ${it.detalleUsdt ?? "en USDT"}`}
-                        {it.origenCosto === "ULTIMO_COSTO" && " · último costo"}
+                        {it.origenCosto === "PROVEEDOR_USDT" && " · costo del proveedor"}
+                        {it.origenCosto === "PROVEEDOR" &&
+                          ` · costo del proveedor${it.detalleUsdt ? ` en pesos: ${it.detalleUsdt}` : ""}`}
+                        {it.origenCosto === "ULTIMO_COSTO" &&
+                          ` · último costo${it.detalleUsdt ? `: ${it.detalleUsdt}` : ""}`}
+                        {it.origenCosto === "manual" &&
+                          it.detalleUsdt &&
+                          ` · convertido de pesos: ${it.detalleUsdt}`}
                         {it.origenCosto === "cargando" && " · buscando costo…"}
                       </p>
                       {items.findIndex((x) => x.productoId === it.productoId) === i && (
                         <PistaComparador
                           comparacion={comparacionesVigentes[it.productoId] ?? null}
+                          cotizacionUsdt={comparaciones.cotizacionUsdt}
                           proveedor={proveedor?.nombre ?? "este proveedor"}
                           onComparar={() =>
                             setEnFoco({
@@ -1024,16 +1060,18 @@ export function CompraForm({
                       )}
                     </label>
                     <label className="text-muted text-small row-start-2 flex flex-col gap-1 md:row-start-auto">
-                      <span className="md:sr-only">Costo unitario</span>
+                      <span className="md:sr-only">Costo unitario (USDT)</span>
                       <input
                         inputMode="decimal"
-                        aria-label={`Costo de ${t}`}
+                        aria-label={`Costo en USDT de ${t}`}
+                        placeholder="USDT"
                         title={sugerido ? "Costo sugerido: editalo si cambió" : undefined}
                         value={it.costo}
                         onChange={(e) =>
                           actualizar(it.varianteId, {
                             costo: soloDecimal(e.target.value),
                             origenCosto: "manual",
+                            detalleUsdt: null,
                           })
                         }
                         aria-invalid={errorDe("costoUnitario") ? true : undefined}
@@ -1043,11 +1081,6 @@ export function CompraForm({
                           sugerido && "text-muted",
                         )}
                       />
-                      <EnUsdt
-                        pesos={it.costo === "" ? null : num(it.costo)}
-                        cotizacion={cotizacionUsdt}
-                        className="text-right"
-                      />
                       {errorDe("costoUnitario") && (
                         <span className="text-danger">{errorDe("costoUnitario")}</span>
                       )}
@@ -1056,12 +1089,8 @@ export function CompraForm({
                       <span className="text-muted text-small md:hidden">Subtotal</span>
                       <span className="flex flex-col items-end">
                         <strong className="font-semibold tabular-nums">
-                          {formatearPesos(num(it.cantidad) * num(it.costo))}
+                          {formatearUsdt(subtotalUsdt(it.cantidad, it.costo))}
                         </strong>
-                        <EnUsdt
-                          pesos={num(it.cantidad) * num(it.costo)}
-                          cotizacion={cotizacionUsdt}
-                        />
                       </span>
                     </p>
                     <IconButton
@@ -1126,7 +1155,9 @@ export function CompraForm({
             sabor: i.sabor,
           }))}
           costos={costos}
-          cotizacion={cotizacionUsdt}
+          finalesUsdt={costos.items.map((c) => c.costoUnitarioFinal)}
+          finalesPesos={items.map((_, n) => conPesos?.itemsPesos[n]?.costoUnitarioFinal ?? null)}
+          cotizacionUsd={cotizacionUsd}
         />
 
         <div className="md:flex md:justify-end">
@@ -1194,10 +1225,12 @@ export function CompraForm({
  */
 function PistaComparador({
   comparacion,
+  cotizacionUsdt,
   proveedor,
   onComparar,
 }: {
   comparacion: ComparacionCompra | null;
+  cotizacionUsdt: CotizacionVigente | null;
   proveedor: string;
   onComparar: () => void;
 }) {
@@ -1229,9 +1262,17 @@ function PistaComparador({
       );
   } else if (masBarato && sobrecostoActual) {
     tono = "text-warning-soft-foreground";
-    texto = `Más barato con ${masBarato.proveedor}: ${formatearMonto(masBarato.precio, masBarato.moneda)} · ahorrás ${formatearMonto(sobrecostoActual, masBarato.grupo)}/u`;
+    // Los dos en USDT: el ahorro exacto en USDT (sin pasar por pesos).
+    const ahorro =
+      actual?.moneda === "USDT" && masBarato.moneda === "USDT"
+        ? formatearUsdt(
+            (Math.round(Number(actual.precio) * 100) - Math.round(Number(masBarato.precio) * 100)) /
+              100,
+          )
+        : montoCompraEnUsdt(sobrecostoActual, masBarato.grupo, cotizacionUsdt);
+    texto = `Más barato con ${masBarato.proveedor}: ${montoCompraEnUsdt(masBarato.precio, masBarato.moneda, cotizacionUsdt)} · ahorrás ${ahorro}/u`;
   } else if (!actual && masBarato) {
-    texto = `${proveedor} no lo tiene cargado · desde ${formatearMonto(masBarato.precio, masBarato.moneda)} con ${masBarato.proveedor}`;
+    texto = `${proveedor} no lo tiene cargado · desde ${montoCompraEnUsdt(masBarato.precio, masBarato.moneda, cotizacionUsdt)} con ${masBarato.proveedor}`;
   } else {
     texto = `Lo venden ${n} proveedores`;
   }

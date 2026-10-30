@@ -122,6 +122,8 @@ enum EstadoCotizacion {
   RECHAZADA
   VENCIDA
   CONVERTIDA
+  /// Anulada a mano (quedó sin efecto): no se edita, convierte ni comparte más.
+  ANULADA
 }
 
 enum EstadoDevolucion {
@@ -828,6 +830,13 @@ model Compra {
   /// Snapshot de la cotización USDT (pesos por USDT) al cargar la compra: con
   /// ella se pasaron a pesos los precios en USDT del proveedor.
   tipoCambioUSDT Decimal?     @db.Decimal(14, 2)
+  /// Snapshot del dólar blue (venta, pesos por dólar) al cargar la compra: para
+  /// mostrar el costo final por unidad también en dólares.
+  tipoCambioUSD  Decimal?     @db.Decimal(14, 2)
+  /// true = compra cargada en USDT (desde 2026-10-30): costos de ítems y gastos
+  /// se cargan y calculan en USDT; los pesos se derivan con tipoCambioUSDT.
+  /// false = compra anterior, calculada en pesos (sus USDT son aproximados).
+  costosEnUsdt   Boolean      @default(false)
 
   // --- Costos finales (compra.service: calcularCostosFinales / recalcularCostosFinales) ---
   /// % de comisión del pasista sobre (subtotal − descuento). null = sin comisión.
@@ -897,10 +906,12 @@ model CompraItem {
   varianteId         String
   productoId         String
   cantidad           Int
-  /// En pesos: es lo que contabiliza el sistema (stock, ganancia).
+  /// En pesos: es lo que contabiliza el sistema (stock, ganancia). En compras
+  /// en USDT = ROUND(costoUnitarioUSDT × Compra.tipoCambioUSDT, 2).
   costoUnitario      Decimal  @db.Decimal(12, 2)
-  /// Trazabilidad: el costo en USDT (costoUnitario ÷ Compra.tipoCambioUSDT)
-  /// cuando el proveedor cotiza ese producto en USDT.
+  /// En compras en USDT (Compra.costosEnUsdt): el costo tal como se cargó. En
+  /// las anteriores, trazabilidad (costoUnitario ÷ tipoCambioUSDT) solo si el
+  /// proveedor cotizaba ese producto en USDT.
   costoUnitarioUSDT  Decimal? @db.Decimal(12, 2)
   subtotal           Decimal  @db.Decimal(12, 2)
   /// costoUnitario + (comisión del pasista + gastos extras) ÷ unidades de la compra:
@@ -927,8 +938,10 @@ model GastoCompra {
   panelId         String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
   compraId        String
   motivo          String
-  /// > 0 (CHECK).
+  /// > 0 (CHECK). En pesos; en compras en USDT = ROUND(montoUSDT × Compra.tipoCambioUSDT, 2).
   monto           Decimal   @db.Decimal(12, 2)
+  /// El gasto tal como se cargó en USDT (null en gastos anteriores a compras en USDT).
+  montoUSDT       Decimal?  @db.Decimal(12, 2)
   fecha           DateTime  @default(now())
   usuarioId       String
   createdAt       DateTime  @default(now())

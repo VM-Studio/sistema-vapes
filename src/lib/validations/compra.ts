@@ -6,10 +6,11 @@ import { hoyAR } from "@/lib/fechas";
 
 import { motivoAjuste } from "./movimiento";
 
+/** Ítem de una compra: el costo unitario se carga EN USDT (moneda principal de Compras). */
 export const compraItemSchema = z.object({
   varianteId: id,
   cantidad: enteroPositivo,
-  costoUnitario: monto,
+  costoUnitarioUSDT: monto,
 });
 
 /** % del pasista: vacío/null = sin comisión; si no, (0, 100] con 2 decimales. */
@@ -96,6 +97,11 @@ export const datosBorradorSchema = z.object({
   notas: textoCorto(1000),
   comisionActiva: z.boolean().default(false),
   comisionPct: textoCorto(10),
+  /**
+   * Moneda de los costos tipeados: "USDT" desde que Compras pasó a USDT; los
+   * borradores anteriores (sin el campo) tienen los costos en pesos.
+   */
+  moneda: z.enum(["USDT", "ARS"]).catch("ARS").default("ARS"),
   items: z.array(itemBorradorSchema).max(500).default([]),
 });
 export type DatosBorradorCompra = z.output<typeof datosBorradorSchema>;
@@ -128,9 +134,10 @@ const montoGasto = z.preprocess(
     .multipleOf(0.01, "Hasta 2 decimales"),
 );
 
+/** Gasto extra: el monto se carga EN USDT (el servidor lo pasa a pesos con la cotización de la compra). */
 export const gastoCompraSchema = z.object({
   motivo: z.string().trim().min(2, "Contá de qué es el gasto (ej. Valija, Envío)").max(120),
-  monto: montoGasto,
+  montoUSDT: montoGasto,
 });
 
 /** Agregar uno o más gastos extras a una compra. */

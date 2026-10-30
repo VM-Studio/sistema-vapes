@@ -13,7 +13,7 @@ import {
   ventaIdSchema,
 } from "@/lib/validations/venta";
 import { actionHandler } from "@/server/action-handler";
-import { requireCtx, requireCtxOwner } from "@/server/auth/permissions";
+import { requireCtx } from "@/server/auth/permissions";
 import { ClienteDuplicadoError, type ClienteBasico } from "@/server/services/cliente.service";
 import { cancelarEscaneo, pedirEscaneo } from "@/server/services/escaneo-remoto.service";
 import { cobrarVenta } from "@/server/services/fiado.service";
@@ -30,7 +30,7 @@ import {
 /**
  * Permisos de VENTAS (en el panel actual):
  *   ver → listado y detalle · crear → generar ventas (y dar de alta al cliente nuevo)
- *   editar → precio especial y descuento global · anular → solo dueños
+ *   editar → precio especial y descuento global · eliminar → anular ventas (dueños siempre)
  * Vender fiado (pagos que no cubren el total) exige además FIADOS "crear" (lo valida el servicio).
  * Precios, costos y totales los calcula el servicio: acá solo se decide qué puede el usuario.
  */
@@ -69,8 +69,9 @@ export const generarVentaAction = actionHandler(
   },
 );
 
+/** Anular: dueños o VENTAS "eliminar" (vuelve el stock con VENTA_ANULADA y se anulan los pagos). */
 export const anularVentaAction = actionHandler(async (input: unknown) => {
-  const ctx = await requireCtxOwner();
+  const ctx = await requireCtx(Modulo.VENTAS, "eliminar");
   const { ventaId, motivo } = anularVentaSchema.parse(input);
   const r = await anularVenta(ctx, ventaId, motivo);
   revalidar();

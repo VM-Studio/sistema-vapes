@@ -18,6 +18,7 @@ import { NotFoundError } from "@/server/errors";
 import { obtener, textoWhatsApp } from "@/server/services/cotizacion.service";
 
 import {
+  esAnulable,
   esConvertible,
   esEditable,
   ESTADO_COTIZACION_UI,
@@ -88,6 +89,7 @@ export default async function DetalleCotizacionPage({
         vencida={c.vencida}
         whatsapp={whatsapp}
         editable={puedeCrear && esEditable(c.estado)}
+        anulable={puedeCrear && esAnulable(c.estado)}
         puedeCrear={puedeCrear}
         convertible={
           esConvertible(c.estado) && puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "crear")
@@ -231,7 +233,8 @@ export default async function DetalleCotizacionPage({
             )}
             {c.motivoRechazo && (
               <p className="text-muted border-border border-t pt-3 text-sm">
-                Motivo del rechazo: {c.motivoRechazo}
+                {c.estado === "ANULADA" ? "Motivo de la anulación" : "Motivo del rechazo"}:{" "}
+                {c.motivoRechazo}
               </p>
             )}
           </Card>

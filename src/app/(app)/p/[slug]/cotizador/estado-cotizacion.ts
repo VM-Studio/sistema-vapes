@@ -13,6 +13,7 @@ const VARIANTE: Record<EstadoCotizacion, Variante> = {
   RECHAZADA: "danger",
   VENCIDA: "warning",
   CONVERTIDA: "success",
+  ANULADA: "neutral",
 };
 
 /** Etiqueta y color del badge de cada estado. */
@@ -23,9 +24,16 @@ export const ESTADO_COTIZACION_UI = Object.fromEntries(
   ]),
 ) as Record<EstadoCotizacion, { label: string; variante: Variante }>;
 
-/** Se puede editar (y volver a guardar) mientras no esté cerrada. */
+/**
+ * Se puede editar (y volver a guardar) mientras no esté cerrada: los mismos
+ * estados que acepta el servicio (una vencida vuelve a borrador con precios de hoy).
+ */
 export const esEditable = (estado: EstadoCotizacion) =>
-  estado === "BORRADOR" || estado === "ENVIADA";
+  estado === "BORRADOR" || estado === "ENVIADA" || estado === "ACEPTADA" || estado === "VENCIDA";
+
+/** Se puede anular mientras no se haya convertido en venta (ni esté ya anulada). */
+export const esAnulable = (estado: EstadoCotizacion) =>
+  estado !== "CONVERTIDA" && estado !== "ANULADA";
 
 /** Se puede convertir en venta (VENCIDA pide confirmar los precios de hoy). */
 export const esConvertible = (estado: EstadoCotizacion) =>

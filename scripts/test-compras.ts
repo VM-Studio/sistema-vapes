@@ -90,7 +90,34 @@ const stockDe = async (varianteId: string, depositoId: string) =>
     })
   )?.cantidad ?? 0;
 
+// Override manual de la cotización USDT (global): el test no depende de las APIs.
+// Fuera de la sección USDT vale 1 → los costos cargados en USDT valen lo mismo en pesos.
+const CLAVE_USDT = "cambio.overrideUSDT";
+const fijarUsdt = (valor: number) =>
+  prisma.configuracionGlobal.upsert({
+    where: { clave: CLAVE_USDT },
+    create: { clave: CLAVE_USDT, valor: { valor, cargadoAt: new Date().toISOString() } },
+    update: { valor: { valor, cargadoAt: new Date().toISOString() } },
+  });
+
 async function main() {
+  const overrideUsdtPrevio = await prisma.configuracionGlobal.findUnique({
+    where: { clave: CLAVE_USDT },
+  });
+  try {
+    await fijarUsdt(1);
+    await pruebas();
+  } finally {
+    if (overrideUsdtPrevio)
+      await prisma.configuracionGlobal.update({
+        where: { clave: CLAVE_USDT },
+        data: { valor: overrideUsdtPrevio.valor ?? {} },
+      });
+    else await prisma.configuracionGlobal.deleteMany({ where: { clave: CLAVE_USDT } });
+  }
+}
+
+async function pruebas() {
   const owner = await prisma.usuario.findFirstOrThrow({
     where: { rol: RolUsuario.OWNER, deletedAt: null },
     orderBy: { createdAt: "asc" },
@@ -240,7 +267,7 @@ async function main() {
       compraSchema.parse({
         proveedorId: provTemp.id,
         depositoId: g1.id,
-        items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
+        items: [{ varianteId: uva.id, cantidad: 1, costoUnitarioUSDT: 1 }],
       }),
     ),
   );
@@ -253,7 +280,7 @@ async function main() {
   console.log("\n2) Compra de 3 sabores: proveedor y galpón obligatorios, totales del servidor");
   const sinProveedor = compraSchema.safeParse({
     depositoId: g1.id,
-    items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
+    items: [{ varianteId: uva.id, cantidad: 1, costoUnitarioUSDT: 1 }],
   });
   check(
     !sinProveedor.success &&
@@ -275,9 +302,9 @@ async function main() {
     depositoId: g1.id,
     notas: "Remito 0001-000123",
     items: [
-      { varianteId: uva.id, cantidad: 10, costoUnitario: "5200" },
-      { varianteId: limon.id, cantidad: 5, costoUnitario: "4800.50" },
-      { varianteId: durazno.id, cantidad: 3, costoUnitario: "5000" },
+      { varianteId: uva.id, cantidad: 10, costoUnitarioUSDT: "5200" },
+      { varianteId: limon.id, cantidad: 5, costoUnitarioUSDT: "4800.50" },
+      { varianteId: durazno.id, cantidad: 3, costoUnitarioUSDT: "5000" },
     ],
   });
   const compra = await crearCompra(actor, datos);
@@ -408,8 +435,8 @@ async function main() {
       proveedorId: prov.id,
       depositoId: g2.id,
       items: [
-        { varianteId: uva.id, cantidad: 5, costoUnitario: 5300 },
-        { varianteId: limon.id, cantidad: 2, costoUnitario: 4800.5 },
+        { varianteId: uva.id, cantidad: 5, costoUnitarioUSDT: 5300 },
+        { varianteId: limon.id, cantidad: 2, costoUnitarioUSDT: 4800.5 },
       ],
     }),
   );
@@ -445,7 +472,7 @@ async function main() {
     compraSchema.parse({
       proveedorId: prov.id,
       depositoId: g1.id,
-      items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
+      items: [{ varianteId: uva.id, cantidad: 1, costoUnitarioUSDT: 1 }],
     }),
   );
   const an3 = await anularCompra(actor, c3.id, "Borrador duplicado");
@@ -583,7 +610,7 @@ async function main() {
       compraSchema.parse({
         proveedorId: provCosmetic.id,
         depositoId: depCosmetic.id,
-        items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
+        items: [{ varianteId: uva.id, cantidad: 1, costoUnitarioUSDT: 1 }],
       }),
     ),
   );
@@ -597,7 +624,7 @@ async function main() {
       compraSchema.parse({
         proveedorId: prov.id,
         depositoId: depCosmetic.id,
-        items: [{ varianteId: uva.id, cantidad: 1, costoUnitario: 1 }],
+        items: [{ varianteId: uva.id, cantidad: 1, costoUnitarioUSDT: 1 }],
       }),
     ),
   );
@@ -623,7 +650,9 @@ async function main() {
   );
 
   // ---------------------------------------------------------------------------
-  console.log("\n9) Proveedor en USDT: costo sugerido en pesos y snapshot de la cotización");
+  console.log(
+    "\n9) Compras en USDT: costo sugerido, catálogo, conversión a pesos y proveedor nuevo",
+  );
   check(
     crearProveedorSchema.parse({
       nombre: "X",
@@ -632,22 +661,14 @@ async function main() {
     }).productos[0]?.moneda === Moneda.USDT,
     "precio de proveedor sin moneda → USDT por defecto",
   );
-  // Override manual de la cotización (global) para que el test no dependa de las APIs.
-  const CLAVE = "cambio.overrideUSDT";
-  const overridePrevio = await prisma.configuracionGlobal.findUnique({ where: { clave: CLAVE } });
-  await prisma.configuracionGlobal.upsert({
-    where: { clave: CLAVE },
-    create: { clave: CLAVE, valor: { valor: 1300, cargadoAt: new Date().toISOString() } },
-    update: { valor: { valor: 1300, cargadoAt: new Date().toISOString() } },
-  });
+  await fijarUsdt(1300);
   try {
     const sug = await costoSugerido(actor, enDolares.id, [uva.id]);
     check(
       sug[uva.id]?.fuente === "PROVEEDOR_USDT" &&
-        sug[uva.id]?.costo === "5200.00" &&
-        sug[uva.id]?.precioUsdt === "4.00" &&
-        sug[uva.id]?.tipoCambio === "1300.00",
-      `4 USDT × $ 1.300 → costo sugerido ${sug[uva.id]?.costo} (${sug[uva.id]?.fuente})`,
+        sug[uva.id]?.costo === "4.00" &&
+        sug[uva.id]?.pesos === undefined,
+      `precio del proveedor 4 USDT → costo sugerido ${sug[uva.id]?.costo} USDT (${sug[uva.id]?.fuente}), sin pasar por pesos`,
     );
     // Catálogo del proveedor y comparador por producto en el formulario de compra.
     const catalogo = await catalogoParaCompra(actor, enDolares.id, { depositoId: g1.id });
@@ -656,11 +677,11 @@ async function main() {
     check(
       enCatalogo?.moneda === Moneda.USDT &&
         enCatalogo.precio === "4.00" &&
-        enCatalogo.costoArs === "5200.00" &&
-        enCatalogo.tipoCambio === "1300.00" &&
+        enCatalogo.costoUsdt === "4.00" &&
+        enCatalogo.tipoCambio === null &&
         enCatalogo.sabores.length === 3 &&
         enCatalogo.sabores.find((s) => s.varianteId === uva.id)?.stock === stockUva,
-      `catálogo de ${enDolares.nombre}: ${enCatalogo?.precio} USDT → $ ${enCatalogo?.costoArs}, ${enCatalogo?.sabores.length} sabores con stock del galpón`,
+      `catálogo de ${enDolares.nombre}: ${enCatalogo?.precio} USDT → precarga ${enCatalogo?.costoUsdt} USDT, ${enCatalogo?.sabores.length} sabores con stock del galpón`,
     );
     const { productos: comparados } = await ofertasParaCompra(actor, [producto.id], enDolares.id);
     const cmp = comparados[producto.id];
@@ -679,14 +700,7 @@ async function main() {
         cmp!.actual?.proveedorId === enDolares.id &&
         cmp!.masBarato?.proveedorId === cmp!.ofertas[0]?.proveedorId &&
         cmp!.ofertas.filter((o) => o.esActual).length === 1,
-      `comparador en la compra (USDT a pesos): ${cmp?.ofertas.map((o) => `${o.proveedor} ${o.precio} ${o.moneda}`).join(" < ")}`,
-    );
-    const masBaratoPesos = pesos(cmp!.masBarato!);
-    check(
-      cmp!.actual?.masBarato
-        ? cmp!.sobrecostoActual === null
-        : cmp!.sobrecostoActual === (5200 - masBaratoPesos).toFixed(2),
-      `sobrecosto de comprarle a ${enDolares.nombre}: ${cmp?.sobrecostoActual ?? "ninguno"}`,
+      `comparador en la compra: ${cmp?.ofertas.map((o) => `${o.proveedor} ${o.precio} ${o.moneda}`).join(" < ")}`,
     );
     const otroPanel = await ofertasParaCompra({ panelId: COSMETIC }, [producto.id], null);
     check(
@@ -694,30 +708,31 @@ async function main() {
         (await catalogoParaCompra({ ...actor, panelId: COSMETIC }, enDolares.id)).length === 0,
       "catálogo y comparador no cruzan paneles",
     );
+    // La compra se carga EN USDT: los pesos salen de USDT × cotización (a centavos, sin redondear a pesos).
     const cUsdt = await crearCompra(
       actor,
       compraSchema.parse({
         proveedorId: enDolares.id,
         depositoId: g1.id,
         items: [
-          { varianteId: uva.id, cantidad: 2, costoUnitario: 5200 },
-          { varianteId: limon.id, cantidad: 1, costoUnitario: 5850 },
+          { varianteId: uva.id, cantidad: 2, costoUnitarioUSDT: "4" },
+          { varianteId: limon.id, cantidad: 1, costoUnitarioUSDT: "4.5" },
         ],
       }),
     );
     const det = await obtenerCompra(actor, cUsdt.id);
     check(
-      det.tipoCambioUSDT === "1300.00" &&
+      det.costosEnUsdt &&
+        det.tipoCambioUSDT === "1300.00" &&
         det.items.find((i) => i.varianteId === uva.id)?.costoUnitarioUSDT === "4.00" &&
+        det.items.find((i) => i.varianteId === uva.id)?.costoUnitario === "5200.00" &&
         det.items.find((i) => i.varianteId === limon.id)?.costoUnitarioUSDT === "4.50" &&
+        det.items.find((i) => i.varianteId === limon.id)?.costoUnitario === "5850.00" &&
         det.total === "16250.00",
-      `snapshot: cotización ${det.tipoCambioUSDT}, costos USDT ${det.items.map((i) => i.costoUnitarioUSDT).join(" / ")}, total ARS ${det.total}`,
+      `en USDT: cotización ${det.tipoCambioUSDT}, costos ${det.items.map((i) => `${i.costoUnitarioUSDT} USDT = $ ${i.costoUnitario}`).join(" / ")}, total $ ${det.total}`,
     );
-    // Editar el borrador con otra cotización vigente conserva el snapshot.
-    await prisma.configuracionGlobal.update({
-      where: { clave: CLAVE },
-      data: { valor: { valor: 1500, cargadoAt: new Date().toISOString() } },
-    });
+    // Editar la compra con otra cotización vigente conserva la suya.
+    await fijarUsdt(1500);
     await actualizarCompra(
       actor,
       cUsdt.id,
@@ -725,16 +740,15 @@ async function main() {
         proveedorId: enDolares.id,
         depositoId: g1.id,
         items: [
-          { varianteId: uva.id, cantidad: 2, costoUnitario: 5200 },
-          { varianteId: limon.id, cantidad: 1, costoUnitario: 5850 },
+          { varianteId: uva.id, cantidad: 2, costoUnitarioUSDT: "4" },
+          { varianteId: limon.id, cantidad: 1, costoUnitarioUSDT: "4.5" },
         ],
       }),
     );
-    const sugBorrador = await costoSugerido(actor, enDolares.id, [uva.id], cUsdt.id);
+    const editada = await obtenerCompra(actor, cUsdt.id);
     check(
-      (await obtenerCompra(actor, cUsdt.id)).tipoCambioUSDT === "1300.00" &&
-        sugBorrador[uva.id]?.costo === "5200.00",
-      "editar el borrador conserva su cotización (y el sugerido del borrador usa esa misma)",
+      editada.tipoCambioUSDT === "1300.00" && editada.total === "16250.00",
+      "editar la compra conserva su cotización (los pesos no cambian)",
     );
     const cambiosUsdt = await preciosQueCambian(actor, cUsdt.id);
     check(
@@ -753,13 +767,84 @@ async function main() {
       ppUsdt.moneda === Moneda.USDT && ppUsdt.precio.toFixed(2) === "4.50",
       `precio del proveedor actualizado en USDT: ${ppUsdt.precio.toFixed(2)} ${ppUsdt.moneda}`,
     );
+
+    // El caso del reclamo: proveedor NUEVO (sin precios), se tipea 8,30 de costo.
+    // Antes se tomaba como $ 8,30 (≈ 0,01 USDT); ahora son 8,30 USDT.
+    await fijarUsdt(1641.4);
+    const nuevo = await crearProveedor(
+      actor,
+      crearProveedorSchema.parse({ nombre: `Nuevo ${sufijo}`, nombreTienda: "Sin precios" }),
+    );
+    // Sin precio del proveedor: el último costo (en pesos) ÷ cotización, a centavos.
+    const { pesosAMoneda } = await import("../src/lib/costos-compra");
+    const uvaAhora = await db.variante.findUniqueOrThrow({ where: { id: uva.id } });
+    const sinPrecio = await costoSugerido(actor, nuevo.id, [uva.id]);
+    check(
+      sinPrecio[uva.id]?.fuente === "ULTIMO_COSTO" &&
+        sinPrecio[uva.id]?.tipoCambio === "1641.40" &&
+        sinPrecio[uva.id]?.pesos === uvaAhora.ultimoCosto?.toFixed(2) &&
+        sinPrecio[uva.id]?.costo ===
+          pesosAMoneda(uvaAhora.ultimoCosto!.toFixed(2), 1641.4).toFixed(2),
+      `proveedor sin precio: último costo $ ${sinPrecio[uva.id]?.pesos} ÷ ${sinPrecio[uva.id]?.tipoCambio} = ${sinPrecio[uva.id]?.costo} USDT`,
+    );
+    const cNuevo = await crearCompra(
+      actor,
+      compraSchema.parse({
+        proveedorId: nuevo.id,
+        depositoId: g1.id,
+        comisionPasistaPorcentaje: "10",
+        items: [
+          { varianteId: uva.id, cantidad: 5, costoUnitarioUSDT: "8.3" },
+          { varianteId: limon.id, cantidad: 10, costoUnitarioUSDT: "8" },
+        ],
+      }),
+    );
+    await agregarGastosCompra(actor, cNuevo.id, [{ motivo: "Valija", montoUSDT: 3 }]);
+    const n = await obtenerCompra(actor, cNuevo.id);
+    const uvaN = n.items.find((i) => i.varianteId === uva.id)!;
+    const limonN = n.items.find((i) => i.varianteId === limon.id)!;
+    // 8,30 × 1.641,40 = 13.623,62 · 8 × 1.641,40 = 13.131,20.
+    // En USDT: subtotal 121,50 · pasista 12,15 · gastos 3 ÷ 15 u. = 0,20 c/u.
+    // Uva: 8,30 + 0,83 + 0,20 = 9,33 USDT → $ 13.623,62 + (1,03 × 1.641,40 = 1.690,64) = $ 15.314,26.
+    // Limón: 8 + 0,80 + 0,20 = 9,00 USDT → $ 13.131,20 + (1 × 1.641,40) = $ 14.772,60.
+    check(
+      uvaN.costoUnitarioUSDT === "8.30" &&
+        uvaN.costoUnitario === "13623.62" &&
+        limonN.costoUnitario === "13131.20" &&
+        uvaN.costoUnitarioFinal === "15314.26" &&
+        limonN.costoUnitarioFinal === "14772.60" &&
+        n.gastos[0]?.montoUSDT === "3.00" &&
+        n.gastos[0]?.monto === "4924.20",
+      `proveedor nuevo, 8,30 USDT → $ ${uvaN.costoUnitario}; final Uva $ ${uvaN.costoUnitarioFinal}, Limón $ ${limonN.costoUnitarioFinal}; gasto 3 USDT = $ ${n.gastos[0]?.monto}`,
+    );
+    const { vistaCostosUsdt } = await import("../src/lib/costos-compra");
+    const vista = vistaCostosUsdt({
+      costosEnUsdt: n.costosEnUsdt,
+      tipoCambioUSDT: n.tipoCambioUSDT!,
+      comisionPorcentaje: n.comisionPasistaPorcentaje,
+      descuento: n.descuento,
+      items: n.items,
+      gastos: n.gastos,
+    });
+    check(
+      !vista.aproximado &&
+        vista.costos.total === 121.5 &&
+        vista.costos.comision === 12.15 &&
+        vista.costos.gastos === 3 &&
+        vista.costos.costoFinalTotal === 136.65 &&
+        vista.finalesUsdt.join(" / ") === "9.33 / 9",
+      `vista en USDT: total ${vista.costos.total}, pasista ${vista.costos.comision}, gastos ${vista.costos.gastos}, final ${vista.costos.costoFinalTotal}, por unidad ${vista.finalesUsdt.join(" / ")}`,
+    );
+    await recibirCompra(actor, cNuevo.id, { actualizarPrecioProveedor: true });
+    const ppNuevo = await db.proveedorProducto.findFirstOrThrow({
+      where: { proveedorId: nuevo.id, productoId: producto.id },
+    });
+    check(
+      ppNuevo.moneda === Moneda.USDT && ppNuevo.precio.toFixed(2) === "8.00",
+      `el proveedor nuevo queda con precio en USDT: ${ppNuevo.precio.toFixed(2)} ${ppNuevo.moneda}`,
+    );
   } finally {
-    if (overridePrevio)
-      await prisma.configuracionGlobal.update({
-        where: { clave: CLAVE },
-        data: { valor: overridePrevio.valor ?? {} },
-      });
-    else await prisma.configuracionGlobal.delete({ where: { clave: CLAVE } });
+    await fijarUsdt(1);
   }
 
   // ---------------------------------------------------------------------------
@@ -771,7 +856,7 @@ async function main() {
         proveedorId: prov.id,
         depositoId: g1.id,
         comisionPasistaPorcentaje: "10",
-        items: [{ varianteId: limon.id, cantidad: 100, costoUnitario: "10000" }],
+        items: [{ varianteId: limon.id, cantidad: 100, costoUnitarioUSDT: "10000" }],
       }),
     );
     let c = await obtenerCompra(actor, cf.id);
@@ -786,8 +871,8 @@ async function main() {
       `recibir pasa el costo FINAL a ultimoCosto: ${limonRecibido.ultimoCosto?.toFixed(2)}`,
     );
     await agregarGastosCompra(actor, cf.id, [
-      { motivo: "Valija", monto: 50_000 },
-      { motivo: "Envío", monto: 30_000 },
+      { motivo: "Valija", montoUSDT: 50_000 },
+      { motivo: "Envío", montoUSDT: 30_000 },
     ]);
     c = await obtenerCompra(actor, cf.id);
     check(
@@ -821,7 +906,7 @@ async function main() {
       compraSchema.parse({
         proveedorId: prov.id,
         depositoId: g1.id,
-        items: [{ varianteId: limon.id, cantidad: 1, costoUnitario: "9000" }],
+        items: [{ varianteId: limon.id, cantidad: 1, costoUnitarioUSDT: "9000" }],
       }),
     );
     await recibirCompra(actor, cNueva.id, { actualizarPrecioProveedor: false });
@@ -892,7 +977,7 @@ async function main() {
     await anularCompra(actor, cNueva.id, "Prueba de costos finales");
     check(
       (await error(() =>
-        agregarGastosCompra(actor, cNueva.id, [{ motivo: "Flete", monto: 1 }]),
+        agregarGastosCompra(actor, cNueva.id, [{ motivo: "Flete", montoUSDT: 1 }]),
       )) instanceof DomainError,
       "una compra anulada no acepta gastos",
     );
@@ -910,7 +995,7 @@ async function main() {
         proveedorId: prov.id,
         depositoId: g1.id,
         comisionPasistaPorcentaje: "10",
-        items: [{ varianteId: uva.id, cantidad: 100, costoUnitario: "10000" }],
+        items: [{ varianteId: uva.id, cantidad: 100, costoUnitarioUSDT: "10000" }],
       }),
     );
     let filas = await comisiones(cp.id);
@@ -1031,7 +1116,7 @@ async function main() {
         proveedorId: prov.id,
         depositoId: g1.id,
         comisionPasistaPorcentaje: "10",
-        items: [{ varianteId: uva.id, cantidad: 2, costoUnitario: "1000" }],
+        items: [{ varianteId: uva.id, cantidad: 2, costoUnitarioUSDT: "1000" }],
       }),
     );
     await anularCompra(actor, cSinPagar.id, "Prueba anulación sin pagar");
@@ -1090,7 +1175,7 @@ async function main() {
         proveedorId,
         depositoId,
         comisionPasistaPorcentaje: "7.5",
-        items: [{ varianteId, cantidad: 4, costoUnitario: "1000" }],
+        items: [{ varianteId, cantidad: 4, costoUnitarioUSDT: "1000" }],
       }),
     );
     await recibirCompra(ctxP, compraP.id, { actualizarPrecioProveedor: false });
@@ -1136,12 +1221,12 @@ async function main() {
         depositoId: g2.id,
         comisionPasistaPorcentaje: "10",
         items: [
-          { varianteId: uva.id, cantidad: 10, costoUnitario: "10000" },
-          { varianteId: durazno.id, cantidad: 10, costoUnitario: "20000" },
+          { varianteId: uva.id, cantidad: 10, costoUnitarioUSDT: "10000" },
+          { varianteId: durazno.id, cantidad: 10, costoUnitarioUSDT: "20000" },
         ],
       }),
     );
-    await agregarGastosCompra(actor, conf.id, [{ motivo: "Valija", monto: 30_000 }]);
+    await agregarGastosCompra(actor, conf.id, [{ motivo: "Valija", montoUSDT: 30_000 }]);
     let c = await obtenerCompra(actor, conf.id);
     const finales = () => c.items.map((i) => i.costoUnitarioFinal).join(" / ");
     check(

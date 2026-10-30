@@ -1,6 +1,15 @@
 "use client";
 
-import { Copy, Eye, FileText, Loader2, MessageCircle, ShoppingCart } from "lucide-react";
+import {
+  Ban,
+  Copy,
+  Eye,
+  FileText,
+  Loader2,
+  MessageCircle,
+  Pencil,
+  ShoppingCart,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -11,6 +20,7 @@ import { rutaPdf } from "@/lib/pdfs";
 
 import { AceptarCotizacion, type GalponAceptar } from "./aceptar-cotizacion";
 import { duplicarCotizacionAction, whatsappCotizacionAction } from "./actions";
+import { DialogoAnularCotizacion } from "./anular-cotizacion";
 import { abrirEnPestana } from "./compartir";
 
 /** Acciones rápidas de una fila del listado. */
@@ -20,6 +30,8 @@ export function AccionesFila({
   puedeCrear,
   convertible,
   puedeVender,
+  editable = false,
+  anulable = false,
   aceptar = null,
 }: {
   id: string;
@@ -27,6 +39,10 @@ export function AccionesFila({
   puedeCrear: boolean;
   convertible: boolean;
   puedeVender: boolean;
+  /** COTIZADOR "crear" y en un estado editable: ofrece «Editar». */
+  editable?: boolean;
+  /** COTIZADOR "crear" y sin convertir ni anular: ofrece «Anular» (con confirmación). */
+  anulable?: boolean;
   /** «Aceptada ✓» (registra la venta pendiente de pago); null = no se ofrece. */
   aceptar?: { total: string; conCliente: boolean; galpones: GalponAceptar[] } | null;
 }) {
@@ -35,6 +51,7 @@ export function AccionesFila({
   const router = useRouter();
   const toast = useToast();
   const [ocupado, setOcupado] = useState<string | null>(null);
+  const [anulando, setAnulando] = useState(false);
 
   async function compartir() {
     setOcupado("whatsapp");
@@ -66,6 +83,7 @@ export function AccionesFila({
 
   const acciones: AccionFila[] = [
     { label: "Ver", icon: Eye, href: ruta(`/cotizador/${id}`) },
+    ...(editable ? [{ label: "Editar", icon: Pencil, href: ruta(`/cotizador/${id}/editar`) }] : []),
     ...(puedeCrear ? [{ label: "Duplicar", icon: Copy, onSelect: () => void duplicarla() }] : []),
     { label: "WhatsApp", icon: MessageCircle, onSelect: () => void compartir() },
     { label: "PDF", icon: FileText, href: rutaPdf.cotizacion(panel.slug, id), externo: true },
@@ -78,9 +96,24 @@ export function AccionesFila({
           },
         ]
       : []),
+    ...(anulable
+      ? [{ label: "Anular", icon: Ban, peligro: true, onSelect: () => setAnulando(true) }]
+      : []),
   ];
 
-  const menu = <MenuFila acciones={acciones} label={`Acciones de ${codigo}`} />;
+  const menu = (
+    <>
+      <MenuFila acciones={acciones} label={`Acciones de ${codigo}`} />
+      {anulable && (
+        <DialogoAnularCotizacion
+          id={id}
+          codigo={codigo}
+          open={anulando}
+          onOpenChange={setAnulando}
+        />
+      )}
+    </>
+  );
   if (!aceptar) return menu;
   return (
     <span className="inline-flex items-center gap-1">

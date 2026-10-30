@@ -1,10 +1,12 @@
 import "server-only";
 
 import { EstadoVenta, TipoVenta } from "@prisma/client";
+import { redirect } from "next/navigation";
 
 import { fechaHoraCotizacion } from "@/lib/cambio";
 import { ESTADO_STOCK_UI, TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { tieneMercadoLibre } from "@/lib/medios-pago";
+import { rutaPanel } from "@/lib/paneles";
 import { esOwner } from "@/lib/permisos";
 import { formatearFecha, formatearFechaHora } from "@/lib/utils";
 import {
@@ -18,6 +20,7 @@ import {
 import type { CtxPanel } from "@/server/auth/permissions";
 import { ForbiddenError, NotFoundError } from "@/server/errors";
 import { reporte, type ClaveReporte } from "@/server/reportes/catalogo";
+import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
 import type { Celda, Exportacion, TablaExport } from "@/server/reportes/exportar";
 import {
   filtrosComprasSchema,
@@ -68,12 +71,19 @@ import {
 
 type Params = Record<string, string>;
 
-export function exigirAccesoReporte(ctx: CtxPanel, clave: string): ClaveReporte {
+export async function exigirAccesoReporte(ctx: CtxPanel, clave: string): Promise<ClaveReporte> {
   const r = reporte(clave);
   if (!r) throw new NotFoundError("Ese reporte no existe.");
   if (r.owner && !esOwner(ctx.usuario))
     throw new ForbiddenError(`«${r.titulo}» es solo para dueños.`);
+  if ("facturado" in r && !(await veFacturadoCtx(ctx)))
+    throw new ForbiddenError(`«${r.titulo}» no está disponible: ves solo tu ganancia.`);
   return r.clave;
+}
+
+/** Página de un reporte con montos vendidos: un vendedor con ganancia por vape va a «sin acceso». */
+export async function exigirPaginaReporteFacturado(ctx: CtxPanel): Promise<void> {
+  if (!(await veFacturadoCtx(ctx))) redirect(rutaPanel(ctx.panel.slug, "/sin-acceso"));
 }
 
 export function periodoAnalitica(params: Params): { periodo: Periodo; etiqueta: string } {

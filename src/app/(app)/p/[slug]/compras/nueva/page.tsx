@@ -5,7 +5,9 @@ import { esFechaISO, hoyAR } from "@/lib/fechas";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import { obtenerBorradorCompra } from "@/server/services/borrador-compra.service";
-import { cotizacionResumenCompra } from "@/server/services/compra.service";
+import { pesosAMoneda } from "@/lib/costos-compra";
+import { formatearPesos } from "@/lib/format";
+import { cotizacionResumenCompra, cotizacionUsdCompra } from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { obtenerVariantesPorId } from "@/server/services/producto.service";
@@ -27,11 +29,12 @@ type SP = Record<string, string | string[] | undefined>;
 export default async function NuevaCompraPage({ searchParams }: { searchParams: Promise<SP> }) {
   const ctx = await requirePaginaPanel(Modulo.COMPRAS, "crear");
   const params = await searchParams;
-  const [depositos, proveedores, configCompras, cotizacionUsdt] = await Promise.all([
+  const [depositos, proveedores, configCompras, cotizacionUsdt, cotizacionUsd] = await Promise.all([
     listarDepositosActivos(ctx),
     listarProveedoresActivos(ctx),
     obtenerConfigCompras(ctx),
     cotizacionResumenCompra(null),
+    cotizacionUsdCompra(null),
   ]);
   const depositoId =
     typeof params.deposito === "string" && depositos.some((d) => d.id === params.deposito)
@@ -60,6 +63,23 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
 
   if (borrador) {
     const d = borrador.datos;
+    // Borrador de antes de que Compras pasara a USDT: sus costos están en
+    // pesos → se pasan a USDT con la cotización vigente (y se avisa de dónde
+    // salió); sin cotización, se vuelven a sugerir.
+    const items =
+      d.moneda === "USDT"
+        ? d.items
+        : d.items.map((i) => {
+            const pesos = Number(i.costo.replace(",", "."));
+            if (!i.costo || !Number.isFinite(pesos) || !cotizacionUsdt)
+              return { ...i, costo: "", origenCosto: null, detalleUsdt: null };
+            return {
+              ...i,
+              costo: String(pesosAMoneda(pesos, cotizacionUsdt.valor)),
+              origenCosto: "manual" as const,
+              detalleUsdt: `${formatearPesos(pesos)} ÷ ${formatearPesos(cotizacionUsdt.valor)}`,
+            };
+          });
     return (
       <CompraForm
         key={borrador.id}
@@ -67,6 +87,7 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
         depositos={depositos}
         comisionDefault={configCompras.comisionPasistaPorcentajeDefault}
         cotizacionUsdt={cotizacionUsdt}
+        cotizacionUsd={cotizacionUsd}
         inicial={{
           id: null,
           borrador: { id: borrador.id, updatedAt: borrador.updatedAt },
@@ -77,7 +98,7 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
           depositoId: depositos.some((x) => x.id === d.depositoId) ? d.depositoId : "",
           fecha: esFechaISO(d.fecha) ? d.fecha : hoyAR(),
           notas: d.notas,
-          items: d.items.map((i) => ({ ...i, detalleUsdt: i.detalleUsdt ?? null })),
+          items: items.map((i) => ({ ...i, detalleUsdt: i.detalleUsdt ?? null })),
         }}
       />
     );
@@ -89,6 +110,7 @@ export default async function NuevaCompraPage({ searchParams }: { searchParams: 
       depositos={depositos}
       comisionDefault={configCompras.comisionPasistaPorcentajeDefault}
       cotizacionUsdt={cotizacionUsdt}
+      cotizacionUsd={cotizacionUsd}
       inicial={{
         id: null,
         comisionPasistaPorcentaje: null,

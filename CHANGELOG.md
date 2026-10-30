@@ -5,6 +5,32 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.8.0] - 2026-10-30 — Compras en USDT, anular ventas y cotizaciones, Trinidad sin facturado
+
+### Cambiado
+
+- **Compras en USDT** (moneda principal): el costo de cada ítem y los gastos extras se cargan en
+  USDT y el costo final se calcula en USDT; los pesos (los que toman stock y ganancia) se derivan
+  una sola vez con la cotización guardada en la compra, a centavos. Listado, detalle, resumen y
+  gastos muestran solo USDT; «= Final u.» muestra además dólares (blue de la compra) y pesos.
+  Corrige el proveedor nuevo sin precios, donde el costo tipeado se tomaba como pesos
+  (8,30 → ≈ 0,01 USDT), y el redondeo a pesos enteros de los precios en USDT. Las compras
+  anteriores siguen en pesos y sus USDT se marcan como aproximados (≈).
+- **Trinidad (vendedores con ganancia por vape) no ve el total facturado** en ningún lado: en
+  Ventas ve la tarjeta «Mi ganancia» del inicio; inicio, reportes, facturas y exportaciones sin
+  montos facturados. «Mi ganancia» ya no muestra la tarjeta «Total facturado».
+- Lo seleccionado y los botones presionados ya no quedan en blanco: colores explícitos, módulo
+  presionado en naranja y la app no se deja oscurecer por el modo oscuro forzado del navegador.
+
+### Agregado
+
+- **Anular venta** desde el detalle y el listado (dueños o VENTAS «eliminar»): devuelve el stock.
+- **Editar y anular cotizaciones** desde el detalle y el listado (estado «Anulada»).
+
+### Corregido
+
+- Cotización mayorista: escanear dos veces el mismo producto suma una unidad (como en minorista).
+
 ## [2.7.0] - 2026-10-29 — Pedido de los dueños: cartera, surtido, borradores y USDT
 
 ### Agregado

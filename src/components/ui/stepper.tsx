@@ -26,7 +26,9 @@ export function Stepper({
             <span
               className={cn(
                 "rounded-control flex size-6 shrink-0 items-center justify-center text-xs font-semibold tabular-nums",
-                hecho || activo ? "bg-foreground text-background" : "bg-surface-3 text-muted",
+                hecho || activo
+                  ? "bg-foreground text-primary-foreground"
+                  : "bg-surface-3 text-muted",
               )}
             >
               {hecho ? <Check className="size-3.5" strokeWidth={2.5} aria-hidden /> : i + 1}

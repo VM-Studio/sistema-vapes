@@ -44,7 +44,9 @@ export function StepperVenta({
               <span
                 className={cn(
                   "rounded-control flex size-6 shrink-0 items-center justify-center text-xs font-semibold tabular-nums transition-colors",
-                  hecho || activo ? "bg-foreground text-background" : "bg-surface-3 text-muted",
+                  hecho || activo
+                    ? "bg-foreground text-primary-foreground"
+                    : "bg-surface-3 text-muted",
                   hecho && onIr && "group-hover:bg-primary-hover",
                 )}
               >

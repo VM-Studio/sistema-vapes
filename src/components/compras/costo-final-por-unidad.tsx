@@ -1,8 +1,8 @@
-import type { CostosFinales } from "@/lib/costos-compra";
-import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import { pesosAMoneda, type CostosFinales } from "@/lib/costos-compra";
+import { formatearDolares, formatearNumero, formatearPesos } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-import { EnUsdt, pesosAUsdt, type CotizacionResumen } from "./resumen-compra-card";
+import { textoUsdt, type CotizacionResumen } from "./resumen-compra-card";
 
 export interface ItemCostoFinalVista {
   key: string;
@@ -16,54 +16,62 @@ export interface ItemCostoFinalVista {
  * «Costo final por unidad»: TODOS los ítems de la compra (marca · modelo ·
  * pitadas · sabor), agrupados por modelo, con cantidad, precio unitario,
  * + pasista por unidad (proporcional al precio), + gastos por unidad
- * (parejos), = costo final por unidad y subtotal final. Los números salen de
- * `calcularCostosFinales` (la misma función que usa el servidor).
+ * (parejos), = costo final por unidad y subtotal final.
  *
- * `finalesGuardados` (detalle de una compra): si el costo final guardado de
- * algún ítem no coincide con el calculado (compra recibida antes de A4, con
- * el recargo parejo), se muestra el guardado y se avisa.
+ * Todo EN USDT (moneda de Compras): `costos` y `finalesUsdt` ya vienen
+ * calculados en USDT (vistaCostosUsdt / calcularCostosCompraUsdt, la misma
+ * función que usa el servidor). Solo «= Final u.» muestra además el costo
+ * en pesos (`finalesPesos`: el que guarda la compra y toman las ventas) y en
+ * dólares (esos pesos ÷ dólar blue de la compra).
  */
 export function CostoFinalPorUnidad({
   items,
   costos,
-  finalesGuardados,
-  cotizacion,
+  finalesUsdt,
+  finalesPesos,
+  aproximado = false,
+  cotizacionUsd,
   className,
 }: {
   items: ItemCostoFinalVista[];
+  /** En USDT. */
   costos: CostosFinales;
-  finalesGuardados?: string[];
-  /** Para el equivalente en USDT debajo de cada monto (null = solo pesos). */
-  cotizacion: CotizacionResumen | null;
+  /** Costo final por unidad de cada ítem en USDT (mismo orden que `items`). */
+  finalesUsdt: number[];
+  /** Costo final por unidad de cada ítem en pesos (null = sin cotización para pasarlo). */
+  finalesPesos: (number | null)[];
+  /** Compra anterior cargada en pesos: los USDT son equivalentes. */
+  aproximado?: boolean;
+  /** Dólar blue (pesos por dólar) para el costo final en dólares; null = no se muestra. */
+  cotizacionUsd: CotizacionResumen | null;
   className?: string;
 }) {
-  const usdt = (pesos: number, prefijo?: string) => (
-    <EnUsdt pesos={pesos} cotizacion={cotizacion} prefijo={prefijo} />
-  );
-  const conGuardado = items.map((it, n) => {
+  const usdt = (n: number) => textoUsdt(n, aproximado);
+  const filas = items.map((it, n) => {
     const c = costos.items[n]!;
-    const guardado = finalesGuardados?.[n] !== undefined ? Number(finalesGuardados[n]) : null;
-    const final = guardado ?? c.costoUnitarioFinal;
+    const final = finalesUsdt[n] ?? c.costoUnitarioFinal;
+    const pesos = finalesPesos[n] ?? null;
     return {
       it,
       c,
       final,
-      subtotalFinal: final * c.cantidad,
-      distinto: guardado !== null && guardado !== c.costoUnitarioFinal,
+      pesos,
+      dolares: pesos !== null && cotizacionUsd ? pesosAMoneda(pesos, cotizacionUsd.valor) : null,
+      // A centavos de USDT: cantidad × final exacto.
+      subtotalFinal: (Math.round(final * 100) * c.cantidad) / 100,
     };
   });
-  const criterioAnterior = conGuardado.some((x) => x.distinto);
   // Agrupar por modelo, en el orden en que aparece cada uno.
-  const grupos = new Map<string, typeof conGuardado>();
-  for (const x of conGuardado) {
+  const grupos = new Map<string, typeof filas>();
+  for (const x of filas) {
     const g = grupos.get(x.it.nombreCompleto) ?? [];
     g.push(x);
     grupos.set(x.it.nombreCompleto, g);
   }
-  const totalFinal = conGuardado.reduce((a, x) => a + Math.round(x.subtotalFinal * 100), 0) / 100;
+  const totalFinal = filas.reduce((a, x) => a + Math.round(x.subtotalFinal * 100), 0) / 100;
   const pct = costos.comisionPorcentaje;
   const columnas =
-    "md:grid-cols-[minmax(0,1fr)_4rem_7rem_7rem_7rem_8rem_8.5rem] md:items-center md:gap-3";
+    "md:grid-cols-[minmax(0,1fr)_4rem_7rem_7rem_7rem_9rem_8.5rem] md:items-center md:gap-3";
 
   return (
     <section
@@ -74,12 +82,13 @@ export function CostoFinalPorUnidad({
       <header className="flex flex-col gap-1">
         <h2 className="text-h3 font-semibold">Costo final por unidad</h2>
         <p className="text-muted text-small">
-          Cada modelo y sabor con su propio costo: precio unitario
+          En USDT. Cada modelo y sabor con su propio costo: precio unitario
           {pct !== null ? ` + ${formatearNumero(pct)}% de pasista sobre ese precio` : ""} + gastos
-          extras ÷ {formatearNumero(costos.unidades)} unidades (
-          {formatearPesos(costos.gastosPorUnidad)} c/u
-          {pesosUsdtTexto(costos.gastosPorUnidad, cotizacion)}). El pasista se lleva más en los
-          modelos más caros; los gastos son iguales para todas las unidades.
+          extras ÷ {formatearNumero(costos.unidades)} unidades ({usdt(costos.gastosPorUnidad)} c/u).
+          El pasista se lleva más en los modelos más caros; los gastos son iguales para todas las
+          unidades. El costo final también está en dólares
+          {cotizacionUsd ? ` (blue ${formatearPesos(cotizacionUsd.valor)})` : ""} y en pesos: es el
+          que toman las ventas para calcular la ganancia.
         </p>
       </header>
 
@@ -103,11 +112,11 @@ export function CostoFinalPorUnidad({
             <span className="text-right">Subtotal final</span>
           </div>
           <ul className="divide-border flex flex-col divide-y">
-            {[...grupos.entries()].map(([modelo, filas]) => (
+            {[...grupos.entries()].map(([modelo, filasModelo]) => (
               <li key={modelo} className="flex flex-col">
                 <p className="px-4 pt-3 text-sm font-semibold">{modelo}</p>
                 <ul aria-label={modelo} className="flex flex-col">
-                  {filas.map(({ it, c, final, subtotalFinal, distinto }) => (
+                  {filasModelo.map(({ it, c, final, pesos, dolares, subtotalFinal }) => (
                     <li
                       key={it.key}
                       data-testid="fila-costo-final"
@@ -120,51 +129,43 @@ export function CostoFinalPorUnidad({
                         {it.sabor ?? "Único"}
                       </span>
                       <Celda label="Cantidad">{formatearNumero(c.cantidad)}</Celda>
-                      <Celda label="Precio unitario">
-                        {formatearPesos(c.costoUnitario)}
-                        {usdt(c.costoUnitario)}
-                      </Celda>
+                      <Celda label="Precio unitario">{usdt(c.costoUnitario)}</Celda>
                       <Celda label="Pasista por unidad">
-                        {pct === null ? (
-                          "—"
-                        ) : (
-                          <>
-                            + {formatearPesos(c.comisionPorUnidad)}
-                            {usdt(c.comisionPorUnidad, "+ ")}
-                          </>
-                        )}
+                        {pct === null ? "—" : `+ ${usdt(c.comisionPorUnidad)}`}
                       </Celda>
                       <Celda label="Gastos por unidad">
-                        {c.gastosPorUnidad > 0 ? (
-                          <>
-                            + {formatearPesos(c.gastosPorUnidad)}
-                            {usdt(c.gastosPorUnidad, "+ ")}
-                          </>
-                        ) : (
-                          "—"
-                        )}
+                        {c.gastosPorUnidad > 0 ? `+ ${usdt(c.gastosPorUnidad)}` : "—"}
                       </Celda>
                       <Celda label="Costo final por unidad" fuerte>
                         <span aria-label={`Costo final por unidad de ${tituloItem(it)}`}>
-                          {formatearPesos(final)}
+                          {usdt(final)}
                         </span>
-                        {usdt(final)}
-                        {c.ajustePorUnidad !== 0 && !distinto && (
+                        {dolares !== null && (
+                          <span
+                            className="text-muted block text-xs font-normal"
+                            aria-label={`En dólares: ${formatearDolares(dolares)}`}
+                            data-testid="final-dolares"
+                          >
+                            {formatearDolares(dolares)}
+                          </span>
+                        )}
+                        {pesos !== null && (
+                          <span
+                            className="text-muted block text-xs font-normal"
+                            aria-label={`En pesos: ${formatearPesos(pesos)}`}
+                            data-testid="final-pesos"
+                          >
+                            {formatearPesos(pesos)}
+                          </span>
+                        )}
+                        {c.ajustePorUnidad !== 0 && !aproximado && (
                           <span className="text-subtle block text-xs font-normal">
                             incl. {c.ajustePorUnidad > 0 ? "+" : "−"}
-                            {formatearPesos(Math.abs(c.ajustePorUnidad))} de redondeo
-                          </span>
-                        )}
-                        {distinto && (
-                          <span className="text-subtle block text-xs font-normal">
-                            hoy daría {formatearPesos(c.costoUnitarioFinal)}
+                            {textoUsdt(Math.abs(c.ajustePorUnidad))} de redondeo
                           </span>
                         )}
                       </Celda>
-                      <Celda label="Subtotal final">
-                        {formatearPesos(subtotalFinal)}
-                        {usdt(subtotalFinal)}
-                      </Celda>
+                      <Celda label="Subtotal final">{usdt(subtotalFinal)}</Celda>
                     </li>
                   ))}
                 </ul>
@@ -178,41 +179,25 @@ export function CostoFinalPorUnidad({
             )}
           >
             <span className="font-semibold md:col-span-6">Suma de costos finales</span>
-            <span className="text-right">
-              <strong className="tabular-nums" aria-label="Suma de costos finales">
-                {formatearPesos(totalFinal)}
-              </strong>
+            <strong className="text-right tabular-nums" aria-label="Suma de costos finales">
               {usdt(totalFinal)}
-            </span>
+            </strong>
           </div>
         </div>
       )}
-      {criterioAnterior && (
+      {aproximado && (
         <p className="text-warning-soft-foreground text-small">
-          Esta compra se recibió con el criterio anterior (recargo parejo por unidad): se muestra el
-          costo final guardado. Se actualiza al nuevo cálculo cuando cambies la comisión o los
-          gastos.
+          Compra cargada en pesos (antes de que Compras pasara a USDT): los USDT son equivalentes
+          con su cotización; el costo en pesos es el guardado.
         </p>
       )}
-      {!criterioAnterior && costos.descuento > 0 && (
+      {!aproximado && costos.diferenciaRedondeo !== 0 && (
         <p className="text-subtle text-small">
-          El descuento se aplica a la comisión del pasista; el precio unitario se muestra sin
-          descuento.
-        </p>
-      )}
-      {!criterioAnterior && costos.diferenciaRedondeo !== 0 && (
-        <p className="text-subtle text-small">
-          Diferencia de redondeo no repartible: {formatearPesos(costos.diferenciaRedondeo)}.
+          Diferencia de redondeo no repartible: {textoUsdt(costos.diferenciaRedondeo)}.
         </p>
       )}
     </section>
   );
-}
-
-/** " ≈ 1,20 USDT" para meter en un texto (vacío sin cotización). */
-function pesosUsdtTexto(pesos: number, cotizacion: CotizacionResumen | null): string {
-  const u = pesosAUsdt(pesos, cotizacion);
-  return u === null ? "" : ` ≈ ${formatearUsdt(u)}`;
 }
 
 const tituloItem = (i: ItemCostoFinalVista) =>

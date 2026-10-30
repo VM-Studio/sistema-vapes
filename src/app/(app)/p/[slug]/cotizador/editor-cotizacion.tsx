@@ -264,13 +264,13 @@ export function EditorCotizacion({
       setAviso(null);
       setMensaje({ tipo: "ok", texto: v.titulo, clave: ++clave.current });
       setItems((prev) => {
+        // Volver a escanear (o elegir) el mismo sabor suma una unidad, en unitaria y en
+        // mayorista (antes la mayorista lo ignoraba y parecía que el escáner no andaba).
         const existe = prev.find((i) => i.varianteId === v.varianteId);
         if (existe) {
-          return mayorista
-            ? prev
-            : prev.map((i) =>
-                i.varianteId === v.varianteId ? { ...i, cantidad: i.cantidad + 1 } : i,
-              );
+          return prev.map((i) =>
+            i.varianteId === v.varianteId ? { ...i, cantidad: i.cantidad + 1 } : i,
+          );
         }
         return [
           ...prev,

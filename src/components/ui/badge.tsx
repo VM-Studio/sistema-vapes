@@ -10,7 +10,7 @@ const badgeVariants = cva(
       variant: {
         neutral: "bg-surface-2 text-muted",
         // "primary" = énfasis neutro (negro): los badges nunca llevan azul/naranja.
-        primary: "bg-foreground text-background",
+        primary: "bg-foreground text-primary-foreground",
         success: "bg-success-soft text-success-soft-foreground",
         warning: "bg-warning-soft text-warning-soft-foreground",
         danger: "bg-danger-soft text-danger-soft-foreground",

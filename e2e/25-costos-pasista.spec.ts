@@ -57,8 +57,8 @@ async function preparar(sufijo: string) {
         create: {
           panelId: PANEL_VAPES,
           productoId: producto.id,
-          precio: 10000,
-          moneda: "ARS",
+          precio: 10,
+          moneda: "USDT",
           usuarioId: dueno.id,
         },
       },
@@ -67,7 +67,7 @@ async function preparar(sufijo: string) {
   return { producto, proveedor, codigo, mango: producto.variantes[0]! };
 }
 
-test("compra de 100 u. × $10.000 con 10% de pasista + Valija y Envío → $11.800 por unidad, y se paga en Pasista", async ({
+test("compra de 100 u. × 10 USDT con 10% de pasista + Valija y Envío → 11,80 USDT por unidad, y se paga en Pasista", async ({
   page,
 }) => {
   test.skip(esMobile(page), "El flujo completo se prueba en escritorio; en mobile, la navegación.");
@@ -83,19 +83,17 @@ test("compra de 100 u. × $10.000 con 10% de pasista + Valija y Envío → $11.8
   await expect(page.getByText("Paso 3 de 3", { exact: false })).toBeVisible();
   await soltarFoco(page);
   await pistola(page, codigo);
-  await expect(page.getByLabel(`Costo de ${nc}`)).toHaveValue("10000");
+  await expect(page.getByLabel(`Costo en USDT de ${nc}`)).toHaveValue("10");
   await page.getByLabel(`Cantidad de ${nc}`).fill("100");
 
   // Tick de la comisión del pasista (10% por defecto) → resumen en vivo.
   await page.getByRole("checkbox", { name: /Comisión del/ }).check();
   await expect(page.getByLabel("Porcentaje de comisión del pasista")).toHaveValue("10");
-  await expect(page.getByLabel("Comisión del pasista", { exact: true })).toHaveText(
-    /\$\s*100\.000/,
-  );
-  await expect(page.getByLabel("Costo final total", { exact: true })).toHaveText(
-    /\$\s*1\.100\.000/,
-  );
-  await expect(page.getByLabel(`Costo final por unidad de ${nc}`)).toHaveText(/\$\s*11\.000/);
+  // Todo en USDT; el costo final por unidad, además, en dólares y en pesos (11 × 1.350).
+  await expect(page.getByLabel("Comisión del pasista", { exact: true })).toHaveText("+ 100 USDT");
+  await expect(page.getByLabel("Costo final total", { exact: true })).toHaveText("1.100 USDT");
+  await expect(page.getByLabel(`Costo final por unidad de ${nc}`)).toHaveText("11 USDT");
+  await expect(page.getByTestId("final-pesos")).toHaveText(/\$\s*14\.850/);
   await expect(page.getByTestId("cotizacion-resumen")).toBeVisible();
 
   // Confirmar (queda pendiente de recibir) y después «Recibido» en el detalle.
@@ -111,9 +109,10 @@ test("compra de 100 u. × $10.000 con 10% de pasista + Valija y Envío → $11.8
   const compra = await db.compra.findFirstOrThrow({
     where: { panelId: PANEL_VAPES, proveedorId: proveedor.id },
   });
-  expect(compra.comisionPasistaMonto.toFixed(0)).toBe("100000");
+  // En pesos (1.350 por USDT): 100 × 13.500 × 10%.
+  expect(compra.comisionPasistaMonto.toFixed(0)).toBe("135000");
 
-  // Gastos extras desde el listado: Valija $50.000 + Envío $30.000.
+  // Gastos extras desde el listado, en USDT: Valija 50 + Envío 30.
   await page.goto("/p/vapes/compras");
   await page
     .getByRole("button", { name: /Agregar gastos extras a la compra/ })
@@ -121,35 +120,35 @@ test("compra de 100 u. × $10.000 con 10% de pasista + Valija y Envío → $11.8
     .click();
   const sheet = page.getByRole("dialog", { name: "Agregar gastos extras" });
   await sheet.getByLabel("Motivo del gasto 1").fill("Valija");
-  await sheet.getByLabel("Monto del gasto 1").fill("50000");
+  await sheet.getByLabel("Monto en USDT del gasto 1").fill("50");
   await sheet.getByRole("button", { name: "Otro gasto" }).click();
   await sheet.getByLabel("Motivo del gasto 2").fill("Envío");
-  await sheet.getByLabel("Monto del gasto 2").fill("30000");
-  await expect(sheet.getByLabel("Costo final total")).toHaveText(/\$\s*1\.180\.000/);
-  await expect(sheet.getByLabel("Costo final por unidad")).toHaveText(/\$\s*11\.800/);
+  await sheet.getByLabel("Monto en USDT del gasto 2").fill("30");
+  await expect(sheet.getByLabel("Costo final total")).toHaveText("1.180 USDT");
+  await expect(sheet.getByLabel("Costo final por unidad")).toHaveText("11,80 USDT");
   await sheet.getByRole("button", { name: "Guardar gastos" }).click();
   await expect(sheet).toBeHidden();
 
   const despues = await db.compra.findUniqueOrThrow({ where: { id: compra.id } });
-  expect(despues.costoFinalTotal.toFixed(0)).toBe("1180000");
-  expect(despues.costoUnitarioFinalPromedio.toFixed(0)).toBe("11800");
+  // Pesos: 1.350.000 + 135.000 + (50 + 30) × 1.350 = 1.593.000 → 15.930 por unidad.
+  expect(despues.costoFinalTotal.toFixed(0)).toBe("1593000");
+  expect(despues.costoUnitarioFinalPromedio.toFixed(0)).toBe("15930");
   const variante = await db.variante.findUniqueOrThrow({ where: { id: mango.id } });
-  expect(variante.ultimoCosto?.toFixed(0)).toBe("11800");
+  expect(variante.ultimoCosto?.toFixed(0)).toBe("15930");
 
   // Detalle: tarjeta grande y costo final por unidad de cada modelo.
   await page.goto(`/p/vapes/compras/${compra.id}`);
-  await expect(page.getByLabel("Costo final total", { exact: true })).toHaveText(
-    /\$\s*1\.180\.000/,
-  );
-  await expect(page.getByLabel(`Costo final por unidad de ${nc}`)).toHaveText(/\$\s*11\.800/);
+  await expect(page.getByLabel("Costo final total", { exact: true })).toHaveText("1.180 USDT");
+  await expect(page.getByLabel(`Costo final por unidad de ${nc}`)).toHaveText("11,80 USDT");
+  await expect(page.getByTestId("final-pesos")).toHaveText(/\$\s*15\.930/);
 
-  // Pasista: pendiente $100.000 en el mes → marcar pagada.
+  // Pasista (en pesos): pendiente $135.000 en el mes → marcar pagada.
   await page.goto("/p/vapes/pasista");
   const idCompra = `VAP-C-${String(compra.numero).padStart(6, "0")}`;
   const fila = page.getByRole("row", { name: new RegExp(idCompra) });
-  await expect(fila).toContainText(/\$\s*100\.000/);
+  await expect(fila).toContainText(/\$\s*135\.000/);
   await expect(fila).toContainText("Pendiente");
-  await expect(page.getByLabel("Total a pagar del mes")).toContainText(/\$\s*100\.000/);
+  await expect(page.getByLabel("Total a pagar del mes")).toContainText(/\$\s*135\.000/);
   await fila.getByRole("button", { name: "Marcar pagada" }).click();
   const pago = page.getByRole("dialog", {
     name: new RegExp(`Marcar pagada la comisión de ${idCompra}`),
@@ -254,8 +253,8 @@ test("Pasista en Cosmetic: la comisión de la compra con su detalle, el cálculo
         create: {
           panelId: PANEL_COSMETIC,
           productoId: producto.id,
-          precio: 2500,
-          moneda: "ARS",
+          precio: 2,
+          moneda: "USDT",
           usuarioId: dueno.id,
         },
       },
@@ -267,14 +266,14 @@ test("Pasista en Cosmetic: la comisión de la compra con su detalle, el cálculo
   await page.getByRole("radio", { name: new RegExp(`Belleza ${sufijo}`) }).click();
   await page.getByRole("radio", { name: /Principal/ }).click();
   await page.getByRole("button", { name: "Continuar con Principal" }).click();
-  // Desde el catálogo del proveedor: 6 Rosa + 4 Coco a $ 2.500.
+  // Desde el catálogo del proveedor: 6 Rosa + 4 Coco a 2 USDT ($ 2.700 con la cotización del e2e).
   await page.getByRole("button", { name: `Agregar ${nc}` }).click();
   const hoja = page.getByRole("dialog", { name: nc });
   await hoja.getByLabel("Cantidad a agregar de Rosa").fill("6");
   await hoja.getByLabel("Cantidad a agregar de Coco").fill("4");
   await hoja.getByRole("button", { name: /Agregar 10 u\./ }).click();
   await page.getByRole("checkbox", { name: /Comisión del/ }).check();
-  await expect(page.getByLabel("Comisión del pasista", { exact: true })).toHaveText(/\$\s*2\.500/);
+  await expect(page.getByLabel("Comisión del pasista", { exact: true })).toHaveText("+ 2 USDT");
   await page.getByRole("button", { name: "Confirmar", exact: true }).click();
   await page.waitForURL(
     (u) => /^\/p\/cosmetic\/compras\/[a-z0-9]+$/.test(u.pathname) && !u.pathname.endsWith("/nueva"),
@@ -294,12 +293,12 @@ test("Pasista en Cosmetic: la comisión de la compra con su detalle, el cálculo
   await page.getByRole("link", { name: /Ver comisión en Pasista/ }).click();
   await expect(page.getByRole("heading", { name: `Comisión de ${idCompra}` })).toBeVisible();
   const calculo = page.getByLabel("Cálculo de la comisión");
-  await expect(calculo).toContainText(/Total de la compra\s*\$\s*25\.000/);
-  await expect(calculo).toContainText(/× 10% del pasista\s*\$\s*2\.500/);
-  await expect(page.getByLabel("Comisión total")).toHaveText(/\$\s*2\.500/);
+  await expect(calculo).toContainText(/Total de la compra\s*\$\s*27\.000/);
+  await expect(calculo).toContainText(/× 10% del pasista\s*\$\s*2\.700/);
+  await expect(page.getByLabel("Comisión total")).toHaveText(/\$\s*2\.700/);
   await expect(page.getByText(/Rosa/).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText(/Coco/).filter({ visible: true }).first()).toBeVisible();
-  await expect(page.getByLabel("Total de los productos")).toContainText(/10 u\.\)\s*\$\s*25\.000/);
+  await expect(page.getByLabel("Total de los productos")).toContainText(/10 u\.\)\s*\$\s*27\.000/);
   await captura(page, "bloqueB-detalle", calculo);
 
   // Listado del mes: la compra con su proveedor, total, % y comisión; totales del período.
@@ -308,9 +307,9 @@ test("Pasista en Cosmetic: la comisión de la compra con su detalle, el cálculo
   if (!esMobile(page)) {
     const fila = page.getByRole("row", { name: new RegExp(idCompra) });
     await expect(fila).toContainText(`Belleza ${sufijo}`);
-    await expect(fila).toContainText(/\$\s*25\.000/);
+    await expect(fila).toContainText(/\$\s*27\.000/);
     await expect(fila).toContainText("10%");
-    await expect(fila).toContainText(/\$\s*2\.500/);
+    await expect(fila).toContainText(/\$\s*2\.700/);
     await expect(fila).toContainText("Pendiente");
     await expect(fila.getByRole("link", { name: `Ver la compra ${idCompra}` })).toHaveAttribute(
       "href",
@@ -318,7 +317,7 @@ test("Pasista en Cosmetic: la comisión de la compra con su detalle, el cálculo
     );
   } else {
     await expect(page.getByRole("link", { name: new RegExp(idCompra) }).first()).toContainText(
-      /\$\s*2\.500/,
+      /\$\s*2\.700/,
     );
   }
   await expect(page.getByLabel("Comisión total del mes")).toHaveText(/\$\s*[\d.]+/);

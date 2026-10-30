@@ -18,7 +18,8 @@
  * Sin dark mode, sin acento por panel.
  */
 :root {
-  color-scheme: light;
+  /* "only": el navegador no fuerza un modo oscuro (Chrome/Samsung Internet invertían los colores y lo seleccionado quedaba blanco). */
+  color-scheme: only light;
 
   /* Marca (colores del logo) */
   --marca-marron: #594a42;

@@ -19,6 +19,7 @@ import {
   ETIQUETA_TIPO_VENTA,
 } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
+import { exigirPaginaReporteFacturado } from "@/server/reportes/armar";
 import { filtrosVentasSchema, rangoReporte } from "@/server/reportes/filtros";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
@@ -41,6 +42,7 @@ type SP = Promise<Record<string, string | string[] | undefined>>;
 /** Reporte 4: detalle de ventas con filtros (la ganancia, solo dueños). */
 export default async function ReporteVentasPage({ searchParams }: { searchParams: SP }) {
   const ctx = await requirePaginaPanel(Modulo.REPORTES, "ver");
+  await exigirPaginaReporteFacturado(ctx);
   const plano = await paramsPlanos(searchParams);
   const owner = esOwner(ctx.usuario);
   const r = rangoReporte(plano);

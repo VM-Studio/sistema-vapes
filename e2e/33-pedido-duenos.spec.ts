@@ -145,9 +145,11 @@ test("borrador de compra: se sale a otra sección y se retoma desde Compras", as
   await expect(page.getByTestId("estado-borrador")).toContainText("Borrador guardado", {
     timeout: 10_000,
   });
-  // Los pesos llevan su equivalente en USDT abajo.
+  // Compras en USDT: el precio en pesos del proveedor se precarga en USDT (6.000 ÷ 1.350 = 4,44)
+  // y el costo final por unidad también se ve en pesos.
+  await expect(page.getByLabel(`Costo en USDT de ${IGNITE_V80} — Mango Ice`)).toHaveValue("4.44");
   await expect(
-    page.getByTestId("costo-final-por-unidad").getByTestId("en-usdt").first(),
+    page.getByTestId("costo-final-por-unidad").getByTestId("final-pesos").first(),
   ).toBeVisible();
 
   // Se va a otra sección sin confirmar…

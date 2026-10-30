@@ -57,6 +57,8 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
   const puedeHacer = (modulo: Modulo, accion: "ver" | "crear" = "ver") =>
     puede(ctx.usuario, ctx.panelId, modulo, accion);
   const confirmada = v.estado === "CONFIRMADA";
+  // Anular: dueños o VENTAS "eliminar" (el servicio lo vuelve a validar).
+  const puedeAnular = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "eliminar");
   // Facturas (paneles con facturación): link a la emitida o «Facturar».
   const facturacion = puedeHacer(Modulo.FACTURAS)
     ? (await obtenerConfigFacturacion(ctx)).habilitada
@@ -74,7 +76,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
       puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "editar"));
   const medios = puedeCobrar ? (await obtenerConfigVentas(ctx)).mediosPago : [];
 
-  const devolucionesBloquean = confirmada && owner && v.tieneDevolucionesRegistradas;
+  const devolucionesBloquean = confirmada && puedeAnular && v.tieneDevolucionesRegistradas;
 
   return (
     <>
@@ -98,7 +100,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
           </span>
         }
         actions={
-          ((confirmada && (puedeHacer(Modulo.DEVOLUCIONES, "crear") || owner)) ||
+          ((confirmada && (puedeHacer(Modulo.DEVOLUCIONES, "crear") || puedeAnular)) ||
             facturaEmitida ||
             puedeFacturar) && (
             <>
@@ -127,7 +129,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                   <RotateCcw strokeWidth={1.75} /> Devolución
                 </Link>
               )}
-              {confirmada && owner && (
+              {confirmada && puedeAnular && (
                 <AnularVenta
                   venta={{
                     id: v.id,

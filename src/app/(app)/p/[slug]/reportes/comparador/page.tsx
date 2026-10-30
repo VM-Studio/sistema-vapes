@@ -313,7 +313,7 @@ function FilaOferta({
     >
       <div className="flex items-start gap-4 md:flex-1">
         <span
-          className="bg-foreground text-background rounded-control flex size-10 shrink-0 items-center justify-center text-base font-semibold tabular-nums"
+          className="bg-foreground text-primary-foreground rounded-control flex size-10 shrink-0 items-center justify-center text-base font-semibold tabular-nums"
           data-testid="posicion"
         >
           {o.posicion}

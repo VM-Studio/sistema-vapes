@@ -12,7 +12,8 @@ import { controlClass } from "@/components/ui/field";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fechaHoraCotizacion, type CotizacionVigente } from "@/lib/cambio";
-import { formatearMonto, formatearNumero, formatearPesos } from "@/lib/format";
+import { pesosAMoneda } from "@/lib/costos-compra";
+import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn, formatearFecha } from "@/lib/utils";
 import type { ComparacionCompra, OfertaCompra } from "@/server/reportes/comparador";
 import type { ProductoCatalogoCompra } from "@/server/services/compra.service";
@@ -27,11 +28,26 @@ export interface SaborAgregado {
 const num = (s: string) => Number(s.replace(",", ".")) || 0;
 
 /**
+ * Monto del comparador en USDT (moneda de Compras): en USDT tal cual; en
+ * pesos, su equivalente con la cotización vigente ("≈ 5,70 USDT") o, sin
+ * cotización, en pesos.
+ */
+export function montoCompraEnUsdt(
+  monto: string | number,
+  moneda: string,
+  cotizacionUsdt: CotizacionVigente | null,
+): string {
+  if (moneda === "USDT") return formatearUsdt(monto);
+  if (!cotizacionUsdt) return formatearMonto(monto, moneda);
+  return `≈ ${formatearUsdt(pesosAMoneda(monto, cotizacionUsdt.valor))}`;
+}
+
+/**
  * Hoja de un producto dentro de la compra:
  * 1. Sabores del producto (si el proveedor actual lo vende: viene de su
  *    catálogo) con cantidad y el costo precargado con su precio → "Agregar".
- * 2. Quién lo vende y a cuánto, del más barato al más caro (USDT pasado a
- *    pesos con la cotización vigente), con el proveedor de la compra y el
+ * 2. Quién lo vende y a cuánto, del más barato al más caro, en USDT (los
+ *    precios en pesos, con su equivalente en USDT), con el proveedor de la compra y el
  *    más barato marcados. Si la compra no tiene productos de otro, se puede
  *    pasar la compra a otro proveedor desde acá; si no, se avisa.
  */
@@ -66,7 +82,7 @@ export function ProductoCompraSheet({
   onAgregar: (sabores: SaborAgregado[], costo: { valor: string; editado: boolean }) => void;
   onCambiarProveedor: (proveedorId: string) => void;
 }) {
-  const costoInicial = catalogo?.costoArs ? String(Number(catalogo.costoArs)) : "";
+  const costoInicial = catalogo?.costoUsdt ? String(Number(catalogo.costoUsdt)) : "";
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
   const [costo, setCosto] = useState(costoInicial);
   const [clave, setClave] = useState<string | null>(null);
@@ -108,8 +124,8 @@ export function ProductoCompraSheet({
             <span className="text-foreground font-medium tabular-nums">
               {formatearMonto(catalogo.precio, catalogo.moneda)}
             </span>
-            {catalogo.moneda === "USDT" && catalogo.costoArs && (
-              <span className="tabular-nums"> ≈ {formatearPesos(catalogo.costoArs)}</span>
+            {catalogo.moneda !== "USDT" && catalogo.costoUsdt && (
+              <span className="tabular-nums"> ≈ {formatearUsdt(catalogo.costoUsdt)}</span>
             )}{" "}
             · actualizado {formatearFecha(catalogo.actualizadoAt)}
           </>
@@ -125,7 +141,7 @@ export function ProductoCompraSheet({
             </Button>
             <Button onClick={agregar} disabled={unidades === 0 || num(costo) <= 0}>
               {unidades > 0
-                ? `Agregar ${formatearNumero(unidades)} u. · ${formatearPesos(unidades * num(costo))}`
+                ? `Agregar ${formatearNumero(unidades)} u. · ${formatearUsdt((Math.round(num(costo) * 100) * unidades) / 100)}`
                 : "Agregar a la compra"}
             </Button>
           </>
@@ -140,7 +156,7 @@ export function ProductoCompraSheet({
                 {unico ? "Cantidad" : "Sabores"}
               </h3>
               <label className="text-muted text-small flex flex-col gap-1">
-                Costo unitario ($)
+                Costo unitario (USDT)
                 <input
                   inputMode="decimal"
                   aria-label="Costo unitario"
@@ -150,10 +166,10 @@ export function ProductoCompraSheet({
                 />
               </label>
             </div>
-            {catalogo.moneda === "USDT" && catalogo.tipoCambio && (
+            {catalogo.moneda !== "USDT" && catalogo.tipoCambio && (
               <p className="text-subtle text-xs">
-                {formatearMonto(catalogo.precio, "USDT")} × {formatearPesos(catalogo.tipoCambio)}{" "}
-                (cotización USDT de la compra).
+                {formatearMonto(catalogo.precio, catalogo.moneda)} ÷{" "}
+                {formatearPesos(catalogo.tipoCambio)} (cotización USDT de la compra).
               </p>
             )}
             {sabores.length === 0 ? (
@@ -219,10 +235,10 @@ export function ProductoCompraSheet({
                   Hay precios en pesos y en USDT sin cotización: se ordenan por separado.
                 </p>
               )}
-              {cotizacionUsdt && comparacion.ofertas.some((o) => o.moneda === "USDT") && (
+              {cotizacionUsdt && comparacion.ofertas.some((o) => o.moneda !== "USDT") && (
                 <p className="text-subtle text-xs">
-                  USDT a {formatearPesos(cotizacionUsdt.valor)} (cotización del{" "}
-                  {fechaHoraCotizacion(cotizacionUsdt.obtenidoAt)}) para comparar.
+                  Precios en pesos pasados a USDT a {formatearPesos(cotizacionUsdt.valor)}{" "}
+                  (cotización del {fechaHoraCotizacion(cotizacionUsdt.obtenidoAt)}) para comparar.
                 </p>
               )}
               <ol aria-label="Proveedores que lo venden" className="flex flex-col gap-2">
@@ -230,6 +246,8 @@ export function ProductoCompraSheet({
                   <FilaOferta
                     key={o.proveedorId}
                     o={o}
+                    masBarato={comparacion.masBarato}
+                    cotizacionUsdt={cotizacionUsdt}
                     puedeCambiar={puedeCambiarProveedor(o.proveedorId)}
                     otrosProductos={otrosProductos}
                     proveedorActual={proveedorActual}
@@ -248,6 +266,8 @@ export function ProductoCompraSheet({
 
 function FilaOferta({
   o,
+  masBarato,
+  cotizacionUsdt,
   puedeCambiar,
   otrosProductos,
   proveedorActual,
@@ -255,6 +275,8 @@ function FilaOferta({
   onCambiar,
 }: {
   o: OfertaCompra;
+  masBarato: OfertaCompra | null;
+  cotizacionUsdt: CotizacionVigente | null;
   puedeCambiar: boolean;
   otrosProductos: number;
   proveedorActual: string;
@@ -271,7 +293,7 @@ function FilaOferta({
       )}
     >
       <div className="flex items-start gap-3">
-        <span className="bg-foreground text-background rounded-control flex size-8 shrink-0 items-center justify-center text-sm font-semibold tabular-nums">
+        <span className="bg-foreground text-primary-foreground rounded-control flex size-8 shrink-0 items-center justify-center text-sm font-semibold tabular-nums">
           {o.posicion}
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
@@ -279,10 +301,12 @@ function FilaOferta({
           <span className="text-muted text-small truncate">{o.tienda}</span>
         </span>
         <span className="flex shrink-0 flex-col items-end">
-          <span className="font-semibold tabular-nums">{formatearMonto(o.precio, o.moneda)}</span>
-          {o.precioArsEquivalente && (
+          <span className="font-semibold tabular-nums">
+            {montoCompraEnUsdt(o.precio, o.moneda, cotizacionUsdt)}
+          </span>
+          {o.moneda !== "USDT" && (
             <span className="text-subtle text-xs tabular-nums">
-              ≈ {formatearPesos(o.precioArsEquivalente)}
+              precio en pesos: {formatearMonto(o.precio, o.moneda)}
             </span>
           )}
           <span
@@ -293,7 +317,16 @@ function FilaOferta({
           >
             {o.masBarato
               ? "El mejor precio"
-              : `+${formatearMonto(o.diferencia, o.grupo)} (+${o.diferenciaPct.toLocaleString("es-AR")} %)`}
+              : `+${
+                  // Los dos en USDT: la diferencia exacta en USDT (sin pasar por pesos).
+                  o.moneda === "USDT" && masBarato?.moneda === "USDT"
+                    ? formatearUsdt(
+                        (Math.round(Number(o.precio) * 100) -
+                          Math.round(Number(masBarato.precio) * 100)) /
+                          100,
+                      )
+                    : montoCompraEnUsdt(o.diferencia, o.grupo, cotizacionUsdt)
+                } (+${o.diferenciaPct.toLocaleString("es-AR")} %)`}
           </span>
         </span>
       </div>

@@ -85,7 +85,7 @@ export function SelectorGalpon({
                   className={cn(
                     "rounded-circle absolute top-5 right-5 flex size-6 items-center justify-center border transition-colors md:top-6 md:right-6",
                     activo
-                      ? "border-foreground bg-foreground text-background"
+                      ? "border-foreground bg-foreground text-primary-foreground"
                       : "border-input bg-surface",
                   )}
                 >

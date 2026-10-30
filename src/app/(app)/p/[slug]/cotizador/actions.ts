@@ -29,6 +29,7 @@ import { guardarConfigCotizacion } from "@/server/services/configuracion.service
 import {
   aceptarYVender,
   actualizarCotizacion,
+  anularCotizacion,
   blueDeCotizacion,
   convertirEnVenta,
   crearCotizacion,
@@ -49,7 +50,7 @@ import { productosMasVendidos } from "@/server/services/venta.service";
 
 /**
  * Permisos del COTIZADOR (en el panel actual):
- *   ver → listado, detalle y WhatsApp (el PDF: GET /api/p/{slug}/cotizaciones/{id}/pdf) · crear → armar, editar, duplicar y cambiar estado
+ *   ver → listado, detalle y WhatsApp (el PDF: GET /api/p/{slug}/cotizaciones/{id}/pdf) · crear → armar, editar, duplicar, cambiar estado y anular
  *   editar → precio manual por ítem y descuento global
  *   configuración y escalones por defecto → solo dueños
  *   escalones de un producto → dueños o "editar" en PRODUCTOS
@@ -127,6 +128,15 @@ export const cambiarEstadoCotizacionAction = actionHandler(async (input: unknown
   else await marcarRechazada(ctx, datos.id, datos.motivo);
   revalidar();
   return { ok: true as const };
+});
+
+/** Anula una cotización sin convertir (motivo opcional). No toca stock. */
+export const anularCotizacionAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.COTIZADOR, "crear");
+  const datos = rechazarCotizacionSchema.parse(input);
+  const r = await anularCotizacion(ctx, datos.id, datos.motivo);
+  revalidar();
+  return r;
 });
 
 export const duplicarCotizacionAction = actionHandler(async (input: unknown) => {

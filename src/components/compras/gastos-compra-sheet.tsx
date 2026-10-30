@@ -11,12 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { calcularCostosFinales } from "@/lib/costos-compra";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { pesosAMoneda, vistaCostosUsdt } from "@/lib/costos-compra";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { CostosCompra } from "@/server/services/compra.service";
 
-import { EnUsdt, type CotizacionResumen } from "./resumen-compra-card";
+import { textoUsdt } from "./resumen-compra-card";
 
 import {
   agregarGastosCompraAction,
@@ -35,7 +35,8 @@ const filaVacia = (clave: number): FilaGasto => ({ clave, motivo: "", monto: "" 
 
 /**
  * "Agregar gastos extras" de una compra (valija, envío…): carga filas motivo
- * + monto y muestra en vivo cómo queda el costo final (comisión + gastos =
+ * + monto EN USDT (el servidor lo pasa a pesos con la cotización de la
+ * compra) y muestra en vivo, en USDT, cómo queda el costo final (comisión + gastos =
  * recargo por unidad → costo final por unidad). Los dueños anulan gastos ya
  * cargados. Los números definitivos los calcula y guarda el servidor.
  */
@@ -83,21 +84,37 @@ export function GastosCompraSheet({
 
   const nuevos = filas.filter((f) => f.monto.trim() !== "" || f.motivo.trim() !== "");
   const vigentes = datos?.gastos.filter((g) => !g.anulado) ?? [];
-  const calculo = datos
-    ? calcularCostosFinales({
-        items: datos.items,
-        descuento: datos.descuento,
-        comisionPorcentaje: datos.comisionPasistaPorcentaje,
-        gastos: [...vigentes.map((g) => g.monto), ...nuevos.map((f) => f.monto)],
-      })
-    : null;
   const cot = datos?.cotizacionUsdt ?? null;
+  // Recálculo en vivo EN USDT con la misma función que el servidor.
+  const vista =
+    datos && cot
+      ? vistaCostosUsdt({
+          costosEnUsdt: datos.costosEnUsdt,
+          tipoCambioUSDT: cot.valor,
+          comisionPorcentaje: datos.comisionPasistaPorcentaje,
+          descuento: datos.descuento,
+          items: datos.items,
+          gastos: [
+            ...vigentes,
+            ...nuevos.map((f) => ({ monto: "", montoUSDT: f.monto.replace(",", ".") || "0" })),
+          ],
+        })
+      : null;
+  const calculo = vista?.costos ?? null;
+  const usdt = (n: number) => textoUsdt(n, vista?.aproximado ?? false);
+  /** Gasto ya cargado en USDT (uno anterior, cargado en pesos: su equivalente). */
+  const usdtGasto = (g: { monto: string; montoUSDT: string | null }) =>
+    g.montoUSDT
+      ? formatearUsdt(g.montoUSDT)
+      : cot
+        ? textoUsdt(pesosAMoneda(g.monto, cot.valor), true)
+        : formatearPesos(g.monto);
 
   async function guardar() {
     setGuardando(true);
     const r = await agregarGastosCompraAction({
       compraId,
-      gastos: nuevos.map((f) => ({ motivo: f.motivo, monto: f.monto })),
+      gastos: nuevos.map((f) => ({ motivo: f.motivo, montoUSDT: f.monto })),
     });
     setGuardando(false);
     if (!r.ok) {
@@ -112,7 +129,7 @@ export function GastosCompraSheet({
     }
     toast.success(
       `Gastos cargados en ${r.data.idVisible}`,
-      `Costo final ${formatearPesos(r.data.costoFinalTotal)}`,
+      calculo ? `Costo final ${usdt(calculo.costoFinalTotal)}` : undefined,
     );
     router.refresh();
     onCerrar();
@@ -136,7 +153,8 @@ export function GastosCompraSheet({
   const errorDe = (i: number, campo: "motivo" | "monto") => {
     // Los índices del servidor son sobre `nuevos` (las filas no vacías).
     const n = nuevos.findIndex((f) => f.clave === filas[i]!.clave);
-    return n >= 0 ? errores[`gastos.${n}.${campo}`] : undefined;
+    const clave = campo === "monto" ? "montoUSDT" : campo;
+    return n >= 0 ? errores[`gastos.${n}.${clave}`] : undefined;
   };
 
   return (
@@ -144,7 +162,7 @@ export function GastosCompraSheet({
       open={abierto}
       onOpenChange={(o) => !o && onCerrar()}
       title="Agregar gastos extras"
-      description={`Compra ${idVisible}: valija, envío y lo que haya costado traerla. Se reparten por unidad.`}
+      description={`Compra ${idVisible}: valija, envío y lo que haya costado traerla, en USDT. Se reparten por unidad.`}
       footer={
         <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">
           <Button variant="secondary" onClick={onCerrar}>
@@ -190,8 +208,8 @@ export function GastosCompraSheet({
                     error={errorDe(i, "motivo")}
                   />
                   <Input
-                    label={i === 0 ? "Monto" : undefined}
-                    aria-label={`Monto del gasto ${i + 1}`}
+                    label={i === 0 ? "Monto (USDT)" : undefined}
+                    aria-label={`Monto en USDT del gasto ${i + 1}`}
                     inputMode="decimal"
                     placeholder="0"
                     className="text-right tabular-nums"
@@ -204,14 +222,6 @@ export function GastosCompraSheet({
                       )
                     }
                     error={errorDe(i, "monto")}
-                    hint={
-                      f.monto ? (
-                        <EnUsdt
-                          pesos={Number(f.monto.replace(",", "."))}
-                          cotizacion={datos.cotizacionUsdt}
-                        />
-                      ) : undefined
-                    }
                   />
                   <IconButton
                     variant="ghost"
@@ -243,39 +253,31 @@ export function GastosCompraSheet({
               aria-label="Recálculo del costo"
               className="bg-surface-2 rounded-card flex flex-col gap-2 p-4 text-sm"
             >
-              <Fila label="Total de la compra" pesos={calculo.total} cotizacion={cot} />
+              <Fila label="Total de la compra" texto={usdt(calculo.total)} />
               <Fila
                 label={
                   calculo.comisionPorcentaje === null
                     ? "Comisión pasista (sin comisión)"
                     : `Comisión pasista (${formatearNumero(calculo.comisionPorcentaje)}%)`
                 }
-                pesos={calculo.comision}
-                cotizacion={cot}
+                texto={usdt(calculo.comision)}
               />
-              <Fila label="Gastos extras" pesos={calculo.gastos} cotizacion={cot} />
+              <Fila label="Gastos extras" texto={usdt(calculo.gastos)} />
               <Fila
                 label={`Gastos por unidad (${formatearNumero(calculo.unidades)} u.)`}
-                pesos={calculo.gastosPorUnidad}
-                cotizacion={cot}
+                texto={usdt(calculo.gastosPorUnidad)}
               />
               <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
                 <span className="font-semibold">Costo final total</span>
-                <span className="flex flex-col items-end">
-                  <strong className="tabular-nums" aria-label="Costo final total">
-                    {formatearPesos(calculo.costoFinalTotal)}
-                  </strong>
-                  <EnUsdt pesos={calculo.costoFinalTotal} cotizacion={cot} />
-                </span>
+                <strong className="tabular-nums" aria-label="Costo final total">
+                  {usdt(calculo.costoFinalTotal)}
+                </strong>
               </div>
               <div className="flex items-baseline justify-between gap-3">
-                <span className="font-semibold">Costo final por unidad</span>
-                <span className="flex flex-col items-end">
-                  <strong className="text-h3 tabular-nums" aria-label="Costo final por unidad">
-                    {formatearPesos(calculo.costoUnitarioFinalPromedio)}
-                  </strong>
-                  <EnUsdt pesos={calculo.costoUnitarioFinalPromedio} cotizacion={cot} />
-                </span>
+                <span className="font-semibold">Costo final por unidad (promedio)</span>
+                <strong className="text-h3 tabular-nums" aria-label="Costo final por unidad">
+                  {usdt(calculo.costoUnitarioFinalPromedio)}
+                </strong>
               </div>
             </section>
           )}
@@ -307,10 +309,7 @@ export function GastosCompraSheet({
                         {g.anulado ? (
                           <Badge variant="neutral">Anulado</Badge>
                         ) : (
-                          <span className="flex flex-col items-end">
-                            <strong className="tabular-nums">{formatearPesos(g.monto)}</strong>
-                            <EnUsdt pesos={g.monto} cotizacion={cot} />
-                          </span>
+                          <strong className="tabular-nums">{usdtGasto(g)}</strong>
                         )}
                         {puedeAnular && !g.anulado && anulando?.id !== g.id && (
                           <Button
@@ -358,22 +357,11 @@ export function GastosCompraSheet({
   );
 }
 
-function Fila({
-  label,
-  pesos,
-  cotizacion,
-}: {
-  label: string;
-  pesos: number;
-  cotizacion: CotizacionResumen | null;
-}) {
+function Fila({ label, texto }: { label: string; texto: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-muted">{label}</span>
-      <span className="flex flex-col items-end tabular-nums">
-        {formatearPesos(pesos)}
-        <EnUsdt pesos={pesos} cotizacion={cotizacion} />
-      </span>
+      <span className="whitespace-nowrap tabular-nums">{texto}</span>
     </div>
   );
 }

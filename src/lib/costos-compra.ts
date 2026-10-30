@@ -209,3 +209,148 @@ export function calcularCostosFinales(c: EntradaCostosCompra): CostosFinales {
 
 /** Comisión del pasista por defecto (Configuracion "compras"), en %. */
 export const COMISION_PASISTA_DEFAULT = 10;
+
+// =============================================================================
+// Compras en USDT (Compra.costosEnUsdt, desde 2026-10-30)
+// =============================================================================
+//
+// Lo que se carga (costo de cada ítem y gastos extras) está en USDT y el costo
+// final se calcula EN USDT con `calcularCostosFinales`: lo que se ve en Compras
+// sale directo de lo tipeado, sin ir y volver de pesos. Los pesos se derivan
+// UNA sola vez con la cotización guardada en la compra (tipoCambioUSDT):
+//
+//   costo en pesos     = ROUND(costo USDT × cotización, 2)
+//   gasto en pesos     = ROUND(gasto USDT × cotización, 2)
+//   costo final pesos  = costo en pesos + ROUND((final USDT − costo USDT) × cotización, 2)
+//
+// Así el costo final en pesos (el que toman las ventas para la ganancia) es
+// el final en USDT × cotización (± 1 centavo) y nunca queda debajo del costo
+// base (CHECK). Las columnas en pesos de la compra (subtotal, comisión,
+// gastos, costo final total) salen de `calcularCostosFinales` sobre los pesos
+// derivados, como siempre: así se cumplen los CHECK y triggers de la DB.
+
+/** USDT → pesos con la cotización (pesos por USDT), a centavos, mitad hacia arriba. */
+export function usdtAPesos(usdt: string | number, tipoCambio: string | number): number {
+  const u = aCentavos(usdt);
+  const t = aCentavos(tipoCambio);
+  // u/100 × t/100 pesos = u × t / 100 centavos.
+  const centavos = divRedondeada(BigInt(Math.abs(u)) * BigInt(t), 100n);
+  return aPesos(u < 0 ? -centavos : centavos);
+}
+
+/**
+ * Pesos → moneda (USDT o dólar) con su cotización (pesos por unidad), a
+ * centavos, mitad hacia arriba. Para compras anteriores cargadas en pesos y
+ * para mostrar el costo final en dólares.
+ */
+export function pesosAMoneda(pesos: string | number, tipoCambio: string | number): number {
+  const p = aCentavos(pesos);
+  const t = aCentavos(tipoCambio);
+  if (t <= 0) return 0;
+  // p/100 ÷ t/100 USDT = p / t USDT = p × 100 / t centavos.
+  const centavos = divRedondeada(BigInt(Math.abs(p)) * 100n, BigInt(t));
+  return aPesos(p < 0 ? -centavos : centavos);
+}
+
+export interface EntradaCostosCompraUsdt {
+  items: { cantidad: number; costoUnitarioUSDT: string | number }[];
+  comisionPorcentaje: string | number | null;
+  /**
+   * Gastos vigentes: el monto en USDT y, si ya está guardado, el monto en
+   * pesos (manda el guardado: la DB verifica que los gastos en pesos sumen).
+   */
+  gastos: { montoUSDT: string | number; monto?: string | number | null }[];
+  /** Pesos por USDT (snapshot de la compra). */
+  tipoCambioUSDT: string | number;
+}
+
+export interface CostosCompraUsdt {
+  /** Lo que se muestra: todo en USDT. */
+  usdt: CostosFinales;
+  /** Columnas en pesos de la compra. */
+  pesos: CostosFinales;
+  /** Por ítem (mismo orden), en pesos: costo base y costo final. */
+  itemsPesos: { costoUnitario: number; costoUnitarioFinal: number }[];
+}
+
+export function calcularCostosCompraUsdt(c: EntradaCostosCompraUsdt): CostosCompraUsdt {
+  const usdt = calcularCostosFinales({
+    items: c.items.map((i) => ({ cantidad: i.cantidad, costoUnitario: i.costoUnitarioUSDT })),
+    comisionPorcentaje: c.comisionPorcentaje,
+    gastos: c.gastos.map((g) => g.montoUSDT),
+  });
+  const costosPesos = c.items.map((i) => usdtAPesos(i.costoUnitarioUSDT, c.tipoCambioUSDT));
+  const pesos = calcularCostosFinales({
+    items: c.items.map((i, n) => ({ cantidad: i.cantidad, costoUnitario: costosPesos[n]! })),
+    comisionPorcentaje: c.comisionPorcentaje,
+    gastos: c.gastos.map((g) =>
+      g.monto !== null && g.monto !== undefined && g.monto !== ""
+        ? g.monto
+        : usdtAPesos(g.montoUSDT, c.tipoCambioUSDT),
+    ),
+  });
+  const itemsPesos = usdt.items.map((u, n) => {
+    const base = costosPesos[n]!;
+    const extras = usdtAPesos(
+      aPesos(aCentavos(u.costoUnitarioFinal) - aCentavos(u.costoUnitario)),
+      c.tipoCambioUSDT,
+    );
+    return { costoUnitario: base, costoUnitarioFinal: aPesos(aCentavos(base) + aCentavos(extras)) };
+  });
+  return { usdt, pesos, itemsPesos };
+}
+
+export interface VistaCostosUsdt {
+  /** Todo en USDT: lo que se muestra en Compras. */
+  costos: CostosFinales;
+  /**
+   * Costo final por unidad de cada ítem en USDT. En compras en USDT es el
+   * calculado; en las anteriores, el final guardado en pesos ÷ cotización.
+   */
+  finalesUsdt: number[];
+  /** true = compra anterior calculada en pesos: los USDT son equivalentes (≈). */
+  aproximado: boolean;
+}
+
+/**
+ * Costos de una compra en USDT para mostrar. En USDT (costosEnUsdt), con lo
+ * cargado; en una compra anterior (en pesos), pasando cada monto cargado a
+ * USDT con la cotización (aproximado).
+ */
+export function vistaCostosUsdt(c: {
+  costosEnUsdt: boolean;
+  /** Pesos por USDT (la de la compra o, si no tiene, la vigente). */
+  tipoCambioUSDT: string | number;
+  comisionPorcentaje: string | number | null;
+  descuento?: string | number;
+  items: {
+    cantidad: number;
+    costoUnitario: string | number;
+    costoUnitarioUSDT: string | number | null;
+    costoUnitarioFinal: string | number;
+  }[];
+  gastos: { monto: string | number; montoUSDT: string | number | null }[];
+}): VistaCostosUsdt {
+  const enUsdt =
+    c.costosEnUsdt &&
+    c.items.every((i) => i.costoUnitarioUSDT !== null && i.costoUnitarioUSDT !== "");
+  const a = (pesos: string | number) => pesosAMoneda(pesos, c.tipoCambioUSDT);
+  const costos = calcularCostosFinales({
+    items: c.items.map((i) => ({
+      cantidad: i.cantidad,
+      costoUnitario: enUsdt ? i.costoUnitarioUSDT! : a(i.costoUnitario),
+    })),
+    descuento: enUsdt ? 0 : a(c.descuento ?? 0),
+    comisionPorcentaje: c.comisionPorcentaje,
+    gastos: c.gastos.map((g) =>
+      g.montoUSDT !== null && g.montoUSDT !== "" ? g.montoUSDT : a(g.monto),
+    ),
+  });
+  return {
+    costos,
+    finalesUsdt: c.items.map((i, n) =>
+      enUsdt ? costos.items[n]!.costoUnitarioFinal : a(i.costoUnitarioFinal),
+    ),
+    aproximado: !enUsdt,
+  };
+}

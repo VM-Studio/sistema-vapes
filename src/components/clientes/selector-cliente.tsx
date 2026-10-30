@@ -148,7 +148,7 @@ function ClienteSeleccionado({
     >
       <span className="relative shrink-0">
         <Avatar nombre={nombre} className="size-11 text-sm" />
-        <span className="bg-foreground text-background ring-surface rounded-circle absolute -right-0.5 -bottom-0.5 flex size-4.5 items-center justify-center ring-2">
+        <span className="bg-foreground text-primary-foreground ring-surface rounded-circle absolute -right-0.5 -bottom-0.5 flex size-4.5 items-center justify-center ring-2">
           <Check className="size-3" strokeWidth={2.5} aria-hidden />
         </span>
       </span>

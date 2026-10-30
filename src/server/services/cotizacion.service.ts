@@ -63,7 +63,8 @@ import { generarVenta, type VentaGenerada } from "@/server/services/venta.servic
  * - Número por Secuencia COTIZACION; código "VAP-Q-000001".
  * - Estados: BORRADOR → ENVIADA → ACEPTADA | RECHAZADA; BORRADOR/ENVIADA pasan
  *   a VENCIDA al pasar `validaHasta`; CONVERTIDA (con su venta) no se modifica
- *   más (lo garantiza un trigger).
+ *   más (lo garantiza un trigger). Cualquiera sin convertir se puede ANULAR
+ *   (estado final: no se edita, ni convierte, ni acepta).
  * - convertirEnVenta: todo en una transacción (alta de cliente si hace falta,
  *   venta con los precios cotizados como especiales, cotización CONVERTIDA).
  * - Mayorista en dólares: la cotización guarda el SNAPSHOT del blue venta con
@@ -481,7 +482,7 @@ async function cambiarEstado(
   return transaccion(ctx, async (tx) => {
     const c = await bloquear(tx, ctx, id);
     const vencida = estaVencida(c);
-    if (vencida && destino !== EstadoCotizacion.RECHAZADA)
+    if (vencida && destino !== EstadoCotizacion.RECHAZADA && destino !== EstadoCotizacion.ANULADA)
       throw new DomainError(
         `La cotización ${c.codigo} está vencida: actualizala o duplicala a precios de hoy.`,
       );
@@ -529,6 +530,27 @@ export function marcarRechazada(ctx: Ctx, id: string, motivo?: string) {
       EstadoCotizacion.VENCIDA,
     ],
     { motivoRechazo: motivo?.trim() || null },
+  );
+}
+
+/**
+ * Anula una cotización que no se convirtió en venta (queda sin efecto: no se
+ * edita, convierte ni acepta más). No mueve stock (una cotización no lo
+ * reserva). El motivo, si lo hay, se guarda en `motivoRechazo` y en la auditoría.
+ */
+export function anularCotizacion(ctx: Ctx, id: string, motivo?: string) {
+  return cambiarEstado(
+    ctx,
+    id,
+    EstadoCotizacion.ANULADA,
+    [
+      EstadoCotizacion.BORRADOR,
+      EstadoCotizacion.ENVIADA,
+      EstadoCotizacion.ACEPTADA,
+      EstadoCotizacion.VENCIDA,
+      EstadoCotizacion.RECHAZADA,
+    ],
+    motivo?.trim() ? { motivoRechazo: motivo.trim() } : {},
   );
 }
 
@@ -781,7 +803,8 @@ export async function resumenCotizaciones(
     cantidad += g._count;
     monto = monto.plus(g._sum.total ?? CERO);
   }
-  const base = cantidad - porEstado.BORRADOR.cantidad;
+  // Las anuladas no cuentan para la conversión (quedaron sin efecto).
+  const base = cantidad - porEstado.BORRADOR.cantidad - porEstado.ANULADA.cantidad;
   return {
     cantidad,
     montoTotal: dec(monto),

@@ -460,9 +460,9 @@ async function main() {
   );
 
   // ---------------------------------------------------------------------------
-  console.log("\n7) Anulación: solo dueños, vuelve el stock (VENTA_ANULADA)");
+  console.log("\n7) Anulación: dueños o VENTAS «eliminar», vuelve el stock (VENTA_ANULADA)");
   const anulaEmp = await error(() => anularVenta(ctxEmp, v1.id, "Probando"));
-  check(anulaEmp instanceof ForbiddenError, "empleado → FORBIDDEN");
+  check(anulaEmp instanceof ForbiddenError, "empleado sin VENTAS «eliminar» → FORBIDDEN");
   await anularVenta(ctx, v1.id, "Se arrepintió");
   const anulada = await db.venta.findUniqueOrThrow({ where: { id: v1.id } });
   check(

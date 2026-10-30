@@ -39,7 +39,7 @@ export function Sidebar({ items, colapsado, onToggle }: SidebarProps) {
             "rounded-control relative flex h-10 items-center gap-3 px-3 text-sm font-medium transition-colors",
             activo
               ? "bg-brand-orange-strong text-primary-foreground font-semibold"
-              : "text-muted hover:bg-brand-orange-soft hover:text-foreground",
+              : "text-muted hover:bg-brand-orange-soft hover:text-foreground active:bg-brand-orange-strong active:text-primary-foreground",
             colapsado && "justify-center px-0",
           )}
         >

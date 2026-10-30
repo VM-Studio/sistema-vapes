@@ -42,7 +42,7 @@ export function ChipLink({
         activo
           ? pestana
             ? "border-brand-orange-strong bg-brand-orange-strong text-primary-foreground"
-            : "border-foreground bg-foreground text-background"
+            : "border-foreground bg-foreground text-primary-foreground"
           : "border-border bg-surface text-muted hover:border-input hover:text-foreground",
         className,
       )}
@@ -96,7 +96,7 @@ export function FilterChip({
       className={cn(
         base,
         activo
-          ? "border-foreground bg-foreground text-background"
+          ? "border-foreground bg-foreground text-primary-foreground"
           : "border-border bg-surface text-muted hover:border-input hover:text-foreground",
         className,
       )}

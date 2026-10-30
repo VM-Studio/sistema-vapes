@@ -11,7 +11,8 @@ export interface TabItem<V extends string> {
 /**
  * Pestañas controladas (estado local). Para pestañas por URL usar <TabsNav>.
  * - `linea` (default): subrayado y texto naranja (módulo activo) en la activa.
- * - `segmentado`: control segmentado sobre gris (filtros cortos, 2–4 opciones).
+ * - `segmentado`: control segmentado (filtros cortos, 2–4 opciones); la opción
+ *   elegida va rellena en marrón (antes blanca sobre blanco: no se veía).
  */
 export function Tabs<V extends string>({
   items,
@@ -33,7 +34,10 @@ export function Tabs<V extends string>({
       <div
         role="tablist"
         aria-label={ariaLabel}
-        className={cn("bg-card rounded-control inline-flex gap-0.5 p-0.5", className)}
+        className={cn(
+          "bg-card border-border rounded-control inline-flex gap-0.5 border p-0.5",
+          className,
+        )}
       >
         {items.map((t) => {
           const activo = t.value === value;
@@ -47,8 +51,8 @@ export function Tabs<V extends string>({
               className={cn(
                 "rounded-inner h-9 px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-8",
                 activo
-                  ? "bg-surface text-foreground shadow-control"
-                  : "text-muted hover:text-foreground",
+                  ? "bg-primary text-primary-foreground shadow-control"
+                  : "text-muted hover:text-foreground active:bg-surface-3",
               )}
             >
               {t.label}

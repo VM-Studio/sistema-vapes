@@ -5,7 +5,13 @@ import { notFound, redirect } from "next/navigation";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
-import { cotizacionResumenCompra, obtenerCompra } from "@/server/services/compra.service";
+import { pesosAMoneda } from "@/lib/costos-compra";
+import { formatearPesos } from "@/lib/format";
+import {
+  cotizacionResumenCompra,
+  cotizacionUsdCompra,
+  obtenerCompra,
+} from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
 import { listarProveedoresActivos } from "@/server/services/proveedor.service";
@@ -27,10 +33,11 @@ export default async function EditarCompraPage({ params }: { params: Promise<{ i
   });
   // Solo se edita la pendiente de recibir: una compra recibida o anulada queda congelada.
   if (c.estado !== "BORRADOR") redirect(rutaPanel(ctx.panel.slug, `/compras/${id}`));
-  const [depositos, proveedores, cotizacionUsdt] = await Promise.all([
+  const [depositos, proveedores, cotizacionUsdt, cotizacionUsd] = await Promise.all([
     listarDepositosActivos(ctx),
     listarProveedoresActivos(ctx),
     cotizacionResumenCompra(c.tipoCambioUSDT),
+    cotizacionUsdCompra(c.tipoCambioUSD),
   ]);
   const configCompras = await obtenerConfigCompras(ctx);
 
@@ -40,10 +47,13 @@ export default async function EditarCompraPage({ params }: { params: Promise<{ i
       depositos={depositos}
       comisionDefault={configCompras.comisionPasistaPorcentajeDefault}
       cotizacionUsdt={cotizacionUsdt}
+      cotizacionUsd={cotizacionUsd}
       inicial={{
         id: c.id,
         comisionPasistaPorcentaje: c.comisionPasistaPorcentaje,
-        gastos: c.gastos.filter((g) => !g.anulado).map((g) => g.monto),
+        gastos: c.gastos
+          .filter((g) => !g.anulado)
+          .map((g) => ({ monto: g.monto, montoUSDT: g.montoUSDT })),
         idVisible: formatearIdCompra(ctx.panel.slug, c.numero),
         // Si el proveedor o el galpón se desactivaron, hay que elegir otro.
         proveedorId: proveedores.some((p) => p.id === c.proveedorId) ? (c.proveedorId ?? "") : "",
@@ -57,7 +67,13 @@ export default async function EditarCompraPage({ params }: { params: Promise<{ i
           sabor: i.sabor,
           sku: i.sku,
           cantidad: String(i.cantidad),
-          costo: String(Number(i.costoUnitario)),
+          // En USDT. Compra anterior cargada en pesos: su equivalente con la cotización de la compra.
+          ...(i.costoUnitarioUSDT || !cotizacionUsdt
+            ? { costo: i.costoUnitarioUSDT ? String(Number(i.costoUnitarioUSDT)) : "" }
+            : {
+                costo: String(pesosAMoneda(i.costoUnitario, cotizacionUsdt.valor)),
+                detalleUsdt: `${formatearPesos(i.costoUnitario)} ÷ ${formatearPesos(cotizacionUsdt.valor)}`,
+              }),
           origenCosto: "manual",
         })),
       }}

@@ -24,6 +24,7 @@ import {
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
 import { listar, type FacturaListada } from "@/server/services/factura.service";
+import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
 
 import { FiltrosFacturas } from "../filtros-facturas";
 
@@ -45,7 +46,11 @@ export default async function FacturasComunesPage({ searchParams }: { searchPara
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   const filtros = listarFacturasSchema.parse(plano);
-  const [r, config] = await Promise.all([listar(ctx, filtros), obtenerConfigFacturacion(ctx)]);
+  const [r, config, verFacturado] = await Promise.all([
+    listar(ctx, filtros),
+    obtenerConfigFacturacion(ctx),
+    veFacturadoCtx(ctx),
+  ]);
   const href = (f: FacturaListada) => rutaPanel(slug, `/facturas/${f.id}`);
   const exportar = `/api/p/${slug}/facturas/exportar?${new URLSearchParams(
     Object.entries(plano).filter(([k]) => k !== "page"),
@@ -64,9 +69,11 @@ export default async function FacturasComunesPage({ searchParams }: { searchPara
         title="Facturas del sistema"
         subtitle="Las facturas que se emitieron por fuera (con su número fiscal) y los comprobantes internos."
         actions={
-          <a href={exportar} className={buttonVariants({ variant: "secondary" })} download>
-            <FileSpreadsheet strokeWidth={1.75} /> Exportar Excel
-          </a>
+          verFacturado && (
+            <a href={exportar} className={buttonVariants({ variant: "secondary" })} download>
+              <FileSpreadsheet strokeWidth={1.75} /> Exportar Excel
+            </a>
+          )
         }
       />
       {!config.habilitada && (
@@ -88,8 +95,13 @@ export default async function FacturasComunesPage({ searchParams }: { searchPara
       )}
       <section aria-label="Totales" className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
         <StatCard label="Facturas emitidas" value={formatearNumero(r.resumen.cantidad)} />
-        <StatCard label="Total facturado" value={formatearPesos(r.resumen.total)} />
-        <StatCard label="IVA discriminado" value={formatearPesos(r.resumen.iva)} />
+        {/* Un vendedor con ganancia por vape no ve lo facturado. */}
+        {verFacturado && (
+          <>
+            <StatCard label="Total facturado" value={formatearPesos(r.resumen.total)} />
+            <StatCard label="IVA discriminado" value={formatearPesos(r.resumen.iva)} />
+          </>
+        )}
       </section>
       <FiltrosFacturas
         params={plano}

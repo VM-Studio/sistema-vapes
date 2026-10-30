@@ -28,8 +28,14 @@ import { rutaPanel } from "@/lib/paneles";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 import { requirePaginaPanel } from "@/server/auth/permissions";
-import { REPORTES, reporteDisponible, type ClaveReporte } from "@/server/reportes/catalogo";
+import {
+  REPORTES,
+  reporteDisponible,
+  reportePermitido,
+  type ClaveReporte,
+} from "@/server/reportes/catalogo";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
+import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
 import {
   periodoDesdeParams,
   rendimientoVendedores,
@@ -73,8 +79,10 @@ export default async function ReportesPage() {
   const ctx = await requirePaginaPanel(Modulo.REPORTES, "ver");
   const owner = esOwner(ctx.usuario);
   const conMercadoLibre = tieneMercadoLibre(await obtenerConfigVentas(ctx));
+  const verFacturado = await veFacturadoCtx(ctx);
   const visibles = REPORTES.filter(
-    (r) => (owner || !r.owner) && reporteDisponible(r, { conMercadoLibre }),
+    (r) =>
+      reportePermitido(r, { owner, verFacturado }) && reporteDisponible(r, { conMercadoLibre }),
   );
   const [vendedores, delMes] = owner
     ? await Promise.all([

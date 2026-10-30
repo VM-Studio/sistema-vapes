@@ -26,6 +26,7 @@ import {
 import {
   aceptarYVender,
   actualizarCotizacion,
+  anularCotizacion,
   convertirEnVenta,
   crearCotizacion,
   duplicar,
@@ -42,6 +43,7 @@ import {
   guardarEscalonesDefault,
   tablaPreciosProducto,
 } from "../src/server/services/escalon.service";
+import { veFacturadoCtx } from "../src/server/services/ganancia-vendedor.service";
 import { registrarAjuste } from "../src/server/services/movimiento.service";
 import { cobrarVenta, puedeFiados } from "../src/server/services/fiado.service";
 import { calcularPrecios } from "../src/server/services/precio.service";
@@ -840,6 +842,71 @@ async function main() {
       }),
     )) instanceof NotFoundError,
     "convertir una de Vapes desde Cosmetic → no existe",
+  );
+
+  // ---------------------------------------------------------------------------
+  console.log("\nA) Anular una cotización (estado final, sin stock)");
+  const qAnul = await crearCotizacion(
+    ctxTri,
+    { tipo: "MAYORISTA", items: [{ varianteId: mango.id, cantidad: 12 }], cliente: null },
+    SIN_EDITAR,
+  );
+  await marcarEnviada(ctxTri, qAnul.id);
+  const stockAntes = await db.stock.findFirst({
+    where: { varianteId: mango.id, depositoId: g1.id },
+  });
+  const anulada = await anularCotizacion(ctxTri, qAnul.id, "El cliente no respondió");
+  const dAnul = await obtener(ctx, qAnul.id);
+  check(
+    anulada.estado === EstadoCotizacion.ANULADA &&
+      dAnul.estado === EstadoCotizacion.ANULADA &&
+      dAnul.motivoRechazo === "El cliente no respondió",
+    "ENVIADA → ANULADA con su motivo",
+  );
+  const stockDespues = await db.stock.findFirst({
+    where: { varianteId: mango.id, depositoId: g1.id },
+  });
+  check(stockAntes?.cantidad === stockDespues?.cantidad, "anular no toca el stock");
+  check(
+    (await error(() => anularCotizacion(ctx, qAnul.id))) instanceof DomainError,
+    "anular dos veces → error",
+  );
+  check(
+    (await error(() =>
+      actualizarCotizacion(
+        ctx,
+        qAnul.id,
+        { tipo: "MAYORISTA", items: [{ varianteId: mango.id, cantidad: 20 }], cliente: null },
+        DUENO,
+      ),
+    )) instanceof DomainError,
+    "una anulada no se edita",
+  );
+  check(
+    (await error(() =>
+      convertirEnVenta(ctx, qAnul.id, {
+        depositoId: g1.id,
+        pagos: [{ medioPago: "EFECTIVO", monto: 1 }],
+      }),
+    )) instanceof DomainError,
+    "una anulada no se convierte en venta",
+  );
+  check(
+    (await error(() => anularCotizacion(ctx, q1.id))) instanceof DomainError,
+    "una convertida no se anula",
+  );
+  const dupAnul = await duplicar(ctx, qAnul.id);
+  check(
+    (await obtener(ctx, dupAnul.id)).estado === EstadoCotizacion.BORRADOR,
+    "una anulada se puede duplicar (borrador nuevo)",
+  );
+
+  console.log("\nF) Lo facturado: dueños sí, vendedor con ganancia por vape no");
+  check(await veFacturadoCtx(ctx), "dueño → ve lo facturado");
+  const conTarifas = (await db.tarifaVendedor.count({ where: { usuarioId: trinidad.id } })) > 0;
+  check(
+    (await veFacturadoCtx(ctxTri)) === !conTarifas,
+    `empleado ${conTarifas ? "con" : "sin"} ganancia por vape → ${conTarifas ? "no ve" : "ve"} lo facturado`,
   );
 
   await guardarConfigCotizacion(ctx, configOriginal);

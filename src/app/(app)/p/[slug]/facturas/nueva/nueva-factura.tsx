@@ -183,7 +183,7 @@ export function NuevaFactura({
                 className={cn(
                   "rounded-control min-h-11 border px-4 text-sm font-semibold transition-colors",
                   modo === m
-                    ? "border-foreground bg-foreground text-background"
+                    ? "border-foreground bg-foreground text-primary-foreground"
                     : "border-foreground bg-surface text-foreground hover:bg-surface-2",
                 )}
               >

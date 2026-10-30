@@ -65,7 +65,7 @@ export const viewport: Viewport = {
   // env(safe-area-inset-*) evitan que el contenido quede debajo.
   viewportFit: "cover",
   themeColor: "#ffffff",
-  colorScheme: "light",
+  colorScheme: "only light",
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

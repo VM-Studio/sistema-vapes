@@ -216,6 +216,7 @@ export const ESTADO_COTIZACION_UI: Record<EstadoCotizacion, { label: string }> =
   RECHAZADA: { label: "Rechazada" },
   VENCIDA: { label: "Vencida" },
   CONVERTIDA: { label: "Convertida en venta" },
+  ANULADA: { label: "Anulada" },
 };
 
 export const ETIQUETA_TIPO_COTIZACION: Record<TipoCotizacion, string> = {

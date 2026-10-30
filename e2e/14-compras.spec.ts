@@ -60,8 +60,8 @@ async function preparar(sufijo: string) {
         create: {
           panelId: PANEL_VAPES,
           productoId: producto.id,
-          precio: 7000,
-          moneda: "ARS",
+          precio: 6,
+          moneda: "USDT",
           usuarioId: dueno.id,
         },
       },
@@ -92,16 +92,17 @@ test("compra a Lucas: 10 + 10 de dos sabores, Confirmar (sin stock) y después R
   await pistola(page, codigos.Mango);
   await pistola(page, codigos.Uva);
 
-  const costoMango = page.getByLabel(`Costo de ${nc} — Mango`);
-  const costoUva = page.getByLabel(`Costo de ${nc} — Uva`);
-  await expect(costoMango).toHaveValue("7000");
-  await expect(costoUva).toHaveValue("7000");
+  const costoMango = page.getByLabel(`Costo en USDT de ${nc} — Mango`);
+  const costoUva = page.getByLabel(`Costo en USDT de ${nc} — Uva`);
+  // Compras en USDT: el costo sugerido es el precio de Lucas en USDT, tal cual.
+  await expect(costoMango).toHaveValue("6");
+  await expect(costoUva).toHaveValue("6");
   await page.getByLabel(`Cantidad de ${nc} — Mango`).fill("10");
   await page.getByLabel(`Cantidad de ${nc} — Uva`).fill("10");
-  await costoUva.fill("7500");
+  await costoUva.fill("6.5");
 
   // Resumen grande y costo final por unidad, en vivo.
-  await expect(page.getByLabel("Costo final total", { exact: true })).toContainText(/145\.000/);
+  await expect(page.getByLabel("Costo final total", { exact: true })).toContainText("125 USDT");
   await expect(page.getByTestId("fila-costo-final")).toHaveCount(2);
 
   // «Confirmar»: la compra queda pendiente de recibir y NO suma stock.
@@ -125,7 +126,7 @@ test("compra a Lucas: 10 + 10 de dos sabores, Confirmar (sin stock) y después R
   const dialogo = page.getByRole("dialog", { name: "¿Llegó la mercadería?" });
   await expect(dialogo.getByText("¿Actualizar el precio de Lucas con estos costos?")).toBeVisible();
   await expect(dialogo.getByRole("list", { name: "Precios que cambian" })).toContainText(
-    /de \$\s*7\.000 a \$\s*7\.500/,
+    /de 6 USDT a 6,50 USDT/,
   );
   await dialogo.getByRole("button", { name: "Recibido y actualizar precios" }).click();
   await expect(page.getByText("Recibida", { exact: true })).toBeVisible();
@@ -135,7 +136,9 @@ test("compra a Lucas: 10 + 10 de dos sabores, Confirmar (sin stock) y después R
     include: { items: true },
   });
   expect(compra).toMatchObject({ estado: "RECIBIDA", depositoId: mercedes });
-  expect(compra.total.toFixed(0)).toBe("145000");
+  // En pesos con la cotización del e2e (1.350): 10 × 8.100 + 10 × 8.775.
+  expect(compra.costosEnUsdt).toBe(true);
+  expect(compra.total.toFixed(0)).toBe("168750");
   expect(compra.items.every((i) => i.productoId === producto.id)).toBe(true);
 
   const movimientos = await db.movimientoStock.findMany({
@@ -150,14 +153,15 @@ test("compra a Lucas: 10 + 10 de dos sabores, Confirmar (sin stock) y después R
     db.variante.findUniqueOrThrow({ where: { id: mango.id } }),
     db.variante.findUniqueOrThrow({ where: { id: uva.id } }),
   ]);
-  expect(mangoDespues.ultimoCosto?.toFixed(0)).toBe("7000");
-  expect(uvaDespues.ultimoCosto?.toFixed(0)).toBe("7500");
+  expect(mangoDespues.ultimoCosto?.toFixed(0)).toBe("8100");
+  expect(uvaDespues.ultimoCosto?.toFixed(0)).toBe("8775");
 
-  // Precio por producto: gana el costo del último ítem cargado (Uva, $ 7.500).
+  // Precio por producto (en USDT): gana el costo del último ítem cargado (Uva, 6,50 USDT).
   const precio = await db.proveedorProducto.findFirstOrThrow({
     where: { proveedorId: proveedor.id, productoId: producto.id },
   });
-  expect(precio.precio.toFixed(0)).toBe("7500");
+  expect(precio.moneda).toBe("USDT");
+  expect(precio.precio.toFixed(2)).toBe("6.50");
 
   // Link a los movimientos que generó.
   await expect(page.getByRole("link", { name: /movimientos de stock/ })).toHaveAttribute(
@@ -195,7 +199,7 @@ test("catálogo del proveedor y comparador: agregar sabores con su precio y pasa
   const { producto, proveedor: lucas, mango, uva } = await preparar(sufijo);
   const nc = producto.nombreCompleto;
   const dueno = await db.usuario.findUniqueOrThrow({ where: { email: EMAIL_DUENO } });
-  // Ana lo vende en USDT: 5 × $ 1.350 (cotización fija del e2e) = $ 6.750, más barato que Lucas.
+  // Ana lo vende a 5 USDT, más barato que Lucas (6 USDT).
   const ana = await db.proveedor.create({
     data: {
       panelId: PANEL_VAPES,
@@ -222,20 +226,20 @@ test("catálogo del proveedor y comparador: agregar sabores con su precio y pasa
   // Paso 3: el catálogo de Lucas con su precio.
   const catalogo = page.getByRole("list", { name: "Productos de Lucas" });
   const fila = catalogo.getByRole("button", { name: `Agregar ${nc}` });
-  await expect(fila).toContainText(/\$\s*7\.000/);
+  await expect(fila).toContainText("6 USDT");
   await captura(page, "bloqueA-catalogo", catalogo);
   await fila.click();
 
   // Hoja del producto: sabores con cantidad y costo precargado; quién lo vende.
   const hoja = page.getByRole("dialog", { name: nc });
-  await expect(hoja.getByLabel("Costo unitario")).toHaveValue("7000");
+  await expect(hoja.getByLabel("Costo unitario")).toHaveValue("6");
   const ofertas = hoja
     .getByRole("list", { name: "Proveedores que lo venden" })
     .getByTestId("oferta-compra");
   await expect(ofertas).toHaveCount(2);
   await expect(ofertas.nth(0)).toHaveAttribute("data-proveedor", "Ana");
   await expect(ofertas.nth(0)).toContainText("Más barato");
-  await expect(ofertas.nth(0)).toContainText(/≈ \$\s*6\.750/);
+  await expect(ofertas.nth(0)).toContainText("5 USDT");
   await expect(ofertas.nth(1)).toContainText("Proveedor de esta compra");
   await hoja.getByLabel("Cantidad a agregar de Mango").fill("3");
   await hoja.getByLabel("Cantidad a agregar de Uva").fill("2");
@@ -245,11 +249,11 @@ test("catálogo del proveedor y comparador: agregar sabores con su precio y pasa
 
   await expect(page.getByLabel(`Cantidad de ${nc} — Mango`)).toHaveValue("3");
   await expect(page.getByLabel(`Cantidad de ${nc} — Uva`)).toHaveValue("2");
-  await expect(page.getByLabel(`Costo de ${nc} — Mango`)).toHaveValue("7000");
+  await expect(page.getByLabel(`Costo en USDT de ${nc} — Mango`)).toHaveValue("6");
   // Pista en el ítem: Ana lo vende más barato.
   const pista = page.getByTestId("pista-comparador");
   await expect(pista).toContainText("Más barato con Ana");
-  await expect(pista).toContainText(/ahorrás \$\s*250/);
+  await expect(pista).toContainText("ahorrás 1 USDT");
   await captura(page, "bloqueA-items-pista", page.getByTestId("pista-comparador"));
 
   // La compra solo tiene este producto: se la paso a Ana desde el comparador.
@@ -257,9 +261,9 @@ test("catálogo del proveedor y comparador: agregar sabores con su precio y pasa
   await hoja.getByRole("button", { name: "Comprarle a Ana" }).click();
   await hoja.getByRole("button", { name: "Cerrar" }).click();
   await expect(page.getByText(`Ana · Mayorista Ana ${sufijo}`)).toBeVisible();
-  // Los costos sugeridos pasan al precio de Ana (5 USDT × $ 1.350).
-  await expect(page.getByLabel(`Costo de ${nc} — Mango`)).toHaveValue("6750");
-  await expect(page.getByLabel(`Costo de ${nc} — Uva`)).toHaveValue("6750");
+  // Los costos sugeridos pasan al precio de Ana (5 USDT; en pesos, 5 × $ 1.350 = $ 6.750).
+  await expect(page.getByLabel(`Costo en USDT de ${nc} — Mango`)).toHaveValue("5");
+  await expect(page.getByLabel(`Costo en USDT de ${nc} — Uva`)).toHaveValue("5");
   await expect(page.getByTestId("pista-comparador")).toContainText("Ana es el más barato");
   await expect(page.getByRole("list", { name: "Productos de Ana" })).toBeVisible();
   await captura(page, "bloqueA-cambio-proveedor", page.getByTestId("pista-comparador"));

@@ -2,6 +2,9 @@ import { Modulo } from "@prisma/client";
 import { Plus, ShoppingCart } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
+
+import { TarjetaMiGanancia } from "@/components/ganancia/tarjetas-inicio";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -24,6 +27,7 @@ import { obtenerClienteBasico } from "@/server/services/cliente.service";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { prepararConversion } from "@/server/services/cotizacion.service";
 import { listarDepositosActivos } from "@/server/services/deposito.service";
+import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
 import {
   listarVentas,
   unidadesPorDeposito,
@@ -31,6 +35,7 @@ import {
   type VentaListada,
 } from "@/server/services/venta.service";
 
+import { AccionesFilaVenta } from "./_componentes/acciones-fila-venta";
 import { MarcarPagada } from "./_componentes/marcar-pagada";
 import { EstadoPagoBadge, MedioPagoBadge, textoEstadoPago } from "./_componentes/medio-pago";
 import { EscaneoBadge } from "./_componentes/escaneo-remoto";
@@ -76,6 +81,22 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
     puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "editar");
   const cobrable = (v: VentaListada) =>
     puedeCobrar && v.estado === "CONFIRMADA" && Number(v.saldoPendiente) > 0;
+  // «Anular venta» desde el listado: dueños o VENTAS "eliminar", solo confirmadas
+  // (si tiene devoluciones registradas, el servicio lo rechaza con su mensaje).
+  const puedeAnular = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "eliminar");
+  const anulable = (v: VentaListada) => puedeAnular && v.estado === "CONFIRMADA";
+  const accionesFila = (v: VentaListada) => (
+    <AccionesFilaVenta
+      venta={{
+        id: v.id,
+        codigo: v.codigo,
+        montoPagado: (Number(v.total) - Number(v.saldoPendiente)).toFixed(2),
+        saldoPendiente: v.saldoPendiente,
+      }}
+      href={href(v)}
+      anulable={anulable(v)}
+    />
+  );
   /** Medio(s) del pago: el principal, el del último cobro si se fió y ya pagó, o «Pendiente de pago». */
   const pago = (v: VentaListada) =>
     v.medioPago ? (
@@ -95,12 +116,13 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
     v.estado === "CONFIRMADA" &&
     !v.retiro.retiradaAt &&
     v.escaneo.estado !== "PENDIENTE";
-  const [r, depositos, vendedores, unidades, configVentas] = await Promise.all([
+  const [r, depositos, vendedores, unidades, configVentas, verFacturado] = await Promise.all([
     listarVentas(ctx, filtros, { verCostos: verGanancia }),
     listarDepositosActivos(ctx),
     vendedoresDelPanel(ctx),
     puedeCrear ? unidadesPorDeposito(ctx) : Promise.resolve({}),
     obtenerConfigVentas(ctx),
+    veFacturadoCtx(ctx),
   ]);
 
   // Links "vender a este cliente" / "vender desde este galpón" desde otros módulos.
@@ -144,23 +166,37 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
           )
         }
       />
-      <section
-        aria-label="Totales del período"
-        className={cn(
-          "mb-4 grid gap-4 max-md:gap-3",
-          r.resumen.gananciaBruta !== null ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2",
-        )}
-      >
-        <StatCard label="Ventas" value={formatearNumero(r.resumen.cantidad)} />
-        <StatCard label="Total vendido" value={formatearPesos(r.resumen.total)} />
-        {r.resumen.gananciaBruta !== null && (
-          <StatCard
-            label="Ganancia bruta"
-            value={formatearPesos(r.resumen.gananciaBruta)}
-            className="max-md:col-span-2"
-          />
-        )}
-      </section>
+      {verFacturado ? (
+        <section
+          aria-label="Totales del período"
+          className={cn(
+            "mb-4 grid gap-4 max-md:gap-3",
+            r.resumen.gananciaBruta !== null ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2",
+          )}
+        >
+          <StatCard label="Ventas" value={formatearNumero(r.resumen.cantidad)} />
+          <StatCard label="Total vendido" value={formatearPesos(r.resumen.total)} />
+          {r.resumen.gananciaBruta !== null && (
+            <StatCard
+              label="Ganancia bruta"
+              value={formatearPesos(r.resumen.gananciaBruta)}
+              className="max-md:col-span-2"
+            />
+          )}
+        </section>
+      ) : (
+        // Vendedor con ganancia por vape: en vez de lo facturado, la misma tarjeta
+        // «Mi ganancia» del inicio (lo que lleva ganado en el mes).
+        <section
+          aria-label="Totales del período"
+          className="mb-4 grid gap-4 max-md:gap-3 md:grid-cols-4 md:items-start"
+        >
+          <StatCard label="Ventas" value={formatearNumero(r.resumen.cantidad)} />
+          <Suspense fallback={null}>
+            <TarjetaMiGanancia ctx={ctx} className="md:col-span-3" />
+          </Suspense>
+        </section>
+      )}
       <FiltrosVentas
         medios={configVentas.mediosPago}
         params={plano}
@@ -306,6 +342,16 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
               </span>
             ),
           },
+          ...(puedeAnular
+            ? [
+                {
+                  key: "acciones",
+                  header: <span className="sr-only">Acciones</span>,
+                  className: "w-14 text-right",
+                  cell: accionesFila,
+                },
+              ]
+            : []),
         ]}
         renderMobile={(v) => (
           <div className="flex flex-col">
@@ -314,7 +360,7 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
               className={cn(
                 cardVariants({ variant: "clickable" }),
                 "flex flex-col gap-2 p-4",
-                cobrable(v) && "rounded-b-none",
+                (cobrable(v) || anulable(v)) && "rounded-b-none",
               )}
             >
               <div className="flex items-center justify-between gap-2">
@@ -366,13 +412,16 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
                 </div>
               )}
             </Link>
-            {cobrable(v) && (
-              <div className="bg-card rounded-b-card flex justify-end px-4 pb-3">
-                <MarcarPagada
-                  venta={{ id: v.id, codigo: v.codigo, saldoPendiente: v.saldoPendiente }}
-                  medios={configVentas.mediosPago}
-                  size="sm"
-                />
+            {(cobrable(v) || anulable(v)) && (
+              <div className="bg-card rounded-b-card flex items-center justify-end gap-2 px-4 pb-3">
+                {cobrable(v) && (
+                  <MarcarPagada
+                    venta={{ id: v.id, codigo: v.codigo, saldoPendiente: v.saldoPendiente }}
+                    medios={configVentas.mediosPago}
+                    size="sm"
+                  />
+                )}
+                {anulable(v) && accionesFila(v)}
               </div>
             )}
           </div>

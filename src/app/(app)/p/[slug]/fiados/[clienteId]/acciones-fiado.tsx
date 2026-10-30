@@ -262,12 +262,12 @@ export function RegistrarCobro({
                       className={cn(
                         "rounded-control flex min-h-16 flex-col items-center justify-center gap-1 border px-2 text-sm font-semibold transition-colors",
                         activo
-                          ? "border-foreground bg-foreground text-background"
+                          ? "border-foreground bg-foreground text-primary-foreground"
                           : "border-foreground bg-surface text-foreground hover:bg-surface-2",
                       )}
                     >
                       <Icono
-                        className={cn("size-5", activo ? "text-background" : "text-muted")}
+                        className={cn("size-5", activo ? "text-primary-foreground" : "text-muted")}
                         strokeWidth={1.75}
                         aria-hidden
                       />

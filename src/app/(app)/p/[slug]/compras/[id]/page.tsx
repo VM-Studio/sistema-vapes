@@ -7,15 +7,15 @@ import { notFound } from "next/navigation";
 import { EditarComisionPasista } from "@/components/compras/comision-pasista";
 import { CostoFinalPorUnidad } from "@/components/compras/costo-final-por-unidad";
 import { BotonGastosCompra } from "@/components/compras/gastos-compra-sheet";
-import { EnUsdt, pesosAUsdt, ResumenCompraCard } from "@/components/compras/resumen-compra-card";
+import { ResumenCompraCard, textoUsdt } from "@/components/compras/resumen-compra-card";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
-import { calcularCostosFinales } from "@/lib/costos-compra";
-import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import { pesosAMoneda, vistaCostosUsdt } from "@/lib/costos-compra";
+import { formatearNumero, formatearPesos } from "@/lib/format";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { formatearIdCompra, rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
@@ -24,6 +24,7 @@ import { requirePaginaPanel } from "@/server/auth/permissions";
 import { NotFoundError } from "@/server/errors";
 import {
   cotizacionResumenCompra,
+  cotizacionUsdCompra,
   obtenerCompra,
   preciosQueCambian,
 } from "@/server/services/compra.service";
@@ -59,21 +60,37 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
   const verPasista = puede(usuario, panelId, Modulo.PASISTA, "ver");
   const comisiones = verPasista ? await comisionesDeCompra(ctx, c.id) : [];
   const comisionPagada = comisiones.length > 0 && comisiones.every((x) => x.estado === "PAGADA");
-  // Costo final por modelo (misma función que el servidor) y equivalentes en USDT:
-  // con la cotización guardada en la compra; si no tiene, con la vigente.
-  const costos = calcularCostosFinales({
-    items: c.items.map((i) => ({ cantidad: i.cantidad, costoUnitario: i.costoUnitario })),
-    descuento: c.descuento,
-    comisionPorcentaje: c.comisionPasistaPorcentaje,
-    gastos: gastosVigentes.map((g) => g.monto),
-  });
-  const cotizacion = verCostos ? await cotizacionResumenCompra(c.tipoCambioUSDT) : null;
+  // Costos EN USDT (moneda de Compras), con la misma función que el servidor.
+  // Cotización: la guardada en la compra; si no tiene (compra anterior), la vigente.
+  const [cotizacion, cotizacionUsd] = verCostos
+    ? await Promise.all([
+        cotizacionResumenCompra(c.tipoCambioUSDT),
+        cotizacionUsdCompra(c.tipoCambioUSD),
+      ])
+    : [null, null];
+  const vista = cotizacion
+    ? vistaCostosUsdt({
+        costosEnUsdt: c.costosEnUsdt,
+        tipoCambioUSDT: cotizacion.valor,
+        comisionPorcentaje: c.comisionPasistaPorcentaje,
+        descuento: c.descuento,
+        items: c.items,
+        gastos: gastosVigentes,
+      })
+    : null;
   const pendiente = c.estado === "BORRADOR";
-  /** " (≈ 1,20 USDT)" para los textos de la vista mobile. */
-  const textoUsdt = (pesos: string) => {
-    const u = pesosAUsdt(Number(pesos), cotizacion);
-    return u === null ? "" : ` (≈ ${formatearUsdt(u)})`;
-  };
+  const aprox = vista?.aproximado ?? false;
+  /** Monto en USDT del ítem n ("—" sin cotización). */
+  const usdtItem = (n: number, campo: "costoUnitario" | "subtotal") =>
+    vista ? textoUsdt(vista.costos.items[n]![campo], aprox) : "—";
+  const finalUsdt = (n: number) => (vista ? textoUsdt(vista.finalesUsdt[n]!, aprox) : "—");
+  const usdtGasto = (g: (typeof gastosVigentes)[number]) =>
+    g.montoUSDT
+      ? textoUsdt(Number(g.montoUSDT))
+      : cotizacion
+        ? textoUsdt(pesosAMoneda(g.monto, cotizacion.valor), true)
+        : formatearPesos(g.monto);
+  const indice = new Map(c.items.map((i, n) => [i.varianteId, n]));
 
   return (
     <>
@@ -112,10 +129,11 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
           llegue la mercadería tocá «Recibido» y ahí ingresa a {c.deposito}.
         </p>
       )}
-      {verCostos && (
+      {verCostos && vista && (
         <ResumenCompraCard
           className="mb-4"
-          costos={costos}
+          costos={vista.costos}
+          aproximado={aprox}
           sabores={c.items.length}
           modelos={new Set(c.items.map((i) => i.productoId)).size}
           cotizacion={cotizacion}
@@ -159,15 +177,8 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                       header: "Costo unitario",
                       className: "text-right",
                       cell: (i: (typeof c.items)[number]) => (
-                        <span className="flex flex-col items-end">
-                          <span className="text-muted">{formatearPesos(i.costoUnitario)}</span>
-                          {i.costoUnitarioUSDT ? (
-                            <span className="text-subtle text-xs">
-                              {formatearUsdt(i.costoUnitarioUSDT)}
-                            </span>
-                          ) : (
-                            <EnUsdt pesos={i.costoUnitario} cotizacion={cotizacion} />
-                          )}
+                        <span className="text-muted tabular-nums">
+                          {usdtItem(indice.get(i.varianteId)!, "costoUnitario")}
                         </span>
                       ),
                     },
@@ -176,16 +187,8 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                       header: "Costo final",
                       className: "text-right",
                       cell: (i: (typeof c.items)[number]) => (
-                        <span className="flex flex-col items-end">
-                          <span
-                            className={cn(
-                              "tabular-nums",
-                              i.costoUnitarioFinal !== i.costoUnitario && "font-medium",
-                            )}
-                          >
-                            {formatearPesos(i.costoUnitarioFinal)}
-                          </span>
-                          <EnUsdt pesos={i.costoUnitarioFinal} cotizacion={cotizacion} />
+                        <span className="font-medium tabular-nums">
+                          {finalUsdt(indice.get(i.varianteId)!)}
                         </span>
                       ),
                     },
@@ -194,9 +197,8 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                       header: "Subtotal",
                       className: "text-right font-medium",
                       cell: (i: (typeof c.items)[number]) => (
-                        <span className="flex flex-col items-end">
-                          {formatearPesos(i.subtotal)}
-                          <EnUsdt pesos={i.subtotal} cotizacion={cotizacion} />
+                        <span className="tabular-nums">
+                          {usdtItem(indice.get(i.varianteId)!, "subtotal")}
                         </span>
                       ),
                     },
@@ -210,23 +212,17 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                   <p className="text-muted text-small">
                     {i.sabor ? `${i.sabor} · ` : ""}
                     {i.sku} · {i.cantidad} u.
-                    {verCostos && ` × ${formatearPesos(i.costoUnitario)}`}
-                    {verCostos &&
-                      (i.costoUnitarioUSDT
-                        ? ` (${formatearUsdt(i.costoUnitarioUSDT)})`
-                        : textoUsdt(i.costoUnitario))}
+                    {verCostos && ` × ${usdtItem(indice.get(i.varianteId)!, "costoUnitario")}`}
                   </p>
-                  {verCostos && i.costoUnitarioFinal !== i.costoUnitario && (
+                  {verCostos && (
                     <p className="text-small">
-                      Costo final <strong>{formatearPesos(i.costoUnitarioFinal)}</strong>
-                      <span className="text-subtle text-xs">{textoUsdt(i.costoUnitarioFinal)}</span>
+                      Costo final <strong>{finalUsdt(indice.get(i.varianteId)!)}</strong>
                     </p>
                   )}
                 </div>
                 {verCostos && (
-                  <p className="flex shrink-0 flex-col items-end font-semibold tabular-nums">
-                    {formatearPesos(i.subtotal)}
-                    <EnUsdt pesos={i.subtotal} cotizacion={cotizacion} />
+                  <p className="shrink-0 font-semibold tabular-nums">
+                    {usdtItem(indice.get(i.varianteId)!, "subtotal")}
                   </p>
                 )}
               </div>
@@ -238,11 +234,8 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
               <span className="text-muted text-small font-normal">({c.unidades} unidades)</span>
             </span>
             {verCostos && (
-              <span className="flex flex-col items-end">
-                <span className="text-h2 font-semibold tabular-nums">
-                  {formatearPesos(c.total)}
-                </span>
-                <EnUsdt pesos={c.total} cotizacion={cotizacion} className="text-small" />
+              <span className="text-h2 font-semibold tabular-nums">
+                {vista ? textoUsdt(vista.costos.total, aprox) : "—"}
               </span>
             )}
           </div>
@@ -260,10 +253,7 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                   {gastosVigentes.map((g) => (
                     <li key={g.id} className="flex justify-between gap-3">
                       <span className="truncate">{g.motivo}</span>
-                      <span className="flex flex-col items-end tabular-nums">
-                        {formatearPesos(g.monto)}
-                        <EnUsdt pesos={g.monto} cotizacion={cotizacion} />
-                      </span>
+                      <span className="tabular-nums">{usdtGasto(g)}</span>
                     </li>
                   ))}
                 </ul>
@@ -319,6 +309,11 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
                   <span className="tabular-nums">{formatearPesos(c.tipoCambioUSDT)} por USDT</span>
                 </Dato>
               )}
+              {verCostos && c.tipoCambioUSD && (
+                <Dato label="Dólar blue usado">
+                  <span className="tabular-nums">{formatearPesos(c.tipoCambioUSD)} por dólar</span>
+                </Dato>
+              )}
               {c.notas && (
                 <Dato label="Notas" className="col-span-2 lg:col-span-1">
                   <span className="whitespace-pre-line">{c.notas}</span>
@@ -348,7 +343,7 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
           )}
         </div>
       </div>
-      {verCostos && (
+      {verCostos && vista && (
         <CostoFinalPorUnidad
           className="mt-4"
           items={c.items.map((i) => ({
@@ -356,9 +351,11 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
             nombreCompleto: i.nombreCompleto,
             sabor: i.sabor,
           }))}
-          costos={costos}
-          finalesGuardados={c.items.map((i) => i.costoUnitarioFinal)}
-          cotizacion={cotizacion}
+          costos={vista.costos}
+          finalesUsdt={vista.finalesUsdt}
+          finalesPesos={c.items.map((i) => Number(i.costoUnitarioFinal))}
+          aproximado={aprox}
+          cotizacionUsd={cotizacionUsd}
         />
       )}
       {barraMobile && <div className="h-[4.5rem] md:hidden" aria-hidden />}

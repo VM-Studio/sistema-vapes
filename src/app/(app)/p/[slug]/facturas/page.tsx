@@ -22,6 +22,7 @@ import {
 } from "@/lib/validations/factura";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { listarVentasML, type VentaMLListada } from "@/server/services/factura-ml.service";
+import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
 
 import { AccionesVentaML } from "./mercado-libre/acciones-venta-ml";
 import { FiltrosVentasML } from "./mercado-libre/filtros-ventas-ml";
@@ -48,7 +49,7 @@ export default async function FacturasPage({ searchParams }: { searchParams: Pro
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   const filtros = listarVentasMLSchema.parse(plano);
-  const r = await listarVentasML(ctx, filtros);
+  const [r, verFacturado] = await Promise.all([listarVentasML(ctx, filtros), veFacturadoCtx(ctx)]);
   const puedeEditar = puede(ctx.usuario, ctx.panelId, Modulo.FACTURAS, "editar");
   const conFiltros = Object.entries(plano).some(([k, v]) => k !== "page" && v !== "");
   const urlArchivo = (v: VentaMLListada) =>
@@ -111,7 +112,11 @@ export default async function FacturasPage({ searchParams }: { searchParams: Pro
           <StatCard
             label="Con factura cargada"
             value={formatearNumero(r.totales.cargadas.cantidad)}
-            hint={`${ventas(r.totales.cargadas.cantidad)} · ${formatearPesos(r.totales.cargadas.total)}`}
+            hint={
+              verFacturado
+                ? `${ventas(r.totales.cargadas.cantidad)} · ${formatearPesos(r.totales.cargadas.total)}`
+                : ventas(r.totales.cargadas.cantidad)
+            }
             icono={CheckCircle2}
             acento="oliva"
             href={filtrar(filtros.estado === "CARGADA" ? null : "CARGADA")}
@@ -123,7 +128,11 @@ export default async function FacturasPage({ searchParams }: { searchParams: Pro
           <StatCard
             label="Pendientes de factura"
             value={formatearNumero(r.totales.pendientes.cantidad)}
-            hint={`${ventas(r.totales.pendientes.cantidad)} · ${formatearPesos(r.totales.pendientes.total)}`}
+            hint={
+              verFacturado
+                ? `${ventas(r.totales.pendientes.cantidad)} · ${formatearPesos(r.totales.pendientes.total)}`
+                : ventas(r.totales.pendientes.cantidad)
+            }
             icono={Clock}
             acento="naranja"
             href={filtrar(filtros.estado === "PENDIENTE" ? null : "PENDIENTE")}

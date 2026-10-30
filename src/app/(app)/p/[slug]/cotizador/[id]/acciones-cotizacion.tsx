@@ -1,7 +1,17 @@
 "use client";
 
 import type { EstadoCotizacion } from "@prisma/client";
-import { Check, Copy, FileText, MessageCircle, Pencil, Send, ShoppingCart, X } from "lucide-react";
+import {
+  Ban,
+  Check,
+  Copy,
+  FileText,
+  MessageCircle,
+  Pencil,
+  Send,
+  ShoppingCart,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +32,7 @@ import {
   duplicarCotizacionAction,
   prepararConversionAction,
 } from "../actions";
+import { DialogoAnularCotizacion } from "../anular-cotizacion";
 
 type Cambio = { titulo: string; antes: string; despues: string };
 
@@ -32,6 +43,7 @@ export function AccionesCotizacion({
   vencida,
   whatsapp,
   editable,
+  anulable = false,
   puedeCrear,
   convertible,
   convertirAlCargar,
@@ -42,6 +54,8 @@ export function AccionesCotizacion({
   vencida: boolean;
   whatsapp: string;
   editable: boolean;
+  /** COTIZADOR "crear" y sin convertir ni anular: ofrece «Anular». */
+  anulable?: boolean;
   puedeCrear: boolean;
   convertible: boolean;
   convertirAlCargar: boolean;
@@ -52,6 +66,7 @@ export function AccionesCotizacion({
   const toast = useToast();
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [rechazo, setRechazo] = useState(false);
+  const [anulando, setAnulando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [cambios, setCambios] = useState<Cambio[] | null>(null);
   const [cambioBlue, setCambioBlue] = useState<PreparacionConversion["blue"]>(null);
@@ -180,10 +195,17 @@ export function AccionesCotizacion({
               {ocupado !== "duplicar" && <Copy strokeWidth={1.75} />} Duplicar
             </Button>
           )}
+          {anulable && (
+            <Button variant="secondary" onClick={() => setAnulando(true)}>
+              <Ban strokeWidth={1.75} /> Anular
+            </Button>
+          )}
           {botonConvertir && <span className="hidden md:contents">{botonConvertir}</span>}
         </div>
       </div>
       {botonConvertir && <BarraAccion soloMobile>{botonConvertir}</BarraAccion>}
+
+      <DialogoAnularCotizacion id={id} codigo={codigo} open={anulando} onOpenChange={setAnulando} />
 
       <Dialog
         open={rechazo}

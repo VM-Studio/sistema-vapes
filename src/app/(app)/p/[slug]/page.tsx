@@ -33,6 +33,7 @@ import {
   periodoDesdeParams,
   queryPeriodo,
 } from "@/server/services/analitica.service";
+import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
 
 import { AvisosEscaneo } from "./ventas/_componentes/avisos-escaneo";
 
@@ -48,12 +49,16 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
  * dueños ven además ganancia, compras vs. ventas y el rendimiento del equipo;
  * un empleado ve "Mi rendimiento". Cada tarjeta carga por su cuenta
  * (Suspense). Siempre: accesos rápidos a los módulos que puede ver.
+ * Un vendedor con ganancia por vape no ve lo facturado: con DASHBOARD ve
+ * su rendimiento en cantidades, «Mi ganancia», alertas y pendientes.
  */
 export default async function InicioPanelPage({ searchParams }: { searchParams: SearchParams }) {
   const ctx = await requirePaginaPanelUsuario();
   const { usuario, panel, panelId } = ctx;
   const owner = esOwner(usuario);
   const verDashboard = puede(usuario, panelId, Modulo.DASHBOARD, "ver");
+  // Vendedor con ganancia por vape: nada de lo facturado (KPIs, gráficos y rankings son montos).
+  const verFacturado = owner || (await veFacturadoCtx(ctx));
   const facturacion = await obtenerConfigFacturacion(ctx);
   const accesos = navegacionPermitida(usuario, panel, {
     facturacion: facturacion.habilitada,
@@ -93,6 +98,51 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
   const clave = `${periodo.modo}-${diaDe(periodo.desde)}-${diaDe(periodo.hasta)}`;
   const preset = typeof sp.preset === "string" ? sp.preset : null;
   const props = { ctx, periodo };
+
+  if (!verFacturado) {
+    return (
+      <div className="flex flex-col gap-4">
+        <header className="mb-2 flex flex-col gap-4 md:mb-4 md:flex-row md:items-start md:justify-between md:gap-6">
+          <Titulo panel={panel.nombre} className="md:pt-1" />
+          <SelectorPeriodo
+            alinear="fin"
+            modo={periodo.modo}
+            desde={diaDe(periodo.desde)}
+            hasta={diaDe(periodo.hasta)}
+            preset={preset}
+            etiqueta={desc.etiqueta}
+            comparacion={desc.comparacion}
+          />
+        </header>
+        {avisoEscaneo}
+        <Suspense fallback={<SkeletonTarjeta alto="h-48" />}>
+          <TarjetaMiGanancia ctx={ctx} />
+        </Suspense>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <Suspense key={`e${clave}`} fallback={<SkeletonTarjeta className="lg:col-span-12" />}>
+            <SeccionMiRendimiento {...props} sinMontos className="lg:col-span-12" />
+          </Suspense>
+          <Suspense fallback={<SkeletonTarjeta className="lg:col-span-6" alto="h-40" />}>
+            <SeccionAlertas
+              ctx={ctx}
+              verStock={puede(usuario, panelId, Modulo.STOCK, "ver")}
+              className="lg:col-span-6"
+            />
+          </Suspense>
+          <Suspense fallback={<SkeletonTarjeta className="lg:col-span-6" alto="h-40" />}>
+            <SeccionPendientes
+              ctx={ctx}
+              verCompras={puede(usuario, panelId, Modulo.COMPRAS, "ver")}
+              verCotizaciones={puede(usuario, panelId, Modulo.COTIZADOR, "ver")}
+              soloPropias
+              className="lg:col-span-6"
+            />
+          </Suspense>
+        </div>
+        {accesos.length > 0 && <AccesosRapidos items={accesos} className="mt-4" />}
+      </div>
+    );
+  }
   // Facturado, unidades, clientes, ventas y ticket; + ganancia (dueños) + cobrado y por cobrar.
   const cantidadKpis =
     5 + (owner ? 1 : 0) + (puede(usuario, panelId, Modulo.FIADOS, "ver") ? 2 : 0);

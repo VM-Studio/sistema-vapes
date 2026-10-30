@@ -571,12 +571,12 @@ function BotonMedio({
       className={cn(
         "text-body rounded-control flex min-h-14 items-center gap-3 border px-4 text-left font-semibold transition-colors sm:min-h-24 sm:flex-col sm:justify-center sm:text-center",
         activo
-          ? "border-foreground bg-foreground text-background"
+          ? "border-foreground bg-foreground text-primary-foreground"
           : "border-foreground bg-surface text-foreground hover:bg-surface-2",
       )}
     >
       <Icono
-        className={cn("size-6", activo ? "text-background" : "text-muted")}
+        className={cn("size-6", activo ? "text-primary-foreground" : "text-muted")}
         strokeWidth={1.75}
         aria-hidden
       />

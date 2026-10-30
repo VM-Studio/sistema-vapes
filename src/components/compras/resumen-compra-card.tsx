@@ -10,57 +10,22 @@ export interface CotizacionResumen {
   origen: string;
 }
 
-/** Pesos → USDT con 2 decimales (null sin cotización). */
-export function pesosAUsdt(pesos: number, cotizacion: CotizacionResumen | null): number | null {
-  if (!cotizacion || !(cotizacion.valor > 0)) return null;
-  return Math.round((pesos / cotizacion.valor) * 100) / 100;
-}
-
-/**
- * Equivalente en USDT, chiquito y en gris, debajo de un monto en pesos
- * ("≈ 145,20 USDT"). Sin cotización (o sin monto) no muestra nada. En Compras
- * va debajo de TODOS los pesos: es para tener los valores también en USDT.
- */
-export function EnUsdt({
-  pesos,
-  cotizacion,
-  prefijo = "",
-  className,
-}: {
-  pesos: number | string | null | undefined;
-  cotizacion: CotizacionResumen | null;
-  /** "+ " / "− " para acompañar al monto en pesos. */
-  prefijo?: string;
-  className?: string;
-}) {
-  const n = typeof pesos === "number" ? pesos : Number(pesos);
-  if (pesos === null || pesos === undefined || pesos === "" || !Number.isFinite(n)) return null;
-  const u = pesosAUsdt(Math.abs(n), cotizacion);
-  if (u === null) return null;
-  return (
-    <span
-      className={cn(
-        "text-subtle block text-xs font-normal whitespace-nowrap tabular-nums",
-        className,
-      )}
-      data-testid="en-usdt"
-    >
-      ≈ {prefijo}
-      {n < 0 && !prefijo ? "− " : ""}
-      {formatearUsdt(u)}
-    </span>
-  );
+/** "6,27 USDT" o "≈ 6,27 USDT" (compra anterior, calculada en pesos). */
+export function textoUsdt(usdt: number, aproximado = false): string {
+  return `${aproximado ? "≈ " : ""}${formatearUsdt(usdt)}`;
 }
 
 /**
  * Tarjeta grande con el detalle de la compra: ítems y unidades, subtotal,
  * descuento, comisión del pasista, gastos extras, total de mercadería y el
- * COSTO FINAL TOTAL, cada monto con su equivalente en USDT y la cotización
- * usada. Sin cotización lo dice y muestra solo pesos. Presentacional: la
- * usan el formulario (vista previa en vivo) y el detalle de la compra.
+ * COSTO FINAL TOTAL, todo EN USDT (moneda de Compras: `costos` ya viene
+ * calculado en USDT, ver vistaCostosUsdt). Arriba, la cotización de la compra.
+ * `aproximado`: compra anterior cargada en pesos (sus USDT son equivalentes).
+ * Presentacional: la usan el formulario (vista previa en vivo) y el detalle.
  */
 export function ResumenCompraCard({
   costos,
+  aproximado = false,
   sabores,
   modelos,
   cotizacion,
@@ -68,7 +33,9 @@ export function ResumenCompraCard({
   className,
   children,
 }: {
+  /** En USDT. */
   costos: CostosFinales;
+  aproximado?: boolean;
   /** Cantidad de ítems (sabores) y de modelos distintos. */
   sabores: number;
   modelos: number;
@@ -78,10 +45,7 @@ export function ResumenCompraCard({
   /** Debajo del total (controles de comisión/gastos, enlaces…). */
   children?: React.ReactNode;
 }) {
-  const usdt = (pesos: number) => {
-    const u = pesosAUsdt(pesos, cotizacion);
-    return u === null ? null : formatearUsdt(u);
-  };
+  const usdt = (n: number) => textoUsdt(n, aproximado);
   return (
     <section
       aria-label={titulo}
@@ -106,36 +70,26 @@ export function ResumenCompraCard({
         >
           {cotizacion
             ? `1 USDT = ${formatearPesos(cotizacion.valor)} · ${cotizacion.origen}`
-            : "Sin cotización USDT: se muestran solo pesos"}
+            : "Sin cotización USDT: no se puede pasar a pesos"}
         </p>
       </header>
 
       <dl className="flex flex-col gap-2 text-sm">
-        <Fila label="Subtotal" pesos={costos.subtotal} usdt={usdt(costos.subtotal)} />
-        {costos.descuento > 0 && (
-          <Fila
-            label="Descuento"
-            pesos={-costos.descuento}
-            usdt={usdt(costos.descuento) && `− ${usdt(costos.descuento)}`}
-          />
-        )}
-        <Fila label="Total de mercadería" pesos={costos.total} usdt={usdt(costos.total)} fuerte />
+        <Fila label="Subtotal" texto={usdt(costos.subtotal)} />
+        {costos.descuento > 0 && <Fila label="Descuento" texto={`− ${usdt(costos.descuento)}`} />}
+        <Fila label="Total de mercadería" texto={usdt(costos.total)} fuerte />
         <Fila
           label={
             costos.comisionPorcentaje === null
               ? "Comisión pasista (sin comisión)"
               : `Comisión pasista (${formatearNumero(costos.comisionPorcentaje)}%)`
           }
-          pesos={costos.comision}
-          usdt={usdt(costos.comision)}
-          signo
+          texto={`${costos.comision > 0 ? "+ " : ""}${usdt(costos.comision)}`}
           ariaLabel="Comisión del pasista"
         />
         <Fila
           label="Gastos extras"
-          pesos={costos.gastos}
-          usdt={usdt(costos.gastos)}
-          signo
+          texto={`${costos.gastos > 0 ? "+ " : ""}${usdt(costos.gastos)}`}
           ariaLabel="Gastos extras"
         />
       </dl>
@@ -144,24 +98,13 @@ export function ResumenCompraCard({
         <span className="text-muted text-small font-medium tracking-wide uppercase">
           Costo final total
         </span>
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <strong className="text-h1 font-semibold tabular-nums" aria-label="Costo final total">
-            {formatearPesos(costos.costoFinalTotal)}
-          </strong>
-          {usdt(costos.costoFinalTotal) && (
-            <span
-              className="text-h3 text-muted font-semibold tabular-nums"
-              aria-label="Costo final total en USDT"
-            >
-              ≈ {usdt(costos.costoFinalTotal)}
-            </span>
-          )}
-        </div>
+        <strong className="text-h1 font-semibold tabular-nums" aria-label="Costo final total">
+          {usdt(costos.costoFinalTotal)}
+        </strong>
         <p className="text-muted text-small">
-          Promedio {formatearPesos(costos.costoUnitarioFinalPromedio)} por unidad
-          {usdt(costos.costoUnitarioFinalPromedio) &&
-            ` (≈ ${usdt(costos.costoUnitarioFinalPromedio)})`}
-          . El costo de cada modelo está en «Costo final por unidad».
+          Promedio {usdt(costos.costoUnitarioFinalPromedio)} por unidad. El costo de cada modelo
+          (también en dólares y en pesos) está en «Costo final por unidad».
+          {aproximado && " Compra cargada en pesos: los USDT son equivalentes con su cotización."}
         </p>
       </div>
       {children}
@@ -171,23 +114,15 @@ export function ResumenCompraCard({
 
 function Fila({
   label,
-  pesos,
-  usdt,
+  texto,
   fuerte = false,
-  signo = false,
   ariaLabel,
 }: {
   label: string;
-  pesos: number;
-  usdt: string | null;
+  texto: string;
   fuerte?: boolean;
-  signo?: boolean;
   ariaLabel?: string;
 }) {
-  const texto =
-    pesos < 0
-      ? `− ${formatearPesos(-pesos)}`
-      : `${signo && pesos > 0 ? "+ " : ""}${formatearPesos(pesos)}`;
   return (
     <div
       className={cn(
@@ -196,11 +131,8 @@ function Fila({
       )}
     >
       <dt className={cn(fuerte ? "font-semibold" : "text-muted")}>{label}</dt>
-      <dd className="flex flex-col items-end">
-        <span className={cn("tabular-nums", fuerte && "font-semibold")} aria-label={ariaLabel}>
-          {texto}
-        </span>
-        {usdt && <span className="text-subtle text-xs tabular-nums">≈ {usdt}</span>}
+      <dd className={cn("tabular-nums", fuerte && "font-semibold")} aria-label={ariaLabel}>
+        {texto}
       </dd>
     </div>
   );

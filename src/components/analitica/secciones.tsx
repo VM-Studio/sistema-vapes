@@ -532,17 +532,33 @@ function Dato({ label, children }: { label: string; children: ReactNode }) {
  * Rendimiento de un vendedor: grilla Unitarias / Mayoristas / Total / Unidades,
  * línea de cotizaciones y clientes nuevos, y la comisión estimada.
  */
-function DatosRendimiento({ r, ancho = false }: { r: RendimientoVendedor; ancho?: boolean }) {
+function DatosRendimiento({
+  r,
+  ancho = false,
+  sinMontos = false,
+}: {
+  r: RendimientoVendedor;
+  ancho?: boolean;
+  /** Vendedor con ganancia por vape: solo cantidades (nada de lo facturado). */
+  sinMontos?: boolean;
+}) {
   return (
     <div className="flex flex-col gap-3">
-      <dl className={cn("grid grid-cols-2 gap-2", ancho && "md:grid-cols-4")}>
+      <dl
+        className={cn(
+          "grid grid-cols-2 gap-2",
+          ancho && (sinMontos ? "md:grid-cols-3" : "md:grid-cols-4"),
+        )}
+      >
         <Dato label="Unitarias">
-          {formatearNumero(r.unitarias.cantidad)} · {formatearPesos(r.unitarias.total)}
+          {formatearNumero(r.unitarias.cantidad)}
+          {!sinMontos && ` · ${formatearPesos(r.unitarias.total)}`}
         </Dato>
         <Dato label="Mayoristas">
-          {formatearNumero(r.mayoristas.cantidad)} · {formatearPesos(r.mayoristas.total)}
+          {formatearNumero(r.mayoristas.cantidad)}
+          {!sinMontos && ` · ${formatearPesos(r.mayoristas.total)}`}
         </Dato>
-        <Dato label="Total">{formatearPesos(r.facturado)}</Dato>
+        {!sinMontos && <Dato label="Total">{formatearPesos(r.facturado)}</Dato>}
         <Dato label="Unidades">{formatearNumero(r.unidades)}</Dato>
       </dl>
       <p className="text-muted text-small tabular-nums">
@@ -550,10 +566,10 @@ function DatosRendimiento({ r, ancho = false }: { r: RendimientoVendedor; ancho?
         {formatearNumero(r.clientesNuevos)}{" "}
         {r.clientesNuevos === 1 ? "cliente nuevo" : "clientes nuevos"} ·{" "}
         {formatearNumero(r.ventasAClientesNuevos)}{" "}
-        {r.ventasAClientesNuevos === 1 ? "venta" : "ventas"} a clientes nuevos · ticket{" "}
-        {formatearPesos(r.ticketPromedio)}
+        {r.ventasAClientesNuevos === 1 ? "venta" : "ventas"} a clientes nuevos
+        {!sinMontos && ` · ticket ${formatearPesos(r.ticketPromedio)}`}
       </p>
-      {r.comision && (
+      {r.comision && !sinMontos && (
         <dl className="border-border flex items-baseline justify-between gap-3 border-t pt-3">
           <dt className="text-muted text-small">Comisión estimada</dt>
           <dd className="font-semibold tabular-nums">{formatearPesos(r.comision.estimada)}</dd>
@@ -683,6 +699,7 @@ export function KpisVendedor({
   periodo,
   etiquetaUnidades,
   sinComision = false,
+  sinMontos = false,
 }: {
   r: RendimientoComparado;
   periodo: Periodo;
@@ -690,12 +707,14 @@ export function KpisVendedor({
   etiquetaUnidades: string;
   /** El detalle del vendedor muestra la comisión en una tarjeta aparte. */
   sinComision?: boolean;
+  /** Vendedor con ganancia por vape: sin total vendido, ticket ni comisión (solo cantidades). */
+  sinMontos?: boolean;
 }) {
   const ant = ETIQUETA_ANTERIOR[periodo.modo];
-  const conComision = !!r.comision && !sinComision;
+  const conComision = !!r.comision && !sinComision && !sinMontos;
   const aNuevos = r.ventasAClientesNuevos.actual;
   return (
-    <div className={claseGrillaKpis(conComision ? 6 : 5)}>
+    <div className={claseGrillaKpis(sinMontos ? 3 : conComision ? 6 : 5)}>
       <KpiCard label="Ventas" etiquetaAnterior={ant} {...numero(r.cantidadVentas)} />
       <KpiCard label={etiquetaUnidades} etiquetaAnterior={ant} {...numero(r.unidades)} />
       <KpiCard
@@ -705,8 +724,12 @@ export function KpisVendedor({
         extra={`${formatearNumero(aNuevos)} ${aNuevos === 1 ? "venta" : "ventas"} a clientes nuevos`}
         ayuda="Clientes que cargó en el período (desde una venta o desde Clientes). Debajo, cuántas de sus ventas fueron a un cliente que se dio de alta en esa misma venta."
       />
-      <KpiCard label="Total vendido" etiquetaAnterior={ant} {...pesos(r.facturado)} />
-      <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...pesos(r.ticketPromedio)} />
+      {!sinMontos && (
+        <>
+          <KpiCard label="Total vendido" etiquetaAnterior={ant} {...pesos(r.facturado)} />
+          <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...pesos(r.ticketPromedio)} />
+        </>
+      )}
       {conComision && r.comision && (
         <KpiCard
           label="Comisión estimada"
@@ -723,10 +746,13 @@ export async function SeccionMiRendimiento({
   ctx,
   periodo,
   className,
+  sinMontos = false,
 }: {
   ctx: CtxPanel;
   periodo: Periodo;
   className?: string;
+  /** Vendedor con ganancia por vape: solo cantidades (lo suyo es «Mi ganancia»). */
+  sinMontos?: boolean;
 }) {
   const r = await miRendimiento(ctx, periodo);
   return (
@@ -735,19 +761,24 @@ export async function SeccionMiRendimiento({
       data-testid="tarjeta-mi-rendimiento"
     >
       <EncabezadoSeccion titulo="Mi rendimiento" />
-      <KpisVendedor r={r} periodo={periodo} etiquetaUnidades={ctx.panel.etiquetaUnidades} />
+      <KpisVendedor
+        r={r}
+        periodo={periodo}
+        etiquetaUnidades={ctx.panel.etiquetaUnidades}
+        sinMontos={sinMontos}
+      />
       <div className="bg-card rounded-card flex flex-col gap-4 p-5">
         <div className="flex items-center gap-3">
           <Avatar nombre={r.usuario.nombre} className="size-10" />
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold">{r.usuario.nombre}</p>
             <p className="text-muted text-small tabular-nums">
-              {formatearNumero(r.actual.cantidadVentas)} ventas ·{" "}
-              {formatearPesos(r.actual.facturado)}
+              {formatearNumero(r.actual.cantidadVentas)} ventas
+              {!sinMontos && ` · ${formatearPesos(r.actual.facturado)}`}
             </p>
           </div>
         </div>
-        <DatosRendimiento r={r.actual} ancho />
+        <DatosRendimiento r={r.actual} ancho sinMontos={sinMontos} />
       </div>
     </section>
   );

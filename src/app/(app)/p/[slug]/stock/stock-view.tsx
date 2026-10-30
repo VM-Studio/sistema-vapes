@@ -455,7 +455,9 @@ export function StockView({
                   aria-current={v.activo ? "page" : undefined}
                   className={cn(
                     "rounded-inner flex h-10 items-center px-3 text-sm font-medium whitespace-nowrap transition-colors md:h-9",
-                    v.activo ? "bg-foreground text-background" : "text-muted hover:text-foreground",
+                    v.activo
+                      ? "bg-foreground text-primary-foreground"
+                      : "text-muted hover:text-foreground",
                   )}
                 >
                   {v.label}

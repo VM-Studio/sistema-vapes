@@ -1,7 +1,8 @@
 /**
  * Catálogo de reportes (puro): clave de URL, textos del índice y si son SOLO
  * para dueños (costos, precios de proveedor, ganancias, rendimiento de otros).
- * La página, la exportación y el índice leen de acá.
+ * `facturado`: muestra montos vendidos; no lo ve un vendedor con ganancia por
+ * vape (ver veFacturado en lib/permisos). La página, la exportación y el índice leen de acá.
  */
 export const REPORTES = [
   {
@@ -28,6 +29,7 @@ export const REPORTES = [
     titulo: "Ventas",
     descripcion: "El detalle de las ventas con filtros por vendedor, galpón, medio de pago y tipo.",
     owner: false,
+    facturado: true,
   },
   {
     clave: "stock",
@@ -64,6 +66,7 @@ export const REPORTES = [
     titulo: "Ventas Mercado Libre",
     descripcion: "Las ventas cobradas por Mercado Libre: cantidad, unidades, total y ganancia.",
     owner: false,
+    facturado: true,
     /** Solo en paneles que cobran por Mercado Libre. */
     soloMercadoLibre: true,
   },
@@ -82,6 +85,12 @@ export const reporteDisponible = (
   r: (typeof REPORTES)[number],
   panel: { conMercadoLibre: boolean },
 ) => !("soloMercadoLibre" in r) || panel.conMercadoLibre;
+
+/** ¿Lo puede ver quien mira? (dueños: todos; el resto, sin los de dueños ni, si no ve lo facturado, los de montos). */
+export const reportePermitido = (
+  r: (typeof REPORTES)[number],
+  quien: { owner: boolean; verFacturado: boolean },
+) => (quien.owner || !r.owner) && (quien.verFacturado || !("facturado" in r));
 
 export function reporte(clave: string) {
   return REPORTES.find((r) => r.clave === clave) ?? null;

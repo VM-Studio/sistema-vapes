@@ -174,7 +174,7 @@ export const agregarGastosCompraAction = actionHandler(async (input: unknown) =>
   const { compraId, gastos } = agregarGastosCompraSchema.parse(input);
   const r = await agregarGastosCompra(ctx, compraId, gastos);
   revalidar();
-  return { idVisible: r.idVisible, costoFinalTotal: r.costos.costoFinalTotal };
+  return { idVisible: r.idVisible };
 });
 
 /** Anular un gasto: solo dueños. */

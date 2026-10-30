@@ -12,6 +12,7 @@ import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { esOwner } from "@/lib/permisos";
 import { saborVisible } from "@/lib/ventas-ui";
 import { requirePaginaPanel } from "@/server/auth/permissions";
+import { exigirPaginaReporteFacturado } from "@/server/reportes/armar";
 import { rangoReporte } from "@/server/reportes/filtros";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { reporteMercadoLibre, type ReporteMercadoLibre } from "@/server/services/reporte.service";
@@ -37,6 +38,7 @@ export default async function ReporteMercadoLibrePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requirePaginaPanel(Modulo.REPORTES, "ver");
+  await exigirPaginaReporteFacturado(ctx);
   if (!tieneMercadoLibre(await obtenerConfigVentas(ctx))) notFound();
   const plano = await paramsPlanos(searchParams);
   const owner = esOwner(ctx.usuario);

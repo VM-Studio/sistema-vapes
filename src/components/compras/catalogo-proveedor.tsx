@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { controlClass } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatearMonto, formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearMonto, formatearNumero, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ProductoCatalogoCompra } from "@/server/services/compra.service";
 
@@ -16,8 +16,8 @@ const VISIBLES_MOBILE = 5;
 
 /**
  * Catálogo del proveedor elegido en el paso Ítems de la compra: los productos
- * que vende con su precio (en su moneda y, si es USDT, el equivalente en
- * pesos que se precarga como costo). Buscable; tocar uno abre la hoja para
+ * que vende con su precio en USDT (si el proveedor lo tiene en pesos, su
+ * equivalente en USDT, que es lo que se precarga como costo). Buscable; tocar uno abre la hoja para
  * elegir sabores y cantidades (`onElegir`). `enCompra` = unidades ya
  * cargadas por producto.
  */
@@ -150,13 +150,15 @@ export function CatalogoProveedor({
                                 className="font-semibold tabular-nums"
                                 data-testid="precio-catalogo"
                               >
-                                {formatearMonto(p.precio, p.moneda)}
-                              </span>
-                              {p.moneda === "USDT" && (
-                                <span className="text-subtle text-xs tabular-nums">
-                                  {p.costoArs
-                                    ? `≈ ${formatearPesos(p.costoArs)}`
+                                {p.moneda === "USDT"
+                                  ? formatearUsdt(p.precio)
+                                  : p.costoUsdt
+                                    ? `≈ ${formatearUsdt(p.costoUsdt)}`
                                     : "sin cotización"}
+                              </span>
+                              {p.moneda !== "USDT" && (
+                                <span className="text-subtle text-xs tabular-nums">
+                                  precio en pesos: {formatearMonto(p.precio, p.moneda)}
                                 </span>
                               )}
                             </span>

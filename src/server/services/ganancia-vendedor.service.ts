@@ -28,7 +28,7 @@ import {
   type Tarifas,
   type VentaParaGanancia,
 } from "@/lib/ganancia-vendedor";
-import { esOwner, type SujetoPermisos } from "@/lib/permisos";
+import { esOwner, veFacturado, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { ZONA_DEFAULT } from "@/lib/zona-horaria";
@@ -615,6 +615,15 @@ export async function tieneGanancia(ctx: Ctx, usuarioId: string): Promise<boolea
   return t + l > 0;
 }
 
+/**
+ * ¿Quien opera (ctx) ve lo facturado? Dueños sí; un vendedor con ganancia por
+ * vape en el panel, no (ve solo su ganancia). Regla pura en lib/permisos.
+ */
+export async function veFacturadoCtx(ctx: CtxConUsuario): Promise<boolean> {
+  if (await esOwnerCtx(ctx)) return true;
+  return veFacturado({ rol: RolUsuario.EMPLEADO }, await tieneGanancia(ctx, ctx.usuarioId));
+}
+
 /** Historial de liquidaciones del vendedor (la más reciente primero). */
 export async function liquidacionesDe(
   ctx: CtxConUsuario,
@@ -733,6 +742,8 @@ export async function exportarGananciaExcel(
 ): Promise<{ buffer: Buffer; nombre: string }> {
   const g = await gananciaDelMes(ctx, usuarioId, mes);
   if (!g) throw new NotFoundError("El vendedor no tiene ganancia por unidad");
+  // El vendedor exporta solo su ganancia: sin lo vendido (lo facturado lo ven los dueños).
+  const conFacturado = await veFacturadoCtx(ctx);
   const libro = new ExcelJS.Workbook();
   libro.created = new Date();
   const pesos = '"$" #,##0.00';
@@ -744,7 +755,9 @@ export async function exportarGananciaExcel(
     { header: "Vapes devueltos", key: "devueltas", width: 16 },
     { header: "Ganancia por vape", key: "tarifa", width: 18, style: { numFmt: pesos } },
     { header: "Ganancia", key: "monto", width: 16, style: { numFmt: pesos } },
-    { header: "Total vendido", key: "vendido", width: 16, style: { numFmt: pesos } },
+    ...(conFacturado
+      ? [{ header: "Total vendido", key: "vendido", width: 16, style: { numFmt: pesos } }]
+      : []),
   ];
   resumen.getRow(1).font = { bold: true };
   for (const c of g.calculo.categorias)
@@ -755,7 +768,7 @@ export async function exportarGananciaExcel(
       devueltas: c.unidadesDevueltas,
       tarifa: Number(c.tarifa),
       monto: Number(c.monto),
-      vendido: Number(c.totalVendido),
+      ...(conFacturado ? { vendido: Number(c.totalVendido) } : {}),
     });
   const pie = resumen.addRow({
     categoria: "Total",
@@ -763,7 +776,7 @@ export async function exportarGananciaExcel(
     unidades: g.calculo.categorias.reduce((s, c) => s + c.unidades, 0),
     devueltas: g.calculo.categorias.reduce((s, c) => s + c.unidadesDevueltas, 0),
     monto: Number(g.calculo.total),
-    vendido: Number(g.calculo.totalVendido),
+    ...(conFacturado ? { vendido: Number(g.calculo.totalVendido) } : {}),
   });
   pie.font = { bold: true };
   resumen.addRow({});
@@ -790,7 +803,9 @@ export async function exportarGananciaExcel(
     { header: "Vapes", key: "unidades", width: 8 },
     { header: "Ganancia por vape", key: "tarifa", width: 18, style: { numFmt: pesos } },
     { header: "Ganancia", key: "ganancia", width: 14, style: { numFmt: pesos } },
-    { header: "Total de la venta", key: "total", width: 16, style: { numFmt: pesos } },
+    ...(conFacturado
+      ? [{ header: "Total de la venta", key: "total", width: 16, style: { numFmt: pesos } }]
+      : []),
   ];
   hoja.getRow(1).font = { bold: true };
   for (const f of g.calculo.filas)
@@ -804,7 +819,7 @@ export async function exportarGananciaExcel(
       unidades: f.unidades,
       tarifa: Number(f.tarifa),
       ganancia: Number(f.ganancia),
-      total: f.tipo === "VENTA" ? Number(f.totalVenta) : null,
+      ...(conFacturado ? { total: f.tipo === "VENTA" ? Number(f.totalVenta) : null } : {}),
     });
   const slug = g.usuario.nombre
     .normalize("NFD")

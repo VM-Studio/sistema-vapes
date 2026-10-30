@@ -256,6 +256,7 @@ async function main() {
     notas: "a medias",
     comisionActiva: true,
     comisionPct: "5",
+    moneda: "USDT" as const,
     items: [
       {
         varianteId: uva.id,
@@ -264,7 +265,7 @@ async function main() {
         sabor: "Uva",
         sku: uva.sku,
         cantidad: "12",
-        costo: "9100",
+        costo: "5.6",
         origenCosto: "manual" as const,
       },
     ],

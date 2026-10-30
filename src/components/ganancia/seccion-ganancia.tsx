@@ -78,7 +78,8 @@ export function EstadoLiquidacionBadge({
  * en curso), desglose por las 4 categorías, ventas y devoluciones con su
  * ganancia (cada una abre la venta), estado de la liquidación e historial.
  * La usan "Ventas de {vendedor}" (dueños, con las acciones) y "Mi ganancia"
- * (el vendedor, sin acciones). Sin datos de ganancia del negocio.
+ * (el vendedor, sin acciones). Sin datos de ganancia del negocio. Con
+ * `verFacturado` false (el vendedor) tampoco muestra lo vendido: solo su ganancia.
  */
 export function SeccionGanancia({
   g,
@@ -91,6 +92,7 @@ export function SeccionGanancia({
   titulo,
   remito,
   usuarioActual,
+  verFacturado = true,
 }: {
   g: GananciaMes;
   /** Remito del pago del mes (con firmas y envíos), si ya se pagó. */
@@ -106,6 +108,8 @@ export function SeccionGanancia({
   /** Link al detalle de una venta (null = sin link). */
   rutaVenta: ((ventaId: string) => string) | null;
   titulo?: string;
+  /** false: sin «Total vendido» ni el total de cada venta (vendedores: solo su ganancia). */
+  verFacturado?: boolean;
 }) {
   const { calculo, liquidacion: l } = g;
   const nombre = g.usuario.nombre;
@@ -202,7 +206,12 @@ export function SeccionGanancia({
         slug={slug}
       />
 
-      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-3 md:gap-4",
+          verFacturado ? "lg:grid-cols-4" : "lg:grid-cols-3",
+        )}
+      >
         <StatCard
           label={etiquetaTotal}
           value={<span data-testid="total-ganancia">{formatearPesos(calculo.total)}</span>}
@@ -212,16 +221,23 @@ export function SeccionGanancia({
         />
         <StatCard label="Ventas" value={formatearNumero(calculo.cantidadVentas)} />
         <StatCard label="Vapes" value={formatearNumero(calculo.unidades)} />
-        <StatCard
-          label="Total vendido"
-          value={formatearPesos(calculo.totalVendido)}
-          className="col-span-2 lg:col-span-1"
-        />
+        {verFacturado && (
+          <StatCard
+            label="Total vendido"
+            value={formatearPesos(calculo.totalVendido)}
+            className="col-span-2 lg:col-span-1"
+          />
+        )}
       </div>
 
-      <TablaCategorias categorias={calculo.categorias} total={calculo.total} />
+      <TablaCategorias
+        categorias={calculo.categorias}
+        total={calculo.total}
+        verFacturado={verFacturado}
+      />
 
       <TablaVentas
+        verFacturado={verFacturado}
         filas={calculo.filas}
         nombre={nombre}
         mesLabel={mesLabel}
@@ -471,7 +487,15 @@ function TarjetaFirma({
   );
 }
 
-function TablaCategorias({ categorias, total }: { categorias: ResumenCategoria[]; total: string }) {
+function TablaCategorias({
+  categorias,
+  total,
+  verFacturado,
+}: {
+  categorias: ResumenCategoria[];
+  total: string;
+  verFacturado: boolean;
+}) {
   const columnas = [
     {
       key: "categoria",
@@ -502,12 +526,16 @@ function TablaCategorias({ categorias, total }: { categorias: ResumenCategoria[]
       className: "text-right font-semibold",
       cell: (c: ResumenCategoria) => formatearPesos(c.monto),
     },
-    {
-      key: "vendido",
-      header: "Total vendido",
-      className: "text-right",
-      cell: (c: ResumenCategoria) => formatearPesos(c.totalVendido),
-    },
+    ...(verFacturado
+      ? [
+          {
+            key: "vendido",
+            header: "Total vendido",
+            className: "text-right",
+            cell: (c: ResumenCategoria) => formatearPesos(c.totalVendido),
+          },
+        ]
+      : []),
   ];
   return (
     <div className="flex flex-col gap-2" data-testid="categorias-ganancia">
@@ -524,8 +552,8 @@ function TablaCategorias({ categorias, total }: { categorias: ResumenCategoria[]
             </div>
             <p className="text-muted text-small tabular-nums">
               {formatearNumero(c.ventas)} {c.ventas === 1 ? "venta" : "ventas"} ·{" "}
-              <VapesCategoria c={c} /> × {formatearPesos(c.tarifa)} · vendido{" "}
-              {formatearPesos(c.totalVendido)}
+              <VapesCategoria c={c} /> × {formatearPesos(c.tarifa)}
+              {verFacturado && ` · vendido ${formatearPesos(c.totalVendido)}`}
             </p>
           </div>
         )}
@@ -553,7 +581,9 @@ function TablaVentas({
   nombre,
   mesLabel,
   rutaVenta,
+  verFacturado,
 }: {
+  verFacturado: boolean;
   filas: FilaGanancia[];
   nombre: string;
   mesLabel: string;
@@ -609,12 +639,16 @@ function TablaVentas({
       className: "text-right font-semibold",
       cell: (f: FilaGanancia) => formatearPesos(f.ganancia),
     },
-    {
-      key: "total",
-      header: "Total venta",
-      className: "text-right",
-      cell: (f: FilaGanancia) => (f.tipo === "VENTA" ? formatearPesos(f.totalVenta) : "—"),
-    },
+    ...(verFacturado
+      ? [
+          {
+            key: "total",
+            header: "Total venta",
+            className: "text-right",
+            cell: (f: FilaGanancia) => (f.tipo === "VENTA" ? formatearPesos(f.totalVenta) : "—"),
+          },
+        ]
+      : []),
   ];
   return (
     <div className="flex flex-col gap-3">
@@ -643,7 +677,11 @@ function TablaVentas({
               <p className="text-subtle text-small tabular-nums">
                 {formatearFechaHora(f.fecha)} · {formatearNumero(f.unidades)}{" "}
                 {Math.abs(f.unidades) === 1 ? "vape" : "vapes"} × {formatearPesos(f.tarifa)}
-                {f.tipo === "VENTA" ? ` · venta ${formatearPesos(f.totalVenta)}` : " · devolución"}
+                {f.tipo === "VENTA"
+                  ? verFacturado
+                    ? ` · venta ${formatearPesos(f.totalVenta)}`
+                    : ""
+                  : " · devolución"}
               </p>
             </>
           );

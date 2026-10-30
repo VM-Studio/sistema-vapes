@@ -59,6 +59,8 @@ export default async function MiGananciaPage({
         titulo={`Lo que vas ganando`}
         hrefMes={(m) => rutaPanel(ctx.panel.slug, `/ganancia?mes=${m}`)}
         rutaVenta={verVentas ? (id) => rutaPanel(ctx.panel.slug, `/ventas/${id}`) : null}
+        // «Mi ganancia» es del vendedor: solo lo que gana, sin el total vendido/facturado.
+        verFacturado={false}
       />
     </div>
   );

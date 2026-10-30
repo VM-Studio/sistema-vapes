@@ -5,9 +5,9 @@ import {
   EstadoPago,
   EstadoVenta,
   MedioPago,
+  Modulo,
   OrigenPrecio,
   Prisma,
-  RolUsuario,
   TipoMovimiento,
   TipoVenta,
 } from "@prisma/client";
@@ -37,6 +37,7 @@ import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import {
   bloquearCliente,
   estadoPagoDe,
+  puedeEnModulo,
   puedeFiados,
   type CtxFiados,
 } from "@/server/services/fiado.service";
@@ -577,7 +578,7 @@ async function generarEnTx(
 }
 
 // =============================================================================
-// Anulación (solo OWNER)
+// Anulación (dueños, o VENTAS "eliminar")
 // =============================================================================
 
 /**
@@ -587,7 +588,7 @@ async function generarEnTx(
  * registradas.
  */
 export async function anularVenta(
-  ctx: Ctx,
+  ctx: CtxFiados,
   id: string,
   motivo: string,
 ): Promise<{ id: string; codigo: string }> {
@@ -596,12 +597,9 @@ export async function anularVenta(
   return transaccion(
     ctx,
     async (tx) => {
-      const usuario = await tx.usuario.findUnique({
-        where: { id: ctx.usuarioId },
-        select: { rol: true },
-      });
-      if (usuario?.rol !== RolUsuario.OWNER)
-        throw new ForbiddenError("Solo un dueño puede anular ventas.");
+      // Dueños siempre; un empleado, con VENTAS "eliminar" (= anular) en el panel.
+      if (!(await puedeEnModulo(ctx, Modulo.VENTAS, "eliminar", tx)))
+        throw new ForbiddenError("No tenés permiso para anular ventas.");
       // Cliente antes que la venta: mismo orden de bloqueo que los cobros de fiados.
       const previa = await tx.venta.findUnique({ where: { id }, select: { clienteId: true } });
       if (!previa) throw new NotFoundError("La venta no existe");

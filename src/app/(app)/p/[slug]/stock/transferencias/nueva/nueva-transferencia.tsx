@@ -730,7 +730,7 @@ function GrupoGalpones({
                 className={cn(
                   "rounded-circle absolute top-4 right-4 flex size-6 items-center justify-center border transition-colors md:top-5 md:right-5",
                   activo
-                    ? "border-foreground bg-foreground text-background"
+                    ? "border-foreground bg-foreground text-primary-foreground"
                     : "border-input bg-surface",
                 )}
               >

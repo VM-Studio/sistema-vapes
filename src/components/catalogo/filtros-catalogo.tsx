@@ -123,7 +123,7 @@ export function FiltrosCatalogo({
         >
           <SlidersHorizontal strokeWidth={1.75} />
           {activos > 0 && (
-            <span className="bg-foreground text-background rounded-inner px-1.5 text-xs tabular-nums">
+            <span className="bg-foreground text-primary-foreground rounded-inner px-1.5 text-xs tabular-nums">
               {activos}
             </span>
           )}
