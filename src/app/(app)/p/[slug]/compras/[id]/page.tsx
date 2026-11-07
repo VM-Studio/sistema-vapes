@@ -30,7 +30,7 @@ import {
 } from "@/server/services/compra.service";
 import { obtenerConfigCompras } from "@/server/services/configuracion.service";
 import { comisionesDeCompra } from "@/server/services/pasista.service";
-import { veCostosCompras } from "@/server/services/proveedor.service";
+import { veCostosComprasCtx } from "@/server/services/proveedor.service";
 
 import { AccionesCompra } from "./acciones-compra";
 
@@ -46,7 +46,7 @@ export default async function CompraPage({ params }: { params: Promise<{ id: str
     throw e;
   });
   const idVisible = formatearIdCompra(panel.slug, c.numero);
-  const verCostos = veCostosCompras(ctx);
+  const verCostos = await veCostosComprasCtx(ctx);
   const puedeEditar = puede(usuario, panelId, Modulo.COMPRAS, "editar");
   const cambios = c.estado === "BORRADOR" && puedeEditar ? await preciosQueCambian(ctx, c.id) : [];
   const verMovimientos = c.movimientos > 0 && puede(usuario, panelId, Modulo.STOCK, "ver");

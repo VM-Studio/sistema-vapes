@@ -10,11 +10,11 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         // Primario: marrón con texto blanco. Secundario: blanco con borde fino; presionado
-        // se rellena en marrón (antes quedaba casi blanco y no se notaba).
+        // se tiñe de marrón claro y el texto queda marrón (en blanco no se leía).
         primary:
           "bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-hover",
         secondary:
-          "border border-foreground bg-surface text-foreground hover:bg-surface-2 active:bg-primary active:text-primary-foreground",
+          "border border-foreground bg-surface text-foreground hover:bg-surface-2 active:bg-foreground/15",
         danger: "bg-danger text-danger-foreground hover:bg-danger-hover active:bg-danger-hover",
         ghost: "text-foreground hover:bg-surface-2 active:bg-surface-3",
       },

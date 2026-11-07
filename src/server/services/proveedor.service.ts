@@ -19,6 +19,7 @@ import {
   type ResultadoComparacion,
 } from "@/server/reportes/comparador";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
 import { obtenerCotizacion } from "@/server/services/cambio.service";
 
 /**
@@ -40,6 +41,16 @@ export type CtxProveedores = Ctx & { usuario?: SujetoPermisos };
 /** ¿Ve precios de proveedor, costos y totales comprados? Dueños o `ver` en COMPRAS. */
 export function veCostosCompras(ctx: CtxProveedores): boolean {
   return ctx.usuario !== undefined && puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "ver");
+}
+
+/**
+ * Igual que veCostosCompras, pero además un vendedor con ganancia por vape
+ * (p. ej. Trinidad) no ve costos: puede mirar Compras para saber qué mercadería
+ * viene, sin precios. Es la misma regla que le oculta lo facturado.
+ */
+export async function veCostosComprasCtx(ctx: CtxProveedores): Promise<boolean> {
+  if (!veCostosCompras(ctx)) return false;
+  return veFacturadoCtx({ ...ctx, usuario: ctx.usuario });
 }
 
 const dec = (d: Prisma.Decimal | string | number) => new Prisma.Decimal(d).toFixed(2);

@@ -21,6 +21,13 @@ import {
 } from "@/lib/validations/compra";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx } from "@/server/auth/permissions";
+
+/** Compras "ver" + que pueda ver costos (un vendedor con ganancia mira Compras sin precios). */
+async function requireCtxCostos() {
+  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  if (!(await veCostosComprasCtx(ctx))) throw new ForbiddenError("No podés ver los costos de compras");
+  return ctx;
+}
 import { ForbiddenError } from "@/server/errors";
 import {
   actualizarCompra,
@@ -40,7 +47,7 @@ import {
   guardarBorradorCompra,
 } from "@/server/services/borrador-compra.service";
 import { buscarVariantes } from "@/server/services/producto.service";
-import { ofertasParaCompra } from "@/server/services/proveedor.service";
+import { ofertasParaCompra, veCostosComprasCtx } from "@/server/services/proveedor.service";
 
 /**
  * Permisos de COMPRAS: crear → nueva (borrador) · editar → modificar el
@@ -106,21 +113,21 @@ export const anularCompraAction = actionHandler(async (input: unknown) => {
 });
 
 export const costoSugeridoAction = actionHandler(async (input: unknown) => {
-  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const ctx = await requireCtxCostos();
   const { proveedorId, varianteIds, compraId } = costoSugeridoSchema.parse(input);
   return costoSugerido(ctx, proveedorId, varianteIds, compraId);
 });
 
 /** Lo que vende el proveedor elegido, con su precio y el costo en pesos que se precarga. */
 export const catalogoProveedorCompraAction = actionHandler(async (input: unknown) => {
-  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const ctx = await requireCtxCostos();
   const { proveedorId, compraId, depositoId } = catalogoCompraSchema.parse(input);
   return catalogoParaCompra(ctx, proveedorId, { compraId, depositoId });
 });
 
 /** Quién vende cada producto de la compra y a cuánto (del más barato al más caro). */
 export const ofertasCompraAction = actionHandler(async (input: unknown) => {
-  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const ctx = await requireCtxCostos();
   const { productoIds, proveedorId } = ofertasCompraSchema.parse(input);
   return ofertasParaCompra(ctx, productoIds, proveedorId ?? null);
 });
@@ -155,7 +162,7 @@ export const buscarSaboresCompraAction = actionHandler(
 // --- Costos finales (Bloque 6): comisión del pasista y gastos extras ---
 
 export const obtenerCostosCompraAction = actionHandler(async (input: unknown) => {
-  const ctx = await requireCtx(Modulo.COMPRAS, "ver");
+  const ctx = await requireCtxCostos();
   const { id: compraId } = z.object({ id }).parse(input);
   return obtenerCostosCompra(ctx, compraId);
 });

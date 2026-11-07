@@ -24,7 +24,7 @@ import { formatearFechaHora } from "@/lib/utils";
 import { listarComprasSchema } from "@/lib/validations/compra";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { listarCompras, type CompraListada } from "@/server/services/compra.service";
-import { listarProveedoresActivos, veCostosCompras } from "@/server/services/proveedor.service";
+import { listarProveedoresActivos, veCostosComprasCtx } from "@/server/services/proveedor.service";
 
 import { listarBorradoresCompra } from "@/server/services/borrador-compra.service";
 
@@ -42,12 +42,12 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
     Object.entries(await searchParams).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   const filtros = listarComprasSchema.parse(plano);
-  const [r, proveedores] = await Promise.all([
+  const [r, proveedores, verCostos] = await Promise.all([
     listarCompras(ctx, filtros),
     listarProveedoresActivos(ctx),
+    veCostosComprasCtx(ctx),
   ]);
 
-  const verCostos = veCostosCompras(ctx);
   // Montos EN USDT (moneda de Compras), calculados por el servicio con la
   // cotización de cada compra; "≈" en compras anteriores cargadas en pesos.
   type CampoUsdt =
@@ -66,7 +66,8 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
   );
 
   const puedeEditar = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "editar");
-  const owner = esOwner(ctx.usuario);
+  // Comisión, gastos y costo final: solo dueños (y nunca sin verCostos).
+  const owner = esOwner(ctx.usuario) && verCostos;
   const conGastos = (c: CompraListada) => puedeEditar && c.estado !== "ANULADA";
   const conRecibido = (c: CompraListada) => puedeEditar && c.estado === "BORRADOR";
   const botonRecibido = (c: CompraListada, className?: string) => (

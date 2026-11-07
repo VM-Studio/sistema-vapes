@@ -162,7 +162,7 @@ export function BottomNav({ items }: { items: ItemNavegacion[] }) {
                       "rounded-control flex min-h-20 flex-col items-center justify-center gap-1.5 px-1 text-center text-xs font-medium transition-colors",
                       activo
                         ? "bg-brand-orange-strong text-primary-foreground"
-                        : "bg-surface text-foreground hover:bg-brand-orange-soft active:bg-brand-orange-strong active:text-primary-foreground",
+                        : "bg-surface text-foreground hover:bg-brand-orange-soft active:bg-brand-orange/25 active:text-brand-orange-strong",
                     )}
                   >
                     <Icono className="size-6" strokeWidth={1.75} aria-hidden />

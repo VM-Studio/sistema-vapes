@@ -5,6 +5,18 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.8.1] - 2026-11-07 — Botones legibles al presionar, Trinidad ve Compras sin precios
+
+### Cambiado
+
+- **Botones presionados con la letra visible**: los secundarios, el menú lateral y el menú «Más»
+  del celular ya no ponen el texto en blanco al tocarlos; el fondo se oscurece y la letra queda
+  de su color.
+- **Compras sin precios para vendedores con ganancia por vape** (Trinidad): ven las compras y lo
+  que está por llegar (productos, cantidades, galpón, estado), sin costos, totales, comisión ni
+  gastos. Tampoco ven precios de proveedores en la ficha de producto, y las acciones de costos de
+  compras les responden «sin permiso».
+
 ## [2.8.0] - 2026-10-30 — Compras en USDT, anular ventas y cotizaciones, Trinidad sin facturado
 
 ### Cambiado

@@ -12,7 +12,7 @@ import { obtenerCotizacion } from "@/server/services/cambio.service";
 import { listarEscalones } from "@/server/services/escalon.service";
 import { listarMovimientos } from "@/server/services/movimiento.service";
 import { obtener } from "@/server/services/producto.service";
-import { proveedoresDeProducto } from "@/server/services/proveedor.service";
+import { proveedoresDeProducto, veCostosComprasCtx } from "@/server/services/proveedor.service";
 
 import { CabeceraProducto } from "./cabecera-producto";
 import { MovimientosProducto } from "./movimientos-producto";
@@ -37,8 +37,8 @@ export default async function FichaProductoPage({
   const texto = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : undefined);
   const owner = esOwner(ctx.usuario);
   // Precios de proveedores = costos de compra: solo dueños o quien ve Compras
-  // (misma regla que veCostosCompras en proveedores; se decide acá, en el servidor).
-  const veProveedores = owner || puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "ver");
+  // (misma regla que en Compras: un vendedor con ganancia no los ve).
+  const veProveedores = owner || (await veCostosComprasCtx(ctx));
 
   const producto = await obtener(ctx, id).catch((e: unknown) => {
     if (e instanceof NotFoundError) notFound();
