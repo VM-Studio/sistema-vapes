@@ -34,6 +34,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { CantidadInput } from "@/components/ui/cantidad-input";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
+import { controlClass } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { Stepper } from "@/components/ui/stepper";
 import { useToast } from "@/components/ui/toast";
@@ -41,13 +42,23 @@ import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { ScanInput } from "@/features/scanner/ScanInput";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
-import { formatearNumero } from "@/lib/format";
+import { formatearNumero, formatearPesos } from "@/lib/format";
+import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 import type { ResumenCargaStock } from "@/server/services/producto.service";
 
 interface Item {
   variante: VarianteEncontrada;
   cantidad: number;
+  /** Costo unitario en pesos tipeado por un dueño ("" o ausente = deja el costo actual). */
+  costo?: string;
+}
+
+/** "" → sin costo; número válido (>= 0, hasta 2 decimales, coma o punto) → string; inválido → null. */
+function leerCosto(texto: string | undefined): string | undefined | null {
+  const t = (texto ?? "").trim().replace(",", ".");
+  if (t === "") return undefined;
+  return /^\d{1,10}(\.\d{1,2})?$/.test(t) ? t : null;
 }
 
 /** Lista de carga guardada en el celular (por panel y usuario): sobrevive a un refresh o a cerrar la app. */
@@ -110,6 +121,8 @@ export function CargaStock({
   const toast = useToast();
   const offline = useEstadoOffline();
   const puedeVerStock = usePuede(Modulo.STOCK, "ver");
+  // Costo de lo que se carga: solo dueños (es el que usan las ventas para calcular la ganancia).
+  const conCosto = esOwner(usuario);
   const CLAVE_LISTA = `carga-stock.lista.${panel.id}.${usuario.id}`;
   const CLAVE_GALPON = `carga-stock.galpon.${panel.id}.${usuario.id}`;
 
@@ -128,6 +141,7 @@ export function CargaStock({
 
   const deposito = depositos.find((d) => d.id === depositoId) ?? null;
   const unidades = items.reduce((a, i) => a + i.cantidad, 0);
+  const costosInvalidos = conCosto ? items.filter((i) => leerCosto(i.costo) === null) : [];
   /** Con más de un galpón, después de escanear viene el paso "Distribuir entre galpones". */
   const conDistribucion = depositos.length > 1;
   const filasInvalidas = items.filter(
@@ -252,7 +266,7 @@ export function CargaStock({
       return existe
         ? its.map((i) =>
             i.variante.varianteId === v.varianteId
-              ? { variante: v, cantidad: Math.min(99_999, i.cantidad + 1) }
+              ? { ...i, variante: v, cantidad: Math.min(99_999, i.cantidad + 1) }
               : i,
           )
         : [{ variante: v, cantidad: 1 }, ...its];
@@ -282,24 +296,32 @@ export function CargaStock({
         i.variante.varianteId === id ? { ...i, cantidad: Math.max(1, cantidad) } : i,
       ),
     );
+  const cambiarCosto = (id: string, costo: string) =>
+    setItems((its) => its.map((i) => (i.variante.varianteId === id ? { ...i, costo } : i)));
   const quitar = (id: string) => setItems((its) => its.filter((i) => i.variante.varianteId !== id));
 
   async function cargar() {
     if (!depositoId) return;
+    if (costosInvalidos.length > 0) {
+      toast.error("Revisá los costos", "Hay un costo mal escrito (usá solo números, ej. 8500,50).");
+      return;
+    }
     setEnviando(true);
     const r = await cargarStockPorEscaneoAction({
       depositoId,
-      items: items.map((i) =>
-        conDistribucion
+      items: items.map((i) => {
+        const costoUnitario = conCosto ? (leerCosto(i.costo) ?? undefined) : undefined;
+        return conDistribucion
           ? {
               varianteId: i.variante.varianteId,
               cantidad: i.cantidad,
+              costoUnitario,
               distribucion: Object.entries(distribucion[i.variante.varianteId] ?? {})
                 .filter(([, n]) => n > 0)
                 .map(([id, n]) => ({ depositoId: id, cantidad: n })),
             }
-          : { varianteId: i.variante.varianteId, cantidad: i.cantidad },
-      ),
+          : { varianteId: i.variante.varianteId, cantidad: i.cantidad, costoUnitario };
+      }),
     });
     setEnviando(false);
     if (!r.ok) {
@@ -447,6 +469,13 @@ export function CargaStock({
               {resumen.items.length} producto{resumen.items.length === 1 ? "" : "s"} · quedó
               registrado como ingreso manual.
             </p>
+            {resumen.costosActualizados > 0 && (
+              <p className="text-muted text-body" data-testid="costos-actualizados">
+                Se actualizó el costo de {resumen.costosActualizados} producto
+                {resumen.costosActualizados === 1 ? "" : "s"}: las próximas ventas calculan la
+                ganancia con ese costo.
+              </p>
+            )}
           </div>
 
           <div className="flex w-full flex-col gap-2 text-left">
@@ -776,10 +805,16 @@ export function CargaStock({
             <div className="border-border bg-surface rounded-control overflow-hidden border">
               <div
                 aria-hidden
-                className="border-border bg-card text-muted hidden h-10 grid-cols-[minmax(0,1fr)_9rem_13rem] items-center gap-4 border-b px-4 text-xs font-medium sm:grid"
+                className={cn(
+                  "border-border bg-card text-muted hidden h-10 items-center gap-4 border-b px-4 text-xs font-medium sm:grid",
+                  conCosto
+                    ? "grid-cols-[minmax(0,1fr)_6rem_8rem_13rem]"
+                    : "grid-cols-[minmax(0,1fr)_9rem_13rem]",
+                )}
               >
                 <span>Producto</span>
                 <span className="text-right">En {deposito?.nombre}</span>
+                {conCosto && <span className="text-right">Costo unitario</span>}
                 <span className="text-right">Cantidad</span>
               </div>
               <ul aria-label="Lista de carga" className="divide-border flex flex-col divide-y">
@@ -787,12 +822,16 @@ export function CargaStock({
                   const v = i.variante;
                   const actual = depositoId ? stockEn(v, depositoId) : 0;
                   const recien = resaltado?.id === v.varianteId;
+                  const costoMal = conCosto && leerCosto(i.costo) === null;
                   return (
                     <li
                       key={v.varianteId}
                       aria-label={v.titulo}
                       className={cn(
-                        "flex flex-col gap-3 px-4 py-3 transition-colors sm:grid sm:grid-cols-[minmax(0,1fr)_9rem_13rem] sm:items-center sm:gap-4",
+                        "flex flex-col gap-3 px-4 py-3 transition-colors sm:grid sm:items-center sm:gap-4",
+                        conCosto
+                          ? "sm:grid-cols-[minmax(0,1fr)_6rem_8rem_13rem]"
+                          : "sm:grid-cols-[minmax(0,1fr)_9rem_13rem]",
                         recien && "bg-surface-3",
                       )}
                     >
@@ -818,6 +857,31 @@ export function CargaStock({
                           {actual + i.cantidad}
                         </strong>
                       </p>
+                      {conCosto && (
+                        <label className="flex items-center justify-between gap-3 text-sm sm:block">
+                          <span className="text-muted sm:sr-only">Costo unitario ($)</span>
+                          <input
+                            inputMode="decimal"
+                            autoComplete="off"
+                            aria-label={`Costo unitario de ${v.titulo}`}
+                            aria-invalid={costoMal || undefined}
+                            placeholder={
+                              v.ultimoCosto !== null ? formatearPesos(v.ultimoCosto) : "$ costo"
+                            }
+                            title={
+                              v.ultimoCosto !== null
+                                ? `Costo actual ${formatearPesos(v.ultimoCosto)}. Dejalo vacío para mantenerlo.`
+                                : "Sin costo cargado"
+                            }
+                            value={i.costo ?? ""}
+                            onChange={(e) => cambiarCosto(v.varianteId, e.target.value)}
+                            className={cn(
+                              controlClass,
+                              "h-11 w-32 text-right tabular-nums sm:w-full md:h-10",
+                            )}
+                          />
+                        </label>
+                      )}
                       <div className="flex items-center gap-1 sm:justify-end">
                         <Button
                           variant="secondary"
@@ -864,7 +928,12 @@ export function CargaStock({
       {items.length > 0 && deposito && (
         <div className="border-border bg-surface fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t py-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:sticky md:bottom-0 md:mt-6 md:px-0 md:py-4">
           {conDistribucion ? (
-            <Button size="lg" fullWidth onClick={irADistribuir}>
+            <Button
+              size="lg"
+              fullWidth
+              onClick={irADistribuir}
+              disabled={costosInvalidos.length > 0}
+            >
               <ArrowRight strokeWidth={1.75} /> Continuar con {formatearNumero(unidades)} unidad
               {unidades === 1 ? "" : "es"}
             </Button>
@@ -873,11 +942,16 @@ export function CargaStock({
               size="lg"
               fullWidth
               onClick={() => setConfirmando(true)}
-              disabled={!offline.online}
+              disabled={!offline.online || costosInvalidos.length > 0}
             >
               <PackageCheck strokeWidth={1.75} /> Cargar {formatearNumero(unidades)} unidad
               {unidades === 1 ? "" : "es"} en {deposito.nombre}
             </Button>
+          )}
+          {costosInvalidos.length > 0 && (
+            <p className="text-danger mt-1 text-center text-xs">
+              Hay un costo mal escrito: usá solo números (ej. 8500,50).
+            </p>
           )}
           {!offline.online && (
             <p className="text-muted mt-1 text-center text-xs">
@@ -909,7 +983,14 @@ export function CargaStock({
           {items.map((i) => (
             <li key={i.variante.varianteId} className="flex justify-between gap-3">
               <span className="truncate">{i.variante.titulo}</span>
-              <strong className="shrink-0 tabular-nums">+{i.cantidad}</strong>
+              <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
+                {conCosto && leerCosto(i.costo) && (
+                  <span className="text-muted text-xs">
+                    costo {formatearPesos(leerCosto(i.costo)!)}
+                  </span>
+                )}
+                <strong>+{i.cantidad}</strong>
+              </span>
             </li>
           ))}
         </ul>

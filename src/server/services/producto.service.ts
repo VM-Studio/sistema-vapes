@@ -1,6 +1,12 @@
 import { randomInt } from "node:crypto";
 
-import { AccionAuditoria, Prisma, TipoMovimiento, type RolUsuario } from "@prisma/client";
+import {
+  AccionAuditoria,
+  OrigenCostoVariante,
+  Prisma,
+  RolUsuario,
+  TipoMovimiento,
+} from "@prisma/client";
 
 import type { StockEnDeposito, VarianteEncontrada } from "@/features/scanner/tipos";
 import { CODIGO_BARRAS_REGEX, digitoLuhn, normalizarCodigoBarras } from "@/lib/barcode";
@@ -20,6 +26,7 @@ import {
 import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { ConflictError, DomainError, NotFoundError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { actualizarUltimoCosto } from "@/server/services/costo-variante.service";
 import { crearStockEnCero, registrarMovimiento } from "@/server/services/stock.service";
 
 /**
@@ -1426,6 +1433,8 @@ export interface ResumenCargaStock {
   cargadoPorDeposito: { depositoId: string; nombre: string; unidades: number }[];
   /** Unidades de los sabores cargados en cada galpón activo, después de la carga. */
   porDeposito: { depositoId: string; nombre: string; unidades: number }[];
+  /** Sabores a los que esta carga les cambió el último costo (solo dueños informan costo). */
+  costosActualizados: number;
 }
 
 type EntradaCarga = CargarStock["items"][number];
@@ -1496,9 +1505,25 @@ export async function cargarStockPorEscaneo(
           deletedAt: null,
           producto: { deletedAt: null },
         },
-        select: { id: true, nombre: true, producto: { select: { nombreCompleto: true } } },
+        select: {
+          id: true,
+          nombre: true,
+          ultimoCosto: true,
+          producto: { select: { nombreCompleto: true } },
+        },
       });
       const porId = new Map(variantes.map((v) => [v.id, v]));
+      // Costo informado por sabor: solo si carga un dueño (si no, se ignora, como en el ingreso manual).
+      const informados = input.items.filter((i) => i.costoUnitario !== undefined);
+      const costos = new Map<string, number>();
+      if (informados.length > 0) {
+        const u = await tx.usuario.findUnique({
+          where: { id: ctx.usuarioId },
+          select: { rol: true },
+        });
+        if (u?.rol === RolUsuario.OWNER)
+          for (const i of informados) costos.set(i.varianteId, i.costoUnitario!);
+      }
       const titulo = (id: string) => {
         const v = porId.get(id);
         return v ? nombreConSabor(v.producto.nombreCompleto, v.nombre) : "Un producto";
@@ -1528,10 +1553,35 @@ export async function cargarStockPorEscaneo(
       const motivo = input.motivo ?? "Carga por escaneo";
       const items: ResumenCargaStock["items"] = [];
       const cargado = new Map<string, number>();
+      let costosActualizados = 0;
       for (const varianteId of ids) {
         const destinos = [...carga.get(varianteId)!.entries()].sort(([a], [b]) =>
           a.localeCompare(b),
         );
+        const v = porId.get(varianteId)!;
+        const costo = costos.get(varianteId);
+        if (
+          costo !== undefined &&
+          (await actualizarUltimoCosto(tx, {
+            varianteId,
+            anterior: v.ultimoCosto,
+            nuevo: costo,
+            origen: OrigenCostoVariante.INGRESO_MANUAL,
+            usuarioId: ctx.usuarioId,
+          }))
+        ) {
+          await registrarAuditoria(tx, {
+            usuarioId: ctx.usuarioId,
+            accion: AccionAuditoria.UPDATE,
+            entidad: "Variante",
+            entidadId: varianteId,
+            datosAntes: { ultimoCosto: v.ultimoCosto?.toFixed(2) ?? null },
+            datosDespues: { ultimoCosto: dec(costo), motivo: `Carga de stock: ${motivo}` },
+            meta: ctx.meta,
+          });
+          costosActualizados++;
+        }
+        const costoMovimiento = costo ?? v.ultimoCosto;
         let stockAnterior = 0;
         let stockPosterior = 0;
         for (const [depositoId, cantidad] of destinos) {
@@ -1540,6 +1590,7 @@ export async function cargarStockPorEscaneo(
             varianteId,
             depositoId,
             cantidad,
+            costoUnitario: costoMovimiento,
             usuarioId: ctx.usuarioId,
             motivo,
           });
@@ -1582,8 +1633,10 @@ export async function cargarStockPorEscaneo(
           depositoIngresoId: ingreso.id,
           motivo,
           unidades,
+          costosActualizados,
           items: items.map((i) => ({
             varianteId: i.varianteId,
+            costoUnitario: costos.has(i.varianteId) ? dec(costos.get(i.varianteId)!) : null,
             distribucion: i.distribucion.map((d) => ({
               depositoId: d.depositoId,
               cantidad: d.cantidad,
@@ -1609,6 +1662,7 @@ export async function cargarStockPorEscaneo(
           nombre: d.nombre,
           unidades: suma.get(d.id) ?? 0,
         })),
+        costosActualizados,
       };
     },
     { timeout: 60_000 },

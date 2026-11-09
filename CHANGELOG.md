@@ -5,6 +5,17 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.9.1] - 2026-11-09 — Costo al cargar stock
+
+### Agregado
+
+- **Costo unitario en «Cargar stock»** (solo dueños): cada producto de la lista de carga tiene un
+  campo de costo en pesos (acepta coma decimal). Si se completa, pasa a ser el último costo del
+  sabor —el que toman las ventas para calcular la ganancia— y queda en el historial de costos
+  como ingreso manual y en la auditoría. Vacío = se mantiene el costo actual. Pensado para el
+  stock inicial que entró sin compra registrada; lo que viene de una compra sigue entrando con
+  «Recibido» (no hay que cargarlo de nuevo).
+
 ## [2.8.2] - 2026-11-09 — La app se actualiza sola a la última versión
 
 ### Cambiado

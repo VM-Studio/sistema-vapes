@@ -140,8 +140,18 @@ export const altaRapidaSchema = z.object({
 });
 
 /** Carga de stock por escaneo. `depositoId` se valida en el servicio (mensaje propio). */
+/**
+ * Costo unitario en pesos de lo que se carga (opcional, solo lo toma un dueño):
+ * pasa a ser el último costo del sabor, el que usan las ventas para la ganancia.
+ * Acepta coma decimal ("1500,50").
+ */
+const costoCarga = z.preprocess(
+  (v) => (typeof v === "string" ? v.replace(",", ".") : v),
+  montoOpcional,
+);
+
 /** Un sabor escaneado que va entero al galpón de ingreso (`depositoId` de la carga). */
-const itemCargaSimple = z.object({ varianteId: id, cantidad });
+const itemCargaSimple = z.object({ varianteId: id, cantidad, costoUnitario: costoCarga });
 
 /**
  * Un sabor escaneado repartido entre galpones. `cantidad` (opcional) es lo
@@ -150,6 +160,7 @@ const itemCargaSimple = z.object({ varianteId: id, cantidad });
 const itemCargaDistribuido = z.object({
   varianteId: id,
   cantidad: cantidad.optional(),
+  costoUnitario: costoCarga,
   distribucion: z
     .array(z.object({ depositoId: id, cantidad }))
     .min(1, "Elegí al menos un galpón para cada producto")

@@ -258,6 +258,47 @@ async function main() {
       simple.items[0]?.distribucion[0]?.cantidad === 2,
     "la firma vieja (depositoId + items) sigue andando: 2 Menta a Mercedes",
   );
+
+  // Costo en la carga (stock inicial sin compra): un dueño lo informa y pasa a
+  // ser el último costo del sabor (el que toman las ventas para la ganancia).
+  const conCosto = await cargarStockPorEscaneo(
+    ctx,
+    cargarStockSchema.parse({
+      depositoId: ayres.id,
+      items: [{ varianteId: id("Menta"), cantidad: 3, costoUnitario: "8500,50" }],
+    }),
+  );
+  const menta = await db.variante.findUniqueOrThrow({ where: { id: id("Menta") } });
+  const histMenta = await db.costoVarianteHistorial.findFirst({
+    where: { varianteId: id("Menta") },
+    orderBy: { createdAt: "desc" },
+  });
+  const movMenta = await db.movimientoStock.findFirst({
+    where: { varianteId: id("Menta"), tipo: TipoMovimiento.INGRESO_MANUAL },
+    orderBy: { createdAt: "desc" },
+  });
+  check(
+    conCosto.costosActualizados === 1 &&
+      menta.ultimoCosto?.toFixed(2) === "8500.50" &&
+      histMenta?.origen === "INGRESO_MANUAL" &&
+      histMenta.costoNuevo.toFixed(2) === "8500.50" &&
+      movMenta?.costoUnitario?.toFixed(2) === "8500.50",
+    "costo en la carga: dueño informa $8500,50 → último costo, historial y movimiento",
+  );
+  const empleado = await prisma.usuario.findFirst({
+    where: { rol: { not: RolUsuario.OWNER }, deletedAt: null },
+  });
+  if (empleado) {
+    const sinCosto = await cargarStockPorEscaneo(
+      { ...ctx, usuarioId: empleado.id },
+      { depositoId: ayres.id, items: [{ varianteId: id("Menta"), cantidad: 1, costoUnitario: 1 }] },
+    );
+    const mentaDespues = await db.variante.findUniqueOrThrow({ where: { id: id("Menta") } });
+    check(
+      sinCosto.costosActualizados === 0 && mentaDespues.ultimoCosto?.toFixed(2) === "8500.50",
+      "un empleado no puede cambiar el costo desde la carga (se ignora)",
+    );
+  }
   g = await global();
 
   // ---------------------------------------------------------------------------
