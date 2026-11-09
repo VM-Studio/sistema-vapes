@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { NextResponse } from "next/server";
 
 import { cronAutorizado } from "@/server/auth/cron";
@@ -7,6 +8,14 @@ import { listarTodosLosPaneles } from "@/server/services/panel.service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+/** Monitor de Sentry (se crea solo con el primer check-in; horario en UTC, igual que vercel.json). */
+const MONITOR = {
+  schedule: { type: "crontab" as const, value: "10 3 1 * *" },
+  checkinMargin: 30,
+  maxRuntime: 5,
+  timezone: "Etc/UTC",
+};
 
 /**
  * Cierre de mes de la ganancia por vape: genera las liquidaciones de los
@@ -21,8 +30,16 @@ async function correr(req: Request) {
       { status: 401 },
     );
   }
-  const paneles = (await listarTodosLosPaneles()).filter((p) => p.activo);
-  return NextResponse.json({ ok: true, data: await cerrarMesesPendientes(paneles) });
+  // Sentry avisa si el cierre de mes no corre o falla.
+  const data = await Sentry.withMonitor(
+    "cron-liquidaciones",
+    async () => {
+      const paneles = (await listarTodosLosPaneles()).filter((p) => p.activo);
+      return cerrarMesesPendientes(paneles);
+    },
+    MONITOR,
+  );
+  return NextResponse.json({ ok: true, data });
 }
 
 export const GET = correr;

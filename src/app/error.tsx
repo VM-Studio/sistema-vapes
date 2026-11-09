@@ -1,7 +1,9 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { useEffect } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -14,6 +16,11 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // Los errores de render en el navegador no pasan por el servidor: se reportan acá.
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <div className="flex min-h-[60dvh] items-center justify-center p-4">
       <EmptyState

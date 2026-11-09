@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 
+import { withSentryConfig } from "@sentry/nextjs/config";
 import { withSerwist } from "@serwist/turbopack";
 import type { NextConfig } from "next";
 
@@ -81,4 +82,19 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSerwist(nextConfig);
+/**
+ * Sentry (proyecto vm-studio-ai/sistema-vapes). El navegador manda los eventos
+ * a /monitoring (mismo dominio → cumple la CSP y esquiva los ad-blockers) y el
+ * servidor los reenvía a Sentry. Los source maps se suben solo si hay
+ * SENTRY_AUTH_TOKEN en el build (Vercel); sin él, el build sigue igual.
+ */
+export default withSentryConfig(withSerwist(nextConfig), {
+  org: "vm-studio-ai",
+  project: "sistema-vapes",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  tunnelRoute: "/monitoring",
+  release: { name: VERSION_BUILD },
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  silent: !process.env.CI,
+  telemetry: false,
+});

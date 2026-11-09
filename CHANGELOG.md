@@ -16,6 +16,19 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
   apareciendo.
 - Nuevo `/api/version` (público, sin datos) con la versión desplegada.
 
+## [2.9.0] - 2026-11-09 — Monitoreo con Sentry
+
+### Agregado
+
+- **Sentry** (proyecto `vm-studio-ai/sistema-vapes`): errores del servidor (Server Components,
+  Server Actions, API) y del navegador, con la versión desplegada como release. Los eventos del
+  navegador salen por `/monitoring` (mismo dominio: cumple la CSP y no lo cortan los
+  ad-blockers). Sin Session Replay ni cookies, cuerpos de requests, queries SQL o datos de
+  usuario. Solo envía desde Vercel (no en dev, tests ni builds locales).
+- **Monitores**: los cron de cotizaciones (diario) y de liquidaciones (mensual) reportan a Sentry
+  y avisan si no corren o fallan; monitor de disponibilidad sobre `/api/health` cada minuto.
+- Pantalla de error global que reporta el error y ofrece recargar.
+
 ## [2.8.1] - 2026-11-07 — Botones legibles al presionar, Trinidad ve Compras sin precios
 
 ### Cambiado

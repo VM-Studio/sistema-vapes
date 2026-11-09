@@ -233,8 +233,9 @@ async function restringirSoloEscaneo(
 
 export const config = {
   runtime: "nodejs",
-  // Todo salvo assets estáticos, íconos, imagen Open Graph, manifest y el service worker.
+  // Todo salvo assets estáticos, íconos, imagen Open Graph, manifest, el service
+  // worker y el túnel de Sentry (/monitoring: lo usan también pantallas sin sesión).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|icons/|splash/|screenshots/|opengraph-image|manifest.webmanifest|robots.txt|ayuda-img/|brand/|portadaApp.png|logoVape.png|logoCosmetics.png|logoEspecial.png).*)",
+    "/((?!monitoring|_next/static|_next/image|favicon.ico|icon|apple-icon|icons/|splash/|screenshots/|opengraph-image|manifest.webmanifest|robots.txt|ayuda-img/|brand/|portadaApp.png|logoVape.png|logoCosmetics.png|logoEspecial.png).*)",
   ],
 };
