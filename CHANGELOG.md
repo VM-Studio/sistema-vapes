@@ -5,6 +5,17 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.8.2] - 2026-11-09 — La app se actualiza sola a la última versión
+
+### Cambiado
+
+- **Actualización automática**: si la app (o la pestaña) quedó abierta con una versión anterior,
+  detecta el deploy nuevo al volver a ella, al recuperar internet y cada 5 minutos, y se
+  actualiza sola en el próximo cambio de pantalla. Sigue sin interrumpir una venta o un escaneo
+  con productos cargados, y el aviso «Hay una versión nueva» con el botón «Actualizar» sigue
+  apareciendo.
+- Nuevo `/api/version` (público, sin datos) con la versión desplegada.
+
 ## [2.8.1] - 2026-11-07 — Botones legibles al presionar, Trinidad ve Compras sin precios
 
 ### Cambiado

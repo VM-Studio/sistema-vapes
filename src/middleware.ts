@@ -30,7 +30,13 @@ import { extenderSesion, validarSesion } from "@/server/auth/sesiones";
  * Runtime Node.js (estable desde Next 15.5) para poder consultar la DB con Prisma.
  */
 
-const RUTAS_PUBLICAS = new Set(["/login", "/api/health", "/api/auth/login", "/offline"]);
+const RUTAS_PUBLICAS = new Set([
+  "/login",
+  "/api/health",
+  "/api/version",
+  "/api/auth/login",
+  "/offline",
+]);
 // /firma/{token}: el vendedor firma su remito desde el link del mail (sin sesión; el token es la credencial).
 const PREFIJOS_PUBLICOS = ["/api/publico/", "/api/cron/", "/serwist/", "/firma/"];
 const PERMITIDAS_CON_CAMBIO_PENDIENTE = new Set(["/cuenta", "/api/auth/logout"]);
@@ -136,6 +142,7 @@ export async function middleware(req: NextRequest) {
   if (
     (esApi(pathname) || esAction) &&
     pathname !== "/api/health" &&
+    pathname !== "/api/version" &&
     !pathname.startsWith("/api/cron/")
   ) {
     const limite = Number(process.env.RATE_LIMIT_POR_MINUTO ?? 300);

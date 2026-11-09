@@ -1,5 +1,18 @@
+import { spawnSync } from "node:child_process";
+
 import { withSerwist } from "@serwist/turbopack";
 import type { NextConfig } from "next";
+
+/**
+ * Versión del build (SHA corto). Se inyecta en el cliente como
+ * NEXT_PUBLIC_APP_VERSION y la expone /api/version: si el navegador tiene
+ * abierta una versión distinta a la desplegada, la app se actualiza sola.
+ */
+const VERSION_BUILD = (
+  process.env.APP_VERSION ??
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  (spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" }).stdout?.trim() || "dev")
+).slice(0, 12);
 
 /**
  * Headers de seguridad para TODO (incluidos los assets). La CSP va aparte,
@@ -31,6 +44,7 @@ function hostApp(): string[] {
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  env: { NEXT_PUBLIC_APP_VERSION: VERSION_BUILD },
   // Metadata SIEMPRE en el <head> (sin streaming): Chrome ignora un
   // <link rel="manifest"> en el <body> y la app deja de ser instalable; iOS
   // tampoco lee ahí los apple-touch-icon / splash.
