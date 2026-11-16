@@ -139,7 +139,7 @@ async function main() {
     "precio: Menta con precio propio 14000; el resto (incluida Cola con 13000 = producto) usa el del producto",
   );
   check(
-    detalle.sabores.every((v) => v.ultimoCosto === null),
+    detalle.sabores.every((v) => v.ultimoCostoUsdt === null),
     "sabores recién creados: sin último costo (todavía no hubo compras)",
   );
   const repetido = productoSchema.safeParse({
@@ -274,13 +274,13 @@ async function main() {
   const mango = sabor("Mango Ice");
   await registrarIngresoManual(actor, {
     depositoId: g1.id,
-    items: [{ varianteId: mango.id, cantidad: 30, costoUnitario: undefined }],
+    items: [{ varianteId: mango.id, cantidad: 30, costoUnitarioUsdt: undefined }],
     motivo: "Carga inicial",
     actualizarCosto: false,
   });
   await registrarIngresoManual(actor, {
     depositoId: g2.id,
-    items: [{ varianteId: mango.id, cantidad: 20, costoUnitario: 7200 }],
+    items: [{ varianteId: mango.id, cantidad: 20, costoUnitarioUsdt: 7.2 }],
     motivo: "Carga inicial",
     actualizarCosto: true,
   });
@@ -299,16 +299,17 @@ async function main() {
     fm.porDeposito[g1.id] === 30 && fm.porDeposito[g2.id] === 20 && fm.total === 50,
     "la matriz de la ficha coincide (30 | 20 | 50)",
   );
-  const costoMango = (await db.variante.findUniqueOrThrow({ where: { id: mango.id } })).ultimoCosto;
+  const costoMango = (await db.variante.findUniqueOrThrow({ where: { id: mango.id } }))
+    .ultimoCostoUsdt;
   check(
-    costoMango?.toFixed(2) === "7200.00",
+    costoMango?.toFixed(2) === "7.20",
     `actualizarCosto: el último costo pasó a ${costoMango?.toFixed(2)}`,
   );
   check(
     (await obtenerProducto(actor, creado.id)).sabores.find((v) => v.id === mango.id)
-      ?.ultimoCosto === "7200.00" &&
+      ?.ultimoCostoUsdt === "7.20" &&
       (await obtenerProducto(vistaEmpleado, creado.id)).sabores.every(
-        (v) => v.ultimoCosto === null,
+        (v) => v.ultimoCostoUsdt === null,
       ),
     "el dueño ve el último costo; un empleado no lo recibe",
   );
@@ -472,10 +473,10 @@ async function main() {
       encontrado.precioVentaProducto === "13000.00",
     "nombre completo, sabor y precio efectivo (el del producto)",
   );
-  check(encontrado?.ultimoCosto === "7200.00", "con ctx de dueño trae el último costo");
+  check(encontrado?.ultimoCostoUsdt === "7.20", "con ctx de dueño trae el último costo");
   const sinCosto = await buscarPorCodigo(vistaEmpleado, mango.codigoBarras!);
   check(
-    sinCosto?.varianteId === mango.id && sinCosto.ultimoCosto === null,
+    sinCosto?.varianteId === mango.id && sinCosto.ultimoCostoUsdt === null,
     "con ctx de empleado, sin costo",
   );
   const menta = await buscarPorCodigo(actor, sabor("Menta").codigoBarras!);

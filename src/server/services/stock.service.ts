@@ -53,7 +53,8 @@ export interface RegistrarMovimientoInput {
   /** Siempre > 0; el signo lo define `tipo`. */
   cantidad: number;
   usuarioId: string;
-  costoUnitario?: Prisma.Decimal | number | string | null;
+  /** Costo por unidad EN USDT (informativo; obligatorio en INGRESO_COMPRA). */
+  costoUnitarioUsdt?: Prisma.Decimal | number | string | null;
   motivo?: string | null;
   referenciaTipo?: ReferenciaTipo | null;
   referenciaId?: string | null;
@@ -199,7 +200,7 @@ export async function registrarMovimiento(
       cantidad: input.cantidad,
       stockAnterior,
       stockPosterior,
-      costoUnitario: input.costoUnitario ?? null,
+      costoUnitarioUsdt: input.costoUnitarioUsdt ?? null,
       motivo: input.motivo ?? null,
       referenciaTipo: input.referenciaTipo ?? null,
       referenciaId: input.referenciaId ?? null,
@@ -448,8 +449,8 @@ export interface MovimientoListado {
   depositoId: string;
   deposito: string;
   usuario: string;
-  /** Solo para dueños (opciones.incluirCostos); null para el resto. */
-  costoUnitario: string | null;
+  /** En USDT. Solo para dueños (opciones.incluirCostos); null para el resto. */
+  costoUnitarioUsdt: string | null;
   motivo: string | null;
   referencia: ReferenciaMovimiento | null;
   /** Texto fácil: "Venta VAP-000123 a Juan", "Transferencia VAP-T-000004 a Mercedes"… */
@@ -796,7 +797,8 @@ export async function movimientos(
       depositoId: m.depositoId,
       deposito: m.deposito.nombre,
       usuario: m.usuario.nombre,
-      costoUnitario: opciones.incluirCostos && m.costoUnitario ? m.costoUnitario.toFixed(2) : null,
+      costoUnitarioUsdt:
+        opciones.incluirCostos && m.costoUnitarioUsdt ? m.costoUnitarioUsdt.toFixed(2) : null,
       motivo: m.motivo,
       referencia,
       descripcion: describirMovimiento(m.tipo, referencia),
@@ -819,7 +821,7 @@ export async function movimientos(
       depositoId: r.venta.depositoId,
       deposito: r.venta.deposito.nombre,
       usuario: r.venta.retiradaPor?.nombre ?? "",
-      costoUnitario: null,
+      costoUnitarioUsdt: null,
       motivo: null,
       referencia,
       descripcion: describirMovimiento(TipoMovimiento.VENTA, referencia, "RETIRO"),

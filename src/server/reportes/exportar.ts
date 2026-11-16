@@ -10,7 +10,8 @@ import {
   type PDFPage,
 } from "pdf-lib";
 
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearDolares, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import type { Montos } from "@/lib/moneda";
 import { formatearFechaHora } from "@/lib/utils";
 import { aWinAnsi, COLOR_PDF, leerArchivoPublico, recortar, rectRedondeado } from "@/server/pdf";
 import { obtenerStorage } from "@/server/storage";
@@ -21,7 +22,8 @@ import { obtenerStorage } from "@/server/storage";
  * aplicados. Un reporte es una o más tablas.
  */
 
-export type TipoColumna = "texto" | "numero" | "moneda" | "pct";
+/** `moneda` = pesos; `usdt` y `dolares` para los montos en las otras monedas. */
+export type TipoColumna = "texto" | "numero" | "moneda" | "usdt" | "dolares" | "pct";
 
 export interface ColumnaExport {
   titulo: string;
@@ -55,6 +57,23 @@ export interface CabeceraPanel {
   logoUrl: string | null;
 }
 
+/**
+ * Un monto en tres columnas: USDT (la principal) y después pesos y dólares
+ * (ver src/lib/moneda.ts). Usar junto con `celdasMonto`.
+ */
+export function columnasMonto(titulo: string, ancho = 1): ColumnaExport[] {
+  return [
+    { titulo: `${titulo} (USDT)`, tipo: "usdt", ancho },
+    { titulo: `${titulo} ($)`, tipo: "moneda", ancho },
+    { titulo: `${titulo} (US$)`, tipo: "dolares", ancho },
+  ];
+}
+
+/** Las tres celdas de un monto, en el orden de `columnasMonto` (null → "—"). */
+export function celdasMonto(m: Montos | null | undefined): Celda[] {
+  return m ? [m.usdt, m.pesos, m.usd] : [null, null, null];
+}
+
 const PREFIJO_ARCHIVOS = "/api/publico/archivos/";
 
 /** Logo del panel (PNG/JPG, del storage propio o una URL). null si no hay o no se puede leer. */
@@ -84,7 +103,11 @@ export async function cargarLogo(
 
 function celdaTexto(v: Celda, tipo: TipoColumna = "texto"): string {
   if (v === null || v === "") return "—";
+  // Texto ya armado en una columna de montos (ej. "150 USDT", "—"): tal cual.
+  if (typeof v === "string" && tipo !== "texto" && !Number.isFinite(Number(v))) return v;
   if (tipo === "moneda") return formatearPesos(v);
+  if (tipo === "usdt") return formatearUsdt(v);
+  if (tipo === "dolares") return formatearDolares(v);
   if (tipo === "numero") return typeof v === "number" ? formatearNumero(v) : v;
   if (tipo === "pct") return typeof v === "number" ? `${v.toLocaleString("es-AR")} %` : v;
   return String(v);
@@ -248,8 +271,7 @@ function dibujarTabla(l: Lienzo, t: TablaExport, tituloDoc: string) {
     (acc, _w, i) => [...acc, i === 0 ? l.margen : acc[i - 1]! + anchos[i - 1]!],
     [],
   );
-  const derecha = (c: ColumnaExport) =>
-    c.tipo === "numero" || c.tipo === "moneda" || c.tipo === "pct";
+  const derecha = (c: ColumnaExport) => (c.tipo ?? "texto") !== "texto";
   const fila = (valores: Celda[], negrita: boolean) => {
     t.columnas.forEach((c, i) => {
       const s = celdaTexto(valores[i] ?? null, c.tipo);
@@ -339,12 +361,14 @@ const FORMATO: Record<TipoColumna, string | undefined> = {
   texto: undefined,
   numero: "#,##0",
   moneda: '"$" #,##0.00;[Red]-"$" #,##0.00',
+  usdt: '#,##0.00" USDT"',
+  dolares: '"US$" #,##0.00;[Red]-"US$" #,##0.00',
   pct: '0.0" %"',
 };
 
 function valorExcel(v: Celda, tipo: TipoColumna = "texto"): string | number | null {
   if (v === null || v === "") return null;
-  if (tipo === "moneda" || tipo === "numero" || tipo === "pct") {
+  if (tipo !== "texto") {
     const n = typeof v === "number" ? v : Number(v);
     return Number.isFinite(n) ? n : v;
   }

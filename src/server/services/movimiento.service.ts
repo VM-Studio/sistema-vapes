@@ -75,7 +75,7 @@ async function variantesVivas(tx: Tx, ids: string[]) {
     select: {
       id: true,
       nombre: true,
-      ultimoCosto: true,
+      ultimoCostoUsdt: true,
       producto: { select: { nombreCompleto: true } },
     },
   });
@@ -108,7 +108,7 @@ const porVariante = <T extends { varianteId: string }>(items: T[]) =>
 
 /**
  * Carga inicial o entrada sin proveedor. Una transacción, un movimiento
- * INGRESO_MANUAL por ítem. Costos: solo si quien carga es dueño; si
+ * INGRESO_MANUAL por ítem. Costos EN USDT: solo si quien carga es dueño; si
  * `actualizarCosto` y el costo informado difiere del último costo de la
  * variante, lo actualiza (es el que tomarán las próximas ventas). Si no es dueño, se ignoran y el movimiento lleva el costo vigente.
  */
@@ -127,30 +127,31 @@ export async function registrarIngresoManual(
         input.items.map((i) => i.varianteId),
       );
       const conCostos =
-        input.items.some((i) => i.costoUnitario !== undefined) &&
+        input.items.some((i) => i.costoUnitarioUsdt !== undefined) &&
         (await esDuenio(tx, ctx.usuarioId));
 
       let costosActualizados = 0;
       for (const item of porVariante(input.items)) {
         const v = variantes.get(item.varianteId)!;
-        const costoInformado = conCostos ? item.costoUnitario : undefined;
+        const costoInformado = conCostos ? item.costoUnitarioUsdt : undefined;
         await registrarMovimiento(tx, {
           tipo: TipoMovimiento.INGRESO_MANUAL,
           varianteId: item.varianteId,
           depositoId: input.depositoId,
           cantidad: item.cantidad,
-          costoUnitario: costoInformado ?? v.ultimoCosto,
+          costoUnitarioUsdt: costoInformado ?? v.ultimoCostoUsdt,
           motivo: input.motivo,
           usuarioId: ctx.usuarioId,
         });
         if (
           input.actualizarCosto &&
           costoInformado !== undefined &&
-          (v.ultimoCosto === null || !new Prisma.Decimal(costoInformado).equals(v.ultimoCosto))
+          (v.ultimoCostoUsdt === null ||
+            !new Prisma.Decimal(costoInformado).equals(v.ultimoCostoUsdt))
         ) {
           await actualizarUltimoCosto(tx, {
             varianteId: item.varianteId,
-            anterior: v.ultimoCosto,
+            anterior: v.ultimoCostoUsdt,
             nuevo: costoInformado,
             origen: OrigenCostoVariante.INGRESO_MANUAL,
             usuarioId: ctx.usuarioId,
@@ -160,9 +161,9 @@ export async function registrarIngresoManual(
             accion: AccionAuditoria.UPDATE,
             entidad: "Variante",
             entidadId: item.varianteId,
-            datosAntes: { ultimoCosto: v.ultimoCosto?.toFixed(2) ?? null },
+            datosAntes: { ultimoCostoUsdt: v.ultimoCostoUsdt?.toFixed(2) ?? null },
             datosDespues: {
-              ultimoCosto: new Prisma.Decimal(costoInformado).toFixed(2),
+              ultimoCostoUsdt: new Prisma.Decimal(costoInformado).toFixed(2),
               motivo: `Ingreso manual: ${input.motivo}`,
             },
             meta: ctx.meta,
@@ -182,7 +183,7 @@ export async function registrarIngresoManual(
           items: input.items.map((i) => ({
             varianteId: i.varianteId,
             cantidad: i.cantidad,
-            costoUnitario: conCostos ? (i.costoUnitario ?? null) : null,
+            costoUnitarioUsdt: conCostos ? (i.costoUnitarioUsdt ?? null) : null,
           })),
           costosActualizados,
         },

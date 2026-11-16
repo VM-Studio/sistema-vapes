@@ -2,6 +2,7 @@ import { expect, test } from "./base";
 
 import { db, EMAIL_DUENO, llamarAccion, loginDueno, PANEL_COSMETIC, PANEL_VAPES } from "./helpers";
 import { usarCatalogoEjemplo } from "./fixtures";
+import { columnasUsdt } from "./fixtures/usdt";
 
 usarCatalogoEjemplo();
 
@@ -46,6 +47,7 @@ async function clienteConVenta(
       total: precio,
       costoTotal: 0,
       gananciaBruta: precio,
+      ...columnasUsdt(precio, 0),
       items: {
         create: {
           panelId: PANEL_VAPES,
@@ -55,6 +57,7 @@ async function clienteConVenta(
           precioLista: precio,
           precioUnitario: precio,
           costoUnitario: 0,
+          costoUnitarioUsdt: 0,
           subtotal: precio,
         },
       },

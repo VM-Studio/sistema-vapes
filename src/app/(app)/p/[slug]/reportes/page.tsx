@@ -22,7 +22,8 @@ import Link from "next/link";
 
 import { cardVariants } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
+import { textoPrincipal } from "@/lib/moneda";
 import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner } from "@/lib/permisos";
@@ -59,14 +60,14 @@ const ICONOS: Record<ClaveReporte, LucideIcon> = {
   "resumen-mensual": CalendarDays,
 };
 
-/** "12 ventas · 30 vapes vendidos · 2 clientes nuevos · $ 300.000" (lo del mes). */
+/** "12 ventas · 30 vapes vendidos · 2 clientes nuevos · 180 USDT" (lo del mes). */
 function resumenMes(r: RendimientoVendedor | undefined, etiquetaUnidades: string): string {
   if (!r || r.cantidadVentas === 0) return "Todavía no vendió este mes.";
   return [
     `${formatearNumero(r.cantidadVentas)} ${r.cantidadVentas === 1 ? "venta" : "ventas"}`,
     `${formatearNumero(r.unidades)} ${etiquetaUnidades.toLowerCase()}`,
     `${formatearNumero(r.clientesNuevos)} ${r.clientesNuevos === 1 ? "cliente nuevo" : "clientes nuevos"}`,
-    formatearPesos(r.facturado),
+    textoPrincipal(r.facturado),
   ].join(" · ");
 }
 

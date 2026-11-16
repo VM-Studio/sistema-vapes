@@ -49,7 +49,10 @@ export async function panelesDeUsuario(
 export interface ResumenPanel {
   panelId: string;
   ventasHoy: number;
+  /** En pesos. */
   totalHoy: string;
+  /** Σ totalUsdt de las ventas de hoy (cada una a su cotización): el principal. */
+  totalHoyUsdt: string;
   alertasStock: number;
 }
 
@@ -62,7 +65,7 @@ export async function resumenesPaneles(panelIds: string[]): Promise<Map<string, 
       by: ["panelId"],
       where: { panelId: { in: panelIds }, estado: "CONFIRMADA", fecha: { gte: desde } },
       _count: { _all: true },
-      _sum: { total: true },
+      _sum: { total: true, totalUsdt: true },
     }),
     prisma.$queryRaw<{ panel_id: string; n: bigint }[]>`
       SELECT panel_id, COUNT(*) AS n FROM vw_alertas_stock
@@ -78,6 +81,7 @@ export async function resumenesPaneles(panelIds: string[]): Promise<Map<string, 
           panelId: id,
           ventasHoy: v?._count._all ?? 0,
           totalHoy: (v?._sum.total ?? new Prisma.Decimal(0)).toFixed(2),
+          totalHoyUsdt: (v?._sum.totalUsdt ?? new Prisma.Decimal(0)).toFixed(2),
           alertasStock: Number(alertas.find((a) => a.panel_id === id)?.n ?? 0),
         },
       ];

@@ -13,7 +13,7 @@ import {
 } from "recharts";
 
 import { ChartPlaceholder, ChartTheme, ChartTooltipCard } from "@/components/ui/chart-theme";
-import { formatearCompacto, formatearPesos } from "@/lib/format";
+import { formatearCompacto, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export interface PuntoGrafico {
@@ -43,14 +43,14 @@ function Contenido({
           Actual{p.fechaActual ? ` (${p.fechaActual})` : ""}
         </dt>
         <dd className="text-right font-medium">
-          {p.actual === null ? "—" : formatearPesos(p.actual)}
+          {p.actual === null ? "—" : formatearUsdt(p.actual)}
         </dd>
         <dt className="text-muted flex items-center gap-1.5">
           <span className="bg-dato-anterior inline-block size-2.5 shrink-0" aria-hidden />
           Anterior{p.fechaAnterior ? ` (${p.fechaAnterior})` : ""}
         </dt>
         <dd className="text-right font-medium">
-          {p.anterior === null ? "—" : formatearPesos(p.anterior)}
+          {p.anterior === null ? "—" : formatearUsdt(p.anterior)}
         </dd>
         {dif !== null && (
           <>
@@ -63,7 +63,7 @@ function Contenido({
               )}
             >
               {dif > 0 ? "+" : dif < 0 ? "−" : ""}
-              {formatearPesos(Math.abs(dif))}
+              {formatearUsdt(Math.round(Math.abs(dif) * 100) / 100)}
             </dd>
           </>
         )}
@@ -72,10 +72,11 @@ function Contenido({
   );
 }
 
-/** Leyenda propia: punto azul (Actual) y trazo naranja punteado (Anterior). */
+/** Leyenda propia: punto azul (Actual) y trazo naranja punteado (Anterior); los montos van en USDT. */
 function Leyenda() {
   return (
     <ul className="text-muted text-small flex items-center justify-end gap-4" aria-hidden>
+      <li className="text-subtle mr-auto">En USDT</li>
       <li className="flex items-center gap-1.5">
         <span className="bg-dato-actual rounded-circle inline-block size-2.5" />
         Actual
@@ -90,7 +91,7 @@ function Leyenda() {
 
 const ALTO = "h-[280px] md:h-[360px]";
 
-/** Facturado del período actual (azul, con relleno) contra el anterior (naranja punteado). */
+/** Facturado EN USDT del período actual (azul, con relleno) contra el anterior (naranja punteado). */
 export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
   if (!datos.some((p) => p.actual || p.anterior)) {
     return (
@@ -129,7 +130,7 @@ export function GraficoComparativo({ datos }: { datos: PuntoGrafico[] }) {
             <YAxis
               width={60}
               {...ChartTheme.ejeY}
-              tickFormatter={(v: number) => formatearCompacto(v, true)}
+              tickFormatter={(v: number) => formatearCompacto(v)}
             />
             <Tooltip
               content={(props) => (

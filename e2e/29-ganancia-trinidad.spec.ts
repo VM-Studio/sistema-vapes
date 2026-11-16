@@ -18,6 +18,7 @@ import {
   PANEL_VAPES,
 } from "./helpers";
 import { usarCatalogoEjemplo } from "./fixtures";
+import { columnasUsdt } from "./fixtures/usdt";
 
 usarCatalogoEjemplo();
 
@@ -89,6 +90,7 @@ async function venta(o: { tipo: TipoVenta; nuevo: boolean; cantidad: number; fec
         total,
         costoTotal: 0,
         gananciaBruta: total,
+        ...columnasUsdt(total, 0),
         items: {
           create: {
             panelId: PANEL_VAPES,
@@ -98,6 +100,7 @@ async function venta(o: { tipo: TipoVenta; nuevo: boolean; cantidad: number; fec
             precioLista: precio,
             precioUnitario: precio,
             costoUnitario: 0,
+            costoUnitarioUsdt: 0,
             subtotal: total,
           },
         },

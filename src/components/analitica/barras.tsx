@@ -1,5 +1,5 @@
 import { ChartPlaceholder } from "@/components/ui/chart-theme";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export interface Barra {
@@ -7,6 +7,8 @@ export interface Barra {
   valor: number;
   /** Texto secundario ("12 ventas"), en gris al lado de la etiqueta. */
   detalle?: string;
+  /** Lo mismo en pesos y dólares ("$ 21.000 · US$ 13,30"), chiquito bajo el valor. */
+  equivalentes?: string;
 }
 
 /** Colores de la marca por barra (solo tokens de gráfico). */
@@ -38,13 +40,14 @@ export function BarrasHorizontales({
   categorias = false,
 }: {
   datos: Barra[];
+  /** `valor` es un monto en USDT (si no, una cantidad). */
   moneda?: boolean;
   /** Color de cada barra en orden (default: todas azules). */
   colores?: (keyof typeof COLOR)[];
   /** Cada barra es una categoría: toma la escala fija en orden (azul, azul claro, naranja…). */
   categorias?: boolean;
 }) {
-  const fmt = (v: number) => (moneda ? formatearPesos(v) : formatearNumero(v));
+  const fmt = (v: number) => (moneda ? formatearUsdt(v) : formatearNumero(v));
   if (!datos.some((d) => d.valor)) {
     return (
       <ChartPlaceholder mensaje="Todavía no hay datos en este período" className="h-40 md:h-44" />
@@ -62,7 +65,12 @@ export function BarrasHorizontales({
                 <span className="text-foreground font-medium">{d.etiqueta}</span>
                 {d.detalle && <span className="text-subtle"> · {d.detalle}</span>}
               </span>
-              <span className="shrink-0 font-semibold tabular-nums">{fmt(d.valor)}</span>
+              <span className="flex shrink-0 flex-col items-end">
+                <span className="font-semibold tabular-nums">{fmt(d.valor)}</span>
+                {d.equivalentes && (
+                  <span className="text-subtle text-xs tabular-nums">{d.equivalentes}</span>
+                )}
+              </span>
             </div>
             <div className="bg-surface-3 h-2.5 w-full" aria-hidden>
               <div

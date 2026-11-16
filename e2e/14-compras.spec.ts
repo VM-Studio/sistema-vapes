@@ -153,8 +153,9 @@ test("compra a Lucas: 10 + 10 de dos sabores, Confirmar (sin stock) y después R
     db.variante.findUniqueOrThrow({ where: { id: mango.id } }),
     db.variante.findUniqueOrThrow({ where: { id: uva.id } }),
   ]);
-  expect(mangoDespues.ultimoCosto?.toFixed(0)).toBe("8100");
-  expect(uvaDespues.ultimoCosto?.toFixed(0)).toBe("8775");
+  // Costo en USDT (moneda de los costos): 6 USDT y 6,50 USDT tal cual se cargaron.
+  expect(mangoDespues.ultimoCostoUsdt?.toFixed(2)).toBe("6.00");
+  expect(uvaDespues.ultimoCostoUsdt?.toFixed(2)).toBe("6.50");
 
   // Precio por producto (en USDT): gana el costo del último ítem cargado (Uva, 6,50 USDT).
   const precio = await db.proveedorProducto.findFirstOrThrow({

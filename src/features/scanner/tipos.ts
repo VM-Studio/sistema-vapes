@@ -34,7 +34,7 @@ export interface VarianteEncontrada {
   precioVentaProducto: string;
   tienePrecioPropio: boolean;
   /** Costo de la última compra. null para quien no es dueño (se filtra en el servidor). */
-  ultimoCosto: string | null;
+  ultimoCostoUsdt: string | null;
   stockMinimo: number;
   /** Todos los depósitos activos del panel (principal primero). */
   stockPorDeposito: StockEnDeposito[];

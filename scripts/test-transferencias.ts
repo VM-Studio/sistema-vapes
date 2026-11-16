@@ -265,7 +265,7 @@ async function main() {
     ctx,
     cargarStockSchema.parse({
       depositoId: ayres.id,
-      items: [{ varianteId: id("Menta"), cantidad: 3, costoUnitario: "8500,50" }],
+      items: [{ varianteId: id("Menta"), cantidad: 3, costoUnitarioUsdt: "8,50" }],
     }),
   );
   const menta = await db.variante.findUniqueOrThrow({ where: { id: id("Menta") } });
@@ -279,11 +279,11 @@ async function main() {
   });
   check(
     conCosto.costosActualizados === 1 &&
-      menta.ultimoCosto?.toFixed(2) === "8500.50" &&
+      menta.ultimoCostoUsdt?.toFixed(2) === "8.50" &&
       histMenta?.origen === "INGRESO_MANUAL" &&
-      histMenta.costoNuevo.toFixed(2) === "8500.50" &&
-      movMenta?.costoUnitario?.toFixed(2) === "8500.50",
-    "costo en la carga: dueño informa $8500,50 → último costo, historial y movimiento",
+      histMenta.costoNuevo.toFixed(2) === "8.50" &&
+      movMenta?.costoUnitarioUsdt?.toFixed(2) === "8.50",
+    "costo en la carga: dueño informa 8,50 USDT → último costo, historial y movimiento",
   );
   const empleado = await prisma.usuario.findFirst({
     where: { rol: { not: RolUsuario.OWNER }, deletedAt: null },
@@ -291,11 +291,14 @@ async function main() {
   if (empleado) {
     const sinCosto = await cargarStockPorEscaneo(
       { ...ctx, usuarioId: empleado.id },
-      { depositoId: ayres.id, items: [{ varianteId: id("Menta"), cantidad: 1, costoUnitario: 1 }] },
+      {
+        depositoId: ayres.id,
+        items: [{ varianteId: id("Menta"), cantidad: 1, costoUnitarioUsdt: 1 }],
+      },
     );
     const mentaDespues = await db.variante.findUniqueOrThrow({ where: { id: id("Menta") } });
     check(
-      sinCosto.costosActualizados === 0 && mentaDespues.ultimoCosto?.toFixed(2) === "8500.50",
+      sinCosto.costosActualizados === 0 && mentaDespues.ultimoCostoUsdt?.toFixed(2) === "8.50",
       "un empleado no puede cambiar el costo desde la carga (se ignora)",
     );
   }

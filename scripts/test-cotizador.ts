@@ -85,7 +85,7 @@ async function crearProducto(ctx: Ctx, nombre: string, sabores: string[], suf: s
           create: sabores.map((s, i) => ({
             nombre: s,
             sku: `TQ-${nombre.slice(0, 2).toUpperCase()}${i}-${suf}-${ctx.panelId.slice(4, 7)}`,
-            ultimoCosto: "5000.00",
+            ultimoCostoUsdt: "3.30",
           })),
         },
       },

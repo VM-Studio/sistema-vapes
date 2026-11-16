@@ -152,7 +152,7 @@ beforeAll(async () => {
         nombre: `Pod R ${suf}`,
         especificacion: "8000",
         precioVenta: "8000.00",
-        variantes: { create: [{ nombre: "Menta", sku: `RM-${suf}`, ultimoCosto: "4000.00" }] },
+        variantes: { create: [{ nombre: "Menta", sku: `RM-${suf}`, ultimoCostoUsdt: "2.50" }] },
       },
       include: { variantes: true },
     });

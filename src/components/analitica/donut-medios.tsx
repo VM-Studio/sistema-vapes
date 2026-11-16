@@ -3,7 +3,7 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { ChartPlaceholder, ChartTheme, colorSerie } from "@/components/ui/chart-theme";
-import { formatearPesos } from "@/lib/format";
+import { formatearUsdt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Orden de los medios del panel: Efectivo, Transferencia y Binance o Mercado Libre (el
@@ -15,7 +15,10 @@ const PUNTO = ["bg-serie-1", "bg-serie-2", "bg-serie-3"];
 export interface SegmentoDonut {
   etiqueta: string;
   cantidad: number;
+  /** En USDT. */
   total: number;
+  /** Lo mismo en pesos y dólares, chiquito en la leyenda. */
+  equivalentes?: string;
 }
 
 export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
@@ -49,14 +52,14 @@ export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(v) => formatearPesos(Number(v))}
+                formatter={(v) => formatearUsdt(Number(v))}
                 contentStyle={ChartTheme.tooltip}
               />
             </PieChart>
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-muted text-small">Total</span>
-            <span className="text-h3 font-bold tabular-nums">{formatearPesos(total)}</span>
+            <span className="text-h3 font-bold tabular-nums">{formatearUsdt(total)}</span>
           </div>
         </div>
         <ul className="text-small divide-border flex w-full min-w-0 flex-col divide-y">
@@ -69,8 +72,13 @@ export function DonutMedios({ datos }: { datos: SegmentoDonut[] }) {
               <span className="text-muted min-w-0 flex-1 truncate">{d.etiqueta}</span>
               <span className="flex flex-col items-end">
                 <span className="font-semibold whitespace-nowrap tabular-nums">
-                  {formatearPesos(d.total)}
+                  {formatearUsdt(d.total)}
                 </span>
+                {d.equivalentes && (
+                  <span className="text-subtle text-xs whitespace-nowrap tabular-nums">
+                    {d.equivalentes}
+                  </span>
+                )}
                 <span className="text-subtle text-xs whitespace-nowrap tabular-nums">
                   {total > 0 ? `${Math.round((d.total / total) * 100)} %` : "—"}
                 </span>

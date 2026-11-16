@@ -21,7 +21,14 @@ import type { CtxPanel } from "@/server/auth/permissions";
 import { ForbiddenError, NotFoundError } from "@/server/errors";
 import { reporte, type ClaveReporte } from "@/server/reportes/catalogo";
 import { veFacturadoCtx } from "@/server/services/ganancia-vendedor.service";
-import type { Celda, Exportacion, TablaExport } from "@/server/reportes/exportar";
+import {
+  celdasMonto,
+  columnasMonto,
+  type Celda,
+  type ColumnaExport,
+  type Exportacion,
+  type TablaExport,
+} from "@/server/reportes/exportar";
 import {
   filtrosComprasSchema,
   filtrosDevolucionesSchema,
@@ -43,6 +50,7 @@ import {
   ventasPorMedioPago,
   ventasPorTipo,
   type Comparado,
+  type ComparadoMontos,
   type Periodo,
 } from "@/server/services/analitica.service";
 import {
@@ -52,6 +60,7 @@ import {
   productosConVariosProveedores,
 } from "@/server/services/proveedor.service";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
+import { sumarMontos } from "@/lib/moneda";
 import {
   comprasPorProveedor,
   opcionesFiltros,
@@ -104,9 +113,31 @@ const textoCotizacion = (c: { valor: number; obtenidoAt: string; fuente: string 
 
 const filaComparado = (nombre: string, c: Comparado<string> | Comparado<number>): Celda[] => [
   nombre,
-  typeof c.actual === "number" ? c.actual : c.actual,
-  typeof c.anterior === "number" ? c.anterior : c.anterior,
+  c.actual,
+  c.anterior,
   c.deltaPct,
+];
+
+/** Montos comparados: USDT (actual, anterior, variación en USDT) y después pesos y dólares. */
+const COLUMNAS_COMPARADO_MONTOS: ColumnaExport[] = [
+  { titulo: "Indicador", ancho: 2 },
+  { titulo: "Actual (USDT)", tipo: "usdt" },
+  { titulo: "Anterior (USDT)", tipo: "usdt" },
+  { titulo: "Variación", tipo: "pct" },
+  { titulo: "Actual ($)", tipo: "moneda" },
+  { titulo: "Anterior ($)", tipo: "moneda" },
+  { titulo: "Actual (US$)", tipo: "dolares" },
+  { titulo: "Anterior (US$)", tipo: "dolares" },
+];
+const filaComparadoMontos = (nombre: string, c: ComparadoMontos): Celda[] => [
+  nombre,
+  c.actual.usdt,
+  c.anterior.usdt,
+  c.deltaPct,
+  c.actual.pesos,
+  c.anterior.pesos,
+  c.actual.usd,
+  c.anterior.usd,
 ];
 
 export async function armarExportacion(
@@ -235,24 +266,22 @@ export async function armarExportacion(
         { titulo: "Anterior", tipo: "numero" as const },
         { titulo: "Variación", tipo: "pct" as const },
       ];
-      const compPesos = comp.map((c, i) =>
-        i === 1 || i === 2 ? { ...c, tipo: "moneda" as const } : c,
-      );
       return {
         titulo: "Rendimiento de la empresa",
         archivo: archivo("empresa"),
         periodo: etiqueta,
-        filtros: [],
+        filtros: ["Montos en USDT: cada venta a la cotización de su momento"],
+        apaisado: true,
         tablas: [
           {
             titulo: "Montos",
-            columnas: compPesos,
+            columnas: COLUMNAS_COMPARADO_MONTOS,
             filas: [
-              filaComparado("Facturado", k.facturado),
-              ...(k.ganancia ? [filaComparado("Ganancia bruta", k.ganancia)] : []),
-              filaComparado("Ticket promedio", k.ticketPromedio),
-              filaComparado("Compras recibidas", compras.compras),
-              filaComparado("Costo de lo vendido", compras.costoVendido),
+              filaComparadoMontos("Facturado", k.facturado),
+              ...(k.ganancia ? [filaComparadoMontos("Ganancia bruta", k.ganancia)] : []),
+              filaComparadoMontos("Ticket promedio", k.ticketPromedio),
+              filaComparadoMontos("Compras recibidas", compras.compras),
+              filaComparadoMontos("Costo de lo vendido", compras.costoVendido),
             ],
           },
           {
@@ -271,9 +300,9 @@ export async function armarExportacion(
             columnas: [
               { titulo: "Medio", ancho: 2 },
               { titulo: "Ventas", tipo: "numero" },
-              { titulo: "Total", tipo: "moneda" },
+              ...columnasMonto("Total"),
             ],
-            filas: medios.map((m) => [m.etiqueta, m.cantidad, m.total]),
+            filas: medios.map((m) => [m.etiqueta, m.cantidad, ...celdasMonto(m.total)]),
           },
           {
             titulo: "Por tipo",
@@ -281,38 +310,48 @@ export async function armarExportacion(
               { titulo: "Tipo", ancho: 2 },
               { titulo: "Ventas", tipo: "numero" },
               { titulo: "Unidades", tipo: "numero" },
-              { titulo: "Total", tipo: "moneda" },
+              ...columnasMonto("Total"),
             ],
-            filas: tipos.map((t) => [t.etiqueta, t.cantidad, t.unidades, t.total]),
+            filas: tipos.map((t) => [t.etiqueta, t.cantidad, t.unidades, ...celdasMonto(t.total)]),
           },
           {
             titulo: "Por galpón",
             columnas: [
               { titulo: "Galpón", ancho: 2 },
               { titulo: "Ventas", tipo: "numero" },
-              { titulo: "Total", tipo: "moneda" },
+              ...columnasMonto("Total"),
             ],
-            filas: depositos.map((d) => [d.nombre, d.cantidad, d.total]),
+            filas: depositos.map((d) => [d.nombre, d.cantidad, ...celdasMonto(d.total)]),
           },
           {
             titulo: "Productos más vendidos",
             columnas: [
               { titulo: "Producto", ancho: 3 },
               { titulo: "Unidades", tipo: "numero" },
-              { titulo: "Facturado", tipo: "moneda" },
-              { titulo: "Ganancia", tipo: "moneda" },
+              ...columnasMonto("Facturado"),
+              ...(k.ganancia ? columnasMonto("Ganancia") : []),
             ],
-            filas: top.map((t) => [t.nombre, t.unidades, t.facturado, t.ganancia]),
+            filas: top.map((t) => [
+              t.nombre,
+              t.unidades,
+              ...celdasMonto(t.facturado),
+              ...(k.ganancia ? celdasMonto(t.ganancia) : []),
+            ]),
           },
           {
             titulo: "Sabores más vendidos",
             columnas: [
               { titulo: "Sabor", ancho: 3 },
               { titulo: "Unidades", tipo: "numero" },
-              { titulo: "Facturado", tipo: "moneda" },
-              { titulo: "Ganancia", tipo: "moneda" },
+              ...columnasMonto("Facturado"),
+              ...(k.ganancia ? columnasMonto("Ganancia") : []),
             ],
-            filas: sabores.map((t) => [t.nombre, t.unidades, t.facturado, t.ganancia]),
+            filas: sabores.map((t) => [
+              t.nombre,
+              t.unidades,
+              ...celdasMonto(t.facturado),
+              ...(k.ganancia ? celdasMonto(t.ganancia) : []),
+            ]),
           },
         ],
       };
@@ -325,37 +364,37 @@ export async function armarExportacion(
         titulo: "Rendimiento por vendedor",
         archivo: archivo("vendedores"),
         periodo: etiqueta,
-        filtros: [],
+        filtros: ["Montos en USDT: cada venta a la cotización de su momento"],
         apaisado: true,
         tablas: [
           {
             columnas: [
-              { titulo: "Vendedor", ancho: 1.8 },
-              { titulo: "Ventas", tipo: "numero", ancho: 0.8 },
-              { titulo: "Unidades", tipo: "numero", ancho: 0.9 },
-              { titulo: "Facturado", tipo: "moneda", ancho: 1.3 },
-              { titulo: "Unitarias", tipo: "moneda", ancho: 1.2 },
-              { titulo: "Mayoristas", tipo: "moneda", ancho: 1.2 },
-              { titulo: "Ticket prom.", tipo: "moneda", ancho: 1.1 },
-              { titulo: "Cotiz. conv.", ancho: 1 },
-              { titulo: "Clientes nuevos", tipo: "numero", ancho: 1 },
-              { titulo: "Ventas a nuevos", tipo: "numero", ancho: 1 },
-              { titulo: "Devol.", tipo: "numero", ancho: 0.7 },
-              { titulo: "Comisión est.", tipo: "moneda", ancho: 1.2 },
+              { titulo: "Vendedor", ancho: 1.6 },
+              { titulo: "Ventas", tipo: "numero", ancho: 0.7 },
+              { titulo: "Unidades", tipo: "numero", ancho: 0.8 },
+              ...columnasMonto("Facturado", 1.2),
+              { titulo: "Unitarias (USDT)", tipo: "usdt", ancho: 1.1 },
+              { titulo: "Mayoristas (USDT)", tipo: "usdt", ancho: 1.1 },
+              { titulo: "Ticket prom. (USDT)", tipo: "usdt", ancho: 1 },
+              { titulo: "Cotiz. conv.", ancho: 0.8 },
+              { titulo: "Clientes nuevos", tipo: "numero", ancho: 0.8 },
+              { titulo: "Ventas a nuevos", tipo: "numero", ancho: 0.8 },
+              { titulo: "Devol.", tipo: "numero", ancho: 0.6 },
+              ...columnasMonto("Comisión est.", 1.1),
             ],
             filas: filas.map((v) => [
               v.nombre,
               v.cantidadVentas,
               v.unidades,
-              v.facturado,
-              v.unitarias.total,
-              v.mayoristas.total,
-              v.ticketPromedio,
+              ...celdasMonto(v.facturado),
+              v.unitarias.total.usdt,
+              v.mayoristas.total.usdt,
+              v.ticketPromedio.usdt,
               `${v.cotizaciones.convertidas}/${v.cotizaciones.creadas}`,
               v.clientesNuevos,
               v.ventasAClientesNuevos,
               v.devoluciones,
-              v.comision?.estimada ?? null,
+              ...celdasMonto(v.comision?.estimada),
             ]),
           },
         ],
@@ -383,6 +422,7 @@ export async function armarExportacion(
           ...(f.depositoId ? [`Galpón: ${nombre(f.depositoId)}`] : []),
           ...(f.medioPago ? [`Medio de pago: ${ETIQUETA_MEDIO_PAGO[f.medioPago]}`] : []),
           ...(f.tipo ? [`Tipo: ${ETIQUETA_TIPO_VENTA[f.tipo as TipoVenta]}`] : []),
+          "Montos en USDT a la cotización de cada venta",
         ],
         tablas: [
           {
@@ -396,8 +436,8 @@ export async function armarExportacion(
               { titulo: "Medio", ancho: 1 },
               { titulo: "Estado", ancho: 0.9 },
               { titulo: "Unid.", tipo: "numero", ancho: 0.6 },
-              { titulo: "Total", tipo: "moneda", ancho: 1.1 },
-              ...(owner ? [{ titulo: "Ganancia", tipo: "moneda" as const, ancho: 1.1 }] : []),
+              ...columnasMonto("Total", 1.1),
+              ...(owner ? columnasMonto("Ganancia", 1.1) : []),
             ],
             filas: v.filas.map((x) => [
               x.codigo,
@@ -409,8 +449,8 @@ export async function armarExportacion(
               etiquetaMedioPrincipal(x.medioPago),
               ESTADO_VENTA_UI[x.estado].label,
               x.unidades,
-              x.total,
-              ...(owner ? [x.ganancia] : []),
+              ...celdasMonto(x.total),
+              ...(owner ? celdasMonto(x.ganancia) : []),
             ]),
             totales: [
               `${v.resumen.ventas} ventas`,
@@ -422,8 +462,8 @@ export async function armarExportacion(
               "",
               "",
               v.resumen.unidades,
-              v.resumen.total,
-              ...(owner ? [v.resumen.ganancia] : []),
+              ...celdasMonto(v.resumen.total),
+              ...(owner ? celdasMonto(v.resumen.ganancia) : []),
             ],
           },
         ],
@@ -556,16 +596,16 @@ export async function armarExportacion(
           {
             titulo: "Compras recibidas por proveedor",
             columnas: [
-              { titulo: "Proveedor", ancho: 2 },
-              { titulo: "Tienda", ancho: 2 },
-              { titulo: "Compras", tipo: "numero" },
-              { titulo: "Unidades", tipo: "numero" },
-              { titulo: "Total", tipo: "moneda" },
-              { titulo: "Total USDT", ancho: 1.2 },
-              { titulo: "Comisión pasista", tipo: "moneda" },
-              { titulo: "Gastos extras", tipo: "moneda" },
-              { titulo: "Costo final", tipo: "moneda" },
-              { titulo: "Costo final / u.", tipo: "moneda" },
+              { titulo: "Proveedor", ancho: 1.8 },
+              { titulo: "Tienda", ancho: 1.6 },
+              { titulo: "Compras", tipo: "numero", ancho: 0.8 },
+              { titulo: "Unidades", tipo: "numero", ancho: 0.8 },
+              ...columnasMonto("Total", 1.1),
+              { titulo: "Comisión pasista (USDT)", tipo: "usdt" },
+              { titulo: "Gastos extras (USDT)", tipo: "usdt" },
+              ...columnasMonto("Costo final", 1.1),
+              { titulo: "Costo final / u. (USDT)", tipo: "usdt" },
+              { titulo: "USDT aprox.", ancho: 0.7 },
               { titulo: "Última", ancho: 1 },
             ],
             filas: porProv.map((x) => [
@@ -573,37 +613,31 @@ export async function armarExportacion(
               x.tienda,
               x.compras,
               x.unidades,
-              x.total,
-              x.totalUSDT === null ? "—" : conMoneda(x.totalUSDT, "USDT"),
-              x.comision,
-              x.gastos,
-              x.costoFinalTotal,
-              x.costoFinalUnidad ?? "—",
+              ...celdasMonto(x.total),
+              x.comision.usdt,
+              x.gastos.usdt,
+              ...celdasMonto(x.costoFinalTotal),
+              x.costoFinalUnidad?.usdt ?? null,
+              x.aproximado ? "Sí" : "No",
               formatearFecha(x.ultima),
             ]),
-            totales: [
-              "Total",
-              "",
-              porProv.reduce((a, x) => a + x.compras, 0),
-              porProv.reduce((a, x) => a + x.unidades, 0),
-              porProv.reduce((a, x) => a + Number(x.total), 0).toFixed(2),
-              porProv.some((x) => x.totalUSDT !== null)
-                ? conMoneda(
-                    porProv.reduce((a, x) => a + Number(x.totalUSDT ?? 0), 0).toFixed(2),
-                    "USDT",
-                  )
-                : "—",
-              porProv.reduce((a, x) => a + Number(x.comision), 0).toFixed(2),
-              porProv.reduce((a, x) => a + Number(x.gastos), 0).toFixed(2),
-              porProv.reduce((a, x) => a + Number(x.costoFinalTotal), 0).toFixed(2),
-              (() => {
-                const u = porProv.reduce((a, x) => a + x.unidades, 0);
-                return u > 0
-                  ? (porProv.reduce((a, x) => a + Number(x.costoFinalTotal), 0) / u).toFixed(2)
-                  : "—";
-              })(),
-              "",
-            ],
+            totales: (() => {
+              const unidades = porProv.reduce((a, x) => a + x.unidades, 0);
+              const costoFinal = sumarMontos(porProv.map((x) => x.costoFinalTotal));
+              return [
+                "Total",
+                "",
+                porProv.reduce((a, x) => a + x.compras, 0),
+                unidades,
+                ...celdasMonto(sumarMontos(porProv.map((x) => x.total))),
+                sumarMontos(porProv.map((x) => x.comision)).usdt,
+                sumarMontos(porProv.map((x) => x.gastos)).usdt,
+                ...celdasMonto(costoFinal),
+                unidades > 0 ? (Number(costoFinal.usdt) / unidades).toFixed(2) : null,
+                porProv.some((x) => x.aproximado) ? "Sí" : "No",
+                "",
+              ];
+            })(),
           },
           {
             titulo: "Evolución de precios",
@@ -656,14 +690,14 @@ export async function armarExportacion(
             { titulo: "Teléfono", ancho: 1.4 },
             { titulo: "Compras", tipo: "numero", ancho: 0.8 },
             { titulo: "Unidades", tipo: "numero", ancho: 0.8 },
-            { titulo: "Total", tipo: "moneda" },
+            ...columnasMonto("Total"),
           ],
           filas: c.top.map((x) => [
             x.nombre,
             telefonoVisible(x.telefono),
             x.compras,
             x.unidades,
-            x.total,
+            ...celdasMonto(x.total),
           ]),
         });
       }
@@ -737,40 +771,41 @@ export async function armarExportacion(
             titulo: "Resumen",
             columnas: [
               { titulo: "Indicador", ancho: 2.5 },
-              { titulo: "Valor", tipo: "numero" },
+              { titulo: "Cantidad", tipo: "numero" },
+              ...columnasMonto("Monto"),
             ],
             filas: [
-              ["Ventas", d.total.ventas],
-              ["Unidades", d.total.unidades],
-              ["Unidades a precio Mercado Libre", d.total.unidadesPrecioML],
-              ["Total facturado", Number(d.total.facturado)],
+              ["Ventas", d.total.ventas, null, null, null],
+              ["Unidades", d.total.unidades, null, null, null],
+              ["Unidades a precio Mercado Libre", d.total.unidadesPrecioML, null, null, null],
+              ["Total facturado", null, ...celdasMonto(d.total.facturado)],
               ...(d.total.ganancia !== null
-                ? [["Ganancia bruta", Number(d.total.ganancia)] as Celda[]]
+                ? [["Ganancia bruta", null, ...celdasMonto(d.total.ganancia)]]
                 : []),
             ],
           },
           {
-            titulo: "Por producto y sabor",
+            titulo: "Por producto y sabor (neto del descuento de cada venta)",
             columnas: [
               { titulo: "Producto", ancho: 2.5 },
               { titulo: "Sabor", ancho: 1.6 },
               { titulo: "Unidades", tipo: "numero" },
-              { titulo: "Facturado", tipo: "moneda" },
-              ...(owner ? [{ titulo: "Ganancia", tipo: "moneda" as const }] : []),
+              ...columnasMonto("Facturado"),
+              ...(owner ? columnasMonto("Ganancia") : []),
             ],
             filas: d.filas.map((x) => [
               x.producto,
               saborVisible(x.sabor) ?? "—",
               x.unidades,
-              Number(x.facturado),
-              ...(x.ganancia !== null ? [Number(x.ganancia)] : []),
+              ...celdasMonto(x.facturado),
+              ...(owner ? celdasMonto(x.ganancia) : []),
             ]),
             totales: [
               "Total",
               "",
               d.total.unidades,
-              Number(d.total.facturado),
-              ...(owner ? [""] : []),
+              ...celdasMonto(d.total.facturado),
+              ...(owner ? celdasMonto(d.total.ganancia) : []),
             ],
           },
         ],

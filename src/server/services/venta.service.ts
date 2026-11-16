@@ -41,6 +41,9 @@ import {
   puedeFiados,
   type CtxFiados,
 } from "@/server/services/fiado.service";
+import type { Montos } from "@/lib/moneda";
+import { costoDeVenta, gananciaDeVenta, sumar, totalDeVenta } from "@/server/moneda/montos-venta";
+import { cotizacionesParaVenta } from "@/server/services/cambio.service";
 import { registrarMovimiento } from "@/server/services/stock.service";
 
 /**
@@ -65,6 +68,11 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  * - `numero` es correlativo por panel (Secuencia VENTA) y se toma en la misma
  *   transacción; `codigo` = formatearIdVenta(slug, numero) ("VAP-000001").
  * - Costos y ganancia: solo los ve el OWNER (`verCostos`); a un empleado no le llegan.
+ * - MONEDA: USDT es la principal. Precios y cobros en pesos; costos en USDT.
+ *   Cada venta congela la cotización USDT y la del blue del momento:
+ *   totalUsdt = total ÷ cotización USDT; costo en pesos de cada ítem = costo
+ *   USDT × cotización (a centavos); gananciaUsdt = totalUsdt − costoTotalUsdt.
+ *   La DB verifica todas estas cuentas (CHECK + trigger diferido).
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -263,6 +271,8 @@ async function generarEnTx(
     );
 
   // 2. Precios de lista y costos del servidor; permisos para precio especial y descuento.
+  //    Cotizaciones del momento: quedan congeladas en la venta.
+  const cambio = await cotizacionesParaVenta();
   const variantes = await tx.variante.findMany({
     where: { id: { in: ids }, deletedAt: null },
     select: {
@@ -271,7 +281,7 @@ async function generarEnTx(
       activo: true,
       productoId: true,
       precioVenta: true,
-      ultimoCosto: true,
+      ultimoCostoUsdt: true,
       producto: {
         select: {
           nombreCompleto: true,
@@ -318,7 +328,9 @@ async function generarEnTx(
         precioUnitario,
         esPrecioEspecial,
         origenPrecio,
-        costoUnitario: D(costoParaVenta(v)),
+        costoUnitarioUsdt: D(costoParaVenta(v)),
+        // En pesos, a la cotización de esta venta (la DB verifica que coincida).
+        costoUnitario: r2(D(costoParaVenta(v)).mul(cambio.usdt)),
         subtotal: precioUnitario.mul(i.cantidad),
       };
     });
@@ -336,6 +348,8 @@ async function generarEnTx(
   }
   const total = subtotal.minus(descuento);
   const costoTotal = items.reduce((a, i) => a.plus(i.costoUnitario.mul(i.cantidad)), CERO);
+  const totalUsdt = r2(total.div(cambio.usdt));
+  const costoTotalUsdt = items.reduce((a, i) => a.plus(i.costoUnitarioUsdt.mul(i.cantidad)), CERO);
 
   // 3. Stock en el galpón: se informa todo lo que falta antes de mover nada.
   const stocks = await tx.stock.findMany({
@@ -435,6 +449,11 @@ async function generarEnTx(
       total,
       costoTotal,
       gananciaBruta: total.minus(costoTotal),
+      tipoCambioUsdt: cambio.usdt,
+      tipoCambioUsd: cambio.usd,
+      totalUsdt,
+      costoTotalUsdt,
+      gananciaUsdt: totalUsdt.minus(costoTotalUsdt),
       notas: input.notas ?? null,
       clienteNuevo,
       verificadaPorEscaneo: verificada,
@@ -456,6 +475,7 @@ async function generarEnTx(
           esPrecioEspecial: i.esPrecioEspecial,
           origenPrecio: i.origenPrecio,
           costoUnitario: i.costoUnitario,
+          costoUnitarioUsdt: i.costoUnitarioUsdt,
           subtotal: i.subtotal,
         })),
       },
@@ -492,7 +512,7 @@ async function generarEnTx(
       varianteId: i.varianteId,
       depositoId: deposito.id,
       cantidad: i.cantidad,
-      costoUnitario: i.costoUnitario,
+      costoUnitarioUsdt: i.costoUnitarioUsdt,
       motivo: `Venta ${codigo}`,
       referenciaTipo: "VENTA",
       referenciaId: venta.id,
@@ -527,6 +547,10 @@ async function generarEnTx(
       descuento: dec(descuento),
       total: dec(total),
       costoTotal: dec(costoTotal),
+      tipoCambioUsdt: dec(cambio.usdt),
+      tipoCambioUsd: dec(cambio.usd),
+      totalUsdt: dec(totalUsdt),
+      costoTotalUsdt: dec(costoTotalUsdt),
       items: items.map((i) => ({
         varianteId: i.varianteId,
         cantidad: i.cantidad,
@@ -628,7 +652,7 @@ export async function anularVenta(
           varianteId: item.varianteId,
           depositoId: venta.depositoId,
           cantidad: item.cantidad,
-          costoUnitario: item.costoUnitario,
+          costoUnitarioUsdt: item.costoUnitarioUsdt,
           motivo: `Anulación venta ${venta.codigo}: ${m}`,
           referenciaTipo: "VENTA",
           referenciaId: venta.id,
@@ -751,7 +775,10 @@ export interface VentaListada {
   deposito: string;
   items: number;
   unidades: number;
+  /** En pesos (lo cobrado). */
   total: string;
+  /** El total en las tres monedas (USDT principal, a la cotización de la venta). */
+  totales: Montos;
   /** Medio principal; null si se fió todo. */
   medioPago: MedioPago | null;
   estadoPago: EstadoPago;
@@ -759,7 +786,7 @@ export interface VentaListada {
   /** Último pago vigente (al vender o cobro posterior): «Pagada con … el …». */
   ultimoPago: { medioPago: MedioPago; fecha: Date } | null;
   /** null si el usuario no es OWNER. */
-  gananciaBruta: string | null;
+  ganancia: Montos | null;
   /** Todas las unidades se escanearon contra el carrito ("Verificar con pistola"). */
   verificadaPorEscaneo: boolean;
   /** «Escanea Charly»: estado del escaneo remoto (null = no se pidió). */
@@ -773,8 +800,8 @@ export interface ListadoVentas {
   total: number;
   page: number;
   pageSize: number;
-  /** Totales del período (solo ventas confirmadas). */
-  resumen: { cantidad: number; total: string; gananciaBruta: string | null };
+  /** Totales del período (solo ventas confirmadas), suma de cada venta a su cotización. */
+  resumen: { cantidad: number; total: Montos; ganancia: Montos | null };
 }
 
 export async function listarVentas(
@@ -807,10 +834,15 @@ export async function listarVentas(
         retiradaPor: { select: { nombre: true } },
       },
     }),
-    db.venta.aggregate({
+    db.venta.findMany({
       where: { AND: [where, { estado: EstadoVenta.CONFIRMADA }] },
-      _count: true,
-      _sum: { total: true, gananciaBruta: true },
+      select: {
+        total: true,
+        totalUsdt: true,
+        gananciaBruta: true,
+        gananciaUsdt: true,
+        tipoCambioUsd: true,
+      },
     }),
   ]);
   return {
@@ -826,11 +858,12 @@ export async function listarVentas(
       items: v.items.length,
       unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
       total: dec(v.total),
+      totales: totalDeVenta(v),
       medioPago: v.medioPago,
       estadoPago: v.estadoPago,
       saldoPendiente: dec(v.saldoPendiente),
       ultimoPago: v.pagos[0] ?? null,
-      gananciaBruta: opciones.verCostos ? dec(v.gananciaBruta) : null,
+      ganancia: opciones.verCostos ? gananciaDeVenta(v) : null,
       verificadaPorEscaneo: v.verificadaPorEscaneo,
       escaneo: estadoEscaneoDe(v),
       retiro: { retiradaAt: v.retiradaAt, retiradaPor: v.retiradaPor?.nombre ?? null },
@@ -839,9 +872,9 @@ export async function listarVentas(
     page: f.page,
     pageSize: f.pageSize,
     resumen: {
-      cantidad: agregado._count,
-      total: dec(agregado._sum.total ?? CERO),
-      gananciaBruta: opciones.verCostos ? dec(agregado._sum.gananciaBruta ?? CERO) : null,
+      cantidad: agregado.length,
+      total: sumar(agregado.map(totalDeVenta)),
+      ganancia: opciones.verCostos ? sumar(agregado.map(gananciaDeVenta)) : null,
     },
   };
 }
@@ -950,8 +983,12 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
     subtotal: dec(v.subtotal),
     descuento: dec(v.descuento),
     total: dec(v.total),
-    costoTotal: costos ? dec(v.costoTotal) : null,
-    gananciaBruta: costos ? dec(v.gananciaBruta) : null,
+    /** USDT principal: total, costo y ganancia a la cotización congelada en la venta. */
+    totales: totalDeVenta(v),
+    costo: costos ? costoDeVenta(v) : null,
+    ganancia: costos ? gananciaDeVenta(v) : null,
+    /** Cotizaciones de la venta (pesos por unidad). */
+    cotizaciones: { usdt: dec(v.tipoCambioUsdt), usd: dec(v.tipoCambioUsd) },
     notas: v.notas,
     anulacion: v.anuladaAt
       ? { por: v.anuladaPor?.nombre ?? "", at: v.anuladaAt, motivo: v.motivoAnulacion }
@@ -973,6 +1010,8 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
       precioUnitario: dec(i.precioUnitario),
       esPrecioEspecial: i.esPrecioEspecial,
       origenPrecio: i.origenPrecio,
+      /** Costo por unidad: en USDT y su equivalente en pesos a la cotización de la venta. */
+      costoUnitarioUsdt: costos ? dec(i.costoUnitarioUsdt) : null,
       costoUnitario: costos ? dec(i.costoUnitario) : null,
       subtotal: dec(i.subtotal),
     })),

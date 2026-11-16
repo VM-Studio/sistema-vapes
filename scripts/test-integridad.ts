@@ -149,8 +149,15 @@ async function main() {
       : {}),
   });
 
-  /** Crea una venta CONFIRMADA consistente y "olvida" que se creó en esta tx. */
-  async function ventaConfirmada(tx: Tx) {
+  /**
+   * Crea una venta CONFIRMADA consistente y "olvida" que se creó en esta tx.
+   * `cambios` / `cambiosItem` pisan campos (para probar que la DB rechaza cuentas mal hechas).
+   */
+  async function ventaConfirmada(
+    tx: Tx,
+    cambios: Record<string, string> = {},
+    cambiosItem: Record<string, string> = {},
+  ) {
     const numero = await siguienteNumero(tx, VAPES, "VENTA");
     const venta = await tx.venta.create({
       data: {
@@ -163,6 +170,12 @@ async function main() {
         total: "32000.00",
         costoTotal: "19000.00",
         gananciaBruta: "13000.00",
+        tipoCambioUsdt: "1000.00",
+        tipoCambioUsd: "1000.00",
+        totalUsdt: "32.00",
+        costoTotalUsdt: "19.00",
+        gananciaUsdt: "13.00",
+        ...cambios,
         items: {
           create: [
             {
@@ -172,7 +185,9 @@ async function main() {
               precioLista: "16000.00",
               precioUnitario: "16000.00",
               costoUnitario: "9500.00",
+              costoUnitarioUsdt: "9.50",
               subtotal: "32000.00",
+              ...cambiosItem,
             },
           ],
         },
@@ -195,7 +210,7 @@ async function main() {
           productoId: va.productoId,
           nombre: "Negativa",
           sku: "TST-NEG",
-          ultimoCosto: 1,
+          ultimoCostoUsdt: 1,
           precioVenta: "-1",
         },
       }),
@@ -207,9 +222,9 @@ async function main() {
     "Variante_precioVenta_chk",
   );
   await rechaza(
-    "ultimoCosto negativo",
-    () => db.variante.update({ where: { id: va.id }, data: { ultimoCosto: "-1" } }),
-    "Variante_ultimoCosto_chk",
+    "ultimoCostoUsdt negativo",
+    () => db.variante.update({ where: { id: va.id }, data: { ultimoCostoUsdt: "-1" } }),
+    "Variante_ultimoCostoUsdt_chk",
   );
   await rechaza(
     "precioVenta negativo del producto",
@@ -269,7 +284,12 @@ async function main() {
         precioVenta: 2,
         variantes: {
           create: [
-            { nombre: "Único", sku: "TST-REUSO", codigoBarras: va.codigoBarras, ultimoCosto: 1 },
+            {
+              nombre: "Único",
+              sku: "TST-REUSO",
+              codigoBarras: va.codigoBarras,
+              ultimoCostoUsdt: 1,
+            },
           ],
         },
       },
@@ -289,7 +309,7 @@ async function main() {
           precioVenta: 2,
           variantes: {
             create: [
-              { nombre: "Único", sku: va.sku, codigoBarras: va.codigoBarras, ultimoCosto: 1 },
+              { nombre: "Único", sku: va.sku, codigoBarras: va.codigoBarras, ultimoCostoUsdt: 1 },
             ],
           },
         },
@@ -478,7 +498,7 @@ async function main() {
       creado.panelId === VAPES &&
       creado.categoriaId === null &&
       creado.variantes[0]?.precioVenta === null &&
-      creado.variantes[0]?.ultimoCosto === null,
+      creado.variantes[0]?.ultimoCostoUsdt === null,
     "producto sin categoría + sabor sin precio propio ni costo en la misma tx: OK",
   );
 
@@ -487,6 +507,55 @@ async function main() {
   check(
     nueva?.items.length === 1 && nueva.items[0]?.panelId === VAPES,
     "crear venta CONFIRMADA con ítems en una tx: OK",
+  );
+  // USDT, moneda principal: la DB no deja guardar una venta con las cuentas mal.
+  await rechaza(
+    "venta con totalUsdt ≠ total ÷ cotización USDT",
+    () => enRollback((tx) => ventaConfirmada(tx, { totalUsdt: "33.00", gananciaUsdt: "14.00" })),
+    "Venta_totalUsdt_chk",
+  );
+  await rechaza(
+    "venta con gananciaUsdt ≠ totalUsdt − costoTotalUsdt",
+    () => enRollback((tx) => ventaConfirmada(tx, { gananciaUsdt: "13.01" })),
+    "Venta_gananciaUsdt_chk",
+  );
+  await rechaza(
+    "venta con costoTotalUsdt ≠ Σ costos USDT de los ítems",
+    () =>
+      transaccion(ctxVapes, (tx) =>
+        ventaConfirmada(tx, { costoTotalUsdt: "18.00", gananciaUsdt: "14.00" }),
+      ),
+    "costoTotalUsdt",
+  );
+  await rechaza(
+    "ítem con costo en pesos ≠ costo USDT × cotización de la venta (costo cargado en pesos como USDT)",
+    () =>
+      transaccion(ctxVapes, (tx) =>
+        ventaConfirmada(
+          tx,
+          { costoTotalUsdt: "19000.00", gananciaUsdt: "-18968.00" },
+          { costoUnitarioUsdt: "9500.00" },
+        ),
+      ),
+    "no son el costo en USDT",
+  );
+  await rechaza(
+    "venta sin cotización (0)",
+    () =>
+      enRollback((tx) =>
+        ventaConfirmada(tx, { tipoCambioUsdt: "0", totalUsdt: "0", gananciaUsdt: "-19.00" }),
+      ),
+    /Venta_tipoCambio_chk|division by zero/,
+  );
+  await rechaza(
+    "cambiar la cotización de una venta confirmada",
+    () =>
+      transaccion(ctxVapes, async (tx) => {
+        const venta = await ventaConfirmada(tx);
+        await tx.$executeRaw`UPDATE "Venta" SET "tipoCambioUsdt" = 2000, "totalUsdt" = 16.00,
+          "gananciaUsdt" = -3.00 WHERE "id" = ${venta.id}`;
+      }),
+    "no se modifica, se anula",
   );
   await rechaza(
     "venta CONFIRMADA con montoPagado distinto de la suma de sus pagos",
@@ -539,6 +608,11 @@ async function main() {
             total: "99999.00",
             costoTotal: "9500.00",
             gananciaBruta: "90499.00",
+            tipoCambioUsdt: "1000.00",
+            tipoCambioUsd: "1000.00",
+            totalUsdt: "100.00",
+            costoTotalUsdt: "9.50",
+            gananciaUsdt: "90.50",
             items: {
               create: [
                 {
@@ -548,6 +622,7 @@ async function main() {
                   precioLista: "16000.00",
                   precioUnitario: "16000.00",
                   costoUnitario: "9500.00",
+                  costoUnitarioUsdt: "9.50",
                   subtotal: "16000.00",
                 },
               ],
@@ -632,6 +707,11 @@ async function main() {
             total: "30000.00",
             costoTotal: "19000.00",
             gananciaBruta: "11000.00",
+            tipoCambioUsdt: "1000.00",
+            tipoCambioUsd: "1000.00",
+            totalUsdt: "30.00",
+            costoTotalUsdt: "19.00",
+            gananciaUsdt: "11.00",
             items: {
               create: [
                 {
@@ -642,6 +722,7 @@ async function main() {
                   precioUnitario: "16000.00",
                   esPrecioEspecial: false,
                   costoUnitario: "9500.00",
+                  costoUnitarioUsdt: "9.50",
                   subtotal: "30000.00",
                 },
               ],
@@ -661,6 +742,11 @@ async function main() {
         total: "30000.00",
         costoTotal: "19000.00",
         gananciaBruta: "11000.00",
+        tipoCambioUsdt: "1000.00",
+        tipoCambioUsd: "1000.00",
+        totalUsdt: "30.00",
+        costoTotalUsdt: "19.00",
+        gananciaUsdt: "11.00",
         items: {
           create: [
             {
@@ -671,6 +757,7 @@ async function main() {
               precioUnitario: "15000.00",
               esPrecioEspecial: true,
               costoUnitario: "9500.00",
+              costoUnitarioUsdt: "9.50",
               subtotal: "30000.00",
             },
           ],
@@ -699,6 +786,11 @@ async function main() {
             total: "16000.00",
             costoTotal: "9500.00",
             gananciaBruta: "6500.00",
+            tipoCambioUsdt: "1000.00",
+            tipoCambioUsd: "1000.00",
+            totalUsdt: "16.00",
+            costoTotalUsdt: "9.50",
+            gananciaUsdt: "6.50",
             items: {
               create: [
                 {
@@ -708,6 +800,7 @@ async function main() {
                   precioLista: "16000.00",
                   precioUnitario: "16000.00",
                   costoUnitario: "9500.00",
+                  costoUnitarioUsdt: "9.50",
                   subtotal: "16000.00",
                 },
               ],
@@ -731,6 +824,11 @@ async function main() {
             total: "16000.00",
             costoTotal: "9500.00",
             gananciaBruta: "6500.00",
+            tipoCambioUsdt: "1000.00",
+            tipoCambioUsd: "1000.00",
+            totalUsdt: "16.00",
+            costoTotalUsdt: "9.50",
+            gananciaUsdt: "6.50",
             items: {
               create: [
                 {
@@ -740,6 +838,7 @@ async function main() {
                   precioLista: "16000.00",
                   precioUnitario: "16000.00",
                   costoUnitario: "9500.00",
+                  costoUnitarioUsdt: "9.50",
                   subtotal: "16000.00",
                 },
               ],
@@ -1168,6 +1267,11 @@ async function main() {
             total: 0,
             costoTotal: 0,
             gananciaBruta: 0,
+            tipoCambioUsdt: 1000,
+            tipoCambioUsd: 1000,
+            totalUsdt: 0,
+            costoTotalUsdt: 0,
+            gananciaUsdt: 0,
           },
         }),
       ),
@@ -1549,7 +1653,7 @@ async function main() {
     precioVentaEfectivo({ precioVenta: null }, { precioVenta: "15000.00" }) === "15000.00" &&
       precioVentaEfectivo({ precioVenta: "17000.00" }, { precioVenta: "15000.00" }) ===
         "17000.00" &&
-      costoParaVenta({ ultimoCosto: null }) === "0.00",
+      costoParaVenta({ ultimoCostoUsdt: null }) === "0.00",
     "sabor sin precio propio usa el del producto; sin costo → snapshot 0",
   );
 

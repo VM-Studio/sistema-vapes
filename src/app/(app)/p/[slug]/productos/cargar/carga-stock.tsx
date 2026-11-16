@@ -42,7 +42,8 @@ import { invalidarResoluciones } from "@/features/scanner/resolver-codigo";
 import { ScanInput } from "@/features/scanner/ScanInput";
 import type { VarianteEncontrada } from "@/features/scanner/tipos";
 import { useEscanerVariantes } from "@/features/scanner/useEscanerVariantes";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearUsdt } from "@/lib/format";
+import { COSTO_USDT_MAXIMO, MENSAJE_COSTO_USDT } from "@/lib/moneda";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 import type { ResumenCargaStock } from "@/server/services/producto.service";
@@ -50,15 +51,18 @@ import type { ResumenCargaStock } from "@/server/services/producto.service";
 interface Item {
   variante: VarianteEncontrada;
   cantidad: number;
-  /** Costo unitario en pesos tipeado por un dueño ("" o ausente = deja el costo actual). */
+  /** Costo unitario EN USDT tipeado por un dueño ("" o ausente = deja el costo actual). */
   costo?: string;
 }
 
-/** "" → sin costo; número válido (>= 0, hasta 2 decimales, coma o punto) → string; inválido → null. */
+/**
+ * "" → sin costo; número válido en USDT (>= 0, hasta 2 decimales, coma o
+ * punto, menos de COSTO_USDT_MAXIMO) → string; inválido → null.
+ */
 function leerCosto(texto: string | undefined): string | undefined | null {
   const t = (texto ?? "").trim().replace(",", ".");
   if (t === "") return undefined;
-  return /^\d{1,10}(\.\d{1,2})?$/.test(t) ? t : null;
+  return /^\d{1,10}(\.\d{1,2})?$/.test(t) && Number(t) < COSTO_USDT_MAXIMO ? t : null;
 }
 
 /** Lista de carga guardada en el celular (por panel y usuario): sobrevive a un refresh o a cerrar la app. */
@@ -303,24 +307,24 @@ export function CargaStock({
   async function cargar() {
     if (!depositoId) return;
     if (costosInvalidos.length > 0) {
-      toast.error("Revisá los costos", "Hay un costo mal escrito (usá solo números, ej. 8500,50).");
+      toast.error("Revisá los costos", MENSAJE_COSTO_USDT);
       return;
     }
     setEnviando(true);
     const r = await cargarStockPorEscaneoAction({
       depositoId,
       items: items.map((i) => {
-        const costoUnitario = conCosto ? (leerCosto(i.costo) ?? undefined) : undefined;
+        const costoUnitarioUsdt = conCosto ? (leerCosto(i.costo) ?? undefined) : undefined;
         return conDistribucion
           ? {
               varianteId: i.variante.varianteId,
               cantidad: i.cantidad,
-              costoUnitario,
+              costoUnitarioUsdt,
               distribucion: Object.entries(distribucion[i.variante.varianteId] ?? {})
                 .filter(([, n]) => n > 0)
                 .map(([id, n]) => ({ depositoId: id, cantidad: n })),
             }
-          : { varianteId: i.variante.varianteId, cantidad: i.cantidad, costoUnitario };
+          : { varianteId: i.variante.varianteId, cantidad: i.cantidad, costoUnitarioUsdt };
       }),
     });
     setEnviando(false);
@@ -814,7 +818,7 @@ export function CargaStock({
               >
                 <span>Producto</span>
                 <span className="text-right">En {deposito?.nombre}</span>
-                {conCosto && <span className="text-right">Costo unitario</span>}
+                {conCosto && <span className="text-right">Costo unitario (USDT)</span>}
                 <span className="text-right">Cantidad</span>
               </div>
               <ul aria-label="Lista de carga" className="divide-border flex flex-col divide-y">
@@ -859,18 +863,20 @@ export function CargaStock({
                       </p>
                       {conCosto && (
                         <label className="flex items-center justify-between gap-3 text-sm sm:block">
-                          <span className="text-muted sm:sr-only">Costo unitario ($)</span>
+                          <span className="text-muted sm:sr-only">Costo unitario (USDT)</span>
                           <input
                             inputMode="decimal"
                             autoComplete="off"
-                            aria-label={`Costo unitario de ${v.titulo}`}
+                            aria-label={`Costo unitario en USDT de ${v.titulo}`}
                             aria-invalid={costoMal || undefined}
                             placeholder={
-                              v.ultimoCosto !== null ? formatearPesos(v.ultimoCosto) : "$ costo"
+                              v.ultimoCostoUsdt !== null
+                                ? formatearUsdt(v.ultimoCostoUsdt)
+                                : "costo USDT"
                             }
                             title={
-                              v.ultimoCosto !== null
-                                ? `Costo actual ${formatearPesos(v.ultimoCosto)}. Dejalo vacío para mantenerlo.`
+                              v.ultimoCostoUsdt !== null
+                                ? `Costo actual ${formatearUsdt(v.ultimoCostoUsdt)}. Dejalo vacío para mantenerlo.`
                                 : "Sin costo cargado"
                             }
                             value={i.costo ?? ""}
@@ -949,9 +955,7 @@ export function CargaStock({
             </Button>
           )}
           {costosInvalidos.length > 0 && (
-            <p className="text-danger mt-1 text-center text-xs">
-              Hay un costo mal escrito: usá solo números (ej. 8500,50).
-            </p>
+            <p className="text-danger mt-1 text-center text-xs">{MENSAJE_COSTO_USDT}</p>
           )}
           {!offline.online && (
             <p className="text-muted mt-1 text-center text-xs">
@@ -986,7 +990,7 @@ export function CargaStock({
               <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
                 {conCosto && leerCosto(i.costo) && (
                   <span className="text-muted text-xs">
-                    costo {formatearPesos(leerCosto(i.costo)!)}
+                    costo {formatearUsdt(leerCosto(i.costo)!)}
                   </span>
                 )}
                 <strong>+{i.cantidad}</strong>

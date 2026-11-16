@@ -48,7 +48,7 @@ async function crearProducto(panelId: string, nombre: string) {
               nombre: "Único",
               sku: `SKU-${nombre}`,
               codigoBarras: EAN,
-              ultimoCosto: "100.00",
+              ultimoCostoUsdt: "10.00",
             },
           ],
         },

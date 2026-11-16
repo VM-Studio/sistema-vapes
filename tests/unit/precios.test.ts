@@ -11,9 +11,9 @@ describe("precio de venta efectivo", () => {
     expect(tienePrecioPropio({ precioVenta: null })).toBe(false);
     expect(tienePrecioPropio({ precioVenta: 12000 })).toBe(true);
   });
-  it("costo para la venta: último costo o 0", () => {
-    expect(costoParaVenta({ ultimoCosto: "4500.00" })).toBe("4500.00");
-    expect(costoParaVenta({ ultimoCosto: null })).toBe("0.00");
+  it("costo para la venta: último costo en USDT o 0", () => {
+    expect(costoParaVenta({ ultimoCostoUsdt: "4.50" })).toBe("4.50");
+    expect(costoParaVenta({ ultimoCostoUsdt: null })).toBe("0.00");
   });
   it("IDs visibles por panel", () => {
     expect(formatearIdVenta("vapes", 12)).toBe("VAP-000012");

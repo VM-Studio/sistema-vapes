@@ -9,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearPesos } from "@/lib/format";
+import { formatearPesos, formatearUsdt } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { rutaPdf } from "@/lib/pdfs";
 import { esOwner, puede } from "@/lib/permisos";
@@ -72,7 +74,7 @@ export default async function CuentaCorrientePage({
       <span className="flex flex-col">
         <span>Venta {codigoVenta(m.ventaId, m.codigo)}</span>
         <span className="text-muted text-xs">
-          Total {formatearPesos(m.total)}
+          Total {formatearUsdt(m.totalMontos.usdt)} ({formatearPesos(m.total)})
           {Number(m.pagadoAlVender) > 0 && ` · pagó ${formatearPesos(m.pagadoAlVender)} al comprar`}
         </span>
       </span>
@@ -132,6 +134,7 @@ export default async function CuentaCorrientePage({
             <RegistrarCobro
               cliente={{ id: c.id, nombre: c.nombre, telefono: c.telefono }}
               saldo={c.saldo}
+              deuda={c.deuda}
               pendientes={cc.pendientes}
               medios={configVentas.mediosPago}
             />
@@ -142,7 +145,7 @@ export default async function CuentaCorrientePage({
         aria-label="Resumen de la cuenta"
         className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4"
       >
-        <StatCard label="Debe" value={formatearPesos(c.saldo)} />
+        <StatCard label="Debe" value={textoPrincipal(c.deuda)} hint={textoEquivalentes(c.deuda)} />
         <StatCard label="Ventas pendientes" value={String(cc.pendientes.length)} />
         <StatCard
           label="Fiado más viejo"
@@ -183,7 +186,12 @@ export default async function CuentaCorrientePage({
                 key: "debe",
                 header: "Debe",
                 className: "text-right tabular-nums",
-                cell: (m) => (m.tipo === "VENTA" ? formatearPesos(m.importe) : ""),
+                cell: (m) =>
+                  m.tipo === "VENTA" ? (
+                    <Monto montos={m.montos} className="items-end whitespace-nowrap" />
+                  ) : (
+                    ""
+                  ),
               },
               {
                 key: "pago",
@@ -191,9 +199,11 @@ export default async function CuentaCorrientePage({
                 className: "text-right tabular-nums",
                 cell: (m) =>
                   m.tipo === "COBRO" ? (
-                    <span className={cn(m.anulado && "text-muted line-through")}>
-                      {formatearPesos(m.importe)}
-                    </span>
+                    <Monto
+                      montos={m.montos}
+                      tachado={m.anulado}
+                      className={cn("items-end whitespace-nowrap", m.anulado && "text-muted")}
+                    />
                   ) : (
                     ""
                   ),
@@ -203,9 +213,10 @@ export default async function CuentaCorrientePage({
                 header: "Saldo",
                 className: "text-right tabular-nums",
                 cell: (m) => (
-                  <span className="font-semibold whitespace-nowrap">
-                    {formatearPesos(m.saldoAcumulado)}
-                  </span>
+                  <Monto
+                    montos={m.saldoMontos}
+                    className="items-end font-semibold whitespace-nowrap"
+                  />
                 ),
               },
               ...(owner
@@ -228,17 +239,24 @@ export default async function CuentaCorrientePage({
                   {detalle(m)}
                   <span
                     className={cn(
-                      "shrink-0 font-semibold tabular-nums",
+                      "flex shrink-0 flex-col items-end font-semibold tabular-nums",
                       m.tipo === "COBRO" && m.anulado && "text-muted line-through",
                     )}
                   >
-                    {m.tipo === "VENTA" ? "+" : "−"}
-                    {formatearPesos(m.importe)}
+                    <span>
+                      {m.tipo === "VENTA" ? "+" : "−"}
+                      {textoPrincipal(m.montos)}
+                    </span>
+                    <span className="text-muted text-xs font-normal">
+                      {formatearPesos(m.importe)}
+                    </span>
                   </span>
                 </div>
                 <div className="text-muted flex items-center justify-between gap-3 text-xs">
                   <span>{formatearFechaHora(m.fecha)}</span>
-                  <span className="tabular-nums">Saldo {formatearPesos(m.saldoAcumulado)}</span>
+                  <span className="text-right tabular-nums">
+                    Saldo {textoPrincipal(m.saldoMontos)} · {formatearPesos(m.saldoAcumulado)}
+                  </span>
                 </div>
                 {owner && m.tipo === "COBRO" && !m.anulado && (
                   <div className="-mb-2 flex justify-end">
@@ -268,14 +286,13 @@ export default async function CuentaCorrientePage({
                   <span className="flex min-w-0 flex-col gap-0.5">
                     {codigoVenta(v.id, v.codigo)}
                     <span className="text-muted text-xs">
-                      {formatearFecha(v.fecha)} · total {formatearPesos(v.total)}
+                      {formatearFecha(v.fecha)} · total {formatearUsdt(v.totalMontos.usdt)} (
+                      {formatearPesos(v.total)})
                       {Number(v.montoPagado) > 0 && ` · pagó ${formatearPesos(v.montoPagado)}`}
                     </span>
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="font-semibold tabular-nums">
-                      {formatearPesos(v.saldoPendiente)}
-                    </span>
+                    <Monto montos={v.saldoMontos} className="items-end text-right font-semibold" />
                     <Badge variant={v.diasAntiguedad > 30 ? "warning" : "neutral"}>
                       {ESTADO_PAGO_UI[v.estadoPago].label} · {v.diasAntiguedad} d
                     </Badge>

@@ -9,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { SectionCard } from "@/components/ui/section-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { rutaPanel } from "@/lib/paneles";
 import { puede, tieneCarteraClientes } from "@/lib/permisos";
 import { formatearFecha, formatearFechaHora } from "@/lib/utils";
@@ -85,8 +86,8 @@ export default async function ClienteCarteraPage({ params }: { params: Promise<{
           <p className="text-sm">
             <strong>Cliente nuevo:</strong> se sumó a tu cartera con la venta{" "}
             {codigoVenta(c.ventaAlta)} del {formatearFechaHora(c.ventaAlta.fecha)} (
-            {formatearPesos(c.ventaAlta.total)}). Esa venta cuenta como cliente nuevo en tu
-            ganancia.
+            {formatearUsdt(c.ventaAlta.totales.usdt)} · {formatearPesos(c.ventaAlta.total)}). Esa
+            venta cuenta como cliente nuevo en tu ganancia.
           </p>
         ) : (
           <p className="text-sm">
@@ -136,7 +137,13 @@ export default async function ClienteCarteraPage({ params }: { params: Promise<{
               key: "total",
               header: "Total",
               className: "text-right tabular-nums",
-              cell: (v: VentaFila) => formatearPesos(v.total),
+              cell: (v: VentaFila) => (
+                <Monto
+                  montos={v.totales}
+                  tachado={v.estado === "ANULADA"}
+                  className="items-end whitespace-nowrap"
+                />
+              ),
             },
             {
               key: "estado",
@@ -152,7 +159,11 @@ export default async function ClienteCarteraPage({ params }: { params: Promise<{
             <div className="border-border bg-surface rounded-card flex flex-col gap-1 border p-4">
               <div className="flex items-center justify-between gap-2">
                 {codigoVenta(v)}
-                <span className="font-semibold tabular-nums">{formatearPesos(v.total)}</span>
+                <Monto
+                  montos={v.totales}
+                  tachado={v.estado === "ANULADA"}
+                  className="items-end text-right font-semibold"
+                />
               </div>
               <p className="text-muted text-small">
                 {formatearFechaHora(v.fecha)} · {ETIQUETA_TIPO_VENTA[v.tipo]} · {v.unidades} u.

@@ -97,7 +97,7 @@ async function main() {
       tipo: TipoMovimiento.INGRESO_MANUAL,
       depositoId: g1.id,
       cantidad: 10,
-      costoUnitario: "9500.00",
+      costoUnitarioUsdt: "6.50",
     }),
   );
   check(

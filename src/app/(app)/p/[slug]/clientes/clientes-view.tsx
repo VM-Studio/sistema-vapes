@@ -17,12 +17,14 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SearchInput } from "@/components/ui/search-input";
 import { Sheet } from "@/components/ui/sheet";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
+import { textoPrincipal } from "@/lib/moneda";
 import { linkWhatsApp, mostrarTelefono } from "@/lib/validations/cliente";
 import { formatearFecha } from "@/lib/utils";
 import type { ClienteListado } from "@/server/services/cliente.service";
@@ -149,7 +151,9 @@ export function ClientesView({
                   key: "total",
                   header: "Total comprado",
                   className: "text-right tabular-nums",
-                  cell: (c: ClienteListado) => formatearPesos(c.totalComprado),
+                  cell: (c: ClienteListado) => (
+                    <Monto montos={c.totalComprado} className="items-end whitespace-nowrap" />
+                  ),
                 },
               ]
             : []),
@@ -178,7 +182,7 @@ export function ClientesView({
                 </span>
                 <span className="text-subtle block truncate text-xs">
                   {c.compras} compra{c.compras === 1 ? "" : "s"}
-                  {verTotales && c.compras > 0 ? ` · ${formatearPesos(c.totalComprado)}` : ""}
+                  {verTotales && c.compras > 0 ? ` · ${textoPrincipal(c.totalComprado)}` : ""}
                   {c.ultimaCompra ? ` · última ${formatearFecha(c.ultimaCompra)}` : ""}
                 </span>
               </span>

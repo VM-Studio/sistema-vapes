@@ -4,9 +4,10 @@ import type { Metadata } from "next";
 
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
 import { esOwner } from "@/lib/permisos";
 import { formatearFecha } from "@/lib/utils";
 import { telefonoVisible } from "@/lib/ventas-ui";
@@ -145,7 +146,7 @@ export default async function ReporteClientesPage({
                 key: "tot",
                 header: "Total",
                 className: "text-right tabular-nums font-medium",
-                cell: (x) => formatearPesos(x.total),
+                cell: (x) => <Monto montos={x.total} className="items-end whitespace-nowrap" />,
               },
             ]}
             renderMobile={(x) => (
@@ -156,9 +157,7 @@ export default async function ReporteClientesPage({
                     {x.compras} compras · {formatearNumero(x.unidades)} u.
                   </span>
                 </span>
-                <span className="shrink-0 font-semibold tabular-nums">
-                  {formatearPesos(x.total)}
-                </span>
+                <Monto montos={x.total} className="shrink-0 items-end text-right font-semibold" />
               </FilaMobile>
             )}
           />

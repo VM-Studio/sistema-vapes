@@ -5,8 +5,10 @@ import Link from "next/link";
 import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { SectionCard } from "@/components/ui/section-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
+import { textoPrincipal } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
@@ -50,14 +52,17 @@ export default async function VendedoresPage({ searchParams }: { searchParams: P
       />
       <PeriodoAnalitica periodo={periodo} preset={plano.preset ?? null} />
       <div className="flex flex-col gap-4">
-        <SectionCard title="Facturado por vendedor">
+        <SectionCard
+          title="Facturado por vendedor"
+          description="En USDT: cada venta a la cotización de su momento."
+        >
           <GraficoBarras
             horizontal
-            moneda
+            moneda="usdt"
             nombre="Facturado"
             datos={filas
               .filter((f) => f.cantidadVentas > 0)
-              .map((f) => ({ etiqueta: f.nombre, valor: Number(f.facturado) }))}
+              .map((f) => ({ etiqueta: f.nombre, valor: Number(f.facturado.usdt) }))}
           />
         </SectionCard>
         <SectionCard title="Detalle por vendedor">
@@ -97,25 +102,37 @@ export default async function VendedoresPage({ searchParams }: { searchParams: P
                 key: "facturado",
                 header: "Facturado",
                 className: "text-right tabular-nums font-medium",
-                cell: (r) => formatearPesos(r.facturado),
+                cell: (r) => <Monto montos={r.facturado} className="items-end whitespace-nowrap" />,
               },
               {
                 key: "unit",
                 header: "Unitarias",
                 className: "text-right tabular-nums",
-                cell: (r) => `${r.unitarias.cantidad} · ${formatearPesos(r.unitarias.total)}`,
+                cell: (r) => (
+                  <span className="inline-flex items-start justify-end gap-1">
+                    <span className="text-muted">{r.unitarias.cantidad} ·</span>
+                    <Monto montos={r.unitarias.total} className="items-end whitespace-nowrap" />
+                  </span>
+                ),
               },
               {
                 key: "may",
                 header: "Mayoristas",
                 className: "text-right tabular-nums",
-                cell: (r) => `${r.mayoristas.cantidad} · ${formatearPesos(r.mayoristas.total)}`,
+                cell: (r) => (
+                  <span className="inline-flex items-start justify-end gap-1">
+                    <span className="text-muted">{r.mayoristas.cantidad} ·</span>
+                    <Monto montos={r.mayoristas.total} className="items-end whitespace-nowrap" />
+                  </span>
+                ),
               },
               {
                 key: "ticket",
                 header: "Ticket prom.",
                 className: "text-right tabular-nums",
-                cell: (r) => formatearPesos(r.ticketPromedio),
+                cell: (r) => (
+                  <Monto montos={r.ticketPromedio} className="items-end whitespace-nowrap" />
+                ),
               },
               {
                 key: "cot",
@@ -145,7 +162,12 @@ export default async function VendedoresPage({ searchParams }: { searchParams: P
                 key: "com",
                 header: "Comisión est.",
                 className: "text-right tabular-nums",
-                cell: (r) => (r.comision ? formatearPesos(r.comision.estimada) : "—"),
+                cell: (r) =>
+                  r.comision ? (
+                    <Monto montos={r.comision.estimada} className="items-end whitespace-nowrap" />
+                  ) : (
+                    "—"
+                  ),
               },
             ]}
             renderMobile={(r) => (
@@ -158,12 +180,12 @@ export default async function VendedoresPage({ searchParams }: { searchParams: P
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-semibold">{r.nombre}</span>
-                  <span className="font-semibold tabular-nums">{formatearPesos(r.facturado)}</span>
+                  <Monto montos={r.facturado} className="items-end text-right font-semibold" />
                 </div>
                 <p className="text-muted text-small mt-1">
                   {r.cantidadVentas} ventas · {r.unidades} u. · ticket{" "}
-                  {formatearPesos(r.ticketPromedio)}
-                  {r.comision ? ` · comisión ${formatearPesos(r.comision.estimada)}` : ""}
+                  {textoPrincipal(r.ticketPromedio)}
+                  {r.comision ? ` · comisión ${textoPrincipal(r.comision.estimada)}` : ""}
                 </p>
               </Link>
             )}

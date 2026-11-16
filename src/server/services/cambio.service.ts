@@ -26,7 +26,7 @@ import {
   parsearOverride,
   type OverrideCambio,
 } from "@/server/cambio/vigente";
-import { ValidationError } from "@/server/errors";
+import { DomainError, ValidationError } from "@/server/errors";
 import { log } from "@/server/log";
 import type { Actor } from "@/server/services/actor";
 import { registrarAuditoria } from "@/server/services/audit.service";
@@ -126,6 +126,27 @@ export async function obtenerCotizacionesSeguro(): Promise<CotizacionesVigentes 
 export async function convertir(monto: number, moneda: MonedaCambioClave): Promise<number | null> {
   const c = await obtenerCotizacion(moneda);
   return c ? convertirConCotizacion(monto, c.valor) : null;
+}
+
+/**
+ * Cotizaciones que congela una venta (USDT y dólar blue, punta venta, pesos por
+ * unidad). Sin alguna de las dos no se puede vender: la ganancia en USDT de la
+ * venta quedaría mal. (Si la fuente falla se usa la última guardada, así que
+ * solo pasa si nunca se obtuvo ninguna y no hay una manual cargada.)
+ */
+export async function cotizacionesParaVenta(): Promise<{
+  usdt: Prisma.Decimal;
+  usd: Prisma.Decimal;
+}> {
+  const [usdt, usd] = await Promise.all([obtenerCotizacion("USDT"), obtenerCotizacion("USD_BLUE")]);
+  if (!usdt || !(usdt.valor > 0) || !usd || !(usd.valor > 0))
+    throw new DomainError(
+      "No hay cotización del USDT o del dólar blue: cargala en Configuración → Cambio antes de vender.",
+    );
+  return {
+    usdt: new Prisma.Decimal(usdt.valor).toDecimalPlaces(2),
+    usd: new Prisma.Decimal(usd.valor).toDecimalPlaces(2),
+  };
 }
 
 /** "U$D 1.200 · $ 1.560.000" con la cotización vigente. */

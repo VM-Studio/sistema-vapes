@@ -1,17 +1,16 @@
 import { History, Truck } from "lucide-react";
 import type { Metadata } from "next";
 
-import { textoCotizacionUsdt } from "@/components/compras/equivalente-usdt";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { SectionCard } from "@/components/ui/section-card";
-import { Tooltip } from "@/components/ui/tooltip";
-import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import { formatearMonto, formatearNumero } from "@/lib/format";
+import { textoPrincipal } from "@/lib/moneda";
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
 import { filtrosComprasSchema, rangoReporte } from "@/server/reportes/filtros";
-import { obtenerCotizacion } from "@/server/services/cambio.service";
 import { historialPrecios, type CambioPrecioHistorial } from "@/server/services/proveedor.service";
 import {
   comprasPorProveedor,
@@ -42,7 +41,7 @@ export default async function ReporteComprasPage({
   const plano = await paramsPlanos(searchParams);
   const r = rangoReporte(plano);
   const f = filtrosComprasSchema.parse(plano);
-  const [porProv, historial, o, productos, cotizacionUsdt] = await Promise.all([
+  const [porProv, historial, o, productos] = await Promise.all([
     comprasPorProveedor(ctx, r, f),
     historialPrecios(ctx, {
       proveedorId: f.proveedorId,
@@ -52,11 +51,9 @@ export default async function ReporteComprasPage({
     }),
     opcionesFiltros(ctx),
     productosConPrecioProveedor(ctx),
-    obtenerCotizacion("USDT"),
   ]);
-  const ayudaUsdt = cotizacionUsdt
-    ? `Cada compra a la cotización USDT con la que se cargó; las que no la tienen, a la vigente. ${textoCotizacionUsdt(cotizacionUsdt)}`
-    : null;
+  const hayAproximados = porProv.some((x) => x.aproximado);
+  const sinCotizacion = porProv.reduce((a, x) => a + x.sinCotizacion, 0);
 
   // Evolución (un producto elegido, precios en pesos): una línea por proveedor.
   const enPesos = f.productoId ? [...historial].reverse().filter((h) => h.moneda === "ARS") : [];
@@ -103,15 +100,28 @@ export default async function ReporteComprasPage({
       </BarraFiltros>
 
       <div className="grid grid-cols-1 gap-4">
-        <SectionCard title="Compras recibidas por proveedor">
+        <SectionCard title="Compras recibidas por proveedor" description="Total en USDT.">
           <GraficoBarras
             horizontal
-            moneda
+            moneda="usdt"
             nombre="Total"
-            datos={porProv.map((x) => ({ etiqueta: x.proveedor, valor: Number(x.total) }))}
+            datos={porProv.map((x) => ({ etiqueta: x.proveedor, valor: Number(x.total.usdt) }))}
           />
         </SectionCard>
-        <SectionCard title="Detalle por proveedor">
+        <SectionCard
+          title="Detalle por proveedor"
+          description={[
+            "En USDT, cada compra como se cargó; abajo, lo pagado en pesos y en dólares (al blue de cada compra).",
+            hayAproximados
+              ? "≈ = incluye compras cargadas en pesos o sin cotización guardada: sus USDT son aproximados."
+              : "",
+            sinCotizacion
+              ? `${sinCotizacion} ${sinCotizacion === 1 ? "compra no tiene" : "compras no tienen"} ninguna cotización: no suman en USDT ni en dólares.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <DataTable
             caption="Compras por proveedor"
             rows={porProv}
@@ -144,31 +154,31 @@ export default async function ReporteComprasPage({
                 key: "t",
                 header: "Total",
                 className: "text-right tabular-nums font-medium",
-                cell: (x) => <TotalDual pesos={x.total} usdt={x.totalUSDT} ayuda={ayudaUsdt} />,
+                cell: (x) => <MontoCompra x={x} montos={x.total} />,
               },
               {
                 key: "com",
                 header: "Comisión",
                 className: "text-right tabular-nums",
-                cell: (x) => formatearPesos(x.comision),
+                cell: (x) => <MontoCompra x={x} montos={x.comision} />,
               },
               {
                 key: "gas",
                 header: "Gastos",
                 className: "text-right tabular-nums",
-                cell: (x) => formatearPesos(x.gastos),
+                cell: (x) => <MontoCompra x={x} montos={x.gastos} />,
               },
               {
                 key: "cf",
                 header: "Costo final",
                 className: "text-right tabular-nums font-medium",
-                cell: (x) => formatearPesos(x.costoFinalTotal),
+                cell: (x) => <MontoCompra x={x} montos={x.costoFinalTotal} />,
               },
               {
                 key: "cfu",
                 header: "Final / u.",
                 className: "text-right tabular-nums",
-                cell: (x) => formatearPesos(x.costoFinalUnidad),
+                cell: (x) => <MontoCompra x={x} montos={x.costoFinalUnidad} />,
               },
               {
                 key: "f",
@@ -184,13 +194,12 @@ export default async function ReporteComprasPage({
                     {x.compras} compras · {x.unidades} u.
                   </span>
                   <span className="text-muted text-small block">
-                    Costo final {formatearPesos(x.costoFinalTotal)} ·{" "}
-                    {formatearPesos(x.costoFinalUnidad)} / u.
+                    Costo final {aprox(x)}
+                    {textoPrincipal(x.costoFinalTotal)} · {aprox(x)}
+                    {textoPrincipal(x.costoFinalUnidad)} / u.
                   </span>
                 </span>
-                <span className="font-semibold tabular-nums">
-                  <TotalDual pesos={x.total} usdt={x.totalUSDT} ayuda={ayudaUsdt} />
-                </span>
+                <MontoCompra x={x} montos={x.total} className="shrink-0 font-semibold" />
               </FilaMobile>
             )}
           />
@@ -284,23 +293,26 @@ export default async function ReporteComprasPage({
   );
 }
 
-/** Total en USDT con su equivalente en pesos (lo pagado) al lado; la cotización en el tooltip. */
-function TotalDual({
-  pesos,
-  usdt,
-  ayuda,
+const aprox = (x: CompraPorProveedor) => (x.aproximado ? "≈ " : "");
+
+/** Monto de compras (USDT y abajo pesos y dólares); «≈» si hay compras aproximadas. */
+function MontoCompra({
+  x,
+  montos,
+  className,
 }: {
-  pesos: string;
-  usdt: string | null;
-  ayuda: string | null;
+  x: CompraPorProveedor;
+  montos: CompraPorProveedor["total"] | null;
+  className?: string;
 }) {
-  if (usdt === null || ayuda === null) return <>{formatearPesos(pesos)}</>;
   return (
-    <Tooltip content={ayuda} className="flex-col items-end">
-      <span tabIndex={0} className="flex flex-col items-end" data-testid="total-usdt">
-        <span>{formatearUsdt(usdt)}</span>
-        <span className="text-subtle text-xs font-normal">{formatearPesos(pesos)}</span>
-      </span>
-    </Tooltip>
+    <span className={cn("inline-flex items-start justify-end gap-1", className)}>
+      {x.aproximado && montos && (
+        <span className="text-muted" title="Aproximado">
+          ≈
+        </span>
+      )}
+      <Monto montos={montos} className="items-end whitespace-nowrap" />
+    </span>
   );
 }

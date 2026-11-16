@@ -8,6 +8,7 @@ import { ESTADO_DEVOLUCION_UI, ESTADO_VENTA_CLIENTE } from "@/components/cliente
 import { TelefonoWhatsApp } from "@/components/clientes/telefono-whatsapp";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Monto } from "@/components/ui/monto";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
@@ -15,7 +16,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearPesos } from "@/lib/format";
+import { formatearPesos, formatearUsdt } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
@@ -93,14 +95,18 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
         {verFiados && debe && (
           <StatCard
             label="Debe"
-            value={formatearPesos(c.saldoDeudor)}
-            hint="Ver cuenta corriente"
+            value={textoPrincipal(c.deuda)}
+            hint={`${formatearPesos(c.deuda.pesos)} · Ver cuenta corriente`}
             href={hrefCuenta}
           />
         )}
         <StatCard label="Compras" value={String(detalle.compras.cantidad)} />
         {detalle.compras.total !== null && (
-          <StatCard label="Total comprado" value={formatearPesos(detalle.compras.total)} />
+          <StatCard
+            label="Total comprado"
+            value={textoPrincipal(detalle.compras.total)}
+            hint={textoEquivalentes(detalle.compras.total)}
+          />
         )}
         <StatCard
           label="Última compra"
@@ -163,7 +169,9 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
                       href={hrefCuenta}
                       className="text-foreground font-medium underline-offset-4 hover:underline"
                     >
-                      {debe ? `Debe ${formatearPesos(c.saldoDeudor)}` : "Al día"}
+                      {debe
+                        ? `Debe ${formatearUsdt(c.deuda.usdt)} (${formatearPesos(c.saldoDeudor)})`
+                        : "Al día"}
                     </Link>
                   </dd>
                 </>
@@ -239,9 +247,10 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
                   header: "Total",
                   className: "text-right tabular-nums",
                   cell: (v) => (
-                    <span className="font-semibold whitespace-nowrap">
-                      {formatearPesos(v.total)}
-                    </span>
+                    <Monto
+                      montos={v.totales}
+                      className="items-end font-semibold whitespace-nowrap"
+                    />
                   ),
                 },
                 {
@@ -277,7 +286,7 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
                   <>
                     <div className="flex justify-between gap-2">
                       <span className="font-mono font-semibold">{v.codigo}</span>
-                      <span className="font-semibold tabular-nums">{formatearPesos(v.total)}</span>
+                      <Monto montos={v.totales} className="items-end text-right font-semibold" />
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
                       <span className="text-muted text-xs">

@@ -39,7 +39,7 @@ import { crearStockEnCero, registrarMovimiento } from "@/server/services/stock.s
  * - `nombreCompleto` / `especificacionNorm` del producto los mantiene la DB
  *   (trigger): acá solo se leen.
  * - Montos hacia la UI como string con 2 decimales.
- * - `ultimoCosto` solo llega si el ctx es de un dueño (se decide acá, en el servidor).
+ * - `ultimoCostoUsdt` solo llega si el ctx es de un dueño (se decide acá, en el servidor).
  */
 
 /** Contexto de lectura: panel y, si se conoce, quién mira (para decidir si ve costos). */
@@ -121,7 +121,7 @@ export interface SaborDetalle extends SaborListado {
   /** Precio Mercado Libre efectivo (null = no tiene). */
   precioVentaML: string | null;
   /** null si quien mira no es dueño. */
-  ultimoCosto: string | null;
+  ultimoCostoUsdt: string | null;
   codigosAlternativos: CodigoAlternativoDTO[];
 }
 
@@ -341,7 +341,7 @@ const selectEncontrada = {
   sku: true,
   codigoBarras: true,
   precioVenta: true,
-  ultimoCosto: true,
+  ultimoCostoUsdt: true,
   stockMinimo: true,
   activo: true,
   producto: {
@@ -403,7 +403,8 @@ function aEncontrada(
     precioVenta: dec(precioVentaEfectivo(v, p)),
     precioVentaProducto: dec(p.precioVenta),
     tienePrecioPropio: tienePrecioPropio(v),
-    ultimoCosto: opciones.conCosto && v.ultimoCosto !== null ? dec(v.ultimoCosto) : null,
+    ultimoCostoUsdt:
+      opciones.conCosto && v.ultimoCostoUsdt !== null ? dec(v.ultimoCostoUsdt) : null,
     stockMinimo: v.stockMinimo,
     stockPorDeposito,
     stockTotal: stockPorDeposito.reduce((a, s) => a + s.cantidad, 0),
@@ -1380,7 +1381,7 @@ export async function obtener(ctx: CtxCatalogo, id: string): Promise<ProductoDet
         select: {
           ...selectSabor,
           precioVentaML: true,
-          ultimoCosto: true,
+          ultimoCostoUsdt: true,
           codigosAlternativos: {
             select: { id: true, codigo: true, descripcion: true },
             orderBy: { createdAt: "asc" },
@@ -1398,7 +1399,7 @@ export async function obtener(ctx: CtxCatalogo, id: string): Promise<ProductoDet
       const ml = precioVentaMLEfectivo(v, p);
       return ml === null ? null : dec(ml);
     })(),
-    ultimoCosto: conCosto && v.ultimoCosto !== null ? dec(v.ultimoCosto) : null,
+    ultimoCostoUsdt: conCosto && v.ultimoCostoUsdt !== null ? dec(v.ultimoCostoUsdt) : null,
     codigosAlternativos: v.codigosAlternativos,
   }));
   return {
@@ -1508,13 +1509,13 @@ export async function cargarStockPorEscaneo(
         select: {
           id: true,
           nombre: true,
-          ultimoCosto: true,
+          ultimoCostoUsdt: true,
           producto: { select: { nombreCompleto: true } },
         },
       });
       const porId = new Map(variantes.map((v) => [v.id, v]));
       // Costo informado por sabor: solo si carga un dueño (si no, se ignora, como en el ingreso manual).
-      const informados = input.items.filter((i) => i.costoUnitario !== undefined);
+      const informados = input.items.filter((i) => i.costoUnitarioUsdt !== undefined);
       const costos = new Map<string, number>();
       if (informados.length > 0) {
         const u = await tx.usuario.findUnique({
@@ -1522,7 +1523,7 @@ export async function cargarStockPorEscaneo(
           select: { rol: true },
         });
         if (u?.rol === RolUsuario.OWNER)
-          for (const i of informados) costos.set(i.varianteId, i.costoUnitario!);
+          for (const i of informados) costos.set(i.varianteId, i.costoUnitarioUsdt!);
       }
       const titulo = (id: string) => {
         const v = porId.get(id);
@@ -1564,7 +1565,7 @@ export async function cargarStockPorEscaneo(
           costo !== undefined &&
           (await actualizarUltimoCosto(tx, {
             varianteId,
-            anterior: v.ultimoCosto,
+            anterior: v.ultimoCostoUsdt,
             nuevo: costo,
             origen: OrigenCostoVariante.INGRESO_MANUAL,
             usuarioId: ctx.usuarioId,
@@ -1575,13 +1576,13 @@ export async function cargarStockPorEscaneo(
             accion: AccionAuditoria.UPDATE,
             entidad: "Variante",
             entidadId: varianteId,
-            datosAntes: { ultimoCosto: v.ultimoCosto?.toFixed(2) ?? null },
-            datosDespues: { ultimoCosto: dec(costo), motivo: `Carga de stock: ${motivo}` },
+            datosAntes: { ultimoCostoUsdt: v.ultimoCostoUsdt?.toFixed(2) ?? null },
+            datosDespues: { ultimoCostoUsdt: dec(costo), motivo: `Carga de stock: ${motivo}` },
             meta: ctx.meta,
           });
           costosActualizados++;
         }
-        const costoMovimiento = costo ?? v.ultimoCosto;
+        const costoMovimiento = costo ?? v.ultimoCostoUsdt;
         let stockAnterior = 0;
         let stockPosterior = 0;
         for (const [depositoId, cantidad] of destinos) {
@@ -1590,7 +1591,7 @@ export async function cargarStockPorEscaneo(
             varianteId,
             depositoId,
             cantidad,
-            costoUnitario: costoMovimiento,
+            costoUnitarioUsdt: costoMovimiento,
             usuarioId: ctx.usuarioId,
             motivo,
           });
@@ -1636,7 +1637,7 @@ export async function cargarStockPorEscaneo(
           costosActualizados,
           items: items.map((i) => ({
             varianteId: i.varianteId,
-            costoUnitario: costos.has(i.varianteId) ? dec(costos.get(i.varianteId)!) : null,
+            costoUnitarioUsdt: costos.has(i.varianteId) ? dec(costos.get(i.varianteId)!) : null,
             distribucion: i.distribucion.map((d) => ({
               depositoId: d.depositoId,
               cantidad: d.cantidad,

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatearPesos } from "@/lib/format";
+import { formatearPesos, formatearUsdt } from "@/lib/format";
 import { esOwner, puede } from "@/lib/permisos";
 import { rutaPanel } from "@/lib/paneles";
 import { requirePaginaUsuario } from "@/server/auth/permissions";
@@ -45,13 +45,18 @@ export default async function PanelesPage({
       .map((p) => p.id),
   );
 
-  /** "Hoy: 12 ventas · $ 340.000" (el monto solo para dueños) o "Sin ventas hoy". */
+  /**
+   * "Hoy: 12 ventas · 210 USDT ($ 340.000)" (el monto solo para dueños; USDT =
+   * Σ de cada venta a su cotización) o "Sin ventas hoy".
+   */
   function lineaHoy(panelId: string): string | null {
     const r = resumenes.get(panelId);
     if (!r) return null;
     if (r.ventasHoy === 0) return "Sin ventas hoy";
     const ventas = `Hoy: ${r.ventasHoy} ${r.ventasHoy === 1 ? "venta" : "ventas"}`;
-    return owner ? `${ventas} · ${formatearPesos(r.totalHoy)}` : ventas;
+    return owner
+      ? `${ventas} · ${formatearUsdt(r.totalHoyUsdt)} (${formatearPesos(r.totalHoy)})`
+      : ventas;
   }
 
   return (

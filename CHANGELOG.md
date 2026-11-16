@@ -5,6 +5,35 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.10.0] - 2026-11-16 — USDT, moneda principal; Fiados para Trinidad
+
+### Cambiado
+
+- **USDT es la moneda principal.** Los costos son en USDT (las compras se cargan en USDT y el
+  costo de «Cargar stock» también); los precios de venta y lo cobrado siguen en pesos. Cada
+  venta congela la cotización USDT y la del dólar blue de su momento: su total, costo y ganancia
+  en USDT quedan fijos aunque después se mueva el cambio. Totales y ganancias (Ventas, detalle
+  de venta, Inicio, Reportes, Fiados, Clientes, Equipo, Pasista, exportación a Excel) se
+  muestran en USDT y abajo, chiquito, en pesos y en dólares. Las sumas en USDT son la suma de
+  cada venta a su cotización (nunca una suma en pesos dividida por la cotización de hoy).
+- **La base verifica las cuentas** de cada venta: total USDT = total ÷ cotización, costo en
+  pesos de cada ítem = costo USDT × cotización, costo total USDT = Σ ítems, ganancia USDT =
+  total − costo. Una venta que no cierra no se guarda; la cotización de una venta no se modifica.
+- «Cargar stock»: el costo se tipea en USDT; 500 o más se rechaza (es un costo en pesos).
+- Ganancia por producto/sabor: ahora descuenta el descuento de la venta (antes lo ignoraba).
+- Sin cotización USDT o blue guardada no se puede vender (avisa que se cargue en Cambio).
+
+### Corregido
+
+- La ganancia salía casi igual al total vendido: el costo cargado en USDT se guardaba como
+  pesos. La migración pasa los costos y recalcula la ganancia de las ventas ya hechas
+  (`scripts/_prod-ganancia-usdt-reporte.sh` simula la migración sin cambiar nada).
+
+### Agregado
+
+- Trinidad: Fiados (ver, fiar al vender y registrar cobros) en Vapes, viendo todos los fiados
+  del panel (`scripts/_prod-permisos-trinidad-fiados.ts`).
+
 ## [2.9.1] - 2026-11-09 — Costo al cargar stock
 
 ### Agregado

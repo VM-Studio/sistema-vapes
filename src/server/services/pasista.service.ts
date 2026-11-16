@@ -9,6 +9,8 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 
+import { vistaCostosUsdt, type VistaCostosUsdt } from "@/lib/costos-compra";
+import { MONTOS_CERO, type Montos } from "@/lib/moneda";
 import { formatearIdCompra } from "@/lib/paneles";
 import { esOwner, type SujetoPermisos } from "@/lib/permisos";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
@@ -28,9 +30,86 @@ import { registrarAuditoria } from "@/server/services/audit.service";
  *   que se paga junto con el resto del mes.
  * - El mes es una columna generada en la DB (mes argentino de la fecha de la
  *   compra). Marcar pagadas y deshacer pagos: solo dueños.
+ * - MONEDA: las compras se cargan en USDT y la comisión es un % de la compra,
+ *   así que se MUESTRA en USDT (principal) y en pesos/dólares chiquito. La
+ *   fila guarda pesos (`monto`, `base`, derivados del USDT con la cotización
+ *   de la compra): cada fila se pasa a USDT con la cotización de SU compra
+ *   (ROUND(pesos ÷ Compra.tipoCambioUSDT, 2); dólares con Compra.tipoCambioUSD)
+ *   y después se suma. Una compra vieja sin cotización guardada usa la vigente
+ *   a la fecha de la compra (historial TipoCambio), nunca la de hoy.
  */
 
 const dec = (d: Prisma.Decimal | string | number) => new Prisma.Decimal(d).toFixed(2);
+
+// =============================================================================
+// Montos en USDT (moneda principal)
+// =============================================================================
+
+/** Cotización (pesos por unidad) de VENTA vigente a la fecha de la compra `c`. */
+const cotizacionEnFechaCompra = (moneda: "USDT" | "USD_BLUE") => Prisma.sql`COALESCE(
+  (SELECT tc."valor" FROM "TipoCambio" tc
+    WHERE tc."moneda" = ${moneda}::"MonedaCambio" AND tc."tipo" = 'VENTA' AND tc."obtenidoAt" <= c."fecha"
+    ORDER BY tc."obtenidoAt" DESC LIMIT 1),
+  (SELECT tc."valor" FROM "TipoCambio" tc
+    WHERE tc."moneda" = ${moneda}::"MonedaCambio" AND tc."tipo" = 'VENTA'
+    ORDER BY tc."obtenidoAt" ASC LIMIT 1))`;
+
+/**
+ * FROM de las comisiones con su compra `c` y las cotizaciones de la compra en
+ * `k` (k.tu = pesos por USDT, k.td = pesos por dólar; NULL si no hay ninguna).
+ */
+const SQL_DESDE_COMISIONES = Prisma.sql`
+  "ComisionPasista" cp
+  JOIN "Compra" c ON c."id" = cp."compraId"
+  CROSS JOIN LATERAL (
+    SELECT NULLIF(COALESCE(c."tipoCambioUSDT", ${cotizacionEnFechaCompra("USDT")}), 0) AS "tu",
+           NULLIF(COALESCE(c."tipoCambioUSD", ${cotizacionEnFechaCompra("USD_BLUE")}), 0) AS "td"
+  ) k`;
+
+/** SUM en las tres monedas (texto) de una columna en pesos de `cp`, cada fila a la cotización de su compra. */
+const sqlSumaMontos = (col: Prisma.Sql, alias: string, filtro?: Prisma.Sql) => {
+  const f = filtro ? Prisma.sql` FILTER (WHERE ${filtro})` : Prisma.empty;
+  return Prisma.sql`
+    COALESCE(SUM(ROUND(${col} / k."tu", 2))${f}, 0)::text AS ${Prisma.raw(`"${alias}_usdt"`)},
+    COALESCE(SUM(${col})${f}, 0)::text AS ${Prisma.raw(`"${alias}_pesos"`)},
+    COALESCE(SUM(ROUND(${col} / k."td", 2))${f}, 0)::text AS ${Prisma.raw(`"${alias}_usd"`)}`;
+};
+
+type FilaSql = Record<string, string | number | Date | null>;
+const montosDe = (f: FilaSql | undefined, alias: string): Montos =>
+  f
+    ? {
+        usdt: dec(String(f[`${alias}_usdt`] ?? "0")),
+        pesos: dec(String(f[`${alias}_pesos`] ?? "0")),
+        usd: dec(String(f[`${alias}_usd`] ?? "0")),
+      }
+    : MONTOS_CERO;
+
+/** Montos (comisión y base) de cada fila en las tres monedas, por id. */
+async function montosDeComisiones(
+  db: Pick<Tx, "$queryRaw">,
+  panelId: string,
+  ids: string[],
+): Promise<Map<string, { monto: Montos; base: Montos }>> {
+  if (ids.length === 0) return new Map();
+  const filas = await db.$queryRaw<FilaSql[]>`
+    SELECT cp."id",
+      ${sqlSumaMontos(Prisma.sql`cp."monto"`, "monto")},
+      ${sqlSumaMontos(Prisma.sql`cp."base"`, "base")}
+    FROM ${SQL_DESDE_COMISIONES}
+    WHERE cp."panelId" = ${panelId} AND cp."id" IN (${Prisma.join(ids)})
+    GROUP BY cp."id"`;
+  return new Map(
+    filas.map((f) => [String(f.id), { monto: montosDe(f, "monto"), base: montosDe(f, "base") }]),
+  );
+}
+
+/** Suma exacta de montos. */
+function sumarMontos(lista: Montos[]): Montos {
+  const s = (k: keyof Montos) =>
+    lista.reduce((a, m) => a.plus(m[k]), new Prisma.Decimal(0)).toFixed(2);
+  return { usdt: s("usdt"), pesos: s("pesos"), usd: s("usd") };
+}
 
 /** "2026-10" → 2026-10-01 (DATE de Postgres llega como medianoche UTC). */
 export const fechaDeMes = (mes: string) => new Date(`${mes}-01T00:00:00.000Z`);
@@ -221,6 +300,13 @@ export interface ResumenMesPasista {
   pagado: string;
   pendiente: string;
   compras: number;
+  /** Lo mismo en USDT (principal), pesos y dólares: cada fila a la cotización de su compra. */
+  montos: {
+    totalCompras: Montos;
+    devengado: Montos;
+    pagado: Montos;
+    pendiente: Montos;
+  };
 }
 
 const resumenSchema = z.array(
@@ -239,26 +325,46 @@ export async function resumenPorMes(
   ctx: Ctx,
   rango: { desde: string; hasta: string },
 ): Promise<ResumenMesPasista[]> {
-  const filas = await dbPara(ctx.panelId).$queryRaw`
+  const filas = await dbPara(ctx.panelId).$queryRaw<FilaSql[]>`
     SELECT cp."mes" AS "mes",
            COALESCE(SUM(cp."base") FILTER (WHERE cp."tipo" = 'ORIGINAL'), 0)::text AS "total_compras",
            COALESCE(SUM(cp."monto"), 0)::text AS "devengado",
            COALESCE(SUM(cp."monto") FILTER (WHERE cp."estado" = 'PAGADA'), 0)::text AS "pagado",
            COALESCE(SUM(cp."monto") FILTER (WHERE cp."estado" = 'PENDIENTE'), 0)::text AS "pendiente",
-           COUNT(DISTINCT cp."compraId")::int AS "compras"
-    FROM "ComisionPasista" cp
+           COUNT(DISTINCT cp."compraId")::int AS "compras",
+           ${sqlSumaMontos(Prisma.sql`cp."base"`, "m_total_compras", Prisma.sql`cp."tipo" = 'ORIGINAL'`)},
+           ${sqlSumaMontos(Prisma.sql`cp."monto"`, "m_devengado")},
+           ${sqlSumaMontos(Prisma.sql`cp."monto"`, "m_pagado", Prisma.sql`cp."estado" = 'PAGADA'`)},
+           ${sqlSumaMontos(Prisma.sql`cp."monto"`, "m_pendiente", Prisma.sql`cp."estado" = 'PENDIENTE'`)}
+    FROM ${SQL_DESDE_COMISIONES}
     WHERE cp."panelId" = ${ctx.panelId}
       -- El mes va como texto: un Date pasaría por la zona horaria de la sesión.
       AND cp."mes" >= ${`${rango.desde}-01`}::date AND cp."mes" <= ${`${rango.hasta}-01`}::date
     GROUP BY cp."mes"
     ORDER BY cp."mes" DESC`;
-  return resumenSchema.parse(filas).map((f) => ({
+  const base = resumenSchema.parse(
+    filas.map((f) => ({
+      mes: f.mes,
+      total_compras: f.total_compras,
+      devengado: f.devengado,
+      pagado: f.pagado,
+      pendiente: f.pendiente,
+      compras: f.compras,
+    })),
+  );
+  return base.map((f, i) => ({
     mes: mesDeFecha(f.mes),
     totalCompras: dec(f.total_compras),
     devengado: dec(f.devengado),
     pagado: dec(f.pagado),
     pendiente: dec(f.pendiente),
     compras: f.compras,
+    montos: {
+      totalCompras: montosDe(filas[i], "m_total_compras"),
+      devengado: montosDe(filas[i], "m_devengado"),
+      pagado: montosDe(filas[i], "m_pagado"),
+      pendiente: montosDe(filas[i], "m_pendiente"),
+    },
   }));
 }
 
@@ -271,25 +377,41 @@ export interface TotalesPasista {
   pagadoMes: string;
   pendienteMes: string;
   comprasMes: number;
+  /** Lo mismo en USDT (principal), pesos y dólares: cada fila a la cotización de su compra. */
+  montos: {
+    pendienteTotal: Montos;
+    totalComprasMes: Montos;
+    devengadoMes: Montos;
+    pagadoMes: Montos;
+    pendienteMes: Montos;
+  };
 }
 
 export async function totalesPasista(ctx: Ctx, mes: string): Promise<TotalesPasista> {
   const db = dbPara(ctx.panelId);
-  const [pendiente, delMes] = await Promise.all([
-    db.comisionPasista.aggregate({
-      where: { estado: EstadoComisionPasista.PENDIENTE },
-      _sum: { monto: true },
-    }),
+  const [[pendiente], delMes] = await Promise.all([
+    db.$queryRaw<FilaSql[]>`
+      SELECT ${sqlSumaMontos(Prisma.sql`cp."monto"`, "p")}
+      FROM ${SQL_DESDE_COMISIONES}
+      WHERE cp."panelId" = ${ctx.panelId} AND cp."estado" = 'PENDIENTE'`,
     resumenPorMes(ctx, { desde: mes, hasta: mes }),
   ]);
   const m = delMes[0];
+  const pendienteTotal = montosDe(pendiente, "p");
   return {
-    pendienteTotal: dec(pendiente._sum.monto ?? 0),
+    pendienteTotal: pendienteTotal.pesos,
     totalComprasMes: m?.totalCompras ?? "0.00",
     devengadoMes: m?.devengado ?? "0.00",
     pagadoMes: m?.pagado ?? "0.00",
     pendienteMes: m?.pendiente ?? "0.00",
     comprasMes: m?.compras ?? 0,
+    montos: {
+      pendienteTotal,
+      totalComprasMes: m?.montos.totalCompras ?? MONTOS_CERO,
+      devengadoMes: m?.montos.devengado ?? MONTOS_CERO,
+      pagadoMes: m?.montos.pagado ?? MONTOS_CERO,
+      pendienteMes: m?.montos.pendiente ?? MONTOS_CERO,
+    },
   };
 }
 
@@ -306,6 +428,10 @@ export interface ComisionListada {
   base: string;
   porcentaje: string | null;
   monto: string;
+  /** `monto` en USDT (principal), pesos y dólares, a la cotización de la compra. */
+  montos: Montos;
+  /** `base` (total de la compra) en las tres monedas. */
+  baseMontos: Montos;
   estado: EstadoComisionPasista;
   pagadaAt: Date | null;
   pagadaPor: string | null;
@@ -335,7 +461,12 @@ const incluirListado = {
 
 type FilaListado = Prisma.ComisionPasistaGetPayload<{ include: typeof incluirListado }>;
 
-function aListada(slug: string, c: FilaListado): ComisionListada {
+function aListada(
+  slug: string,
+  c: FilaListado,
+  montos: Map<string, { monto: Montos; base: Montos }>,
+): ComisionListada {
+  const m = montos.get(c.id);
   return {
     id: c.id,
     compraId: c.compraId,
@@ -350,6 +481,8 @@ function aListada(slug: string, c: FilaListado): ComisionListada {
     base: dec(c.base),
     porcentaje: c.porcentaje ? dec(c.porcentaje) : null,
     monto: dec(c.monto),
+    montos: m?.monto ?? { ...MONTOS_CERO, pesos: dec(c.monto) },
+    baseMontos: m?.base ?? { ...MONTOS_CERO, pesos: dec(c.base) },
     estado: c.estado,
     pagadaAt: c.pagadaAt,
     pagadaPor: c.pagadaPor?.nombre ?? null,
@@ -379,7 +512,17 @@ export async function listar(
     }),
     slugDelPanel(db, ctx.panelId),
   ]);
-  return { filas: filas.map((c) => aListada(slug, c)), total, page: f.page, pageSize: f.pageSize };
+  const montos = await montosDeComisiones(
+    db,
+    ctx.panelId,
+    filas.map((c) => c.id),
+  );
+  return {
+    filas: filas.map((c) => aListada(slug, c, montos)),
+    total,
+    page: f.page,
+    pageSize: f.pageSize,
+  };
 }
 
 /** Todas las del mes (Excel). */
@@ -393,7 +536,12 @@ export async function listarMes(ctx: Ctx, mes: string): Promise<ComisionListada[
     }),
     slugDelPanel(db, ctx.panelId),
   ]);
-  return filas.map((c) => aListada(slug, c));
+  const montos = await montosDeComisiones(
+    db,
+    ctx.panelId,
+    filas.map((c) => c.id),
+  );
+  return filas.map((c) => aListada(slug, c, montos));
 }
 
 export interface ItemCompraPasista {
@@ -431,11 +579,18 @@ export interface DetalleComisionPasista {
     costoFinalTotal: string;
     costoUnitarioFinalPromedio: string;
     /** Gastos extras vigentes (no anulados). */
-    gastos: { id: string; motivo: string; monto: string; fecha: Date }[];
+    gastos: { id: string; motivo: string; monto: string; montoUSDT: string | null; fecha: Date }[];
     items: ItemCompraPasista[];
   };
   /** Totales de la comisión de la compra (original + ajustes). */
   totales: TotalesComisiones;
+  /** Los mismos totales en USDT (principal), pesos y dólares. */
+  totalesMontos: { total: Montos; pagado: Montos; pendiente: Montos };
+  /**
+   * La compra en USDT (lo que se muestra), con la cotización de la compra.
+   * `aproximado` = compra vieja cargada en pesos (USDT equivalentes).
+   */
+  compraUsdt: (VistaCostosUsdt & { tipoCambioUSDT: string }) | null;
   /**
    * Comisión que da hoy la compra (ROUND(total × % / 100, 2); 0 si está
    * anulada o sin tick). Coincide con `totales.total` salvo un cambio a
@@ -466,7 +621,7 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
         gastos: {
           where: { anulado: false },
           orderBy: [{ fecha: "asc" }, { id: "asc" }],
-          select: { id: true, motivo: true, monto: true, fecha: true },
+          select: { id: true, motivo: true, monto: true, montoUSDT: true, fecha: true },
         },
         items: {
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -484,12 +639,47 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
       select: { createdAt: true },
     }),
   ]);
-  const comision = aListada(slug, c);
-  const relacionadas = otras.map((o) => aListada(slug, o));
+  const [montos, [cot]] = await Promise.all([
+    montosDeComisiones(db, ctx.panelId, [c.id, ...otras.map((o) => o.id)]),
+    db.$queryRaw<{ tu: string | null }[]>`
+      SELECT COALESCE(c."tipoCambioUSDT", ${cotizacionEnFechaCompra("USDT")})::text AS "tu"
+      FROM "Compra" c WHERE c."id" = ${c.compraId} AND c."panelId" = ${ctx.panelId}`,
+  ]);
+  const comision = aListada(slug, c, montos);
+  const relacionadas = otras.map((o) => aListada(slug, o, montos));
+  const todas = [comision, ...relacionadas];
+  const tc = cot?.tu && Number(cot.tu) > 0 ? dec(cot.tu) : null;
+  // Sin cotización (nunca se obtuvo ninguna) no hay USDT que mostrar.
+  const vista = tc
+    ? vistaCostosUsdt({
+        costosEnUsdt: compra.costosEnUsdt,
+        tipoCambioUSDT: tc,
+        comisionPorcentaje: compra.comisionPasistaPorcentaje
+          ? dec(compra.comisionPasistaPorcentaje)
+          : null,
+        descuento: dec(compra.descuento),
+        items: compra.items.map((i) => ({
+          cantidad: i.cantidad,
+          costoUnitario: dec(i.costoUnitario),
+          costoUnitarioUSDT: i.costoUnitarioUSDT ? dec(i.costoUnitarioUSDT) : null,
+          costoUnitarioFinal: dec(i.costoUnitarioFinal),
+        })),
+        gastos: compra.gastos.map((g) => ({
+          monto: dec(g.monto),
+          montoUSDT: g.montoUSDT ? dec(g.montoUSDT) : null,
+        })),
+      })
+    : null;
   return {
     comision,
     relacionadas,
-    totales: totalizarComisiones([comision, ...relacionadas]),
+    totales: totalizarComisiones(todas),
+    totalesMontos: {
+      total: sumarMontos(todas.map((f) => f.montos)),
+      pagado: sumarMontos(todas.filter((f) => f.estado === "PAGADA").map((f) => f.montos)),
+      pendiente: sumarMontos(todas.filter((f) => f.estado === "PENDIENTE").map((f) => f.montos)),
+    },
+    compraUsdt: vista && tc ? { ...vista, tipoCambioUSDT: tc } : null,
     comisionVigente:
       compra.estado === EstadoCompra.ANULADA ? "0.00" : dec(compra.comisionPasistaMonto),
     compra: {
@@ -518,6 +708,7 @@ export async function detalle(ctx: Ctx, id: string): Promise<DetalleComisionPasi
         id: g.id,
         motivo: g.motivo,
         monto: dec(g.monto),
+        montoUSDT: g.montoUSDT ? dec(g.montoUSDT) : null,
         fecha: g.fecha,
       })),
       items: compra.items.map((i) => ({

@@ -3,10 +3,10 @@
  *
  * - Precio de venta: el del producto para todos sus sabores; un sabor puede
  *   tener precio propio (Variante.precioVenta, null = usa el del producto).
- * - Costo: Variante.ultimoCosto = costo de la última compra recibida. Cada
- *   venta guarda un SNAPSHOT de ese costo en VentaItem.costoUnitario (0 si el
- *   sabor todavía no tiene compras): la ganancia de una venta no cambia
- *   aunque después cambie el costo.
+ * - Costo: Variante.ultimoCostoUsdt = costo en USDT (última compra recibida o
+ *   el tipeado al cargar stock). Cada venta guarda un SNAPSHOT de ese costo en
+ *   VentaItem.costoUnitarioUsdt (0 si el sabor no tiene costo): la ganancia de
+ *   una venta no cambia aunque después cambie el costo o la cotización.
  */
 type Monto = { toString(): string } | string | number | null | undefined;
 
@@ -37,7 +37,7 @@ export function tienePrecioPropio(variante: { precioVenta: Monto }): boolean {
   return variante.precioVenta !== null && variante.precioVenta !== undefined;
 }
 
-/** Costo que se congela en la venta: el último costo, o 0 si todavía no hubo compras. */
-export function costoParaVenta(variante: { ultimoCosto: Monto }): string {
-  return aTexto(variante.ultimoCosto) ?? "0.00";
+/** Costo en USDT que se congela en la venta: el último costo, o 0 si no tiene. */
+export function costoParaVenta(variante: { ultimoCostoUsdt: Monto }): string {
+  return aTexto(variante.ultimoCostoUsdt) ?? "0.00";
 }

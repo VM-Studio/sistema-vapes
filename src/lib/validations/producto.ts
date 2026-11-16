@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { COSTO_USDT_MAXIMO, MENSAJE_COSTO_USDT } from "@/lib/moneda";
+
 import {
   cantidad,
   codigoBarras,
@@ -141,17 +143,17 @@ export const altaRapidaSchema = z.object({
 
 /** Carga de stock por escaneo. `depositoId` se valida en el servicio (mensaje propio). */
 /**
- * Costo unitario en pesos de lo que se carga (opcional, solo lo toma un dueño):
+ * Costo unitario EN USDT de lo que se carga (opcional, solo lo toma un dueño):
  * pasa a ser el último costo del sabor, el que usan las ventas para la ganancia.
- * Acepta coma decimal ("1500,50").
+ * Acepta coma decimal ("12,50"). 500 o más se rechaza: es un costo en pesos.
  */
 const costoCarga = z.preprocess(
   (v) => (typeof v === "string" ? v.replace(",", ".") : v),
-  montoOpcional,
+  montoOpcional.refine((n) => n === undefined || Number(n) < COSTO_USDT_MAXIMO, MENSAJE_COSTO_USDT),
 );
 
 /** Un sabor escaneado que va entero al galpón de ingreso (`depositoId` de la carga). */
-const itemCargaSimple = z.object({ varianteId: id, cantidad, costoUnitario: costoCarga });
+const itemCargaSimple = z.object({ varianteId: id, cantidad, costoUnitarioUsdt: costoCarga });
 
 /**
  * Un sabor escaneado repartido entre galpones. `cantidad` (opcional) es lo
@@ -160,7 +162,7 @@ const itemCargaSimple = z.object({ varianteId: id, cantidad, costoUnitario: cost
 const itemCargaDistribuido = z.object({
   varianteId: id,
   cantidad: cantidad.optional(),
-  costoUnitario: costoCarga,
+  costoUnitarioUsdt: costoCarga,
   distribucion: z
     .array(z.object({ depositoId: id, cantidad }))
     .min(1, "Elegí al menos un galpón para cada producto")

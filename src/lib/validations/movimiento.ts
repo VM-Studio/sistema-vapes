@@ -1,6 +1,8 @@
 import { TipoMovimiento } from "@prisma/client";
 import { z } from "zod";
 
+import { COSTO_USDT_MAXIMO, MENSAJE_COSTO_USDT } from "@/lib/moneda";
+
 import { FAMILIAS, type FamiliaMovimiento } from "@/lib/movimientos-ui";
 
 import {
@@ -37,7 +39,11 @@ export const ingresoManualSchema = z.object({
     z.object({
       varianteId: id,
       cantidad: enteroPositivo,
-      costoUnitario: montoOpcional,
+      /** Costo por unidad EN USDT (solo dueños). 500 o más: es un costo en pesos. */
+      costoUnitarioUsdt: montoOpcional.refine(
+        (n) => n === undefined || Number(n) < COSTO_USDT_MAXIMO,
+        MENSAJE_COSTO_USDT,
+      ),
     }),
   ),
   motivo: texto(500),

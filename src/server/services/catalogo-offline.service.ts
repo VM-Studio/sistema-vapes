@@ -17,7 +17,7 @@ import { dbPara, type Ctx } from "@/server/db/panel-scoped";
 
 export type VarianteOffline = Omit<
   VarianteEncontrada,
-  "ultimoCosto" | "porCodigoAlternativo" | "stockEnDeposito"
+  "ultimoCostoUsdt" | "porCodigoAlternativo" | "stockEnDeposito"
 > & {
   /** Normalizados: principal, alternativos y SKU. */
   codigos: string[];

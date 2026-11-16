@@ -16,7 +16,7 @@ import type { CambioPrecioProveedor } from "@/server/services/compra.service";
  * «Recibido»: confirma la llegada de una compra pendiente de recibir. Abre la
  * confirmación (con los precios del proveedor que cambiarían, que pide al
  * abrir si no vienen) y recién ahí ingresa el stock al galpón
- * (recibirCompra: INGRESO_COMPRA, ultimoCosto y, si se elige, precios del
+ * (recibirCompra: INGRESO_COMPRA, ultimoCostoUsdt y, si se elige, precios del
  * proveedor). Lo usan el listado y el detalle de compras.
  */
 export function BotonRecibido({

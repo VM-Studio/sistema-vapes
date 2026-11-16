@@ -6,6 +6,7 @@ import Link from "next/link";
 import { TelefonoWhatsApp } from "@/components/clientes/telefono-whatsapp";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Monto } from "@/components/ui/monto";
 import { buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -14,7 +15,8 @@ import { Pagination } from "@/components/ui/pagination";
 import { SearchInput } from "@/components/ui/search-input";
 import { StatCard } from "@/components/ui/stat-card";
 import { fechasDeRango, finDelDia, inicioDelDia } from "@/lib/fechas";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { formatearFecha } from "@/lib/utils";
 import { linkWhatsApp, mostrarTelefono } from "@/lib/validations/cliente";
@@ -76,10 +78,22 @@ export default async function FiadosPage({ searchParams }: { searchParams: Promi
         aria-label="Resumen de fiados"
         className="mb-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4"
       >
-        <StatCard label="Por cobrar" value={formatearPesos(resumen.porCobrar)} />
+        <StatCard
+          label="Por cobrar"
+          value={textoPrincipal(resumen.porCobrar)}
+          hint={textoEquivalentes(resumen.porCobrar)}
+        />
         <StatCard label="Deudores" value={formatearNumero(resumen.deudores)} />
-        <StatCard label="Fiado este mes" value={formatearPesos(resumen.fiadoPeriodo)} />
-        <StatCard label="Cobrado este mes" value={formatearPesos(resumen.cobradoPeriodo)} />
+        <StatCard
+          label="Fiado este mes"
+          value={textoPrincipal(resumen.fiadoPeriodo)}
+          hint={textoEquivalentes(resumen.fiadoPeriodo)}
+        />
+        <StatCard
+          label="Cobrado este mes"
+          value={textoPrincipal(resumen.cobradoPeriodo)}
+          hint={textoEquivalentes(resumen.cobradoPeriodo)}
+        />
       </section>
       <section aria-label="Buscar deudores" className="bg-card rounded-card mb-4 p-4">
         <SearchInput placeholder="Nombre o teléfono" />
@@ -142,7 +156,7 @@ export default async function FiadosPage({ searchParams }: { searchParams: Promi
             header: "Debe",
             className: "text-right tabular-nums",
             cell: (d) => (
-              <span className="font-semibold whitespace-nowrap">{formatearPesos(d.saldo)}</span>
+              <Monto montos={d.deuda} className="items-end font-semibold whitespace-nowrap" />
             ),
           },
         ]}
@@ -158,7 +172,7 @@ export default async function FiadosPage({ searchParams }: { searchParams: Promi
                 </span>
               </span>
               <span className="flex shrink-0 flex-col items-end gap-1">
-                <span className="font-semibold tabular-nums">{formatearPesos(d.saldo)}</span>
+                <Monto montos={d.deuda} className="items-end text-right font-semibold" />
                 <Antiguedad d={d} />
               </span>
             </Link>

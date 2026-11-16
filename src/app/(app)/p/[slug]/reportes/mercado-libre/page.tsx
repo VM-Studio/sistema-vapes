@@ -5,9 +5,11 @@ import { notFound } from "next/navigation";
 
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { esOwner } from "@/lib/permisos";
 import { saborVisible } from "@/lib/ventas-ui";
@@ -63,22 +65,37 @@ export default async function ReporteMercadoLibrePage({
           value={formatearNumero(d.total.unidades)}
           hint={`${formatearNumero(d.total.unidadesPrecioML)} a precio Mercado Libre`}
         />
-        <StatCard label="Total facturado" value={formatearPesos(d.total.facturado)} />
+        <StatCard
+          label="Total facturado"
+          value={textoPrincipal(d.total.facturado)}
+          hint={textoEquivalentes(d.total.facturado)}
+        />
         {d.total.ganancia !== null && (
-          <StatCard label="Ganancia bruta" value={formatearPesos(d.total.ganancia)} />
+          <StatCard
+            label="Ganancia bruta"
+            value={textoPrincipal(d.total.ganancia)}
+            hint={textoEquivalentes(d.total.ganancia)}
+          />
         )}
       </GrillaKpis>
-      <SectionCard title="Facturado por día" className="mb-4">
+      <SectionCard
+        title="Facturado por día"
+        description="En USDT: cada venta a la cotización de su momento."
+        className="mb-4"
+      >
         <GraficoBarras
-          moneda
+          moneda="usdt"
           nombre="Facturado"
           datos={d.porDia.map((x) => ({
             etiqueta: `${x.dia.slice(8, 10)}/${x.dia.slice(5, 7)}`,
-            valor: Number(x.facturado),
+            valor: Number(x.facturado.usdt),
           }))}
         />
       </SectionCard>
-      <SectionCard title="Por producto y sabor">
+      <SectionCard
+        title="Por producto y sabor"
+        description="Facturado y ganancia de cada ítem, netos del descuento de su venta."
+      >
         <DataTable
           caption="Ventas Mercado Libre por producto y sabor"
           rows={d.filas}
@@ -103,7 +120,7 @@ export default async function ReporteMercadoLibrePage({
               key: "f",
               header: "Facturado",
               className: "text-right tabular-nums font-medium",
-              cell: (x) => formatearPesos(x.facturado),
+              cell: (x) => <Monto montos={x.facturado} className="items-end whitespace-nowrap" />,
             },
             ...(owner
               ? [
@@ -111,7 +128,9 @@ export default async function ReporteMercadoLibrePage({
                     key: "g",
                     header: "Ganancia",
                     className: "text-right tabular-nums",
-                    cell: (x: Fila) => (x.ganancia !== null ? formatearPesos(x.ganancia) : "—"),
+                    cell: (x: Fila) => (
+                      <Monto montos={x.ganancia} className="items-end whitespace-nowrap" />
+                    ),
                   },
                 ]
               : []),
@@ -122,12 +141,10 @@ export default async function ReporteMercadoLibrePage({
                 <span className="block truncate font-semibold">{x.producto}</span>
                 <span className="text-muted text-small block">
                   {saborVisible(x.sabor) ?? "Sin sabor"} · {formatearNumero(x.unidades)} u.
-                  {x.ganancia !== null && ` · ganancia ${formatearPesos(x.ganancia)}`}
+                  {x.ganancia !== null && ` · ganancia ${textoPrincipal(x.ganancia)}`}
                 </span>
               </span>
-              <span className="shrink-0 font-semibold tabular-nums">
-                {formatearPesos(x.facturado)}
-              </span>
+              <Monto montos={x.facturado} className="shrink-0 items-end text-right font-semibold" />
             </FilaMobile>
           )}
         />

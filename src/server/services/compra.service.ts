@@ -48,7 +48,7 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  *   reportes, pasista y proveedores ya lo tratan como "sin stock todavía".
  * - El stock entra solo al RECIBIR (INGRESO_COMPRA, vía el motor de stock) y
  *   sale solo al ANULAR una recibida (DEVOLUCION_PROVEEDOR).
- * - Recibir actualiza `Variante.ultimoCosto` con el costo de la compra. Cada
+ * - Recibir actualiza `Variante.ultimoCostoUsdt` con el costo de la compra. Cada
  *   VENTA guarda un SNAPSHOT de ese costo al vender (`costoParaVenta` de
  *   `src/lib/precios.ts` → VentaItem.costoUnitario): cambiar el costo después
  *   no cambia la ganancia de las ventas ya hechas.
@@ -77,7 +77,7 @@ import { registrarMovimiento } from "@/server/services/stock.service";
  * - Comisión del pasista: se genera al CONFIRMAR (crear) la compra, como
  *   siempre; recibirla no la cambia. `recalcularCostosFinales` corre
  *   al crear/editar, al cambiar el tick y al agregar/anular gastos; en una
- *   compra RECIBIDA además pasa el costo final a `Variante.ultimoCosto` de los
+ *   compra RECIBIDA además pasa el costo final a `Variante.ultimoCostoUsdt` de los
  *   sabores cuya última compra recibida es esta (historial en
  *   CostoVarianteHistorial). Recibir usa el costo final, no el base.
  * - Comisión del pasista (módulo Pasista): cada cambio de la comisión de la
@@ -531,7 +531,7 @@ export async function costoSugerido(
   const db = dbPara(ctx.panelId);
   const variantes = await db.variante.findMany({
     where: { id: { in: varianteIds }, deletedAt: null },
-    select: { id: true, productoId: true, ultimoCosto: true },
+    select: { id: true, productoId: true, ultimoCostoUsdt: true },
   });
   const precios = await db.proveedorProducto.findMany({
     where: {
@@ -550,7 +550,10 @@ export async function costoSugerido(
       const precio = precioDe.get(v.productoId);
       if (precio?.moneda === Moneda.USDT)
         return [v.id, { costo: dec(precio.precio), fuente: "PROVEEDOR_USDT" }];
-      const pesos = precio?.precio ?? v.ultimoCosto;
+      // Último costo del sabor: ya está en USDT.
+      if (!precio && v.ultimoCostoUsdt)
+        return [v.id, { costo: dec(v.ultimoCostoUsdt), fuente: "ULTIMO_COSTO" }];
+      const pesos = precio?.precio ?? null;
       const costo = pesos ? enUsdt(pesos, tipoCambio) : null;
       if (!pesos || !costo || !tipoCambio) return [v.id, { costo: null, fuente: null }];
       return [
@@ -759,7 +762,7 @@ export async function preciosQueCambian(
 
 /**
  * Recibe la mercadería: un INGRESO_COMPRA por ítem (con su costo y la
- * referencia a la compra) en el galpón de la compra, y `ultimoCosto` de cada
+ * referencia a la compra) en el galpón de la compra, y `ultimoCostoUsdt` de cada
  * sabor = costo de esta compra. Con `actualizarPrecioProveedor`, el precio
  * del proveedor para cada producto pasa a ser el costo pagado (ver arriba:
  * último ítem de cada producto). Transacción Serializable; si ya está
@@ -791,7 +794,7 @@ export async function recibirCompra(
       if (compra.items.length === 0) throw new DomainError("La compra no tiene productos.");
       // Costo final con el criterio vigente (pasista proporcional al precio): una
       // compra confirmada antes de A4 todavía tiene el recargo parejo guardado.
-      await recalcularCostosFinales(tx, ctx, id);
+      const { finalesUsdt, basesUsdt } = await recalcularCostosFinales(tx, ctx, id);
       compra.items = await tx.compraItem.findMany({ where: { compraId: id } });
 
       const cambios =
@@ -808,7 +811,7 @@ export async function recibirCompra(
           varianteId: item.varianteId,
           depositoId: compra.depositoId,
           cantidad: item.cantidad,
-          costoUnitario: item.costoUnitario,
+          costoUnitarioUsdt: basesUsdt.get(item.varianteId)!,
           motivo: `Compra ${idVisible}`,
           referenciaTipo: "COMPRA",
           referenciaId: compra.id,
@@ -818,16 +821,17 @@ export async function recibirCompra(
       // Costo final (con comisión y gastos prorrateados): el de las próximas ventas.
       const anteriores = await tx.variante.findMany({
         where: { id: { in: compra.items.map((i) => i.varianteId) } },
-        select: { id: true, ultimoCosto: true },
+        select: { id: true, ultimoCostoUsdt: true },
       });
-      const anteriorDe = new Map(anteriores.map((v) => [v.id, v.ultimoCosto]));
+      const anteriorDe = new Map(anteriores.map((v) => [v.id, v.ultimoCostoUsdt]));
       for (const item of [...compra.items].sort((a, b) =>
         a.varianteId.localeCompare(b.varianteId),
       )) {
         await actualizarUltimoCosto(tx, {
           varianteId: item.varianteId,
           anterior: anteriorDe.get(item.varianteId) ?? null,
-          nuevo: item.costoUnitarioFinal,
+          // EN USDT: el costo final de la compra en USDT (con pasista y gastos).
+          nuevo: finalesUsdt.get(item.varianteId)!,
           origen: OrigenCostoVariante.COMPRA_RECIBIDA,
           compraId: compra.id,
           usuarioId: ctx.usuarioId,
@@ -873,7 +877,7 @@ export async function recibirCompra(
  * Anula la compra. Si estaba RECIBIDA, devuelve la mercadería al proveedor
  * (DEVOLUCION_PROVEEDOR por ítem): si ya no hay stock suficiente en el
  * galpón, falla completa con el detalle y la compra queda como estaba.
- * No revierte `ultimoCosto` ni precios de proveedor.
+ * No revierte `ultimoCostoUsdt` ni precios de proveedor.
  */
 export async function anularCompra(
   ctx: Ctx,
@@ -935,7 +939,13 @@ export async function anularCompra(
               varianteId: item.varianteId,
               depositoId: compra.depositoId,
               cantidad: item.cantidad,
-              costoUnitario: item.costoUnitario,
+              costoUnitarioUsdt:
+                item.costoUnitarioUSDT ??
+                (compra.tipoCambioUSDT
+                  ? decimal(
+                      pesosAMoneda(item.costoUnitario.toFixed(2), compra.tipoCambioUSDT.toFixed(2)),
+                    )
+                  : null),
               motivo: `Anulación compra ${idVisible}: ${motivo}`,
               referenciaTipo: "COMPRA",
               referenciaId: compra.id,
@@ -981,7 +991,7 @@ export async function anularCompra(
 /**
  * Recalcula y guarda los costos finales de la compra (columnas de Compra y
  * CompraItem.costoUnitarioFinal) con su comisión y sus gastos vigentes. Si
- * está RECIBIDA, el costo final pasa a `ultimoCosto` de los sabores cuya
+ * está RECIBIDA, el costo final pasa a `ultimoCostoUsdt` de los sabores cuya
  * última compra recibida es esta (si después entró otra compra de ese sabor,
  * manda la otra). Las ventas ya hechas conservan su snapshot de costo.
  * Se llama dentro de la transacción del cambio, con la compra bloqueada.
@@ -992,7 +1002,12 @@ export async function recalcularCostosFinales(
   compraId: string,
   /** Nuevo % del pasista (null = sin comisión); sin pasar, el que ya tiene. */
   opciones: { comisionPorcentaje?: number | null } = {},
-): Promise<CostosFinales> {
+): Promise<{
+  costos: CostosFinales;
+  /** Por sabor, EN USDT: costo base y costo final (con pasista y gastos) por unidad. */
+  basesUsdt: Map<string, Prisma.Decimal>;
+  finalesUsdt: Map<string, Prisma.Decimal>;
+}> {
   const compra = await tx.compra.findUnique({
     where: { id: compraId },
     select: {
@@ -1048,12 +1063,33 @@ export async function recalcularCostosFinales(
       gastos: compra.gastos.map((g) => g.monto.toFixed(2)),
     });
   await tx.compra.update({ where: { id: compraId }, data: columnasCostos(costos) });
+  // Costos EN USDT (la moneda de los costos): en una compra en USDT, lo
+  // calculado en USDT; en una anterior (en pesos), pesos ÷ su cotización.
+  // (Una cotización guardada de menos de $ 100 por USDT es un error de carga: se ignora.)
+  const tcAnterior = usdt
+    ? null
+    : compra.tipoCambioUSDT?.greaterThanOrEqualTo(100)
+      ? compra.tipoCambioUSDT
+      : await cotizacionUsdtActual().catch(() => null);
+  if (!usdt && !tcAnterior)
+    throw new DomainError(
+      "No hay cotización USDT para pasar a USDT los costos de esta compra: cargala en Configuración → Cambio.",
+    );
+  const aUsdt = (pesos: string | number) => decimal(pesosAMoneda(pesos, tcAnterior!.toFixed(2)));
   const finalDe = new Map<string, Prisma.Decimal>();
+  const basesUsdt = new Map<string, Prisma.Decimal>();
   for (const [n, item] of compra.items.entries()) {
     const final = decimal(
       usdt ? usdt.itemsPesos[n]!.costoUnitarioFinal : costos.items[n]!.costoUnitarioFinal,
     );
-    finalDe.set(item.varianteId, final);
+    finalDe.set(
+      item.varianteId,
+      usdt ? decimal(usdt.usdt.items[n]!.costoUnitarioFinal) : aUsdt(final.toFixed(2)),
+    );
+    basesUsdt.set(
+      item.varianteId,
+      usdt ? decimal(usdt.usdt.items[n]!.costoUnitario) : aUsdt(item.costoUnitario.toFixed(2)),
+    );
     if (!item.costoUnitarioFinal.equals(final))
       await tx.compraItem.update({ where: { id: item.id }, data: { costoUnitarioFinal: final } });
   }
@@ -1071,13 +1107,13 @@ export async function recalcularCostosFinales(
     if (propias.length > 0) {
       const variantes = await tx.variante.findMany({
         where: { id: { in: propias } },
-        select: { id: true, ultimoCosto: true },
+        select: { id: true, ultimoCostoUsdt: true },
         orderBy: { id: "asc" },
       });
       for (const v of variantes) {
         await actualizarUltimoCosto(tx, {
           varianteId: v.id,
-          anterior: v.ultimoCosto,
+          anterior: v.ultimoCostoUsdt,
           nuevo: finalDe.get(v.id)!,
           origen: OrigenCostoVariante.COSTOS_FINALES_COMPRA,
           compraId,
@@ -1087,7 +1123,7 @@ export async function recalcularCostosFinales(
     }
   }
   await sincronizarComisionPasista(tx, ctx, compraId);
-  return costos;
+  return { costos, basesUsdt, finalesUsdt: finalDe };
 }
 
 async function compraParaCostos(tx: Tx, ctx: Ctx, id: string) {
@@ -1132,7 +1168,7 @@ export async function cambiarComisionPasista(
 ): Promise<{ idVisible: string; costos: CostosFinales }> {
   return transaccion(ctx, async (tx) => {
     const antes = await compraParaCostos(tx, ctx, compraId);
-    const costos = await recalcularCostosFinales(tx, ctx, compraId, {
+    const { costos } = await recalcularCostosFinales(tx, ctx, compraId, {
       comisionPorcentaje: porcentaje,
     });
     await registrarAuditoria(tx, {
@@ -1182,7 +1218,7 @@ export async function agregarGastosCompra(
         },
       });
     }
-    const costos = await recalcularCostosFinales(tx, ctx, compraId);
+    const { costos } = await recalcularCostosFinales(tx, ctx, compraId);
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.CREATE,
@@ -1231,7 +1267,7 @@ export async function anularGastoCompra(
         motivoAnulacion: motivo,
       },
     });
-    const costos = await recalcularCostosFinales(tx, ctx, gasto.compraId);
+    const { costos } = await recalcularCostosFinales(tx, ctx, gasto.compraId);
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.UPDATE,

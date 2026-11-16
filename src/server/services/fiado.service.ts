@@ -12,6 +12,7 @@ import {
 
 import { hoyAR } from "@/lib/fechas";
 import { listaDeMedios } from "@/lib/medios-pago";
+import { MONTOS_CERO, type Montos } from "@/lib/moneda";
 import { puede, type Accion, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import type { FiltrosDeudores } from "@/lib/validations/fiado";
@@ -19,6 +20,7 @@ import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { enDolares, sumar } from "@/server/moneda/montos-venta";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 
 /**
@@ -107,6 +109,82 @@ const diasDesde = (fecha: Date, hoy: Date) =>
   Math.max(0, Math.floor((hoy.getTime() - fecha.getTime()) / DIA_MS));
 
 // =============================================================================
+// Montos en USDT (moneda principal, ver src/lib/moneda.ts)
+// =============================================================================
+// La deuda es en pesos (precios y cobros en pesos), pero se MUESTRA en USDT:
+// cada peso adeudado / cobrado se convierte con la cotización de SU venta
+// (USDT = ROUND(pesos ÷ venta.tipoCambioUsdt, 2), dólares igual con el blue)
+// y después se suma. Nunca se divide una suma en pesos por la cotización de hoy.
+
+/** Cotizaciones congeladas de una venta. */
+interface CotizacionVenta {
+  tipoCambioUsdt: Prisma.Decimal;
+  tipoCambioUsd: Prisma.Decimal;
+}
+
+const aUsdt = (pesos: Prisma.Decimal, v: CotizacionVenta) =>
+  pesos.div(v.tipoCambioUsdt).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+
+/** Un monto en pesos de una venta (saldo, pago, …) en las tres monedas, a la cotización de la venta. */
+export function montosDePesosDeVenta(pesos: Prisma.Decimal, v: CotizacionVenta): Montos {
+  return {
+    usdt: aUsdt(pesos, v).toFixed(2),
+    pesos: pesos.toFixed(2),
+    usd: enDolares(pesos, v.tipoCambioUsd).toFixed(2),
+  };
+}
+
+/** Fila SQL con un monto en las tres monedas (sumas ya convertidas venta por venta). */
+interface FilaMontos {
+  usdt: string;
+  pesos: string;
+  usd: string;
+}
+
+const montosDeFila = (f: FilaMontos | undefined): Montos =>
+  f ? { usdt: dec(D(f.usdt)), pesos: dec(D(f.pesos)), usd: dec(D(f.usd)) } : MONTOS_CERO;
+
+/** SUM en las tres monedas de un monto en pesos de la venta `v` (cada fila a su cotización). */
+const sqlSumaMontos = (pesos: Prisma.Sql) => Prisma.sql`
+  COALESCE(SUM(ROUND(${pesos} / v."tipoCambioUsdt", 2)), 0)::text AS "usdt",
+  COALESCE(SUM(${pesos}), 0)::text AS "pesos",
+  COALESCE(SUM(ROUND(${pesos} / v."tipoCambioUsd", 2)), 0)::text AS "usd"`;
+
+export interface DeudaCliente {
+  deuda: Montos;
+  ventasPendientes: number;
+  /** Fecha de la venta pendiente más vieja. */
+  fiadoMasViejo: Date | null;
+}
+
+/**
+ * Deuda de cada cliente en las tres monedas: Σ saldoPendiente de sus ventas
+ * confirmadas, cada una convertida a la cotización de SU venta (en pesos
+ * coincide con Cliente.saldoDeudor). Los clientes sin deuda no vienen.
+ */
+export async function deudaDeClientes(
+  ctx: Ctx,
+  clienteIds: readonly string[],
+): Promise<Map<string, DeudaCliente>> {
+  if (clienteIds.length === 0) return new Map();
+  const filas = await dbPara(ctx.panelId).$queryRaw<
+    (FilaMontos & { clienteId: string; ventas: number; masVieja: Date })[]
+  >`
+    SELECT v."clienteId", ${sqlSumaMontos(Prisma.sql`v."saldoPendiente"`)},
+      COUNT(*)::int AS "ventas", MIN(v."fecha") AS "masVieja"
+    FROM "Venta" v
+    WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
+      AND v."saldoPendiente" > 0 AND v."clienteId" IN (${Prisma.join([...clienteIds])})
+    GROUP BY v."clienteId"`;
+  return new Map(
+    filas.map((f) => [
+      f.clienteId,
+      { deuda: montosDeFila(f), ventasPendientes: f.ventas, fiadoMasViejo: f.masVieja },
+    ]),
+  );
+}
+
+// =============================================================================
 // Deudores
 // =============================================================================
 
@@ -115,7 +193,10 @@ export interface Deudor {
   nombre: string;
   telefono: string;
   activo: boolean;
+  /** Deuda en pesos (= Cliente.saldoDeudor). */
   saldo: string;
+  /** La deuda en USDT (principal), pesos y dólares, cada venta a su cotización. */
+  deuda: Montos;
   ventasPendientes: number;
   /** Fecha de la venta pendiente más vieja. */
   fiadoMasViejo: Date | null;
@@ -153,31 +234,23 @@ export async function deudores(
       select: { id: true, nombre: true, telefono: true, activo: true, saldoDeudor: true },
     }),
   ]);
-  const grupos = clientes.length
-    ? await db.venta.groupBy({
-        by: ["clienteId"],
-        where: {
-          clienteId: { in: clientes.map((c) => c.id) },
-          estado: EstadoVenta.CONFIRMADA,
-          saldoPendiente: { gt: 0 },
-        },
-        _count: { _all: true },
-        _min: { fecha: true },
-      })
-    : [];
-  const porCliente = new Map(grupos.map((g) => [g.clienteId, g]));
+  const porCliente = await deudaDeClientes(
+    ctx,
+    clientes.map((c) => c.id),
+  );
   const hoy = ahora();
   return {
     deudores: clientes.map((c) => {
       const g = porCliente.get(c.id);
-      const viejo = g?._min.fecha ?? null;
+      const viejo = g?.fiadoMasViejo ?? null;
       return {
         id: c.id,
         nombre: c.nombre,
         telefono: c.telefono,
         activo: c.activo,
         saldo: dec(c.saldoDeudor),
-        ventasPendientes: g?._count._all ?? 0,
+        deuda: g?.deuda ?? MONTOS_CERO,
+        ventasPendientes: g?.ventasPendientes ?? 0,
         fiadoMasViejo: viejo,
         diasAntiguedad: viejo ? diasDesde(viejo, hoy) : null,
       };
@@ -198,13 +271,19 @@ export interface MovimientoVentaCC {
   ventaId: string;
   codigo: string;
   total: string;
+  /** Total de la venta en las tres monedas (USDT congelado de la venta). */
+  totalMontos: Montos;
   /** Lo pagado en el momento de la venta (pagos no anulados). */
   pagadoAlVender: string;
   /** Lo que quedó debiendo con esta venta (total − pagado al vender). */
   importe: string;
+  /** `importe` en las tres monedas (a la cotización de la venta). */
+  montos: Montos;
   /** Saldo pendiente HOY de esa venta. */
   saldoVenta: string;
   saldoAcumulado: string;
+  /** Saldo acumulado en las tres monedas (cada venta a su cotización). */
+  saldoMontos: Montos;
 }
 
 export interface MovimientoCobroCC {
@@ -216,12 +295,15 @@ export interface MovimientoCobroCC {
   medioPago: MedioPago;
   referencia: string | null;
   importe: string;
+  /** `importe` en las tres monedas: cada imputación a la cotización de su venta. */
+  montos: Montos;
   usuario: string;
-  imputaciones: { ventaId: string; codigo: string; monto: string }[];
+  imputaciones: { ventaId: string; codigo: string; monto: string; montos: Montos }[];
   anulado: boolean;
   motivoAnulacion: string | null;
   /** Los anulados no mueven el saldo (se repite el anterior). */
   saldoAcumulado: string;
+  saldoMontos: Montos;
 }
 
 export type MovimientoCC = MovimientoVentaCC | MovimientoCobroCC;
@@ -233,12 +315,25 @@ export interface VentaPendiente {
   total: string;
   montoPagado: string;
   saldoPendiente: string;
+  /** `saldoPendiente` en las tres monedas (a la cotización de la venta). */
+  saldoMontos: Montos;
+  /** Total de la venta en las tres monedas. */
+  totalMontos: Montos;
   estadoPago: EstadoPago;
   diasAntiguedad: number;
 }
 
 export interface CuentaCorriente {
-  cliente: { id: string; nombre: string; telefono: string; activo: boolean; saldo: string };
+  cliente: {
+    id: string;
+    nombre: string;
+    telefono: string;
+    activo: boolean;
+    /** Deuda en pesos (= Cliente.saldoDeudor): lo que se cobra. */
+    saldo: string;
+    /** La deuda en USDT (principal), pesos y dólares, cada venta a su cotización. */
+    deuda: Montos;
+  };
   movimientos: MovimientoCC[];
   pendientes: VentaPendiente[];
 }
@@ -275,6 +370,9 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
       codigo: true,
       fecha: true,
       total: true,
+      totalUsdt: true,
+      tipoCambioUsdt: true,
+      tipoCambioUsd: true,
       montoPagado: true,
       saldoPendiente: true,
       estadoPago: true,
@@ -296,34 +394,44 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
     },
   });
 
-  const movimientos: (
-    Omit<MovimientoVentaCC, "saldoAcumulado"> | Omit<MovimientoCobroCC, "saldoAcumulado">
-  )[] = [];
-  const cobros = new Map<string, Omit<MovimientoCobroCC, "saldoAcumulado">>();
+  type SinSaldo<T> = Omit<T, "saldoAcumulado" | "saldoMontos">;
+  const movimientos: (SinSaldo<MovimientoVentaCC> | SinSaldo<MovimientoCobroCC>)[] = [];
+  const cobros = new Map<string, SinSaldo<MovimientoCobroCC>>();
+  const cotizacion = new Map<string, CotizacionVenta>();
   for (const v of ventas) {
+    cotizacion.set(v.id, v);
     const pagadoAlVender = v.pagos
       .filter((p) => !p.esCobroPosterior && !p.anulado)
       .reduce((a, p) => a.plus(p.monto), CERO);
+    const importe = v.total.minus(pagadoAlVender);
     movimientos.push({
       tipo: "VENTA",
       fecha: v.fecha,
       ventaId: v.id,
       codigo: v.codigo,
       total: dec(v.total),
+      totalMontos: { ...montosDePesosDeVenta(v.total, v), usdt: dec(v.totalUsdt) },
       pagadoAlVender: dec(pagadoAlVender),
-      importe: dec(v.total.minus(pagadoAlVender)),
+      importe: dec(importe),
+      montos: montosDePesosDeVenta(importe, v),
       saldoVenta: dec(v.saldoPendiente),
     });
     for (const p of v.pagos.filter((x) => x.esCobroPosterior)) {
       const clave = p.cobroId ?? p.id;
       const existente = cobros.get(clave);
-      const imputacion = { ventaId: v.id, codigo: v.codigo, monto: dec(p.monto) };
+      const imputacion = {
+        ventaId: v.id,
+        codigo: v.codigo,
+        monto: dec(p.monto),
+        montos: montosDePesosDeVenta(p.monto, v),
+      };
       if (existente) {
         existente.importe = dec(D(existente.importe).plus(p.monto));
+        existente.montos = sumar([existente.montos, imputacion.montos]);
         existente.imputaciones.push(imputacion);
         continue;
       }
-      const cobro: Omit<MovimientoCobroCC, "saldoAcumulado"> = {
+      const cobro: SinSaldo<MovimientoCobroCC> = {
         tipo: "COBRO",
         fecha: p.fecha,
         pagoId: p.id,
@@ -331,6 +439,7 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
         medioPago: p.medioPago,
         referencia: p.referencia,
         importe: dec(p.monto),
+        montos: imputacion.montos,
         usuario: p.usuario.nombre,
         imputaciones: [imputacion],
         anulado: p.anulado,
@@ -346,14 +455,49 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
       a.fecha.getTime() - b.fecha.getTime() ||
       (a.tipo === b.tipo ? 0 : a.tipo === "VENTA" ? -1 : 1),
   );
+  // Saldo en USDT/dólares = Σ (saldo en pesos de cada venta → a SU cotización):
+  // se lleva el saldo en pesos por venta y, al moverse una, se reemplaza su
+  // aporte convertido. El último coincide con la deuda (Σ saldoPendiente convertido).
   let saldo = CERO;
+  let saldoUsdt = CERO;
+  let saldoUsd = CERO;
+  const saldoPorVenta = new Map<string, Prisma.Decimal>();
+  const mover = (ventaId: string, delta: Prisma.Decimal) => {
+    const v = cotizacion.get(ventaId)!;
+    const antes = saldoPorVenta.get(ventaId) ?? CERO;
+    const despues = antes.plus(delta);
+    saldoPorVenta.set(ventaId, despues);
+    saldo = saldo.plus(delta);
+    saldoUsdt = saldoUsdt.minus(aUsdt(antes, v)).plus(aUsdt(despues, v));
+    saldoUsd = saldoUsd
+      .minus(enDolares(antes, v.tipoCambioUsd))
+      .plus(enDolares(despues, v.tipoCambioUsd));
+  };
   const conSaldo: MovimientoCC[] = movimientos.map((m) => {
-    if (m.tipo === "VENTA") saldo = saldo.plus(m.importe);
-    else if (!m.anulado) saldo = saldo.minus(m.importe);
-    return { ...m, saldoAcumulado: dec(saldo) } as MovimientoCC;
+    if (m.tipo === "VENTA") mover(m.ventaId, D(m.importe));
+    else if (!m.anulado) for (const i of m.imputaciones) mover(i.ventaId, D(i.monto).neg());
+    return {
+      ...m,
+      saldoAcumulado: dec(saldo),
+      saldoMontos: { usdt: dec(saldoUsdt), pesos: dec(saldo), usd: dec(saldoUsd) },
+    } as MovimientoCC;
   });
 
   const hoy = ahora();
+  const pendientes: VentaPendiente[] = ventas
+    .filter((v) => v.saldoPendiente.greaterThan(0))
+    .map((v) => ({
+      id: v.id,
+      codigo: v.codigo,
+      fecha: v.fecha,
+      total: dec(v.total),
+      montoPagado: dec(v.montoPagado),
+      saldoPendiente: dec(v.saldoPendiente),
+      saldoMontos: montosDePesosDeVenta(v.saldoPendiente, v),
+      totalMontos: { ...montosDePesosDeVenta(v.total, v), usdt: dec(v.totalUsdt) },
+      estadoPago: v.estadoPago,
+      diasAntiguedad: diasDesde(v.fecha, hoy),
+    }));
   return {
     cliente: {
       id: c.id,
@@ -361,20 +505,10 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
       telefono: c.telefono,
       activo: c.activo,
       saldo: dec(c.saldoDeudor),
+      deuda: pendientes.length ? sumar(pendientes.map((v) => v.saldoMontos)) : MONTOS_CERO,
     },
     movimientos: conSaldo,
-    pendientes: ventas
-      .filter((v) => v.saldoPendiente.greaterThan(0))
-      .map((v) => ({
-        id: v.id,
-        codigo: v.codigo,
-        fecha: v.fecha,
-        total: dec(v.total),
-        montoPagado: dec(v.montoPagado),
-        saldoPendiente: dec(v.saldoPendiente),
-        estadoPago: v.estadoPago,
-        diasAntiguedad: diasDesde(v.fecha, hoy),
-      })),
+    pendientes,
   };
 }
 
@@ -725,14 +859,18 @@ export async function anularCobro(
 // Resumen (dashboard y módulo Fiados)
 // =============================================================================
 
+/**
+ * Montos en USDT (principal), pesos y dólares; cada peso convertido a la
+ * cotización de SU venta y después sumado.
+ */
 export interface ResumenFiados {
-  /** Σ saldo deudor actual de todos los clientes. */
-  porCobrar: string;
+  /** Σ saldo deudor actual de todos los clientes (Σ saldoPendiente de ventas confirmadas). */
+  porCobrar: Montos;
   deudores: number;
   /** Lo que quedó debiendo en las ventas del período (total − pagado al vender). */
-  fiadoPeriodo: string;
+  fiadoPeriodo: Montos;
   /** Cobros de cuenta corriente del período (no anulados). */
-  cobradoPeriodo: string;
+  cobradoPeriodo: Montos;
 }
 
 /**
@@ -747,14 +885,15 @@ export async function resumenFiados(
   periodo: { desde: Date; hasta: Date },
 ): Promise<ResumenFiados> {
   const db = dbPara(ctx.panelId);
-  const [deuda, [fiado], cobrado] = await Promise.all([
-    db.cliente.aggregate({
-      where: { saldoDeudor: { gt: 0 } },
-      _sum: { saldoDeudor: true },
-      _count: { _all: true },
-    }),
-    db.$queryRaw<{ fiado: string }[]>`
-      SELECT COALESCE(SUM(v."total" - COALESCE(p."pagado", 0)), 0)::text AS "fiado"
+  const [cantidadDeudores, [deuda], [fiado], [cobrado]] = await Promise.all([
+    db.cliente.count({ where: { saldoDeudor: { gt: 0 } } }),
+    db.$queryRaw<FilaMontos[]>`
+      SELECT ${sqlSumaMontos(Prisma.sql`v."saldoPendiente"`)}
+      FROM "Venta" v
+      WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
+        AND v."saldoPendiente" > 0`,
+    db.$queryRaw<FilaMontos[]>`
+      SELECT ${sqlSumaMontos(Prisma.sql`(v."total" - COALESCE(p."pagado", 0))`)}
       FROM "Venta" v
       LEFT JOIN (
         SELECT "ventaId", SUM("monto") AS "pagado" FROM "PagoVenta"
@@ -763,19 +902,17 @@ export async function resumenFiados(
       ) p ON p."ventaId" = v."id"
       WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
         AND v."fecha" >= ${ts(periodo.desde)} AND v."fecha" < ${ts(periodo.hasta)}`,
-    db.pagoVenta.aggregate({
-      where: {
-        esCobroPosterior: true,
-        anulado: false,
-        fecha: { gte: periodo.desde, lt: periodo.hasta },
-      },
-      _sum: { monto: true },
-    }),
+    db.$queryRaw<FilaMontos[]>`
+      SELECT ${sqlSumaMontos(Prisma.sql`pv."monto"`)}
+      FROM "PagoVenta" pv
+      JOIN "Venta" v ON v."id" = pv."ventaId"
+      WHERE pv."panelId" = ${ctx.panelId} AND pv."esCobroPosterior" AND NOT pv."anulado"
+        AND pv."fecha" >= ${ts(periodo.desde)} AND pv."fecha" < ${ts(periodo.hasta)}`,
   ]);
   return {
-    porCobrar: dec(deuda._sum.saldoDeudor ?? CERO),
-    deudores: deuda._count._all,
-    fiadoPeriodo: dec(D(fiado?.fiado ?? "0")),
-    cobradoPeriodo: dec(cobrado._sum.monto ?? CERO),
+    porCobrar: montosDeFila(deuda),
+    deudores: cantidadDeudores,
+    fiadoPeriodo: montosDeFila(fiado),
+    cobradoPeriodo: montosDeFila(cobrado),
   };
 }

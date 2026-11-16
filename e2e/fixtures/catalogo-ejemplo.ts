@@ -47,7 +47,7 @@ interface SaborSeed {
   ean12?: string;
   /** Solo si el sabor tiene un precio distinto al del producto. */
   precioPropio?: string;
-  /** Último costo (el de la compra con la que entró el stock inicial). */
+  /** Último costo EN USDT (el de la compra con la que entró el stock inicial). */
   costo: string;
   stockMinimo: number;
   /** Stock inicial por depósito de Vapes: [Ayres Plaza, Mercedes]. */
@@ -75,14 +75,14 @@ const PRODUCTOS: ProductoSeed[] = [
       {
         nombre: "Mango Ice",
         ean12: "779000100001",
-        costo: "9500.00",
+        costo: "7.04",
         stockMinimo: 10,
         stock: [24, 12],
       },
       {
         nombre: "Strawberry Watermelon",
         ean12: "779000100002",
-        costo: "9500.00",
+        costo: "7.04",
         stockMinimo: 10,
         stock: [18, 6],
       },
@@ -90,14 +90,14 @@ const PRODUCTOS: ProductoSeed[] = [
         nombre: "Blue Razz Ice",
         ean12: "779000100003",
         precioPropio: "16500.00",
-        costo: "9800.00",
+        costo: "7.26",
         stockMinimo: 10,
         stock: [30, 10],
       },
       {
         nombre: "Grape Ice",
         ean12: "779000100004",
-        costo: "9500.00",
+        costo: "7.04",
         stockMinimo: 10,
         stock: [4, 2],
       },
@@ -113,28 +113,28 @@ const PRODUCTOS: ProductoSeed[] = [
       {
         nombre: "Watermelon Ice",
         ean12: "779000200001",
-        costo: "8200.00",
+        costo: "6.07",
         stockMinimo: 8,
         stock: [20, 10],
       },
       {
         nombre: "Peach Mango",
         ean12: "779000200002",
-        costo: "8200.00",
+        costo: "6.07",
         stockMinimo: 8,
         stock: [15, 5],
       },
       {
         nombre: "Cool Mint",
         ean12: "779000200003",
-        costo: "8200.00",
+        costo: "6.07",
         stockMinimo: 8,
         stock: [12, 12],
       },
       {
         nombre: "Lemon Mint",
         ean12: "779000200004",
-        costo: "8200.00",
+        costo: "6.07",
         stockMinimo: 8,
         stock: [0, 3],
       },
@@ -150,14 +150,14 @@ const PRODUCTOS: ProductoSeed[] = [
       {
         nombre: "Watermelon Ice",
         ean12: "779000200011",
-        costo: "11000.00",
+        costo: "8.15",
         stockMinimo: 5,
         stock: [10, 4],
       },
       {
         nombre: "Blue Razz Ice",
         ean12: "779000200012",
-        costo: "11000.00",
+        costo: "8.15",
         stockMinimo: 5,
         stock: [8, 0],
       },
@@ -170,7 +170,7 @@ const PRODUCTOS: ProductoSeed[] = [
     categoria: "Accesorios",
     precioVenta: "8900.00",
     sabores: [
-      { nombre: "Único", ean12: "779000300001", costo: "4500.00", stockMinimo: 5, stock: [15, 5] },
+      { nombre: "Único", ean12: "779000300001", costo: "3.33", stockMinimo: 5, stock: [15, 5] },
     ],
   },
   {
@@ -180,7 +180,7 @@ const PRODUCTOS: ProductoSeed[] = [
     categoria: "Artefactos",
     precioVenta: "21990.00",
     sabores: [
-      { nombre: "Único", ean12: "779000300002", costo: "12000.00", stockMinimo: 2, stock: [6, 0] },
+      { nombre: "Único", ean12: "779000300002", costo: "8.89", stockMinimo: 2, stock: [6, 0] },
     ],
   },
 ];
@@ -282,7 +282,7 @@ async function seedProductos(
                 sku: skuNuevo(),
                 codigoBarras: s.ean12 ? generarEan13(s.ean12) : null,
                 precioVenta: s.precioPropio ?? null,
-                ultimoCosto: s.costo,
+                ultimoCostoUsdt: s.costo,
                 stockMinimo: s.stockMinimo,
               },
             }));
@@ -304,7 +304,7 @@ async function seedProductos(
               varianteId: variante.id,
               depositoId: deposito.id,
               cantidad,
-              costoUnitario: s.costo,
+              costoUnitarioUsdt: s.costo,
               motivo: MOTIVO_STOCK_INICIAL,
               usuarioId,
             });

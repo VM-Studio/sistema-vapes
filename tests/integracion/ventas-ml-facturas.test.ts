@@ -88,8 +88,8 @@ beforeAll(async () => {
         precioVentaML: "15000.00",
         variantes: {
           create: [
-            { nombre: "Rosa", sku: `ML-R-${suf}`, ultimoCosto: "5000.00" },
-            { nombre: "Coco", sku: `ML-C-${suf}`, ultimoCosto: "3000.00" },
+            { nombre: "Rosa", sku: `ML-R-${suf}`, ultimoCostoUsdt: "3.20" },
+            { nombre: "Coco", sku: `ML-C-${suf}`, ultimoCostoUsdt: "1.90" },
           ],
         },
       },
@@ -146,8 +146,13 @@ describe("venta por Mercado Libre: precio a mano por ítem", () => {
     expect(v.items.every((i) => i.origenPrecio === "ML" && !i.esPrecioEspecial)).toBe(true);
     expect(v.items.find((i) => i.varianteId === serum)!.precioUnitario).toBe("14500.00");
     const enDb = await m.db.prisma.venta.findUniqueOrThrow({ where: { id: v.id } });
-    expect(enDb.costoTotal.toFixed(2)).toBe("13000.00");
-    expect(enDb.gananciaBruta.toFixed(2)).toBe("25999.99");
+    // Costos en USDT (2 × 3,20 + 1,90); pesos = USDT × la cotización congelada en la venta.
+    expect(enDb.costoTotalUsdt.toFixed(2)).toBe("8.30");
+    expect(enDb.totalUsdt.toFixed(2)).toBe(
+      enDb.total.div(enDb.tipoCambioUsdt).toDecimalPlaces(2).toFixed(2),
+    );
+    expect(enDb.gananciaUsdt.toFixed(2)).toBe(enDb.totalUsdt.minus("8.30").toFixed(2));
+    expect(enDb.gananciaBruta.toFixed(2)).toBe(enDb.total.minus(enDb.costoTotal).toFixed(2));
   });
 });
 

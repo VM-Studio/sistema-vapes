@@ -95,7 +95,7 @@ beforeAll(async () => {
         nombre: `Pod ${suf}`,
         especificacion: "8000",
         precioVenta: "8000.00",
-        variantes: { create: [{ nombre: "Mango", sku: `VV-${suf}`, ultimoCosto: "4000.00" }] },
+        variantes: { create: [{ nombre: "Mango", sku: `VV-${suf}`, ultimoCostoUsdt: "2.50" }] },
       },
       include: { variantes: true },
     });
@@ -186,17 +186,21 @@ describe("ventasDeVendedor", () => {
     expect(d.actual.ventasAClientesNuevos - a.ventasAClientesNuevos).toBe(1);
     expect(d.ventasAClientesNuevos.actual).toBe(d.actual.ventasAClientesNuevos);
     expect(d.actual.unitarias.cantidad - a.unitarias.cantidad).toBe(1);
-    expect(Number(d.actual.unitarias.total) - Number(a.unitarias.total)).toBe(24000);
+    expect(Number(d.actual.unitarias.total.pesos) - Number(a.unitarias.total.pesos)).toBe(24000);
     expect(d.actual.mayoristas.cantidad - a.mayoristas.cantidad).toBe(1);
-    expect(Number(d.actual.facturado)).toBe(
-      Number(d.actual.unitarias.total) + Number(d.actual.mayoristas.total),
+    // USDT: la suma de cada venta a su cotización; unitarias + mayoristas = facturado, al centavo.
+    expect(Math.round(Number(d.actual.facturado.usdt) * 100)).toBe(
+      Math.round(Number(d.actual.unitarias.total.usdt) * 100) +
+        Math.round(Number(d.actual.mayoristas.total.usdt) * 100),
     );
     expect(d.ventas.total - antes.ventas.total).toBe(2);
     // Las más nuevas primero: la mayorista (cliente de Clientes) y la del cliente nuevo.
     expect(d.ventas.filas.slice(0, 2).map((f) => f.clienteNuevo)).toEqual([false, true]);
     expect(d.ventas.filas.slice(0, 2).every((f) => f.estadoPago === "PAGADA")).toBe(true);
     expect(d.serie.length).toBe(24);
-    expect(d.serie.reduce((a, p) => a + (p.actual ?? 0), 0)).toBe(Number(d.actual.facturado));
+    expect(Math.round(d.serie.reduce((a, p) => a + (p.actual ?? 0), 0) * 100)).toBe(
+      Math.round(Number(d.actual.facturado.usdt) * 100),
+    );
   });
 
   it("es solo para dueños", async () => {

@@ -10,7 +10,9 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
-import { formatearPesos } from "@/lib/format";
+import { formatearPesos, formatearUsdt } from "@/lib/format";
+import { textoCotizaciones } from "@/lib/moneda";
+import { Monto } from "@/components/ui/monto";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { cn, formatearFechaHora } from "@/lib/utils";
@@ -220,8 +222,8 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                         {i.origenPrecio === "ML" && (
                           <span data-testid="origen-ml"> (precio Mercado Libre)</span>
                         )}
-                        {i.costoUnitario !== null && (
-                          <> · costo {formatearPesos(i.costoUnitario)}</>
+                        {i.costoUnitarioUsdt !== null && (
+                          <> · costo {formatearUsdt(i.costoUnitarioUsdt)}</>
                         )}
                       </p>
                     </div>
@@ -245,21 +247,27 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                   )}
                   <div className="text-h3 flex justify-between font-semibold">
                     <span>Total</span>
-                    <span
-                      className={cn(
-                        "tabular-nums",
-                        v.estado === "ANULADA" && "text-muted line-through",
-                      )}
-                    >
-                      {formatearPesos(v.total)}
-                    </span>
+                    <Monto
+                      montos={v.totales}
+                      tachado={v.estado === "ANULADA"}
+                      className={cn("items-end text-right", v.estado === "ANULADA" && "text-muted")}
+                    />
                   </div>
-                  {v.costoTotal !== null && v.gananciaBruta !== null && (
-                    <div className="text-muted text-small flex justify-between gap-3">
-                      <span>Costo {formatearPesos(v.costoTotal)}</span>
-                      <span>Ganancia bruta {formatearPesos(v.gananciaBruta)}</span>
+                  {v.costo !== null && v.ganancia !== null && (
+                    <div className="text-small flex justify-between gap-3">
+                      <span className="text-muted">
+                        Costo
+                        <Monto montos={v.costo} className="block" />
+                      </span>
+                      <span className="text-right font-semibold">
+                        Ganancia bruta
+                        <Monto montos={v.ganancia} className="block items-end" />
+                      </span>
                     </div>
                   )}
+                  <p className="text-muted text-xs" data-testid="cotizacion-venta">
+                    Cotización de la venta: {textoCotizaciones(v.cotizaciones)}
+                  </p>
                 </li>
               </ul>
             </SectionCard>

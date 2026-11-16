@@ -15,7 +15,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
 import { esFechaISO, fechasDeRango, RANGOS, type Rango } from "@/lib/fechas";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
+import { Monto } from "@/components/ui/monto";
 import { rutaPanel } from "@/lib/paneles";
 import { tieneMercadoLibre } from "@/lib/medios-pago";
 import { esOwner, puede } from "@/lib/permisos";
@@ -171,15 +173,20 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
           aria-label="Totales del período"
           className={cn(
             "mb-4 grid gap-4 max-md:gap-3",
-            r.resumen.gananciaBruta !== null ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2",
+            r.resumen.ganancia !== null ? "grid-cols-2 md:grid-cols-3" : "grid-cols-2",
           )}
         >
           <StatCard label="Ventas" value={formatearNumero(r.resumen.cantidad)} />
-          <StatCard label="Total vendido" value={formatearPesos(r.resumen.total)} />
-          {r.resumen.gananciaBruta !== null && (
+          <StatCard
+            label="Total vendido"
+            value={textoPrincipal(r.resumen.total)}
+            hint={textoEquivalentes(r.resumen.total)}
+          />
+          {r.resumen.ganancia !== null && (
             <StatCard
               label="Ganancia bruta"
-              value={formatearPesos(r.resumen.gananciaBruta)}
+              value={textoPrincipal(r.resumen.ganancia)}
+              hint={textoEquivalentes(r.resumen.ganancia)}
               className="max-md:col-span-2"
             />
           )}
@@ -319,14 +326,14 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             header: "Total",
             className: "text-right tabular-nums",
             cell: (v) => (
-              <span
+              <Monto
+                montos={v.totales}
+                tachado={v.estado === "ANULADA"}
                 className={cn(
-                  "font-semibold whitespace-nowrap",
-                  v.estado === "ANULADA" && "text-muted line-through",
+                  "items-end font-semibold whitespace-nowrap",
+                  v.estado === "ANULADA" && "text-muted",
                 )}
-              >
-                {formatearPesos(v.total)}
-              </span>
+              />
             ),
           },
           { key: "estado", header: "Estado", cell: estado },
@@ -365,14 +372,14 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono font-semibold">{v.codigo}</span>
-                <span
+                <Monto
+                  montos={v.totales}
+                  tachado={v.estado === "ANULADA"}
                   className={cn(
-                    "font-semibold tabular-nums",
-                    v.estado === "ANULADA" && "text-muted line-through",
+                    "items-end text-right font-semibold",
+                    v.estado === "ANULADA" && "text-muted",
                   )}
-                >
-                  {formatearPesos(v.total)}
-                </span>
+                />
               </div>
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span className="min-w-0 truncate">

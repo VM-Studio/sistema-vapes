@@ -10,6 +10,8 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 
+import { pesosAMoneda, vistaCostosUsdt } from "@/lib/costos-compra";
+import { sumarMontos, type Montos } from "@/lib/moneda";
 import { estadoDeStock, type EstadoStockUI } from "@/lib/movimientos-ui";
 import { ahora } from "@/lib/reloj";
 import { ZONA_DEFAULT } from "@/lib/zona-horaria";
@@ -22,18 +24,32 @@ import type {
   FiltrosVentasReporte,
   RangoReporte,
 } from "@/server/reportes/filtros";
-import { obtenerCotizacion } from "@/server/services/cambio.service";
+import { SQL_USD_GANANCIA, SQL_USD_TOTAL } from "@/server/moneda/montos-venta";
+import { obtenerCotizaciones } from "@/server/services/cambio.service";
 
 /**
  * REPORTES del panel (4 a 9). Todo se agrega en PostgreSQL ($queryRaw con
  * `"panelId" = ctx.panelId` explícito, resultados validados con Zod); Node
  * solo presenta. Costos, ganancias y totales comprados: el que llama decide
  * (`owner`) y acá se devuelven `null` si no corresponde.
+ *
+ * MONEDA (ver src/lib/moneda.ts): los montos salen como `Montos` (USDT
+ * principal, pesos y dólares). Sumar en USDT es sumar lo de cada venta a SU
+ * cotización (columnas Venta.totalUsdt / gananciaUsdt); nunca se divide una
+ * suma en pesos por la cotización de hoy.
  */
 
 const num = z.union([z.number(), z.bigint(), z.string(), z.instanceof(Prisma.Decimal)]);
 const monto = num.transform((v) => new Prisma.Decimal(v.toString()).toFixed(2));
 const entero = num.transform((v) => Number(v));
+const M = (usdt: string, pesos: string, usd: string): Montos => ({ usdt, pesos, usd });
+
+/**
+ * Por ítem de venta (alias `vi` / `v`): el subtotal del ítem neto del
+ * descuento de la venta (prorrateado), en pesos. Sin esto la ganancia por
+ * producto ignora el descuento y queda inflada.
+ */
+const SQL_NETO_ITEM = Prisma.sql`COALESCE(vi."subtotal" * v."total" / NULLIF(v."subtotal", 0), 0)`;
 const TZ = ZONA_DEFAULT;
 
 /**
@@ -63,8 +79,9 @@ export interface VentaReporte {
   medioPago: MedioPago | null;
   estado: EstadoVenta;
   unidades: number;
-  total: string;
-  ganancia: string | null;
+  /** A la cotización de la venta. */
+  total: Montos;
+  ganancia: Montos | null;
 }
 
 export interface ReporteVentas {
@@ -72,8 +89,8 @@ export interface ReporteVentas {
   cantidad: number;
   page: number;
   pageSize: number;
-  resumen: { ventas: number; unidades: number; total: string; ganancia: string | null };
-  porDia: { dia: string; ventas: number; total: string }[];
+  resumen: { ventas: number; unidades: number; total: Montos; ganancia: Montos | null };
+  porDia: { dia: string; ventas: number; total: Montos }[];
 }
 
 function whereVentas(ctx: Ctx, r: RangoReporte, f: FiltrosVentasReporte): Prisma.Sql {
@@ -103,14 +120,46 @@ const filaVentaSchema = z.array(
     medio_pago: z.enum(MedioPago).nullable(),
     estado: z.enum(["CONFIRMADA", "ANULADA"]),
     unidades: entero,
-    total: monto,
-    ganancia: monto,
+    total_usdt: monto,
+    total_pesos: monto,
+    total_usd: monto,
+    ganancia_usdt: monto,
+    ganancia_pesos: monto,
+    ganancia_usd: monto,
   }),
 );
 const resumenVentasSchema = z.array(
-  z.object({ ventas: entero, unidades: entero, total: monto, ganancia: monto }),
+  z.object({
+    ventas: entero,
+    unidades: entero,
+    total_usdt: monto,
+    total_pesos: monto,
+    total_usd: monto,
+    ganancia_usdt: monto,
+    ganancia_pesos: monto,
+    ganancia_usd: monto,
+  }),
 );
-const porDiaSchema = z.array(z.object({ dia: z.string(), ventas: entero, total: monto }));
+const porDiaSchema = z.array(
+  z.object({
+    dia: z.string(),
+    ventas: entero,
+    total_usdt: monto,
+    total_pesos: monto,
+    total_usd: monto,
+  }),
+);
+
+/** SELECT de total y ganancia de UNA venta en las tres monedas (alias `v`). */
+const SQL_MONTOS_VENTA = Prisma.sql`v."totalUsdt" AS total_usdt, v."total" AS total_pesos,
+  ${SQL_USD_TOTAL} AS total_usd, v."gananciaUsdt" AS ganancia_usdt,
+  v."gananciaBruta" AS ganancia_pesos, ${SQL_USD_GANANCIA} AS ganancia_usd`;
+/** Lo mismo sumado (cada venta a su cotización). */
+const SQL_SUMA_TOTAL = Prisma.sql`COALESCE(SUM(v."totalUsdt"), 0) AS total_usdt,
+  COALESCE(SUM(v."total"), 0) AS total_pesos, COALESCE(SUM(${SQL_USD_TOTAL}), 0) AS total_usd`;
+const SQL_SUMA_GANANCIA = Prisma.sql`COALESCE(SUM(v."gananciaUsdt"), 0) AS ganancia_usdt,
+  COALESCE(SUM(v."gananciaBruta"), 0) AS ganancia_pesos,
+  COALESCE(SUM(${SQL_USD_GANANCIA}), 0) AS ganancia_usd`;
 
 export async function reporteVentas(
   ctx: Ctx,
@@ -120,6 +169,11 @@ export async function reporteVentas(
 ): Promise<ReporteVentas> {
   const db = dbPara(ctx.panelId);
   const where = whereVentas(ctx, r, f);
+  // Totales y serie: con «Todas», solo suman las confirmadas (una anulada no es plata vendida).
+  const whereSumas =
+    (f.estado ?? "CONFIRMADA") === "TODAS"
+      ? Prisma.sql`${where} AND v."estado" = 'CONFIRMADA'`
+      : where;
   const pageSize = opciones.exportar ? MAX_FILAS_EXPORTACION : POR_PAGINA;
   const offset = opciones.exportar ? 0 : (f.page - 1) * POR_PAGINA;
   const [filas, resumen, porDia] = await Promise.all([
@@ -128,7 +182,7 @@ export async function reporteVentas(
              d."nombre" AS deposito, v."tipo"::text AS tipo, v."medioPago"::text AS medio_pago,
              v."estado"::text AS estado,
              COALESCE((SELECT SUM(vi."cantidad") FROM "VentaItem" vi WHERE vi."ventaId" = v."id"), 0) AS unidades,
-             v."total", v."gananciaBruta" AS ganancia
+             ${SQL_MONTOS_VENTA}
       FROM "Venta" v
       JOIN "Cliente" c ON c."id" = v."clienteId"
       JOIN "Usuario" u ON u."id" = v."vendedorId"
@@ -139,12 +193,12 @@ export async function reporteVentas(
     db.$queryRaw`
       SELECT COUNT(*) AS ventas,
              COALESCE(SUM((SELECT SUM(vi."cantidad") FROM "VentaItem" vi WHERE vi."ventaId" = v."id")), 0) AS unidades,
-             COALESCE(SUM(v."total"), 0) AS total, COALESCE(SUM(v."gananciaBruta"), 0) AS ganancia
-      FROM "Venta" v WHERE ${where}`,
+             ${SQL_SUMA_TOTAL}, ${SQL_SUMA_GANANCIA}
+      FROM "Venta" v WHERE ${whereSumas}`,
     db.$queryRaw`
       SELECT to_char(v."fecha" AT TIME ZONE 'UTC' AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS dia,
-             COUNT(*) AS ventas, COALESCE(SUM(v."total"), 0) AS total
-      FROM "Venta" v WHERE ${where}
+             COUNT(*) AS ventas, ${SQL_SUMA_TOTAL}
+      FROM "Venta" v WHERE ${whereSumas}
       GROUP BY 1 ORDER BY 1`,
   ]);
   const res = resumenVentasSchema.parse(resumen)[0]!;
@@ -160,8 +214,8 @@ export async function reporteVentas(
       medioPago: v.medio_pago,
       estado: v.estado,
       unidades: v.unidades,
-      total: v.total,
-      ganancia: opciones.owner ? v.ganancia : null,
+      total: M(v.total_usdt, v.total_pesos, v.total_usd),
+      ganancia: opciones.owner ? M(v.ganancia_usdt, v.ganancia_pesos, v.ganancia_usd) : null,
     })),
     cantidad: res.ventas,
     page: f.page,
@@ -169,10 +223,14 @@ export async function reporteVentas(
     resumen: {
       ventas: res.ventas,
       unidades: res.unidades,
-      total: res.total,
-      ganancia: opciones.owner ? res.ganancia : null,
+      total: M(res.total_usdt, res.total_pesos, res.total_usd),
+      ganancia: opciones.owner ? M(res.ganancia_usdt, res.ganancia_pesos, res.ganancia_usd) : null,
     },
-    porDia: porDiaSchema.parse(porDia),
+    porDia: porDiaSchema.parse(porDia).map((d) => ({
+      dia: d.dia,
+      ventas: d.ventas,
+      total: M(d.total_usdt, d.total_pesos, d.total_usd),
+    })),
   };
 }
 
@@ -354,93 +412,172 @@ export interface CompraPorProveedor {
   tienda: string | null;
   compras: number;
   unidades: number;
-  /** En pesos (lo que se pagó). */
-  total: string;
   /**
-   * El mismo total en USDT: cada compra con su cotización (snapshot
-   * Compra.tipoCambioUSDT); las que no la tienen, con la vigente. null = sin
-   * cotización USDT.
+   * Montos de las compras recibidas. USDT: lo de cada compra en USDT
+   * (`vistaCostosUsdt`: las cargadas en USDT, tal cual; las anteriores en
+   * pesos, pasadas con su cotización → aproximado). Pesos: las columnas de la
+   * compra. Dólares: pesos ÷ dólar blue de cada compra.
    */
-  totalUSDT: string | null;
+  total: Montos;
   /** Comisión del pasista + gastos extras + costo final (total + ambos). */
-  comision: string;
-  gastos: string;
-  costoFinalTotal: string;
-  /** costoFinalTotal ÷ unidades (a centavos); null sin unidades. */
-  costoFinalUnidad: string | null;
+  comision: Montos;
+  gastos: Montos;
+  costoFinalTotal: Montos;
+  /** costoFinalTotal ÷ unidades (a centavos, en cada moneda); null sin unidades. */
+  costoFinalUnidad: Montos | null;
+  /**
+   * true = alguna compra se pasó a USDT/dólares de forma aproximada: cargada
+   * en pesos (anterior a las compras en USDT) o sin cotización guardada (se
+   * usó la vigente).
+   */
+  aproximado: boolean;
+  /** Compras sin ninguna cotización (ni guardada ni vigente): suman 0 en USDT y dólares. */
+  sinCotizacion: number;
   ultima: Date | null;
 }
 
-const filaCompraProvSchema = z.array(
-  z.object({
-    proveedor_id: z.string().nullable(),
-    proveedor: z.string().nullable(),
-    tienda: z.string().nullable(),
-    compras: entero,
-    unidades: entero,
-    total: monto,
-    usdt_snapshot: monto,
-    sin_snapshot: monto,
-    comision: monto,
-    gastos: monto,
-    costo_final: monto,
-    ultima: z.date().nullable(),
-  }),
-);
-
-/** Pesos → USDT: Σ con snapshot + (Σ sin snapshot ÷ cotización vigente). */
-export function totalEnUsdt(
-  usdtConSnapshot: string,
-  pesosSinSnapshot: string,
-  cotizacionUsdt: number | null,
-): string | null {
-  if (cotizacionUsdt === null || !(cotizacionUsdt > 0)) return null;
-  return new Prisma.Decimal(usdtConSnapshot)
-    .plus(new Prisma.Decimal(pesosSinSnapshot).div(cotizacionUsdt))
-    .toFixed(2);
-}
+const D = (v: Prisma.Decimal | string | number) => new Prisma.Decimal(v);
 
 export async function comprasPorProveedor(
   ctx: Ctx,
   r: RangoReporte,
   f: FiltrosComprasReporte,
 ): Promise<CompraPorProveedor[]> {
-  const cotizacion = (await obtenerCotizacion("USDT"))?.valor ?? null;
-  const crudas = await dbPara(ctx.panelId).$queryRaw`
-    SELECT c."proveedorId" AS proveedor_id, pr."nombre" AS proveedor, pr."nombreTienda" AS tienda,
-           COUNT(*) AS compras,
-           COALESCE(SUM((SELECT SUM(ci."cantidad") FROM "CompraItem" ci WHERE ci."compraId" = c."id")), 0) AS unidades,
-           COALESCE(SUM(c."total"), 0) AS total,
-           COALESCE(SUM(c."total" / c."tipoCambioUSDT") FILTER (WHERE c."tipoCambioUSDT" IS NOT NULL), 0) AS usdt_snapshot,
-           COALESCE(SUM(c."total") FILTER (WHERE c."tipoCambioUSDT" IS NULL), 0) AS sin_snapshot,
-           COALESCE(SUM(c."comisionPasistaMonto"), 0) AS comision,
-           COALESCE(SUM(c."gastosExtrasTotal"), 0) AS gastos,
-           COALESCE(SUM(c."costoFinalTotal"), 0) AS costo_final,
-           MAX(c."fecha") AS ultima
-    FROM "Compra" c
-    LEFT JOIN "Proveedor" pr ON pr."id" = c."proveedorId"
-    WHERE c."panelId" = ${ctx.panelId} AND c."estado" = ${EstadoCompra.RECIBIDA}::"EstadoCompra"
-      AND c."fecha" >= ${ts(r.inicio)} AND c."fecha" < ${ts(r.fin)}
-      ${f.proveedorId ? Prisma.sql`AND c."proveedorId" = ${f.proveedorId}` : Prisma.empty}
-    GROUP BY 1, 2, 3
-    ORDER BY total DESC`;
-  return filaCompraProvSchema.parse(crudas).map((x) => ({
-    proveedorId: x.proveedor_id,
-    proveedor: x.proveedor ?? "Sin proveedor",
-    tienda: x.tienda,
-    compras: x.compras,
-    unidades: x.unidades,
-    total: x.total,
-    totalUSDT: totalEnUsdt(x.usdt_snapshot, x.sin_snapshot, cotizacion),
-    comision: x.comision,
-    gastos: x.gastos,
-    costoFinalTotal: x.costo_final,
-    costoFinalUnidad:
-      x.unidades > 0
-        ? new Prisma.Decimal(x.costo_final).div(x.unidades).toDecimalPlaces(2).toFixed(2)
-        : null,
-    ultima: x.ultima,
-  }));
+  const [cot, compras] = await Promise.all([
+    obtenerCotizaciones(),
+    dbPara(ctx.panelId).compra.findMany({
+      where: {
+        estado: EstadoCompra.RECIBIDA,
+        fecha: { gte: r.inicio, lt: r.fin },
+        ...(f.proveedorId ? { proveedorId: f.proveedorId } : {}),
+      },
+      select: {
+        proveedorId: true,
+        proveedor: { select: { nombre: true, nombreTienda: true } },
+        fecha: true,
+        total: true,
+        descuento: true,
+        comisionPasistaPorcentaje: true,
+        comisionPasistaMonto: true,
+        gastosExtrasTotal: true,
+        costoFinalTotal: true,
+        tipoCambioUSDT: true,
+        tipoCambioUSD: true,
+        costosEnUsdt: true,
+        items: {
+          select: {
+            cantidad: true,
+            costoUnitario: true,
+            costoUnitarioUSDT: true,
+            costoUnitarioFinal: true,
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        gastos: { where: { anulado: false }, select: { monto: true, montoUSDT: true } },
+      },
+    }),
+  ]);
+  const usdtVigente = cot.USDT?.valor ?? null;
+  const blueVigente = cot.USD_BLUE?.valor ?? null;
+
+  interface Acum {
+    proveedorId: string | null;
+    proveedor: string;
+    tienda: string | null;
+    compras: number;
+    unidades: number;
+    total: Montos[];
+    comision: Montos[];
+    gastos: Montos[];
+    costoFinal: Montos[];
+    aproximado: boolean;
+    sinCotizacion: number;
+    ultima: Date | null;
+  }
+  const grupos = new Map<string, Acum>();
+  for (const c of compras) {
+    const clave = c.proveedorId ?? "";
+    const g: Acum = grupos.get(clave) ?? {
+      proveedorId: c.proveedorId,
+      proveedor: c.proveedor?.nombre ?? "Sin proveedor",
+      tienda: c.proveedor?.nombreTienda ?? null,
+      compras: 0,
+      unidades: 0,
+      total: [],
+      comision: [],
+      gastos: [],
+      costoFinal: [],
+      aproximado: false,
+      sinCotizacion: 0,
+      ultima: null,
+    };
+    grupos.set(clave, g);
+    g.compras += 1;
+    g.unidades += c.items.reduce((a, i) => a + i.cantidad, 0);
+    if (!g.ultima || c.fecha > g.ultima) g.ultima = c.fecha;
+
+    const tcUsdt = c.tipoCambioUSDT?.toFixed(2) ?? (usdtVigente ? usdtVigente.toFixed(2) : null);
+    const tcUsd = c.tipoCambioUSD?.toFixed(2) ?? (blueVigente ? blueVigente.toFixed(2) : null);
+    if (!c.tipoCambioUSDT || !c.tipoCambioUSD) g.aproximado = true;
+    if (!tcUsdt || !tcUsd) g.sinCotizacion += 1;
+    const vista = tcUsdt
+      ? vistaCostosUsdt({
+          costosEnUsdt: c.costosEnUsdt,
+          tipoCambioUSDT: tcUsdt,
+          comisionPorcentaje: c.comisionPasistaPorcentaje?.toFixed(2) ?? null,
+          descuento: c.descuento.toFixed(2),
+          items: c.items.map((i) => ({
+            cantidad: i.cantidad,
+            costoUnitario: i.costoUnitario.toFixed(2),
+            costoUnitarioUSDT: i.costoUnitarioUSDT?.toFixed(2) ?? null,
+            costoUnitarioFinal: i.costoUnitarioFinal.toFixed(2),
+          })),
+          gastos: c.gastos.map((x) => ({
+            monto: x.monto.toFixed(2),
+            montoUSDT: x.montoUSDT?.toFixed(2) ?? null,
+          })),
+        })
+      : null;
+    if (vista?.aproximado) g.aproximado = true;
+    const m = (usdt: number | undefined, pesos: Prisma.Decimal): Montos => ({
+      usdt: (usdt ?? 0).toFixed(2),
+      pesos: pesos.toFixed(2),
+      usd: (tcUsd ? pesosAMoneda(pesos.toFixed(2), tcUsd) : 0).toFixed(2),
+    });
+    g.total.push(m(vista?.costos.total, c.total));
+    g.comision.push(m(vista?.costos.comision, c.comisionPasistaMonto));
+    g.gastos.push(m(vista?.costos.gastos, c.gastosExtrasTotal));
+    g.costoFinal.push(m(vista?.costos.costoFinalTotal, c.costoFinalTotal));
+  }
+
+  const porUnidad = (t: Montos, unidades: number): Montos => {
+    const div = (x: string) => D(x).div(unidades).toDecimalPlaces(2).toFixed(2);
+    return { usdt: div(t.usdt), pesos: div(t.pesos), usd: div(t.usd) };
+  };
+  return [...grupos.values()]
+    .map((g) => {
+      const costoFinalTotal = sumarMontos(g.costoFinal);
+      return {
+        proveedorId: g.proveedorId,
+        proveedor: g.proveedor,
+        tienda: g.tienda,
+        compras: g.compras,
+        unidades: g.unidades,
+        total: sumarMontos(g.total),
+        comision: sumarMontos(g.comision),
+        gastos: sumarMontos(g.gastos),
+        costoFinalTotal,
+        costoFinalUnidad: g.unidades > 0 ? porUnidad(costoFinalTotal, g.unidades) : null,
+        aproximado: g.aproximado,
+        sinCotizacion: g.sinCotizacion,
+        ultima: g.ultima,
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.total.usdt) - Number(a.total.usdt) ||
+        Number(b.total.pesos) - Number(a.total.pesos),
+    );
 }
 
 // =============================================================================
@@ -460,7 +597,8 @@ export interface ReporteClientes {
         telefono: string;
         compras: number;
         unidades: number;
-        total: string;
+        /** Cada venta a su cotización. */
+        total: Montos;
       }[]
     | null;
   inactivos: {
@@ -499,12 +637,12 @@ export async function reporteClientes(
       ? db.$queryRaw`
           SELECT c."id", c."nombre", c."telefono", COUNT(*) AS compras,
                  COALESCE(SUM((SELECT SUM(vi."cantidad") FROM "VentaItem" vi WHERE vi."ventaId" = v."id")), 0) AS unidades,
-                 SUM(v."total") AS total
+                 ${SQL_SUMA_TOTAL}
           FROM "Venta" v JOIN "Cliente" c ON c."id" = v."clienteId"
           WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
             AND v."fecha" >= ${ts(r.inicio)} AND v."fecha" < ${ts(r.fin)}
           GROUP BY c."id", c."nombre", c."telefono"
-          ORDER BY total DESC
+          ORDER BY total_usdt DESC, total_pesos DESC
           LIMIT 20`
       : Promise.resolve(null),
     db.$queryRaw`
@@ -541,10 +679,20 @@ export async function reporteClientes(
                 telefono: z.string(),
                 compras: entero,
                 unidades: entero,
-                total: monto,
+                total_usdt: monto,
+                total_pesos: monto,
+                total_usd: monto,
               }),
             )
-            .parse(top),
+            .parse(top)
+            .map((x) => ({
+              id: x.id,
+              nombre: x.nombre,
+              telefono: x.telefono,
+              compras: x.compras,
+              unidades: x.unidades,
+              total: M(x.total_usdt, x.total_pesos, x.total_usd),
+            })),
     inactivos: z
       .array(
         z.object({
@@ -647,21 +795,23 @@ export interface ReporteMercadoLibre {
   total: {
     ventas: number;
     unidades: number;
-    facturado: string;
+    /** Cada venta a su cotización. */
+    facturado: Montos;
     /** null si quien mira no es dueño. */
-    ganancia: string | null;
+    ganancia: Montos | null;
     /** Unidades cobradas a precio Mercado Libre (el resto, a lista o precio especial). */
     unidadesPrecioML: number;
   };
-  porDia: { dia: string; ventas: number; facturado: string }[];
+  porDia: { dia: string; ventas: number; facturado: Montos }[];
   filas: {
     productoId: string;
     producto: string;
     sabor: string;
     unidades: number;
-    facturado: string;
-    /** Ganancia bruta de esos ítems (sin prorratear descuentos globales); null si no es dueño. */
-    ganancia: string | null;
+    /** Neto del descuento de la venta (prorrateado), a la cotización de cada venta. */
+    facturado: Montos;
+    /** Ganancia de esos ítems (neta del descuento prorrateado); null si no es dueño. */
+    ganancia: Montos | null;
   }[];
 }
 
@@ -674,10 +824,12 @@ export async function reporteMercadoLibre(
   const where = Prisma.sql`v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
     AND v."medioPago" = 'MERCADO_LIBRE'
     AND v."fecha" >= ${ts(r.inicio)} AND v."fecha" < ${ts(r.fin)}`;
+  // Por ítem: neto en pesos; USDT y dólares con la cotización de SU venta;
+  // costo en USDT el congelado del ítem. Se redondea solo la suma final.
+  const neto = SQL_NETO_ITEM;
   const [totales, unidades, dias, crudas] = await Promise.all([
     db.$queryRaw`
-      SELECT COUNT(*) AS ventas, COALESCE(SUM(v."total"), 0) AS facturado,
-             COALESCE(SUM(v."gananciaBruta"), 0) AS ganancia
+      SELECT COUNT(*) AS ventas, ${SQL_SUMA_TOTAL}, ${SQL_SUMA_GANANCIA}
       FROM "Venta" v WHERE ${where}`,
     db.$queryRaw`
       SELECT COALESCE(SUM(vi."cantidad"), 0) AS unidades,
@@ -685,34 +837,53 @@ export async function reporteMercadoLibre(
       FROM "VentaItem" vi JOIN "Venta" v ON v."id" = vi."ventaId" WHERE ${where}`,
     db.$queryRaw`
       SELECT to_char((v."fecha" AT TIME ZONE 'UTC') AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS dia,
-             COUNT(*) AS ventas, COALESCE(SUM(v."total"), 0) AS facturado
+             COUNT(*) AS ventas, ${SQL_SUMA_TOTAL}
       FROM "Venta" v WHERE ${where}
       GROUP BY 1 ORDER BY 1`,
     db.$queryRaw`
       SELECT p."id" AS producto_id, p."nombreCompleto" AS producto, va."nombre" AS sabor,
-             SUM(vi."cantidad") AS unidades, SUM(vi."subtotal") AS facturado,
-             SUM(vi."subtotal" - vi."costoUnitario" * vi."cantidad") AS ganancia
+             SUM(vi."cantidad") AS unidades,
+             ROUND(SUM(${neto} / v."tipoCambioUsdt"), 2) AS total_usdt,
+             ROUND(SUM(${neto}), 2) AS total_pesos,
+             ROUND(SUM(${neto} / v."tipoCambioUsd"), 2) AS total_usd,
+             ROUND(SUM(${neto} / v."tipoCambioUsdt" - vi."costoUnitarioUsdt" * vi."cantidad"), 2) AS ganancia_usdt,
+             ROUND(SUM(${neto} - vi."costoUnitario" * vi."cantidad"), 2) AS ganancia_pesos,
+             ROUND(SUM((${neto} - vi."costoUnitario" * vi."cantidad") / v."tipoCambioUsd"), 2) AS ganancia_usd
       FROM "VentaItem" vi
       JOIN "Venta" v ON v."id" = vi."ventaId"
       JOIN "Variante" va ON va."id" = vi."varianteId"
       JOIN "Producto" p ON p."id" = vi."productoId"
       WHERE ${where}
       GROUP BY 1, 2, 3
-      ORDER BY facturado DESC, producto, sabor`,
+      ORDER BY total_usdt DESC, producto, sabor`,
   ]);
   const t = z
-    .array(z.object({ ventas: entero, facturado: monto, ganancia: monto }))
+    .array(
+      z.object({
+        ventas: entero,
+        total_usdt: monto,
+        total_pesos: monto,
+        total_usd: monto,
+        ganancia_usdt: monto,
+        ganancia_pesos: monto,
+        ganancia_usd: monto,
+      }),
+    )
     .parse(totales)[0]!;
   const u = z.array(z.object({ unidades: entero, unidades_ml: entero })).parse(unidades)[0]!;
   return {
     total: {
       ventas: t.ventas,
       unidades: u.unidades,
-      facturado: t.facturado,
-      ganancia: opciones.owner ? t.ganancia : null,
+      facturado: M(t.total_usdt, t.total_pesos, t.total_usd),
+      ganancia: opciones.owner ? M(t.ganancia_usdt, t.ganancia_pesos, t.ganancia_usd) : null,
       unidadesPrecioML: u.unidades_ml,
     },
-    porDia: z.array(z.object({ dia: z.string(), ventas: entero, facturado: monto })).parse(dias),
+    porDia: porDiaSchema.parse(dias).map((d) => ({
+      dia: d.dia,
+      ventas: d.ventas,
+      facturado: M(d.total_usdt, d.total_pesos, d.total_usd),
+    })),
     filas: z
       .array(
         z.object({
@@ -720,8 +891,12 @@ export async function reporteMercadoLibre(
           producto: z.string(),
           sabor: z.string(),
           unidades: entero,
-          facturado: monto,
-          ganancia: monto,
+          total_usdt: monto,
+          total_pesos: monto,
+          total_usd: monto,
+          ganancia_usdt: monto,
+          ganancia_pesos: monto,
+          ganancia_usd: monto,
         }),
       )
       .parse(crudas)
@@ -730,8 +905,8 @@ export async function reporteMercadoLibre(
         producto: x.producto,
         sabor: x.sabor,
         unidades: x.unidades,
-        facturado: x.facturado,
-        ganancia: opciones.owner ? x.ganancia : null,
+        facturado: M(x.total_usdt, x.total_pesos, x.total_usd),
+        ganancia: opciones.owner ? M(x.ganancia_usdt, x.ganancia_pesos, x.ganancia_usd) : null,
       })),
   };
 }

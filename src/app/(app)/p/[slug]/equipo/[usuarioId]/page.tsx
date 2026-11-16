@@ -18,7 +18,9 @@ import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { Monto } from "@/components/ui/monto";
+import { formatearNumero } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { esMes } from "@/lib/ganancia-vendedor";
 import { rutaPanel } from "@/lib/paneles";
 import { cn, formatearFechaHora } from "@/lib/utils";
@@ -63,11 +65,11 @@ function ClienteVenta({ v }: { v: VentaDeVendedor }) {
   );
 }
 
-/** Estado de pago: "Debe $ X" si quedó saldo, "Pagada" si no. */
+/** Estado de pago: "Debe $ X" (lo que se debe, en pesos) si quedó saldo, "Pagada" si no. */
 function PagoVenta({ v }: { v: VentaDeVendedor }) {
-  if (v.estadoPago === "PAGADA" || !(Number(v.saldoPendiente) > 0))
+  if (v.estadoPago === "PAGADA" || !(Number(v.saldoPendiente.pesos) > 0))
     return <span className="text-muted text-small">Pagada</span>;
-  return <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente} />;
+  return <EstadoPagoBadge estado={v.estadoPago} saldo={v.saldoPendiente.pesos} />;
 }
 
 /**
@@ -148,7 +150,7 @@ export default async function EquipoVendedorPage({
       key: "total",
       header: "Total",
       className: "text-right font-semibold",
-      cell: (v: VentaDeVendedor) => formatearPesos(v.total),
+      cell: (v: VentaDeVendedor) => <Monto montos={v.total} className="items-end" />,
     },
     {
       key: "pago",
@@ -166,11 +168,11 @@ export default async function EquipoVendedorPage({
   const detalle: [string, string][] = [
     [
       "Unitarias",
-      `${formatearNumero(d.actual.unitarias.cantidad)} · ${formatearPesos(d.actual.unitarias.total)}`,
+      `${formatearNumero(d.actual.unitarias.cantidad)} · ${textoPrincipal(d.actual.unitarias.total)}`,
     ],
     [
       "Mayoristas",
-      `${formatearNumero(d.actual.mayoristas.cantidad)} · ${formatearPesos(d.actual.mayoristas.total)}`,
+      `${formatearNumero(d.actual.mayoristas.cantidad)} · ${textoPrincipal(d.actual.mayoristas.total)}`,
     ],
     ["Ventas a clientes nuevos", formatearNumero(d.actual.ventasAClientesNuevos)],
     [
@@ -233,7 +235,7 @@ export default async function EquipoVendedorPage({
       <section className="bg-card rounded-card flex flex-col gap-4 p-5 md:p-6">
         <div className="flex flex-col gap-0.5">
           <h2 className="text-h3 font-semibold">{desc.tituloGrafico}</h2>
-          <p className="text-muted text-small">Facturado por {d.usuario.nombre}</p>
+          <p className="text-muted text-small">Facturado por {d.usuario.nombre}, en USDT</p>
         </div>
         <GraficoComparativo datos={d.serie} />
       </section>
@@ -261,11 +263,11 @@ export default async function EquipoVendedorPage({
         {d.comision && (
           <StatCard
             label="Comisión estimada"
-            value={formatearPesos(d.comision.actual)}
-            anterior={formatearPesos(d.comision.anterior)}
+            value={textoPrincipal(d.comision.actual)}
+            anterior={textoPrincipal(d.comision.anterior)}
             etiquetaAnterior={ETIQUETA_ANTERIOR[periodo.modo]}
             deltaPct={d.comision.deltaPct}
-            hint="Orientativa: se calcula con los porcentajes de comisión del usuario sobre sus ventas unitarias y mayoristas."
+            hint={`${textoEquivalentes(d.comision.actual)}. Orientativa: se calcula con los porcentajes de comisión del usuario sobre sus ventas unitarias y mayoristas.`}
             className="md:p-6"
           />
         )}
@@ -356,7 +358,7 @@ export default async function EquipoVendedorPage({
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="font-mono text-sm font-semibold">{v.codigo}</span>
-                <span className="font-semibold tabular-nums">{formatearPesos(v.total)}</span>
+                <Monto montos={v.total} className="items-end font-semibold" />
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="min-w-0 text-sm">

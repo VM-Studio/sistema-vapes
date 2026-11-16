@@ -130,7 +130,7 @@ export async function buscarEnCatalogo(
       precioVenta: v.precioVenta,
       precioVentaProducto: v.precioVentaProducto,
       tienePrecioPropio: v.tienePrecioPropio,
-      ultimoCosto: null, // el catálogo offline no lleva costos
+      ultimoCostoUsdt: null, // el catálogo offline no lleva costos
       stockMinimo: v.stockMinimo,
       stockPorDeposito: v.stockPorDeposito,
       stockTotal: v.stockTotal,

@@ -125,6 +125,21 @@ export interface CalculoGanancia {
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 const CERO = D(0);
 
+/**
+ * MONEDA: la ganancia por vape es en PESOS (la tarifa es $ por unidad y es lo
+ * que se le paga al vendedor), así que se muestra en pesos. Su equivalente en
+ * USDT va chiquito, solo de referencia, a `cotizacionUsdt` (pesos por USDT:
+ * la de hoy para lo que falta pagar, la del día del pago para lo pagado).
+ * Devuelve "12.34" o null si no hay cotización.
+ */
+export function equivalenteUsdt(
+  pesos: Prisma.Decimal.Value,
+  cotizacionUsdt: string | null | undefined,
+): string | null {
+  if (!cotizacionUsdt || !(Number(cotizacionUsdt) > 0)) return null;
+  return D(pesos).div(cotizacionUsdt).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2);
+}
+
 export function calcularGanancia(
   tarifas: Tarifas,
   ventas: VentaParaGanancia[],

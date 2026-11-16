@@ -15,7 +15,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { hoyAR } from "@/lib/fechas";
-import { formatearPesos } from "@/lib/format";
+import { formatearPesos, formatearUsdt } from "@/lib/format";
+import type { Montos } from "@/lib/moneda";
 import { rutaPdf } from "@/lib/pdfs";
 import { cn, formatearFecha } from "@/lib/utils";
 import {
@@ -34,15 +35,21 @@ import { anularCobroAction, registrarCobroAction } from "../actions";
  * "Registrar cobro" (FIADOS "editar"): Sheet con monto (precargado con toda la
  * deuda), medio, referencia, fecha e imputación (de la más vieja a la más
  * nueva, o las ventas elegidas). Después: recibo por WhatsApp.
+ * El cobro se tipea y se registra en PESOS (lo que se cobra); la deuda en
+ * USDT (cada venta a su cotización) va de referencia.
  */
 export function RegistrarCobro({
   cliente,
   saldo,
+  deuda,
   pendientes,
   medios = MEDIOS_PAGO,
 }: {
   cliente: { id: string; nombre: string; telefono: string };
+  /** Deuda en pesos: lo que se cobra. */
   saldo: string;
+  /** La misma deuda en USDT (referencia). */
+  deuda?: Montos;
   pendientes: VentaPendiente[];
   /** Medios del panel (configuración de ventas). */
   medios?: readonly MedioPago[];
@@ -138,7 +145,11 @@ export function RegistrarCobro({
         open={abierto}
         onOpenChange={(o) => !enviando && setAbierto(o)}
         title={hecho ? "Cobro registrado" : `Cobro a ${cliente.nombre}`}
-        description={hecho ? undefined : `Debe ${formatearPesos(saldo)}`}
+        description={
+          hecho
+            ? undefined
+            : `Debe ${formatearPesos(saldo)}${deuda ? ` (${formatearUsdt(deuda.usdt)})` : ""}`
+        }
         footer={
           hecho ? (
             <>

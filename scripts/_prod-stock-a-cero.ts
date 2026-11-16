@@ -39,7 +39,16 @@ async function main() {
 
   const paneles = await prisma.panel.findMany({ select: { id: true, nombre: true, slug: true } });
   const filasCsv: string[] = [
-    ["panel", "galpon", "producto", "sabor", "cantidad", "ultimoCosto", "varianteId", "depositoId"]
+    [
+      "panel",
+      "galpon",
+      "producto",
+      "sabor",
+      "cantidad",
+      "ultimoCostoUsdt",
+      "varianteId",
+      "depositoId",
+    ]
       .map(csv)
       .join(","),
   ];
@@ -65,7 +74,7 @@ async function main() {
         variante: {
           select: {
             nombre: true,
-            ultimoCosto: true,
+            ultimoCostoUsdt: true,
             deletedAt: true,
             producto: { select: { nombreCompleto: true, deletedAt: true } },
           },
@@ -86,7 +95,7 @@ async function main() {
           f.variante.producto.nombreCompleto,
           f.variante.nombre ?? "",
           f.cantidad,
-          f.variante.ultimoCosto?.toFixed(2) ?? "",
+          f.variante.ultimoCostoUsdt?.toFixed(2) ?? "",
           f.varianteId,
           f.depositoId,
         ]

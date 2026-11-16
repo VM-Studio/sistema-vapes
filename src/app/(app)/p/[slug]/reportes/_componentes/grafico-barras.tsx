@@ -12,7 +12,7 @@ import {
 } from "recharts";
 
 import { ChartPlaceholder, ChartTheme } from "@/components/ui/chart-theme";
-import { formatearCompacto, formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearCompacto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 
 /** Etiquetas del eje de categorías: recortadas para que el gráfico entre en 375px (el tooltip muestra el nombre completo). */
 const recortarEtiqueta = (t: string) => (t.length > 16 ? `${t.slice(0, 15).trimEnd()}…` : t);
@@ -24,7 +24,10 @@ export interface PuntoBarra {
   comparacion?: number | null;
 }
 
-/** Barras simples (recharts). Actual en azul, comparación en naranja. `moneda`: ejes y tooltip en pesos. */
+/**
+ * Barras simples (recharts). Actual en azul, comparación en naranja.
+ * `moneda`: ejes y tooltip en pesos (`true`) o en USDT (`"usdt"`).
+ */
 export function GraficoBarras({
   datos,
   moneda = false,
@@ -34,13 +37,16 @@ export function GraficoBarras({
   alto = 260,
 }: {
   datos: PuntoBarra[];
-  moneda?: boolean;
+  moneda?: boolean | "usdt";
   nombre?: string;
   nombreComparacion?: string;
   horizontal?: boolean;
   alto?: number;
 }) {
-  const fmt = (n: number) => (moneda ? formatearPesos(n) : formatearNumero(n));
+  const fmt = (n: number) =>
+    moneda === "usdt" ? formatearUsdt(n) : moneda ? formatearPesos(n) : formatearNumero(n);
+  // En USDT el eje va sin unidad (no entra en 56px): la unidad está en el tooltip y el nombre.
+  const eje = (n: number) => formatearCompacto(n, moneda === true);
   if (!datos.some((d) => d.valor || d.comparacion)) {
     return <ChartPlaceholder mensaje="Sin datos para graficar" />;
   }
@@ -60,11 +66,7 @@ export function GraficoBarras({
           <CartesianGrid {...ChartTheme.grid} vertical={horizontal} horizontal={!horizontal} />
           {horizontal ? (
             <>
-              <XAxis
-                type="number"
-                tickFormatter={(n: number) => formatearCompacto(n, moneda)}
-                {...ChartTheme.ejeY}
-              />
+              <XAxis type="number" tickFormatter={eje} {...ChartTheme.ejeY} />
               <YAxis
                 type="category"
                 dataKey="etiqueta"
@@ -81,11 +83,7 @@ export function GraficoBarras({
                 minTickGap={12}
                 {...ChartTheme.ejeX}
               />
-              <YAxis
-                tickFormatter={(n: number) => formatearCompacto(n, moneda)}
-                width={56}
-                {...ChartTheme.ejeY}
-              />
+              <YAxis tickFormatter={eje} width={56} {...ChartTheme.ejeY} />
             </>
           )}
           <Tooltip

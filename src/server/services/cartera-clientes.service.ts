@@ -1,9 +1,11 @@
 import { AccionAuditoria, EstadoVenta, Prisma, RolUsuario } from "@prisma/client";
 
 import { finDelDia, fechasDeRango, inicioDelDia } from "@/lib/fechas";
+import type { Montos } from "@/lib/moneda";
 import { normalizarTelefono } from "@/lib/validations/cliente";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, NotFoundError } from "@/server/errors";
+import { totalDeVenta } from "@/server/moneda/montos-venta";
 import { registrarAuditoria } from "@/server/services/audit.service";
 import {
   actualizarCliente,
@@ -60,7 +62,14 @@ export interface ClienteCartera {
   /** Cuándo entró a la cartera (alta o cuando se sumó). */
   createdAt: Date;
   /** La venta con la que se dio de alta (cliente NUEVO); null = ya lo tenía. */
-  ventaAlta: { id: string; codigo: string; fecha: Date; total: string } | null;
+  ventaAlta: {
+    id: string;
+    codigo: string;
+    fecha: Date;
+    total: string;
+    /** Total en USDT (principal), pesos y dólares, a la cotización de la venta. */
+    totales: Montos;
+  } | null;
   /** Ventas confirmadas de este vendedor al cliente. */
   compras: number;
   ultimaCompra: Date | null;
@@ -75,7 +84,17 @@ const selectCartera = {
   notas: true,
   activo: true,
   createdAt: true,
-  creadoEnVenta: { select: { id: true, codigo: true, fecha: true, total: true, vendedorId: true } },
+  creadoEnVenta: {
+    select: {
+      id: true,
+      codigo: true,
+      fecha: true,
+      total: true,
+      totalUsdt: true,
+      tipoCambioUsd: true,
+      vendedorId: true,
+    },
+  },
 } satisfies Prisma.ClienteSelect;
 
 type FilaCartera = Prisma.ClienteGetPayload<{ select: typeof selectCartera }>;
@@ -109,6 +128,7 @@ async function conCompras(
             codigo: c.creadoEnVenta.codigo,
             fecha: c.creadoEnVenta.fecha,
             total: dec(c.creadoEnVenta.total),
+            totales: totalDeVenta(c.creadoEnVenta),
           }
         : null,
     compras: de.get(c.id)?._count._all ?? 0,
@@ -211,6 +231,8 @@ export async function obtenerClienteDeCartera(ctx: Ctx, vendedorId: string, id: 
         estado: true,
         tipo: true,
         total: true,
+        totalUsdt: true,
+        tipoCambioUsd: true,
         clienteNuevo: true,
         items: { select: { cantidad: true } },
       },
@@ -225,6 +247,7 @@ export async function obtenerClienteDeCartera(ctx: Ctx, vendedorId: string, id: 
       estado: v.estado,
       tipo: v.tipo,
       total: dec(v.total),
+      totales: totalDeVenta(v),
       clienteNuevo: v.clienteNuevo,
       unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
     })),

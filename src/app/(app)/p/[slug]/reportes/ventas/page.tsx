@@ -5,10 +5,12 @@ import type { Metadata } from "next";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { Pagination } from "@/components/ui/pagination";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner } from "@/lib/permisos";
 import { formatearFechaHora } from "@/lib/utils";
@@ -113,19 +115,31 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
       <GrillaKpis>
         <StatCard label="Ventas" value={formatearNumero(v.resumen.ventas)} />
         <StatCard label={ctx.panel.etiquetaUnidades} value={formatearNumero(v.resumen.unidades)} />
-        <StatCard label="Total" value={formatearPesos(v.resumen.total)} />
+        <StatCard
+          label="Total"
+          value={textoPrincipal(v.resumen.total)}
+          hint={textoEquivalentes(v.resumen.total)}
+        />
         {v.resumen.ganancia !== null && (
-          <StatCard label="Ganancia bruta" value={formatearPesos(v.resumen.ganancia)} />
+          <StatCard
+            label="Ganancia bruta"
+            value={textoPrincipal(v.resumen.ganancia)}
+            hint={textoEquivalentes(v.resumen.ganancia)}
+          />
         )}
       </GrillaKpis>
 
-      <SectionCard title="Total por día" className="mb-4 md:mb-6">
+      <SectionCard
+        title="Total por día"
+        description="En USDT: cada venta a la cotización de su momento."
+        className="mb-4 md:mb-6"
+      >
         <GraficoBarras
-          moneda
+          moneda="usdt"
           nombre="Total"
           datos={v.porDia.map((d) => ({
             etiqueta: `${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}`,
-            valor: Number(d.total),
+            valor: Number(d.total.usdt),
           }))}
         />
       </SectionCard>
@@ -178,7 +192,13 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
               key: "total",
               header: "Total",
               className: "text-right tabular-nums font-medium",
-              cell: (x) => formatearPesos(x.total),
+              cell: (x) => (
+                <Monto
+                  montos={x.total}
+                  tachado={x.estado === "ANULADA"}
+                  className="items-end whitespace-nowrap"
+                />
+              ),
             },
             ...(owner
               ? [
@@ -186,7 +206,9 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
                     key: "ganancia",
                     header: "Ganancia",
                     className: "text-right tabular-nums",
-                    cell: (x: VentaReporte) => formatearPesos(x.ganancia),
+                    cell: (x: VentaReporte) => (
+                      <Monto montos={x.ganancia} className="items-end whitespace-nowrap" />
+                    ),
                   },
                 ]
               : []),
@@ -198,7 +220,11 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
                   <span className="font-mono text-sm font-semibold">{x.codigo}</span>
                   <span className="truncate font-medium">{x.cliente}</span>
                 </span>
-                <span className="font-semibold tabular-nums">{formatearPesos(x.total)}</span>
+                <Monto
+                  montos={x.total}
+                  tachado={x.estado === "ANULADA"}
+                  className="items-end text-right font-semibold"
+                />
               </div>
               <p className="text-muted text-small mt-1">
                 {formatearFechaHora(x.fecha)} · {x.vendedor} · {x.deposito} · {x.unidades} u. ·{" "}

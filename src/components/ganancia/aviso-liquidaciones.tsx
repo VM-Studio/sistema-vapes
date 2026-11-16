@@ -1,8 +1,8 @@
 import { CalendarCheck, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
-import { formatearNumero, formatearPesos } from "@/lib/format";
-import { nombreMes } from "@/lib/ganancia-vendedor";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import { equivalenteUsdt, nombreMes } from "@/lib/ganancia-vendedor";
 import { rutaPanel } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
 import type { Liquidacion } from "@/server/services/ganancia-vendedor.service";
@@ -41,8 +41,10 @@ export function AvisoLiquidaciones({
           />
           <span className="text-warning-soft-foreground min-w-0 flex-1 text-sm">
             <span className="font-semibold">Cerró {nombreMes(l.mes)}:</span> a {l.usuario.nombre} le
-            corresponden <span className="font-semibold">{formatearPesos(l.total)}</span> (
-            {formatearNumero(l.cantidadVentas)} {l.cantidadVentas === 1 ? "venta" : "ventas"},{" "}
+            corresponden <span className="font-semibold">{formatearPesos(l.total)}</span>
+            {equivalenteUsdt(l.total, l.cotizacionUsdt) !== null &&
+              ` · ≈ ${formatearUsdt(equivalenteUsdt(l.total, l.cotizacionUsdt))}`}{" "}
+            ({formatearNumero(l.cantidadVentas)} {l.cantidadVentas === 1 ? "venta" : "ventas"},{" "}
             {formatearNumero(l.unidades)} vapes). Falta registrar el pago.
           </span>
           <ChevronRight

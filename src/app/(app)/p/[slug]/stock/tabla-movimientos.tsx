@@ -10,7 +10,7 @@ import { controlClass } from "@/components/ui/field";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/select";
 import { useUrlParams } from "@/hooks/use-url-params";
-import { conSigno, formatearPesos } from "@/lib/format";
+import { conSigno, formatearUsdt } from "@/lib/format";
 import { FAMILIAS, FAMILIAS_MOVIMIENTO, TIPO_MOVIMIENTO_UI } from "@/lib/movimientos-ui";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { MovimientoListado } from "@/server/services/stock.service";
@@ -204,8 +204,10 @@ export function TablaMovimientos({
                 <td className="px-4 py-3">{m.usuario}</td>
                 <td className="text-muted max-w-56 px-4 py-3">
                   {m.motivo ?? "—"}
-                  {m.costoUnitario && (
-                    <span className="block text-xs">Costo {formatearPesos(m.costoUnitario)}</span>
+                  {m.costoUnitarioUsdt && (
+                    <span className="block text-xs">
+                      Costo {formatearUsdt(m.costoUnitarioUsdt)}
+                    </span>
                   )}
                 </td>
               </tr>

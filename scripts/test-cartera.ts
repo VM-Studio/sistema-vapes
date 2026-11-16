@@ -88,7 +88,7 @@ async function main() {
         nombre: `Pod ${suf}`,
         especificacion: "6000",
         precioVenta: "15000.00",
-        variantes: { create: [{ nombre: "Uva", sku: `TC-U-${suf}`, ultimoCosto: "9000.00" }] },
+        variantes: { create: [{ nombre: "Uva", sku: `TC-U-${suf}`, ultimoCostoUsdt: "6.00" }] },
       },
       include: { variantes: true },
     });

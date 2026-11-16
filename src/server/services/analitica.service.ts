@@ -12,6 +12,7 @@ import { getDaysInMonth, getISODay, parseISO } from "date-fns";
 import { z } from "zod";
 
 import { TODOS_LOS_MEDIOS } from "@/lib/medios-pago";
+import { MONTOS_CERO, type Montos } from "@/lib/moneda";
 import { esOwner, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import {
@@ -33,6 +34,13 @@ import {
 } from "@/lib/zona-horaria";
 import { dbPara, type Ctx } from "@/server/db/panel-scoped";
 import { ForbiddenError, NotFoundError } from "@/server/errors";
+import {
+  SQL_USD_COSTO,
+  SQL_USD_GANANCIA,
+  SQL_USD_TOTAL,
+  sumar,
+  totalDeVenta,
+} from "@/server/moneda/montos-venta";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { puedeFiados } from "@/server/services/fiado.service";
 
@@ -43,6 +51,13 @@ import { puedeFiados } from "@/server/services/fiado.service";
  * explícito y el resultado validado con Zod): acá nunca se traen ventas
  * completas a memoria para sumarlas. Los días se cortan en la zona del
  * negocio (America/Argentina/Buenos_Aires) y la semana va de lunes a domingo.
+ *
+ * MONEDA: los montos salen en USDT (principal), pesos y dólares (`Montos`, ver
+ * src/lib/moneda.ts). Cada venta suma lo suyo a SU cotización congelada
+ * (`totalUsdt`, `gananciaUsdt`…; dólares = pesos ÷ su dólar blue): nunca se
+ * divide una suma en pesos por la cotización de hoy. Los montos en pesos
+ * atados a una venta (pagos, saldos, diferencias de devoluciones) se
+ * convierten fila por fila con la cotización de su venta.
  *
  * Costos, ganancias y el rendimiento de otros usuarios: SOLO dueños. Las
  * funciones que son enteramente de dueño lanzan ForbiddenError; las mixtas
@@ -371,6 +386,99 @@ const montoTexto = z.string().regex(/^-?\d+(\.\d+)?$/);
 const D = (v: string | number) => new Prisma.Decimal(v);
 const aMonto = (v: Prisma.Decimal | string | number) => D(v.toString()).toFixed(2);
 
+// --- Montos en las tres monedas (USDT principal, pesos y dólares) -------------
+
+/** Expresiones SQL de un monto en cada moneda (por fila). */
+interface ExprMontos {
+  usdt: Prisma.Sql;
+  pesos: Prisma.Sql;
+  usd: Prisma.Sql;
+}
+
+/** Montos de la venta `v`, cada uno a la cotización de esa venta. */
+const DE_VENTA = {
+  total: { usdt: Prisma.sql`v."totalUsdt"`, pesos: Prisma.sql`v."total"`, usd: SQL_USD_TOTAL },
+  ganancia: {
+    usdt: Prisma.sql`v."gananciaUsdt"`,
+    pesos: Prisma.sql`v."gananciaBruta"`,
+    usd: SQL_USD_GANANCIA,
+  },
+  costo: {
+    usdt: Prisma.sql`v."costoTotalUsdt"`,
+    pesos: Prisma.sql`v."costoTotal"`,
+    usd: SQL_USD_COSTO,
+  },
+} satisfies Record<string, ExprMontos>;
+
+/**
+ * Un monto en PESOS de una fila convertido con las cotizaciones de esa fila
+ * (pesos por USDT / por dólar), a centavos: lo mismo que se hace por venta.
+ */
+const convertido = (pesos: Prisma.Sql, tcUsdt: Prisma.Sql, tcUsd: Prisma.Sql): ExprMontos => ({
+  usdt: Prisma.sql`ROUND(${pesos} / ${tcUsdt}, 2)`,
+  pesos,
+  usd: Prisma.sql`ROUND(${pesos} / ${tcUsd}, 2)`,
+});
+
+/** `COALESCE(SUM(x), 0)::text AS "{nombre}Usdt"`, idem Pesos y Usd. */
+function sumaMontos(e: ExprMontos, nombre: string): Prisma.Sql {
+  const col = (m: string) => Prisma.raw(`"${nombre}${m}"`);
+  return Prisma.sql`COALESCE(SUM(${e.usdt}), 0)::text AS ${col("Usdt")},
+    COALESCE(SUM(${e.pesos}), 0)::text AS ${col("Pesos")},
+    COALESCE(SUM(${e.usd}), 0)::text AS ${col("Usd")}`;
+}
+
+type ClavesMontos<N extends string> = `${N}Usdt` | `${N}Pesos` | `${N}Usd`;
+
+/** Campos Zod de las tres columnas de `sumaMontos(…, nombre)`. */
+function camposMontos<N extends string>(nombre: N) {
+  return {
+    [`${nombre}Usdt`]: montoTexto,
+    [`${nombre}Pesos`]: montoTexto,
+    [`${nombre}Usd`]: montoTexto,
+  } as Record<ClavesMontos<N>, typeof montoTexto>;
+}
+
+function leerMontos<N extends string>(f: Record<ClavesMontos<N>, string>, nombre: N): Montos {
+  return {
+    usdt: aMonto(f[`${nombre}Usdt`]),
+    pesos: aMonto(f[`${nombre}Pesos`]),
+    usd: aMonto(f[`${nombre}Usd`]),
+  };
+}
+
+/**
+ * Cotización (pesos por unidad, punta venta) vigente en `fecha`: la última
+ * obtenida hasta ese momento o, si no había ninguna, la primera posterior.
+ * Solo para filas sin venta propia (compras viejas sin snapshot).
+ */
+function cotizacionEn(moneda: "USDT" | "USD_BLUE", fecha: Prisma.Sql): Prisma.Sql {
+  const m = Prisma.raw(`'${moneda}'`);
+  return Prisma.sql`COALESCE(
+    (SELECT tc."valor" FROM "TipoCambio" tc
+      WHERE tc."moneda" = ${m} AND tc."tipo" = 'VENTA' AND tc."obtenidoAt" <= ${fecha}
+      ORDER BY tc."obtenidoAt" DESC, tc."id" DESC LIMIT 1),
+    (SELECT tc."valor" FROM "TipoCambio" tc
+      WHERE tc."moneda" = ${m} AND tc."tipo" = 'VENTA'
+      ORDER BY tc."obtenidoAt" ASC, tc."id" ASC LIMIT 1))`;
+}
+
+const mapMontos = (m: Montos, f: (v: Prisma.Decimal) => Prisma.Decimal): Montos => ({
+  usdt: f(D(m.usdt)).toFixed(2),
+  pesos: f(D(m.pesos)).toFixed(2),
+  usd: f(D(m.usd)).toFixed(2),
+});
+
+const restarMontos = (a: Montos, b: Montos): Montos => ({
+  usdt: D(a.usdt).minus(b.usdt).toFixed(2),
+  pesos: D(a.pesos).minus(b.pesos).toFixed(2),
+  usd: D(a.usd).minus(b.usd).toFixed(2),
+});
+
+/** Ticket promedio: cada moneda ÷ cantidad de ventas. */
+const ticket = (total: Montos, cantidad: number): Montos =>
+  cantidad === 0 ? MONTOS_CERO : mapMontos(total, (v) => v.div(cantidad));
+
 /** ¿Es dueño quien llama? (CtxPanel trae el usuario; si no, se consulta.) */
 async function esOwnerCtx(ctx: Ctx & { usuario?: Pick<SujetoPermisos, "rol"> }): Promise<boolean> {
   if (ctx.usuario) return esOwner(ctx.usuario);
@@ -393,6 +501,15 @@ export interface Comparado<T extends string | number> {
   deltaPct: number | null;
 }
 
+/** Un monto comparado en las tres monedas; `deltaPct` sale de los USDT. */
+export interface ComparadoMontos {
+  actual: Montos;
+  anterior: Montos;
+  delta: Montos;
+  /** Variación porcentual en USDT; null si el anterior es 0. */
+  deltaPct: number | null;
+}
+
 const pct = (a: number, b: number): number | null =>
   b === 0 ? null : Math.round(((a - b) / Math.abs(b)) * 1000) / 10;
 
@@ -409,8 +526,14 @@ export function compararMonto(actual: string, anterior: string): Comparado<strin
   };
 }
 
-const ticket = (total: string, cantidad: number) =>
-  cantidad === 0 ? "0.00" : D(total).div(cantidad).toFixed(2);
+export function compararMontos(actual: Montos, anterior: Montos): ComparadoMontos {
+  return {
+    actual,
+    anterior,
+    delta: restarMontos(actual, anterior),
+    deltaPct: pct(Number(actual.usdt), Number(anterior.usdt)),
+  };
+}
 
 // =============================================================================
 // KPIs
@@ -420,22 +543,26 @@ export interface KpisPeriodo {
   periodo: Periodo;
   anterior: Periodo;
   /** Σ total de las ventas (lo vendido, incluye lo fiado). */
-  facturado: Comparado<string>;
+  facturado: ComparadoMontos;
   /**
    * Σ pagos no anulados con fecha en el período (al vender y cobros de
-   * fiados). Solo dueños o FIADOS "ver" (null para el resto).
+   * fiados), cada uno a la cotización de su venta. Solo dueños o FIADOS
+   * "ver" (null para el resto).
    */
-  cobrado: Comparado<string> | null;
-  /** Deuda total actual de los clientes (no depende del período). Idem `cobrado`. */
-  porCobrar: string | null;
+  cobrado: ComparadoMontos | null;
+  /**
+   * Deuda total actual (Σ saldo pendiente de las ventas confirmadas, cada uno
+   * a la cotización de su venta; no depende del período). Idem `cobrado`.
+   */
+  porCobrar: Montos | null;
   cantidadVentas: Comparado<number>;
   unidadesVendidas: Comparado<number>;
   /** Solo dueños (null para el resto). */
-  ganancia: Comparado<string> | null;
-  /** Ganancia / facturado del período actual, en %. Solo dueños. */
+  ganancia: ComparadoMontos | null;
+  /** Ganancia / facturado del período actual (en USDT), en %. Solo dueños. */
   margenPct: number | null;
   clientesNuevos: Comparado<number>;
-  ticketPromedio: Comparado<string>;
+  ticketPromedio: ComparadoMontos;
   /** Devoluciones por garantía REGISTRADAS (no anuladas). */
   devoluciones: Comparado<number>;
 }
@@ -443,12 +570,22 @@ export interface KpisPeriodo {
 const filaVentasSchema = z.object({
   actual: z.boolean(),
   cantidad: z.number().int(),
-  facturado: montoTexto,
-  ganancia: montoTexto,
-  costo: montoTexto,
+  ...camposMontos("facturado"),
+  ...camposMontos("ganancia"),
+  ...camposMontos("costo"),
 });
 
-async function ventasActualAnterior(ctx: Ctx, p: Periodo) {
+interface VentasDeRango {
+  cantidad: number;
+  facturado: Montos;
+  ganancia: Montos;
+  costo: Montos;
+}
+
+async function ventasActualAnterior(
+  ctx: Ctx,
+  p: Periodo,
+): Promise<{ actual: VentasDeRango; anterior: VentasDeRango }> {
   const { a, b } = rangos(p);
   const filas = await consultar(
     ctx,
@@ -456,66 +593,97 @@ async function ventasActualAnterior(ctx: Ctx, p: Periodo) {
     Prisma.sql`
       SELECT (v."fecha" >= ${ts(a.inicio)}) AS "actual",
              COUNT(*)::int AS "cantidad",
-             COALESCE(SUM(v."total"), 0)::text AS "facturado",
-             COALESCE(SUM(v."gananciaBruta"), 0)::text AS "ganancia",
-             COALESCE(SUM(v."costoTotal"), 0)::text AS "costo"
+             ${sumaMontos(DE_VENTA.total, "facturado")},
+             ${sumaMontos(DE_VENTA.ganancia, "ganancia")},
+             ${sumaMontos(DE_VENTA.costo, "costo")}
       FROM "Venta" v
       WHERE v."panelId" = ${ctx.panelId}
         AND v."estado" = 'CONFIRMADA'
         AND v."fecha" >= ${ts(b.inicio)} AND v."fecha" < ${ts(a.fin)}
       GROUP BY 1`,
   );
-  const vacio = { cantidad: 0, facturado: "0", ganancia: "0", costo: "0" };
+  const de = (f: z.output<typeof filaVentasSchema> | undefined): VentasDeRango =>
+    f
+      ? {
+          cantidad: f.cantidad,
+          facturado: leerMontos(f, "facturado"),
+          ganancia: leerMontos(f, "ganancia"),
+          costo: leerMontos(f, "costo"),
+        }
+      : { cantidad: 0, facturado: MONTOS_CERO, ganancia: MONTOS_CERO, costo: MONTOS_CERO };
   return {
-    actual: filas.find((f) => f.actual) ?? vacio,
-    anterior: filas.find((f) => !f.actual) ?? vacio,
+    actual: de(filas.find((f) => f.actual)),
+    anterior: de(filas.find((f) => !f.actual)),
   };
 }
 
 /**
  * Movimientos de plata del panel: los pagos de ventas (no anulados) y las
  * diferencias de precio de las devoluciones con cambio (registradas): > 0 la
- * pagó el cliente, < 0 se le devolvió. Columnas: fecha, monto, medio.
+ * pagó el cliente, < 0 se le devolvió. Columnas: fecha, monto (pesos),
+ * medioPago y las cotizaciones de su venta ("tcUsdt", "tcUsd") para pasarlo
+ * a USDT y a dólares fila por fila (una devolución sin venta: las de su fecha).
  */
 function movimientosDePlata(ctx: Ctx) {
   return Prisma.sql`(
-    SELECT pv."fecha", pv."monto", pv."medioPago"
+    SELECT pv."fecha", pv."monto", pv."medioPago",
+           v."tipoCambioUsdt" AS "tcUsdt", v."tipoCambioUsd" AS "tcUsd"
     FROM "PagoVenta" pv
+    JOIN "Venta" v ON v."id" = pv."ventaId"
     WHERE pv."panelId" = ${ctx.panelId} AND NOT pv."anulado"
     UNION ALL
-    SELECT d."fecha", d."diferencia", d."medioPagoDiferencia"
+    SELECT d."fecha", d."diferencia", d."medioPagoDiferencia",
+           COALESCE(v."tipoCambioUsdt", ${cotizacionEn("USDT", Prisma.sql`d."fecha"`)}),
+           COALESCE(v."tipoCambioUsd", ${cotizacionEn("USD_BLUE", Prisma.sql`d."fecha"`)})
     FROM "Devolucion" d
+    LEFT JOIN "Venta" v ON v."id" = d."ventaId"
     WHERE d."panelId" = ${ctx.panelId} AND d."estado" = 'REGISTRADA' AND d."diferencia" <> 0
   )`;
 }
 
+/** Monto de un movimiento de `movimientosDePlata` (alias `pv`) en las tres monedas. */
+const MONTO_MOVIMIENTO = convertido(
+  Prisma.sql`pv."monto"`,
+  Prisma.sql`pv."tcUsdt"`,
+  Prisma.sql`pv."tcUsd"`,
+);
+
 /** Cobrado del período actual y del anterior (con las diferencias de devoluciones), y la deuda de hoy. */
 async function cobranzas(ctx: Ctx, p: Periodo) {
   const { a, b } = rangos(p);
+  const filaCobrado = z.object({ actual: z.boolean(), ...camposMontos("total") });
   const [cobrado, [deuda]] = await Promise.all([
     consultar(
       ctx,
-      z.object({ actual: z.boolean(), total: montoTexto }),
+      filaCobrado,
       Prisma.sql`
-        SELECT (pv."fecha" >= ${ts(a.inicio)}) AS "actual", COALESCE(SUM(pv."monto"), 0)::text AS "total"
+        SELECT (pv."fecha" >= ${ts(a.inicio)}) AS "actual", ${sumaMontos(MONTO_MOVIMIENTO, "total")}
         FROM ${movimientosDePlata(ctx)} pv
         WHERE pv."fecha" >= ${ts(b.inicio)} AND pv."fecha" < ${ts(a.fin)}
         GROUP BY 1`,
     ),
+    // La deuda: el saldo de cada venta confirmada a la cotización de esa venta.
     consultar(
       ctx,
-      z.object({ total: montoTexto }),
+      z.object(camposMontos("total")),
       Prisma.sql`
-        SELECT COALESCE(SUM(c."saldoDeudor"), 0)::text AS "total"
-        FROM "Cliente" c WHERE c."panelId" = ${ctx.panelId} AND c."saldoDeudor" > 0`,
+        SELECT ${sumaMontos(
+          convertido(
+            Prisma.sql`v."saldoPendiente"`,
+            Prisma.sql`v."tipoCambioUsdt"`,
+            Prisma.sql`v."tipoCambioUsd"`,
+          ),
+          "total",
+        )}
+        FROM "Venta" v
+        WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA' AND v."saldoPendiente" > 0`,
     ),
   ]);
+  const de = (f: z.output<typeof filaCobrado> | undefined) =>
+    f ? leerMontos(f, "total") : MONTOS_CERO;
   return {
-    cobrado: compararMonto(
-      cobrado.find((f) => f.actual)?.total ?? "0",
-      cobrado.find((f) => !f.actual)?.total ?? "0",
-    ),
-    porCobrar: aMonto(deuda?.total ?? "0"),
+    cobrado: compararMontos(de(cobrado.find((f) => f.actual)), de(cobrado.find((f) => !f.actual))),
+    porCobrar: deuda ? leerMontos(deuda, "total") : MONTOS_CERO,
   };
 }
 
@@ -566,7 +734,7 @@ export async function kpis(ctx: Ctx, p: Periodo): Promise<KpisPeriodo> {
   return {
     periodo: p,
     anterior,
-    facturado: compararMonto(va.facturado, vb.facturado),
+    facturado: compararMontos(va.facturado, vb.facturado),
     cobrado: cobros?.cobrado ?? null,
     porCobrar: cobros?.porCobrar ?? null,
     cantidadVentas: compararNumero(va.cantidad, vb.cantidad),
@@ -574,13 +742,13 @@ export async function kpis(ctx: Ctx, p: Periodo): Promise<KpisPeriodo> {
       unidades.find((u) => u.actual)?.unidades ?? 0,
       unidades.find((u) => !u.actual)?.unidades ?? 0,
     ),
-    ganancia: owner ? compararMonto(va.ganancia, vb.ganancia) : null,
+    ganancia: owner ? compararMontos(va.ganancia, vb.ganancia) : null,
     margenPct:
-      owner && Number(va.facturado) > 0
-        ? Math.round((Number(va.ganancia) / Number(va.facturado)) * 1000) / 10
+      owner && Number(va.facturado.usdt) > 0
+        ? Math.round((Number(va.ganancia.usdt) / Number(va.facturado.usdt)) * 1000) / 10
         : null,
     clientesNuevos: compararNumero(otros?.clientesA ?? 0, otros?.clientesB ?? 0),
-    ticketPromedio: compararMonto(
+    ticketPromedio: compararMontos(
       ticket(va.facturado, va.cantidad),
       ticket(vb.facturado, vb.cantidad),
     ),
@@ -603,7 +771,7 @@ export function sqlSerieComparativa(ctx: Ctx, p: Periodo, vendedorId?: string): 
           THEN ${diaDe(p.desde)}::date ELSE ${diaDe(anterior.desde)}::date END)::int`;
   return Prisma.sql`
     SELECT (v."fecha" >= ${ts(a.inicio)}) AS "actual", ${idx} AS "idx",
-           COALESCE(SUM(v."total"), 0)::text AS "total"
+           COALESCE(SUM(v."totalUsdt"), 0)::text AS "total"
     FROM "Venta" v
     WHERE v."panelId" = ${ctx.panelId}
       AND v."estado" = 'CONFIRMADA'
@@ -613,7 +781,8 @@ export function sqlSerieComparativa(ctx: Ctx, p: Periodo, vendedorId?: string): 
 }
 
 /**
- * Facturado por punto (hora / día) del período actual y del anterior, alineados.
+ * Facturado EN USDT (cada venta a su cotización) por punto (hora / día) del
+ * período actual y del anterior, alineados.
  * Con `vendedorId`, solo las ventas de ese vendedor.
  */
 export async function serieComparativa(
@@ -642,23 +811,24 @@ export interface PorMedioPago {
   medio: MedioPago;
   etiqueta: string;
   cantidad: number;
-  total: string;
+  total: Montos;
 }
 
 /**
  * Lo cobrado por medio de pago: Σ PagoVenta no anulados con FECHA DE PAGO en
  * el período (pagos al vender, mixtos por separado, y cobros de fiados), más
  * las diferencias de las devoluciones con cambio (restan si se le devolvió al
- * cliente). `cantidad` = movimientos registrados en ese medio.
+ * cliente), cada uno a la cotización de su venta. `cantidad` = movimientos
+ * registrados en ese medio.
  */
 export async function ventasPorMedioPago(ctx: Ctx, p: Periodo): Promise<PorMedioPago[]> {
   const { inicio, fin } = instantesDe(p);
   const filas = await consultar(
     ctx,
-    z.object({ medio: z.enum(MedioPago), cantidad: z.number().int(), total: montoTexto }),
+    z.object({ medio: z.enum(MedioPago), cantidad: z.number().int(), ...camposMontos("total") }),
     Prisma.sql`
       SELECT pv."medioPago"::text AS "medio", COUNT(*)::int AS "cantidad",
-             COALESCE(SUM(pv."monto"), 0)::text AS "total"
+             ${sumaMontos(MONTO_MOVIMIENTO, "total")}
       FROM ${movimientosDePlata(ctx)} pv
       WHERE pv."fecha" >= ${ts(inicio)} AND pv."fecha" < ${ts(fin)}
       GROUP BY 1`,
@@ -676,7 +846,7 @@ export async function ventasPorMedioPago(ctx: Ctx, p: Periodo): Promise<PorMedio
       medio,
       etiqueta: ETIQUETA_MEDIO_PAGO[medio],
       cantidad: f?.cantidad ?? 0,
-      total: aMonto(f?.total ?? "0"),
+      total: f ? leerMontos(f, "total") : MONTOS_CERO,
     };
   });
 }
@@ -685,7 +855,7 @@ export interface PorTipo {
   tipo: TipoVenta;
   etiqueta: string;
   cantidad: number;
-  total: string;
+  total: Montos;
   unidades: number;
 }
 
@@ -696,12 +866,12 @@ export async function ventasPorTipo(ctx: Ctx, p: Periodo): Promise<PorTipo[]> {
     z.object({
       tipo: z.enum(TipoVenta),
       cantidad: z.number().int(),
-      total: montoTexto,
+      ...camposMontos("total"),
       unidades: z.number().int(),
     }),
     Prisma.sql`
       SELECT v."tipo"::text AS "tipo", COUNT(*)::int AS "cantidad",
-             COALESCE(SUM(v."total"), 0)::text AS "total",
+             ${sumaMontos(DE_VENTA.total, "total")},
              COALESCE(SUM(u."unidades"), 0)::int AS "unidades"
       FROM "Venta" v
       LEFT JOIN LATERAL (
@@ -718,7 +888,7 @@ export async function ventasPorTipo(ctx: Ctx, p: Periodo): Promise<PorTipo[]> {
       tipo,
       etiqueta: ETIQUETA_TIPO_VENTA[tipo],
       cantidad: f?.cantidad ?? 0,
-      total: aMonto(f?.total ?? "0"),
+      total: f ? leerMontos(f, "total") : MONTOS_CERO,
       unidades: f?.unidades ?? 0,
     };
   });
@@ -728,7 +898,7 @@ export interface PorDeposito {
   depositoId: string;
   nombre: string;
   cantidad: number;
-  total: string;
+  total: Montos;
 }
 
 /** Ventas por galpón (todos los depósitos activos, aunque no hayan vendido). */
@@ -740,11 +910,11 @@ export async function ventasPorDeposito(ctx: Ctx, p: Periodo): Promise<PorDeposi
       depositoId: z.string(),
       nombre: z.string(),
       cantidad: z.number().int(),
-      total: montoTexto,
+      ...camposMontos("total"),
     }),
     Prisma.sql`
       SELECT d."id" AS "depositoId", d."nombre" AS "nombre",
-             COUNT(v."id")::int AS "cantidad", COALESCE(SUM(v."total"), 0)::text AS "total"
+             COUNT(v."id")::int AS "cantidad", ${sumaMontos(DE_VENTA.total, "total")}
       FROM "Deposito" d
       LEFT JOIN "Venta" v ON v."depositoId" = d."id" AND v."panelId" = ${ctx.panelId}
         AND v."estado" = 'CONFIRMADA' AND v."fecha" >= ${ts(inicio)} AND v."fecha" < ${ts(fin)}
@@ -752,16 +922,22 @@ export async function ventasPorDeposito(ctx: Ctx, p: Periodo): Promise<PorDeposi
       GROUP BY d."id", d."nombre", d."esPrincipal"
       ORDER BY d."esPrincipal" DESC, d."nombre" ASC`,
   );
-  return filas.map((f) => ({ ...f, total: aMonto(f.total) }));
+  return filas.map((f) => ({
+    depositoId: f.depositoId,
+    nombre: f.nombre,
+    cantidad: f.cantidad,
+    total: leerMontos(f, "total"),
+  }));
 }
 
 export interface TopItem {
   id: string;
   nombre: string;
   unidades: number;
-  facturado: string;
+  /** Lo facturado neto (con el descuento de cada venta prorrateado). */
+  facturado: Montos;
   /** Solo dueños. */
-  ganancia: string | null;
+  ganancia: Montos | null;
 }
 
 const topSchema = z.object({
@@ -769,13 +945,23 @@ const topSchema = z.object({
   nombre: z.string(),
   sabor: z.string().nullable(),
   unidades: z.number().int(),
-  facturado: montoTexto,
-  ganancia: montoTexto,
+  ...camposMontos("facturado"),
+  ...camposMontos("ganancia"),
 });
+
+/**
+ * Lo facturado NETO de un ítem en pesos: su subtotal con el descuento de la
+ * venta prorrateado (subtotal del ítem × total ÷ subtotal de la venta).
+ */
+const NETO_ITEM = Prisma.sql`COALESCE(vi."subtotal" * v."total" / NULLIF(v."subtotal", 0), 0)`;
+/** Ganancia en pesos del ítem: neto − costo en pesos (a la cotización de la venta). */
+const GANANCIA_ITEM_PESOS = Prisma.sql`(${NETO_ITEM} - vi."costoUnitario" * vi."cantidad")`;
 
 async function top(ctx: Ctx, p: Periodo, limit: number, porSabor: boolean): Promise<TopItem[]> {
   const { inicio, fin } = instantesDe(p);
   const lim = Math.min(Math.max(Math.trunc(limit), 1), 100);
+  // Cada ítem a la cotización de SU venta; se redondea solo la suma final.
+  const r2 = (x: Prisma.Sql) => Prisma.sql`ROUND(COALESCE(SUM(${x}), 0), 2)::text`;
   const [owner, filas] = await Promise.all([
     esOwnerCtx(ctx),
     consultar(
@@ -786,8 +972,12 @@ async function top(ctx: Ctx, p: Periodo, limit: number, porSabor: boolean): Prom
                p."nombreCompleto" AS "nombre",
                ${porSabor ? Prisma.sql`va."nombre"` : Prisma.sql`NULL::text`} AS "sabor",
                SUM(vi."cantidad")::int AS "unidades",
-               SUM(vi."subtotal")::text AS "facturado",
-               SUM((vi."precioUnitario" - vi."costoUnitario") * vi."cantidad")::text AS "ganancia"
+               ${r2(Prisma.sql`${NETO_ITEM} / v."tipoCambioUsdt"`)} AS "facturadoUsdt",
+               ${r2(NETO_ITEM)} AS "facturadoPesos",
+               ${r2(Prisma.sql`${NETO_ITEM} / v."tipoCambioUsd"`)} AS "facturadoUsd",
+               ${r2(Prisma.sql`${NETO_ITEM} / v."tipoCambioUsdt" - vi."costoUnitarioUsdt" * vi."cantidad"`)} AS "gananciaUsdt",
+               ${r2(GANANCIA_ITEM_PESOS)} AS "gananciaPesos",
+               ${r2(Prisma.sql`${GANANCIA_ITEM_PESOS} / v."tipoCambioUsd"`)} AS "gananciaUsd"
         FROM "Venta" v
         JOIN "VentaItem" vi ON vi."ventaId" = v."id"
         JOIN "Producto" p ON p."id" = vi."productoId"
@@ -796,7 +986,7 @@ async function top(ctx: Ctx, p: Periodo, limit: number, porSabor: boolean): Prom
           AND v."estado" = 'CONFIRMADA'
           AND v."fecha" >= ${ts(inicio)} AND v."fecha" < ${ts(fin)}
         GROUP BY 1, 2, 3
-        ORDER BY "unidades" DESC, SUM(vi."subtotal") DESC
+        ORDER BY "unidades" DESC, SUM(${NETO_ITEM} / v."tipoCambioUsdt") DESC
         LIMIT ${lim}`,
     ),
   ]);
@@ -804,8 +994,8 @@ async function top(ctx: Ctx, p: Periodo, limit: number, porSabor: boolean): Prom
     id: f.id,
     nombre: porSabor ? nombreConSabor(f.nombre, f.sabor) : f.nombre,
     unidades: f.unidades,
-    facturado: aMonto(f.facturado),
-    ganancia: owner ? aMonto(f.ganancia) : null,
+    facturado: leerMontos(f, "facturado"),
+    ganancia: owner ? leerMontos(f, "ganancia") : null,
   }));
 }
 
@@ -827,20 +1017,23 @@ export interface RendimientoVendedor {
   usuarioId: string;
   nombre: string;
   rol: RolUsuario;
-  unitarias: { cantidad: number; total: string };
-  mayoristas: { cantidad: number; total: string };
+  unitarias: { cantidad: number; total: Montos };
+  mayoristas: { cantidad: number; total: Montos };
   cantidadVentas: number;
-  facturado: string;
+  facturado: Montos;
   unidades: number;
-  ticketPromedio: string;
+  ticketPromedio: Montos;
   cotizaciones: { creadas: number; convertidas: number; tasaPct: number | null };
   /** Clientes que dio de alta en el período (Cliente.creadoPorId), desde una venta o desde Clientes. */
   clientesNuevos: number;
   /** Ventas a clientes que se dieron de alta con esa misma venta (Venta.clienteNuevo). */
   ventasAClientesNuevos: number;
   devoluciones: number;
-  /** null si el usuario no tiene porcentajes de comisión cargados. */
-  comision: { unitariaPct: string | null; mayoristaPct: string | null; estimada: string } | null;
+  /**
+   * null si el usuario no tiene porcentajes de comisión cargados. `estimada`:
+   * los porcentajes sobre lo vendido, en cada moneda.
+   */
+  comision: { unitariaPct: string | null; mayoristaPct: string | null; estimada: Montos } | null;
 }
 
 interface UsuarioRend {
@@ -861,13 +1054,13 @@ async function agregadosVendedores(ctx: Ctx, r: Instantes, usuarioId?: string) {
         tipo: z.enum(TipoVenta),
         cantidad: z.number().int(),
         aClientesNuevos: z.number().int(),
-        total: montoTexto,
+        ...camposMontos("total"),
       }),
       Prisma.sql`
         SELECT v."vendedorId" AS "usuarioId", v."tipo"::text AS "tipo",
                COUNT(*)::int AS "cantidad",
                (COUNT(*) FILTER (WHERE v."clienteNuevo"))::int AS "aClientesNuevos",
-               COALESCE(SUM(v."total"), 0)::text AS "total"
+               ${sumaMontos(DE_VENTA.total, "total")}
         FROM "Venta" v
         WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
           AND v."fecha" >= ${ts(r.inicio)} AND v."fecha" < ${ts(r.fin)} ${soloV}
@@ -928,12 +1121,12 @@ type Agregados = Awaited<ReturnType<typeof agregadosVendedores>>;
 function filaRendimiento(u: UsuarioRend, ag: Agregados): RendimientoVendedor {
   const tipo = (t: TipoVenta) => {
     const f = ag.ventas.find((x) => x.usuarioId === u.id && x.tipo === t);
-    return { cantidad: f?.cantidad ?? 0, total: aMonto(f?.total ?? "0") };
+    return { cantidad: f?.cantidad ?? 0, total: f ? leerMontos(f, "total") : MONTOS_CERO };
   };
   const unitarias = tipo(TipoVenta.UNITARIA);
   const mayoristas = tipo(TipoVenta.MAYORISTA);
   const cantidadVentas = unitarias.cantidad + mayoristas.cantidad;
-  const facturado = D(unitarias.total).plus(mayoristas.total).toFixed(2);
+  const facturado = sumar([unitarias.total, mayoristas.total]);
   const cot = ag.cotizaciones.find((x) => x.usuarioId === u.id);
   const creadas = cot?.creadas ?? 0;
   const convertidas = cot?.convertidas ?? 0;
@@ -965,11 +1158,10 @@ function filaRendimiento(u: UsuarioRend, ag: Agregados): RendimientoVendedor {
         : {
             unitariaPct: pctU?.toFixed(2) ?? null,
             mayoristaPct: pctM?.toFixed(2) ?? null,
-            estimada: D(unitarias.total)
-              .mul(pctU ?? 0)
-              .plus(D(mayoristas.total).mul(pctM ?? 0))
-              .div(100)
-              .toFixed(2),
+            estimada: sumar([
+              mapMontos(unitarias.total, (v) => v.mul(pctU ?? 0).div(100)),
+              mapMontos(mayoristas.total, (v) => v.mul(pctM ?? 0).div(100)),
+            ]),
           },
   };
 }
@@ -1016,7 +1208,7 @@ export async function rendimientoVendedores(ctx: Ctx, p: Periodo): Promise<Rendi
     .sort(
       (x, y) =>
         (x.rol === RolUsuario.OWNER ? 1 : 0) - (y.rol === RolUsuario.OWNER ? 1 : 0) ||
-        Number(y.facturado) - Number(x.facturado) ||
+        Number(y.facturado.usdt) - Number(x.facturado.usdt) ||
         x.nombre.localeCompare(y.nombre),
     );
 }
@@ -1025,13 +1217,13 @@ export interface RendimientoComparado {
   usuario: { id: string; nombre: string; rol: RolUsuario };
   actual: RendimientoVendedor;
   anterior: RendimientoVendedor;
-  facturado: Comparado<string>;
+  facturado: ComparadoMontos;
   cantidadVentas: Comparado<number>;
   unidades: Comparado<number>;
-  ticketPromedio: Comparado<string>;
+  ticketPromedio: ComparadoMontos;
   clientesNuevos: Comparado<number>;
   ventasAClientesNuevos: Comparado<number>;
-  comision: Comparado<string> | null;
+  comision: ComparadoMontos | null;
 }
 
 async function rendimientoDe(
@@ -1055,10 +1247,10 @@ async function rendimientoDe(
     usuario: { id: u.id, nombre: u.nombre, rol: u.rol },
     actual,
     anterior,
-    facturado: compararMonto(actual.facturado, anterior.facturado),
+    facturado: compararMontos(actual.facturado, anterior.facturado),
     cantidadVentas: compararNumero(actual.cantidadVentas, anterior.cantidadVentas),
     unidades: compararNumero(actual.unidades, anterior.unidades),
-    ticketPromedio: compararMonto(actual.ticketPromedio, anterior.ticketPromedio),
+    ticketPromedio: compararMontos(actual.ticketPromedio, anterior.ticketPromedio),
     clientesNuevos: compararNumero(actual.clientesNuevos, anterior.clientesNuevos),
     ventasAClientesNuevos: compararNumero(
       actual.ventasAClientesNuevos,
@@ -1066,7 +1258,7 @@ async function rendimientoDe(
     ),
     comision:
       actual.comision && anterior.comision
-        ? compararMonto(actual.comision.estimada, anterior.comision.estimada)
+        ? compararMontos(actual.comision.estimada, anterior.comision.estimada)
         : null,
   };
 }
@@ -1087,12 +1279,27 @@ export interface VentaDeVendedor {
   /** Medio principal; null si se fió todo. */
   medioPago: MedioPago | null;
   estadoPago: EstadoPago;
-  saldoPendiente: string;
+  /** Lo que falta cobrar, a la cotización de la venta. */
+  saldoPendiente: Montos;
   unidades: number;
-  total: string;
+  total: Montos;
 }
 
 export const PAGE_SIZE_VENTAS_VENDEDOR = 25;
+
+/** Saldo pendiente (pesos) de una venta en las tres monedas, a SU cotización. */
+function saldoDeVenta(v: {
+  saldoPendiente: Prisma.Decimal;
+  tipoCambioUsdt: Prisma.Decimal;
+  tipoCambioUsd: Prisma.Decimal;
+}): Montos {
+  const r2 = (d: Prisma.Decimal) => d.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2);
+  return {
+    usdt: r2(v.saldoPendiente.div(v.tipoCambioUsdt)),
+    pesos: v.saldoPendiente.toFixed(2),
+    usd: r2(v.saldoPendiente.div(v.tipoCambioUsd)),
+  };
+}
 
 async function listarVentasVendedor(
   ctx: Ctx,
@@ -1123,6 +1330,9 @@ async function listarVentasVendedor(
         saldoPendiente: true,
         clienteNuevo: true,
         total: true,
+        totalUsdt: true,
+        tipoCambioUsdt: true,
+        tipoCambioUsd: true,
         cliente: { select: { nombre: true } },
       },
     }),
@@ -1146,9 +1356,9 @@ async function listarVentasVendedor(
       clienteNuevo: v.clienteNuevo,
       medioPago: v.medioPago,
       estadoPago: v.estadoPago,
-      saldoPendiente: aMonto(v.saldoPendiente),
+      saldoPendiente: saldoDeVenta(v),
       unidades: unidades.find((u) => u.ventaId === v.id)?._sum.cantidad ?? 0,
-      total: aMonto(v.total),
+      total: totalDeVenta(v),
     })),
   };
 }
@@ -1233,7 +1443,9 @@ export async function exportarVentasVendedorExcel(
     { header: "Medio de pago", key: "medio", width: 16 },
     { header: "Estado de pago", key: "estadoPago", width: 15 },
     { header: "Unidades", key: "unidades", width: 10 },
-    { header: "Total", key: "total", width: 14, style: { numFmt: '"$" #,##0.00' } },
+    { header: "Total USDT", key: "totalUsdt", width: 14, style: { numFmt: '#,##0.00 "USDT"' } },
+    { header: "Total en pesos", key: "total", width: 16, style: { numFmt: '"$" #,##0.00' } },
+    { header: "Total en dólares", key: "totalUsd", width: 16, style: { numFmt: '"US$" #,##0.00' } },
   ];
   hoja.getRow(1).font = { bold: true };
   for (const v of filas) {
@@ -1250,13 +1462,17 @@ export async function exportarVentasVendedorExcel(
       medio: etiquetaMedioPrincipal(v.medioPago),
       estadoPago: ESTADO_PAGO_UI[v.estadoPago].label,
       unidades: v.unidades,
-      total: Number(v.total),
+      totalUsdt: Number(v.total.usdt),
+      total: Number(v.total.pesos),
+      totalUsd: Number(v.total.usd),
     });
   }
   const pie = hoja.addRow({
     cliente: "Total",
     unidades: rend.actual.unidades,
-    total: Number(rend.actual.facturado),
+    totalUsdt: Number(rend.actual.facturado.usdt),
+    total: Number(rend.actual.facturado.pesos),
+    totalUsd: Number(rend.actual.facturado.usd),
   });
   pie.font = { bold: true };
   const slug = rend.usuario.nombre
@@ -1275,24 +1491,39 @@ export async function exportarVentasVendedorExcel(
 // =============================================================================
 
 export interface ComprasPeriodo {
-  /** Costo final de las compras recibidas (con comisión del pasista y gastos extras). */
-  compras: Comparado<string>;
+  /**
+   * Costo final de las compras recibidas (con comisión del pasista y gastos
+   * extras), cada una a SU cotización (la de su fecha si no la guardó).
+   */
+  compras: ComparadoMontos;
   cantidadCompras: Comparado<number>;
-  ventas: Comparado<string>;
-  /** Costo de lo vendido (Σ costoTotal). */
-  costoVendido: Comparado<string>;
+  ventas: ComparadoMontos;
+  /** Costo de lo vendido (Σ costoTotalUsdt / costoTotal). */
+  costoVendido: ComparadoMontos;
 }
 
 export async function comprasDelPeriodo(ctx: Ctx, p: Periodo): Promise<ComprasPeriodo> {
   await exigirOwner(ctx, "Compras vs. ventas");
   const { a, b } = rangos(p);
+  const filaCompras = z.object({
+    actual: z.boolean(),
+    cantidad: z.number().int(),
+    ...camposMontos("total"),
+  });
   const [compras, ventas] = await Promise.all([
     consultar(
       ctx,
-      z.object({ actual: z.boolean(), cantidad: z.number().int(), total: montoTexto }),
+      filaCompras,
       Prisma.sql`
         SELECT (c."fecha" >= ${ts(a.inicio)}) AS "actual", COUNT(*)::int AS "cantidad",
-               COALESCE(SUM(c."costoFinalTotal"), 0)::text AS "total"
+               ${sumaMontos(
+                 convertido(
+                   Prisma.sql`c."costoFinalTotal"`,
+                   Prisma.sql`COALESCE(c."tipoCambioUSDT", ${cotizacionEn("USDT", Prisma.sql`c."fecha"`)})`,
+                   Prisma.sql`COALESCE(c."tipoCambioUSD", ${cotizacionEn("USD_BLUE", Prisma.sql`c."fecha"`)})`,
+                 ),
+                 "total",
+               )}
         FROM "Compra" c
         WHERE c."panelId" = ${ctx.panelId} AND c."estado" = 'RECIBIDA'
           AND c."fecha" >= ${ts(b.inicio)} AND c."fecha" < ${ts(a.fin)}
@@ -1302,11 +1533,13 @@ export async function comprasDelPeriodo(ctx: Ctx, p: Periodo): Promise<ComprasPe
   ]);
   const ca = compras.find((c) => c.actual);
   const cb = compras.find((c) => !c.actual);
+  const de = (f: z.output<typeof filaCompras> | undefined) =>
+    f ? leerMontos(f, "total") : MONTOS_CERO;
   return {
-    compras: compararMonto(ca?.total ?? "0", cb?.total ?? "0"),
+    compras: compararMontos(de(ca), de(cb)),
     cantidadCompras: compararNumero(ca?.cantidad ?? 0, cb?.cantidad ?? 0),
-    ventas: compararMonto(ventas.actual.facturado, ventas.anterior.facturado),
-    costoVendido: compararMonto(ventas.actual.costo, ventas.anterior.costo),
+    ventas: compararMontos(ventas.actual.facturado, ventas.anterior.facturado),
+    costoVendido: compararMontos(ventas.actual.costo, ventas.anterior.costo),
   };
 }
 
@@ -1392,7 +1625,7 @@ export async function alertasStock(ctx: Ctx): Promise<AlertasDeposito[]> {
 export interface Pendientes {
   /** null = quien llama no ve compras. */
   comprasBorrador: number | null;
-  /** null = quien llama no ve el cotizador. */
+  /** null = quien llama no ve el cotizador. `total` en pesos: una cotización es un presupuesto en pesos. */
   cotizacionesPorVencer:
     | { id: string; codigo: string; cliente: string | null; validaHasta: Date; total: string }[]
     | null;

@@ -134,7 +134,8 @@ test("compra de 100 u. × 10 USDT con 10% de pasista + Valija y Envío → 11,80
   expect(despues.costoFinalTotal.toFixed(0)).toBe("1593000");
   expect(despues.costoUnitarioFinalPromedio.toFixed(0)).toBe("15930");
   const variante = await db.variante.findUniqueOrThrow({ where: { id: mango.id } });
-  expect(variante.ultimoCosto?.toFixed(0)).toBe("15930");
+  // El costo del sabor queda en USDT: 11,80 USDT por unidad (= 15.930 ÷ 1.350).
+  expect(variante.ultimoCostoUsdt?.toFixed(2)).toBe("11.80");
 
   // Detalle: tarjeta grande y costo final por unidad de cada modelo.
   await page.goto(`/p/vapes/compras/${compra.id}`);
@@ -293,12 +294,13 @@ test("Pasista en Cosmetic: la comisión de la compra con su detalle, el cálculo
   await page.getByRole("link", { name: /Ver comisión en Pasista/ }).click();
   await expect(page.getByRole("heading", { name: `Comisión de ${idCompra}` })).toBeVisible();
   const calculo = page.getByLabel("Cálculo de la comisión");
-  await expect(calculo).toContainText(/Total de la compra\s*\$\s*27\.000/);
-  await expect(calculo).toContainText(/× 10% del pasista\s*\$\s*2\.700/);
-  await expect(page.getByLabel("Comisión total")).toHaveText(/\$\s*2\.700/);
+  // USDT principal (27.000 ÷ 1.350 = 20 USDT) y los pesos abajo.
+  await expect(calculo).toContainText(/Total de la compra\s*20 USDT\s*\$\s*27\.000/);
+  await expect(calculo).toContainText(/× 10% del pasista\s*2 USDT\s*\$\s*2\.700/);
+  await expect(page.getByLabel("Comisión total")).toContainText(/2 USDT\s*\$\s*2\.700/);
   await expect(page.getByText(/Rosa/).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText(/Coco/).filter({ visible: true }).first()).toBeVisible();
-  await expect(page.getByLabel("Total de los productos")).toContainText(/10 u\.\)\s*\$\s*27\.000/);
+  await expect(page.getByLabel("Total de los productos")).toContainText(/10 u\.\)\s*20 USDT/);
   await captura(page, "bloqueB-detalle", calculo);
 
   // Listado del mes: la compra con su proveedor, total, % y comisión; totales del período.

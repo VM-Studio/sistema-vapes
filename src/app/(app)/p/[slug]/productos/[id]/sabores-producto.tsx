@@ -14,7 +14,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { useToast } from "@/components/ui/toast";
-import { formatearPesos } from "@/lib/format";
+import { formatearPesos, formatearUsdt } from "@/lib/format";
 import { esOwner } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 import type { DepositoBasico } from "@/server/services/deposito.service";
@@ -114,7 +114,7 @@ export function SaboresProducto({
                 </td>
                 {verCosto && (
                   <td className="px-4 py-3 text-right tabular-nums">
-                    {s.ultimoCosto === null ? "—" : formatearPesos(s.ultimoCosto)}
+                    {s.ultimoCostoUsdt === null ? "—" : formatearUsdt(s.ultimoCostoUsdt)}
                   </td>
                 )}
                 {depositos.map((d) => (
@@ -164,8 +164,10 @@ export function SaboresProducto({
                 <p className="font-medium">{titulo(s)}</p>
                 <div className="mt-0.5">{codigo(s)}</div>
                 <p className="mt-1 text-sm">{precio(s)}</p>
-                {verCosto && s.ultimoCosto !== null && (
-                  <p className="text-muted text-xs">Último costo {formatearPesos(s.ultimoCosto)}</p>
+                {verCosto && s.ultimoCostoUsdt !== null && (
+                  <p className="text-muted text-xs">
+                    Último costo {formatearUsdt(s.ultimoCostoUsdt)}
+                  </p>
                 )}
               </div>
               <div className="text-right">

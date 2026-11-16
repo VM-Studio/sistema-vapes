@@ -9,10 +9,12 @@ import { cardVariants } from "@/components/ui/card";
 import { ChipLink, ChipRow } from "@/components/ui/chip";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Monto } from "@/components/ui/monto";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal, type Montos } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
 import { formatearFecha } from "@/lib/utils";
@@ -32,6 +34,9 @@ import { DeshacerPago, MarcarPagado } from "./acciones-pasista";
 export const metadata: Metadata = { title: "Pasista" };
 
 type SP = Record<string, string | string[] | undefined>;
+
+/** "12,50 USDT ($ 20.000)": la comisión en USDT con los pesos al lado. */
+const usdtYPesos = (m: Montos) => `${formatearUsdt(m.usdt)} (${formatearPesos(m.pesos)})`;
 
 function EstadoBadge({ c }: { c: ComisionListada }) {
   return c.estado === EstadoComisionPasista.PAGADA ? (
@@ -84,7 +89,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
               <MarcarPagado
                 objetivo={{ mes }}
                 titulo={`Marcar ${nombre} como pagado`}
-                resumen={`Se marcan pagadas todas las comisiones pendientes de ${nombre}: ${formatearPesos(t.pendienteMes)}.`}
+                resumen={`Se marcan pagadas todas las comisiones pendientes de ${nombre}: ${usdtYPesos(t.montos.pendienteMes)}.`}
                 textoBoton="Marcar mes como pagado"
               />
             )}
@@ -97,24 +102,32 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
       >
         <StatCard
           label={delMesActual ? "Comisión de este mes" : `Comisión de ${nombre}`}
-          value={formatearPesos(t.devengadoMes)}
-          hint={`${formatearNumero(t.comprasMes)} ${t.comprasMes === 1 ? "compra" : "compras"} por ${formatearPesos(t.totalComprasMes)}`}
+          value={textoPrincipal(t.montos.devengadoMes)}
+          hint={
+            <>
+              {textoEquivalentes(t.montos.devengadoMes)}
+              <br />
+              {`${formatearNumero(t.comprasMes)} ${t.comprasMes === 1 ? "compra" : "compras"} por ${textoPrincipal(t.montos.totalComprasMes)}`}
+            </>
+          }
           acento="azul"
         />
         <StatCard
           label={delMesActual ? "Pagado este mes" : `Pagado de ${nombre}`}
-          value={formatearPesos(t.pagadoMes)}
+          value={textoPrincipal(t.montos.pagadoMes)}
+          hint={textoEquivalentes(t.montos.pagadoMes)}
           acento="oliva"
         />
         <StatCard
           label={delMesActual ? "Pendiente de este mes" : `Pendiente de ${nombre}`}
-          value={formatearPesos(t.pendienteMes)}
+          value={textoPrincipal(t.montos.pendienteMes)}
+          hint={textoEquivalentes(t.montos.pendienteMes)}
           acento="naranja"
         />
         <StatCard
           label="Pendiente total"
-          value={formatearPesos(t.pendienteTotal)}
-          hint="Todos los meses"
+          value={textoPrincipal(t.montos.pendienteTotal)}
+          hint={`Todos los meses · ${textoEquivalentes(t.montos.pendienteTotal)}`}
           acento="naranja"
         />
       </section>
@@ -199,7 +212,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
             key: "base",
             header: "Total compra",
             className: "text-right tabular-nums",
-            cell: (c) => formatearPesos(c.base),
+            cell: (c) => <Monto montos={c.baseMontos} className="items-end whitespace-nowrap" />,
           },
           {
             key: "pct",
@@ -211,7 +224,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
             key: "monto",
             header: "Comisión",
             className: "text-right tabular-nums font-semibold",
-            cell: (c) => formatearPesos(c.monto),
+            cell: (c) => <Monto montos={c.montos} className="items-end whitespace-nowrap" />,
           },
           { key: "estado", header: "Estado", cell: (c) => <EstadoBadge c={c} /> },
           ...(owner
@@ -226,7 +239,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
                       <MarcarPagado
                         objetivo={{ ids: [c.id] }}
                         titulo={`Marcar pagada la comisión de ${c.compra}`}
-                        resumen={formatearPesos(c.monto)}
+                        resumen={usdtYPesos(c.montos)}
                         textoBoton="Marcar pagada"
                         variante="secondary"
                         size="sm"
@@ -260,10 +273,10 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
               <div className="flex items-end justify-between gap-2">
                 <p className="text-muted text-small">
                   {formatearFecha(c.fecha)} · {formatearNumero(c.unidades)} u. · compra{" "}
-                  {formatearPesos(c.base)}
+                  {textoPrincipal(c.baseMontos)}
                   {c.porcentaje ? ` × ${formatearNumero(Number(c.porcentaje))}%` : ""}
                 </p>
-                <p className="shrink-0 font-semibold tabular-nums">{formatearPesos(c.monto)}</p>
+                <Monto montos={c.montos} className="shrink-0 items-end text-right font-semibold" />
               </div>
             </Link>
             {owner && (
@@ -272,7 +285,7 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
                   <MarcarPagado
                     objetivo={{ ids: [c.id] }}
                     titulo={`Marcar pagada la comisión de ${c.compra}`}
-                    resumen={formatearPesos(c.monto)}
+                    resumen={usdtYPesos(c.montos)}
                     textoBoton="Marcar pagada"
                     variante="secondary"
                     size="sm"
@@ -302,21 +315,27 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
             <dt className="text-muted text-small">
               Total de las compras ({formatearNumero(t.comprasMes)})
             </dt>
-            <dd className="font-semibold tabular-nums">{formatearPesos(t.totalComprasMes)}</dd>
+            <dd className="font-semibold">
+              <Monto montos={t.montos.totalComprasMes} />
+            </dd>
           </div>
           <div className="flex flex-col gap-0.5">
             <dt className="text-muted text-small">Comisión total</dt>
-            <dd className="font-semibold tabular-nums" aria-label="Comisión total del mes">
-              {formatearPesos(t.devengadoMes)}
+            <dd className="font-semibold" aria-label="Comisión total del mes">
+              <Monto montos={t.montos.devengadoMes} />
             </dd>
           </div>
           <div className="flex flex-col gap-0.5">
             <dt className="text-muted text-small">Pagada</dt>
-            <dd className="font-semibold tabular-nums">{formatearPesos(t.pagadoMes)}</dd>
+            <dd className="font-semibold">
+              <Monto montos={t.montos.pagadoMes} />
+            </dd>
           </div>
           <div className="flex flex-col gap-0.5">
             <dt className="text-muted text-small">Pendiente</dt>
-            <dd className="font-semibold tabular-nums">{formatearPesos(t.pendienteMes)}</dd>
+            <dd className="font-semibold">
+              <Monto montos={t.montos.pendienteMes} />
+            </dd>
           </div>
         </dl>
         <p
@@ -324,7 +343,9 @@ export default async function PasistaPage({ searchParams }: { searchParams: Prom
           aria-label="Total a pagar del mes"
         >
           <span className="font-semibold">Total a pagar al pasista en {nombre}</span>
-          <strong className="text-h2 tabular-nums">{formatearPesos(t.pendienteMes)}</strong>
+          <strong className="text-h2">
+            <Monto montos={t.montos.pendienteMes} className="items-end" />
+          </strong>
         </p>
       </section>
     </>

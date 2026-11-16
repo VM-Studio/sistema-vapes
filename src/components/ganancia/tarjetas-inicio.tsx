@@ -1,8 +1,13 @@
 import { ChevronRight, HandCoins, PenLine } from "lucide-react";
 import Link from "next/link";
 
-import { formatearNumero, formatearPesos } from "@/lib/format";
-import { ETIQUETA_CATEGORIA, nombreMes, sumarMeses } from "@/lib/ganancia-vendedor";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import {
+  equivalenteUsdt,
+  ETIQUETA_CATEGORIA,
+  nombreMes,
+  sumarMeses,
+} from "@/lib/ganancia-vendedor";
 import { rutaPanel } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
 import type { CtxPanel } from "@/server/auth/permissions";
@@ -41,6 +46,8 @@ export async function TarjetaMiGanancia({ ctx, className }: { ctx: CtxPanel; cla
   if (!g) return null;
   const paraFirmar = await remitosParaFirmar(ctx);
   const anterior = historial.find((l) => l.mes === sumarMeses(mes, -1));
+  // La ganancia es en pesos (tarifa por vape); el USDT va de referencia.
+  const usdt = equivalenteUsdt(g.calculo.total, g.cotizacionUsdt);
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       {paraFirmar.map((r) => (
@@ -78,6 +85,9 @@ export async function TarjetaMiGanancia({ ctx, className }: { ctx: CtxPanel; cla
             <p className="text-2xl leading-tight font-bold tabular-nums">
               {formatearPesos(g.calculo.total)}
             </p>
+            {usdt !== null && (
+              <p className="text-muted text-xs tabular-nums">≈ {formatearUsdt(usdt)}</p>
+            )}
             <p className="text-subtle text-small tabular-nums">
               A hoy · {formatearNumero(g.calculo.cantidadVentas)}{" "}
               {g.calculo.cantidadVentas === 1 ? "venta" : "ventas"} ·{" "}

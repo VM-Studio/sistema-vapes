@@ -1,6 +1,7 @@
 import "server-only";
 
-import { formatearCompacto, formatearDelta, formatearNumero, formatearPesos } from "@/lib/format";
+import { formatearCompacto, formatearDelta, formatearNumero } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal, type Montos } from "@/lib/moneda";
 import type { CtxPanel } from "@/server/auth/permissions";
 import { aWinAnsi, COLOR_PDF, recortar, rectRedondeado } from "@/server/pdf";
 import {
@@ -19,14 +20,23 @@ import {
   serieComparativa,
   topProductos,
   type Comparado,
+  type ComparadoMontos,
   type Periodo,
 } from "@/server/services/analitica.service";
 
 /**
  * Resumen mensual (SOLO dueños): UNA página A4 con KPIs contra el mes
  * anterior, facturación por día (barras), top 5 productos, compras vs.
- * ventas y el rendimiento del equipo.
+ * ventas y el rendimiento del equipo. Montos en USDT (cada venta a su
+ * cotización); en las tarjetas, abajo, lo mismo en pesos y dólares.
  */
+
+/** a − b en cada moneda (centavos exactos). */
+function restar(a: Montos, b: Montos): Montos {
+  const r = (x: string, y: string) =>
+    ((Math.round(Number(x) * 100) - Math.round(Number(y) * 100)) / 100).toFixed(2);
+  return { usdt: r(a.usdt, b.usdt), pesos: r(a.pesos, b.pesos), usd: r(a.usd, b.usd) };
+}
 
 export function periodoDelMes(mes: string): Periodo {
   const { desde, hasta } = diasDelMes(mes);
@@ -69,7 +79,9 @@ export async function pdfResumenMensual(
   cab: CabeceraPanel,
   d: DatosResumenMensual,
 ): Promise<Uint8Array> {
-  const l = await nuevoLienzo(cab, d.titulo, ["Comparado con el mes anterior completo."]);
+  const l = await nuevoLienzo(cab, d.titulo, [
+    "Comparado con el mes anterior completo. Montos en USDT: cada venta a la cotización de su momento.",
+  ]);
   const { page, margen: M, ancho } = l;
   const util = ancho - 2 * M;
 
@@ -78,13 +90,21 @@ export async function pdfResumenMensual(
   const tarjetas: {
     label: string;
     valor: string;
-    c: Comparado<string> | Comparado<number> | null;
+    /** Equivalentes en pesos y dólares (línea chica). */
+    equivalentes?: string;
+    c: ComparadoMontos | Comparado<number> | null;
     extra?: string;
   }[] = [
-    { label: "Facturado", valor: formatearPesos(k.facturado.actual), c: k.facturado },
+    {
+      label: "Facturado",
+      valor: textoPrincipal(k.facturado.actual),
+      equivalentes: textoEquivalentes(k.facturado.actual),
+      c: k.facturado,
+    },
     {
       label: "Ganancia bruta",
-      valor: k.ganancia ? formatearPesos(k.ganancia.actual) : "—",
+      valor: k.ganancia ? textoPrincipal(k.ganancia.actual) : "—",
+      equivalentes: k.ganancia ? textoEquivalentes(k.ganancia.actual) : undefined,
       c: k.ganancia,
       extra: k.margenPct !== null ? `margen ${k.margenPct.toLocaleString("es-AR")} %` : undefined,
     },
@@ -96,7 +116,8 @@ export async function pdfResumenMensual(
     },
     {
       label: "Ticket promedio",
-      valor: formatearPesos(k.ticketPromedio.actual),
+      valor: textoPrincipal(k.ticketPromedio.actual),
+      equivalentes: textoEquivalentes(k.ticketPromedio.actual),
       c: k.ticketPromedio,
     },
     {
@@ -107,13 +128,16 @@ export async function pdfResumenMensual(
   ];
   const gap = 8;
   const w = (util - 2 * gap) / 3;
-  const h = 58;
+  const h = 66;
   tarjetas.forEach((t, i) => {
     const x = M + (i % 3) * (w + gap);
     const y = l.y - Math.floor(i / 3) * (h + gap) - h;
     rectRedondeado(page, x, y, w, h, 6, FONDO);
     l.texto(t.label, x + 10, y + h - 15, { size: 8, color: GRIS });
     l.texto(t.valor, x + 10, y + h - 34, { size: 15, font: l.negrita, max: w - 20 });
+    if (t.equivalentes) {
+      l.texto(t.equivalentes, x + 10, y + h - 46, { size: 7, color: GRIS, max: w - 20 });
+    }
     const pct = t.c?.deltaPct ?? null;
     const fuenteDelta = pct === null ? l.normal : l.negrita;
     // Saneado y recortado ANTES de medirlo: widthOfTextAtSize falla con caracteres fuera de WinAnsi.
@@ -140,7 +164,7 @@ export async function pdfResumenMensual(
   l.y -= 2 * h + gap + 26;
 
   // --- Gráfico: facturación por día ------------------------------------------
-  l.texto("Facturación por día", M, l.y, { size: 11, font: l.negrita });
+  l.texto("Facturación por día (USDT)", M, l.y, { size: 11, font: l.negrita });
   // Leyenda a la derecha: cuadrado de color pegado a su etiqueta.
   const anchoAnt = l.normal.widthOfTextAtSize(aWinAnsi("Mes anterior", l.normal), 7.5);
   const anchoAct = l.normal.widthOfTextAtSize(aWinAnsi("Este mes", l.normal), 7.5);
@@ -165,7 +189,7 @@ export async function pdfResumenMensual(
       thickness: 0.3,
       color: BORDE,
     });
-    l.texto(formatearCompacto(max * frac, true), ejeX - 4, y - 3, {
+    l.texto(formatearCompacto(max * frac), ejeX - 4, y - 3, {
       size: 6.5,
       color: GRIS,
       derecha: true,
@@ -221,7 +245,7 @@ export async function pdfResumenMensual(
   d.top.forEach((t, i) => {
     l.texto(`${i + 1}. ${t.nombre}`, M + 5, yTop, { max: col - 125 });
     l.texto(formatearNumero(t.unidades), M + col - 70, yTop, { derecha: true });
-    l.texto(formatearPesos(t.facturado), M + col - 5, yTop, { derecha: true });
+    l.texto(textoPrincipal(t.facturado), M + col - 5, yTop, { derecha: true });
     page.drawLine({
       start: { x: M, y: yTop - 5 },
       end: { x: M + col, y: yTop - 5 },
@@ -232,19 +256,15 @@ export async function pdfResumenMensual(
   });
   const cv = d.compras;
   const filasCv: [string, string, number | null | undefined][] = [
-    ["Ventas (facturado)", formatearPesos(cv.ventas.actual), cv.ventas.deltaPct],
-    ["Compras recibidas", formatearPesos(cv.compras.actual), cv.compras.deltaPct],
-    ["Costo de lo vendido", formatearPesos(cv.costoVendido.actual), cv.costoVendido.deltaPct],
+    ["Ventas (facturado)", textoPrincipal(cv.ventas.actual), cv.ventas.deltaPct],
+    ["Compras recibidas", textoPrincipal(cv.compras.actual), cv.compras.deltaPct],
+    ["Costo de lo vendido", textoPrincipal(cv.costoVendido.actual), cv.costoVendido.deltaPct],
     [
       "Cantidad de compras",
       formatearNumero(cv.cantidadCompras.actual),
       cv.cantidadCompras.deltaPct,
     ],
-    [
-      "Ventas - compras",
-      formatearPesos((Number(cv.ventas.actual) - Number(cv.compras.actual)).toFixed(2)),
-      undefined,
-    ],
+    ["Ventas - compras", textoPrincipal(restar(cv.ventas.actual, cv.compras.actual)), undefined],
   ];
   l.texto("Concepto", x2 + 5, yTabla - 18, { size: 7.5, color: GRIS, font: l.negrita });
   l.texto("Mes", x2 + col - 60, yTabla - 18, {
@@ -315,9 +335,9 @@ export async function pdfResumenMensual(
       v.nombre,
       formatearNumero(v.cantidadVentas),
       formatearNumero(v.unidades),
-      formatearPesos(v.facturado),
-      formatearPesos(v.ticketPromedio),
-      v.comision ? formatearPesos(v.comision.estimada) : "—",
+      textoPrincipal(v.facturado),
+      textoPrincipal(v.ticketPromedio),
+      v.comision ? textoPrincipal(v.comision.estimada) : "—",
     ];
     cols.forEach((c, i) =>
       l.texto(valores[i]!, c.x, l.y, {

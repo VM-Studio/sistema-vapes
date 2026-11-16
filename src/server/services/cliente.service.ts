@@ -1,6 +1,7 @@
-import { AccionAuditoria, EstadoVenta, Prisma } from "@prisma/client";
+import { AccionAuditoria, Prisma } from "@prisma/client";
 
 import { finDelDia, fechasDeRango, inicioDelDia } from "@/lib/fechas";
+import { MONTOS_CERO, type Montos } from "@/lib/moneda";
 import { nombreConSabor } from "@/lib/ventas-ui";
 import {
   MENSAJE_TELEFONO_INVALIDO,
@@ -10,7 +11,9 @@ import {
 } from "@/lib/validations/cliente";
 import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, NotFoundError, ValidationError } from "@/server/errors";
+import { SQL_USD_TOTAL, totalDeVenta } from "@/server/moneda/montos-venta";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { deudaDeClientes } from "@/server/services/fiado.service";
 
 /**
  * CLIENTES (por panel). Nombre + teléfono obligatorio, normalizado ("+54" +
@@ -229,7 +232,8 @@ function filtroBusqueda(q?: string): Prisma.ClienteWhereInput {
 
 interface ResumenCompras {
   cantidad: number;
-  total: string;
+  /** Total comprado en USDT (principal), pesos y dólares: Σ de cada venta a su cotización. */
+  total: Montos;
   ultima: Date | null;
 }
 
@@ -238,17 +242,34 @@ async function resumenesDeCompras(
   clienteIds: string[],
 ): Promise<Map<string, ResumenCompras>> {
   if (clienteIds.length === 0) return new Map();
-  const filas = await dbPara(ctx.panelId).venta.groupBy({
-    by: ["clienteId"],
-    where: { clienteId: { in: clienteIds }, estado: EstadoVenta.CONFIRMADA },
-    _count: { _all: true },
-    _sum: { total: true },
-    _max: { fecha: true },
-  });
+  const filas = await dbPara(ctx.panelId).$queryRaw<
+    {
+      clienteId: string;
+      cantidad: number;
+      usdt: string;
+      pesos: string;
+      usd: string;
+      ultima: Date | null;
+    }[]
+  >`
+    SELECT v."clienteId", COUNT(*)::int AS "cantidad",
+      COALESCE(SUM(v."totalUsdt"), 0)::text AS "usdt",
+      COALESCE(SUM(v."total"), 0)::text AS "pesos",
+      COALESCE(SUM(${SQL_USD_TOTAL}), 0)::text AS "usd",
+      MAX(v."fecha") AS "ultima"
+    FROM "Venta" v
+    WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
+      AND v."clienteId" IN (${Prisma.join(clienteIds)})
+    GROUP BY v."clienteId"`;
+  const d = (x: string) => new Prisma.Decimal(x).toFixed(2);
   return new Map(
     filas.map((f) => [
       f.clienteId,
-      { cantidad: f._count._all, total: dec(f._sum.total), ultima: f._max.fecha },
+      {
+        cantidad: f.cantidad,
+        total: { usdt: d(f.usdt), pesos: d(f.pesos), usd: d(f.usd) },
+        ultima: f.ultima,
+      },
     ]),
   );
 }
@@ -309,8 +330,8 @@ export async function obtenerClienteBasico(ctx: Ctx, id: string): Promise<Client
 export interface ClienteListado extends ClienteBasico {
   activo: boolean;
   compras: number;
-  /** Solo para dueños (null si no). */
-  totalComprado: string | null;
+  /** Solo para dueños (null si no). USDT principal, cada venta a su cotización. */
+  totalComprado: Montos | null;
   ultimaCompra: Date | null;
 }
 
@@ -347,7 +368,7 @@ export async function listarClientes(
       return {
         ...c,
         compras: r?.cantidad ?? 0,
-        totalComprado: opciones.verTotales ? (r?.total ?? "0.00") : null,
+        totalComprado: opciones.verTotales ? (r?.total ?? MONTOS_CERO) : null,
         ultimaCompra: r?.ultima ?? null,
       };
     }),
@@ -376,7 +397,7 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
     },
   });
   if (!c) throw new NotFoundError("El cliente no existe");
-  const [ventas, resumen, devoluciones] = await Promise.all([
+  const [ventas, resumen, devoluciones, deudas] = await Promise.all([
     db.venta.findMany({
       where: { clienteId: id },
       orderBy: { fecha: "desc" },
@@ -387,6 +408,8 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
         fecha: true,
         estado: true,
         total: true,
+        totalUsdt: true,
+        tipoCambioUsd: true,
         medioPago: true,
         estadoPago: true,
         saldoPendiente: true,
@@ -414,6 +437,7 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
         },
       },
     }),
+    deudaDeClientes(ctx, [id]),
   ]);
   const r = resumen.get(id);
   return {
@@ -426,6 +450,8 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
       createdAt: c.createdAt,
       /** Deuda de cuenta corriente (ventas fiadas sin cobrar). */
       saldoDeudor: dec(c.saldoDeudor),
+      /** La deuda en USDT (principal), pesos y dólares: cada venta a su cotización. */
+      deuda: deudas.get(id)?.deuda ?? MONTOS_CERO,
       /** Cartera del vendedor en la que está («Mis clientes»), si está en alguna. */
       cartera: c.vendedor
         ? {
@@ -445,7 +471,7 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
     },
     compras: {
       cantidad: r?.cantidad ?? 0,
-      total: opciones.verTotales ? (r?.total ?? "0.00") : null,
+      total: opciones.verTotales ? (r?.total ?? MONTOS_CERO) : null,
       ultima: r?.ultima ?? null,
     },
     ventas: ventas.map((v) => ({
@@ -454,6 +480,7 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
       fecha: v.fecha,
       estado: v.estado,
       total: dec(v.total),
+      totales: totalDeVenta(v),
       medioPago: v.medioPago,
       estadoPago: v.estadoPago,
       saldoPendiente: dec(v.saldoPendiente),

@@ -9,6 +9,7 @@ import { expect, test } from "./base";
 import { PASSWORD_TRINIDAD } from "./global-setup";
 import { db, login, loginDueno, PANEL_COSMETIC, PANEL_VAPES } from "./helpers";
 import { usarCatalogoEjemplo } from "./fixtures";
+import { columnasUsdt, costoEnPesos } from "./fixtures/usdt";
 
 usarCatalogoEjemplo();
 
@@ -59,6 +60,7 @@ async function venta(opciones: {
   fecha: Date;
   cantidad: number;
   precio: number;
+  /** Costo por unidad EN USDT. */
   costo: number;
 }) {
   const variante = await db.variante.findFirstOrThrow({
@@ -70,7 +72,8 @@ async function venta(opciones: {
   });
   const cliente = await db.cliente.findFirstOrThrow({ where: { panelId: PANEL_VAPES } });
   const total = opciones.cantidad * opciones.precio;
-  const costo = opciones.cantidad * opciones.costo;
+  const costoUnitario = costoEnPesos(opciones.costo);
+  const costo = opciones.cantidad * costoUnitario;
   await db.$transaction(async (tx) => {
     const s = await tx.secuencia.update({
       where: { panelId_entidad: { panelId: PANEL_VAPES, entidad: "VENTA" } },
@@ -101,6 +104,7 @@ async function venta(opciones: {
         total,
         costoTotal: costo,
         gananciaBruta: total - costo,
+        ...columnasUsdt(total, opciones.cantidad * opciones.costo),
         items: {
           create: {
             panelId: PANEL_VAPES,
@@ -109,7 +113,8 @@ async function venta(opciones: {
             cantidad: opciones.cantidad,
             precioLista: opciones.precio,
             precioUnitario: opciones.precio,
-            costoUnitario: opciones.costo,
+            costoUnitario: costoUnitario,
+            costoUnitarioUsdt: opciones.costo,
             subtotal: total,
           },
         },
@@ -166,7 +171,7 @@ test.beforeAll(async () => {
     fecha: new Date(ahora - 60_000),
     cantidad: 2,
     precio: 10_000,
-    costo: 6_000,
+    costo: 4.5,
   });
   await venta({
     vendedorId: v.id,
@@ -174,7 +179,7 @@ test.beforeAll(async () => {
     fecha: new Date(ahora - 120_000),
     cantidad: 10,
     precio: 10_000,
-    costo: 6_000,
+    costo: 4.5,
   });
   await venta({
     vendedorId: v.id,
@@ -182,7 +187,7 @@ test.beforeAll(async () => {
     fecha: new Date(ahora - 24 * HORA),
     cantidad: 1,
     precio: 10_000,
-    costo: 6_000,
+    costo: 4.5,
   });
 });
 
@@ -247,11 +252,13 @@ test("dueño: tarjeta de una vendedora con unitarias, mayoristas y comisión est
   await loginDueno(page);
   await page.goto("/p/vapes");
   const tarjeta = page.getByTestId(`vendedor-${VENDEDORA.nombre}`);
-  await expect(tarjeta).toContainText("2 ventas · $ 120.000");
-  await expect(tarjeta).toContainText("Unitarias1 · $ 20.000");
-  await expect(tarjeta).toContainText("Mayoristas1 · $ 100.000");
-  // 5 % de 20.000 + 3 % de 100.000.
-  await expect(tarjeta).toContainText("Comisión estimada$ 4.000");
+  // USDT principal: cada venta a su cotización (1.350): 20.000 → 14,81 y 100.000 → 74,07.
+  await expect(tarjeta).toContainText("2 ventas · 88,88 USDT");
+  await expect(tarjeta).toContainText("Unitarias1 · 14,81 USDT");
+  await expect(tarjeta).toContainText("Mayoristas1 · 74,07 USDT");
+  await expect(tarjeta).toContainText("$ 120.000");
+  // 5 % de 20.000 + 3 % de 100.000 = $ 4.000 (≈ 2,96 USDT).
+  await expect(tarjeta).toContainText("Comisión estimada2,96 USDT$ 4.000");
   await expect(page.getByTestId("tarjeta-compras")).toBeVisible();
 
   await irCon(

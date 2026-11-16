@@ -105,12 +105,12 @@ async function crearCatalogo(ctx: Ctx, suf: string) {
         precioVenta: "16000.00",
         variantes: {
           create: [
-            { nombre: "Mango Ice", sku: `TV-M-${suf}`, ultimoCosto: "9500.00" },
+            { nombre: "Mango Ice", sku: `TV-M-${suf}`, ultimoCostoUsdt: "6.00" },
             {
               nombre: "Frutilla",
               sku: `TV-F-${suf}`,
               precioVenta: "17000.00",
-              ultimoCosto: "9800.00",
+              ultimoCostoUsdt: "6.20",
             },
             { nombre: "Sin compras", sku: `TV-S-${suf}` },
           ],
@@ -205,15 +205,32 @@ async function main() {
       itemFrutilla.esPrecioEspecial,
     "Frutilla: lista 17000 (precio propio), cobrado 15000 → esPrecioEspecial",
   );
+  // USDT: costos del sabor en USDT; la venta congela la cotización y de ahí salen los pesos.
+  const tc = venta1.tipoCambioUsdt;
+  const enPesos = (usdt: string) => $(new Prisma.Decimal(usdt).mul(tc).toDecimalPlaces(2));
   check(
-    $(itemMango.costoUnitario) === "9500.00" && $(itemFrutilla.costoUnitario) === "9800.00",
-    "costoUnitario = ultimoCosto de cada sabor",
+    $(itemMango.costoUnitarioUsdt) === "6.00" && $(itemFrutilla.costoUnitarioUsdt) === "6.20",
+    "costoUnitarioUsdt = ultimoCostoUsdt de cada sabor",
   );
   check(
+    $(itemMango.costoUnitario) === enPesos("6.00") &&
+      $(itemFrutilla.costoUnitario) === enPesos("6.20"),
+    `costo en pesos = USDT × cotización de la venta (${$(tc)})`,
+  );
+  const costoPesos = new Prisma.Decimal(enPesos("6.00")).mul(2).plus(enPesos("6.20"));
+  const totalUsdt = new Prisma.Decimal(47000).div(tc).toDecimalPlaces(2);
+  check(
     $(venta1.total) === "47000.00" &&
-      $(venta1.costoTotal) === "28800.00" &&
-      $(venta1.gananciaBruta) === "18200.00",
-    `total ${$(venta1.total)} · costo ${$(venta1.costoTotal)} · ganancia ${$(venta1.gananciaBruta)}`,
+      $(venta1.costoTotal) === $(costoPesos) &&
+      $(venta1.gananciaBruta) === $(new Prisma.Decimal(47000).minus(costoPesos)),
+    `pesos: total ${$(venta1.total)} · costo ${$(venta1.costoTotal)} · ganancia ${$(venta1.gananciaBruta)}`,
+  );
+  check(
+    $(venta1.totalUsdt) === $(totalUsdt) &&
+      $(venta1.costoTotalUsdt) === "18.20" &&
+      $(venta1.gananciaUsdt) === $(totalUsdt.minus("18.20")) &&
+      venta1.tipoCambioUsd.greaterThan(0),
+    `USDT: total ${$(venta1.totalUsdt)} · costo ${$(venta1.costoTotalUsdt)} · ganancia ${$(venta1.gananciaUsdt)}`,
   );
   check(
     venta1.estado === EstadoVenta.CONFIRMADA &&
@@ -432,14 +449,22 @@ async function main() {
   const porCliente = await listarVentas(ctx, filtros({ clienteId: v1.cliente.id }), {
     verCostos: true,
   });
+  const enDbCliente = await db.venta.findMany({
+    where: { clienteId: v1.cliente.id, estado: EstadoVenta.CONFIRMADA },
+  });
+  const sumaUsdt = (k: "totalUsdt" | "gananciaUsdt") =>
+    $(enDbCliente.reduce((a, v) => a.plus(v[k]), new Prisma.Decimal(0)));
   check(
-    porCliente.resumen.cantidad === 3 && porCliente.resumen.total === "93000.00",
-    `ventas del cliente: ${porCliente.resumen.cantidad} por ${porCliente.resumen.total}`,
+    porCliente.resumen.cantidad === 3 &&
+      porCliente.resumen.total.pesos === "93000.00" &&
+      porCliente.resumen.total.usdt === sumaUsdt("totalUsdt") &&
+      porCliente.resumen.ganancia?.usdt === sumaUsdt("gananciaUsdt"),
+    `ventas del cliente: ${porCliente.resumen.cantidad} por ${porCliente.resumen.total.pesos} ` +
+      `= ${porCliente.resumen.total.usdt} USDT (suma de cada venta a su cotización)`,
   );
   const sinCostos = await listarVentas(ctx, filtros({ q: "Nico Test" }), { verCostos: false });
   check(
-    sinCostos.resumen.gananciaBruta === null &&
-      sinCostos.ventas.every((v) => v.gananciaBruta === null),
+    sinCostos.resumen.ganancia === null && sinCostos.ventas.every((v) => v.ganancia === null),
     "sin verCostos: no llega la ganancia",
   );
   const porVendedor = await listarVentas(
@@ -453,8 +478,9 @@ async function main() {
   );
   const detalle = await obtenerVenta(ctxEmp, v1.id, { verCostos: false });
   check(
-    detalle.costoTotal === null &&
-      detalle.items.every((i) => i.costoUnitario === null) &&
+    detalle.costo === null &&
+      detalle.ganancia === null &&
+      detalle.items.every((i) => i.costoUnitario === null && i.costoUnitarioUsdt === null) &&
       detalle.movimientos.length === 2,
     "detalle sin costos para el empleado, con sus 2 movimientos",
   );
@@ -600,7 +626,7 @@ async function main() {
         precioVentaML: "15000.00",
         variantes: {
           create: [
-            { nombre: "Rosa", sku: `TML-R-${suf}`, ultimoCosto: "7000.00" },
+            { nombre: "Rosa", sku: `TML-R-${suf}`, ultimoCostoUsdt: "4.50" },
             { nombre: "Coco", sku: `TML-C-${suf}`, precioVentaML: "16500.00" },
           ],
         },
@@ -703,9 +729,10 @@ async function main() {
   check(
     $(enDb.items[0]!.precioLista) === "14000.00" &&
       enDb.items[0]!.origenPrecio === "ML" &&
-      $(enDb.costoTotal) === "14000.00" &&
-      $(enDb.gananciaBruta) === "40250.50",
-    `VentaItem guarda el precio a mano (ML); costo y ganancia del servidor (${$(enDb.costoTotal)} / ${$(enDb.gananciaBruta)})`,
+      $(enDb.costoTotalUsdt) === "9.00" &&
+      $(enDb.gananciaUsdt) === $(enDb.totalUsdt.minus("9.00")) &&
+      $(enDb.gananciaBruta) === $(enDb.total.minus(enDb.costoTotal)),
+    `VentaItem guarda el precio a mano (ML); costo y ganancia del servidor (${$(enDb.costoTotalUsdt)} / ${$(enDb.gananciaUsdt)} USDT)`,
   );
 
   const efectivo = await generarVenta(

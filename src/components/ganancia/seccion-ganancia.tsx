@@ -15,8 +15,10 @@ import { cardVariants } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { Monto } from "@/components/ui/monto";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import {
+  equivalenteUsdt,
   ETIQUETA_CATEGORIA,
   nombreMes,
   nombreMesTitulo,
@@ -26,9 +28,14 @@ import {
   type ResumenCategoria,
   type Tarifas,
 } from "@/lib/ganancia-vendedor";
+import { textoEquivalentes, textoPrincipal, type Montos } from "@/lib/moneda";
 import { cn, formatearFecha, formatearFechaHora } from "@/lib/utils";
 import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
-import type { GananciaMes, Liquidacion } from "@/server/services/ganancia-vendedor.service";
+import type {
+  FacturadoGanancia,
+  GananciaMes,
+  Liquidacion,
+} from "@/server/services/ganancia-vendedor.service";
 import type { FirmaVista, Remito } from "@/server/services/remito-liquidacion.service";
 
 import {
@@ -38,6 +45,33 @@ import {
   TarifasDialog,
 } from "./acciones-ganancia";
 import { FirmarRemito } from "./firmar-remito";
+
+/**
+ * La ganancia por vape es en PESOS (tarifa fija por unidad: lo que se le
+ * paga). Al lado, chiquito, su equivalente en USDT a `cotizacion` ("≈ 12,34 USDT").
+ */
+function usdtAprox(pesos: string, cotizacion: string | null): string {
+  const u = equivalenteUsdt(pesos, cotizacion);
+  return u === null ? "" : `≈ ${formatearUsdt(u)}`;
+}
+
+function PesosConUsdt({
+  pesos,
+  cotizacion,
+  className,
+}: {
+  pesos: string;
+  cotizacion: string | null;
+  className?: string;
+}) {
+  const u = usdtAprox(pesos, cotizacion);
+  return (
+    <span className={cn("inline-flex flex-col", className)}>
+      <span className="tabular-nums">{formatearPesos(pesos)}</span>
+      {u && <span className="text-muted text-xs font-normal tabular-nums">{u}</span>}
+    </span>
+  );
+}
 
 const VARIANTE_CATEGORIA: Record<CategoriaGanancia, "neutral" | "primary" | "success"> = {
   MINORISTA: "neutral",
@@ -215,6 +249,7 @@ export function SeccionGanancia({
         <StatCard
           label={etiquetaTotal}
           value={<span data-testid="total-ganancia">{formatearPesos(calculo.total)}</span>}
+          hint={usdtAprox(calculo.total, g.cotizacionUsdt) || undefined}
           icono={HandCoins}
           acento="oliva"
           className="col-span-2 lg:col-span-1"
@@ -224,7 +259,8 @@ export function SeccionGanancia({
         {verFacturado && (
           <StatCard
             label="Total vendido"
-            value={formatearPesos(calculo.totalVendido)}
+            value={textoPrincipal(g.facturado.total)}
+            hint={textoEquivalentes(g.facturado.total)}
             className="col-span-2 lg:col-span-1"
           />
         )}
@@ -234,10 +270,13 @@ export function SeccionGanancia({
         categorias={calculo.categorias}
         total={calculo.total}
         verFacturado={verFacturado}
+        facturado={g.facturado}
+        cotizacion={g.cotizacionUsdt}
       />
 
       <TablaVentas
         verFacturado={verFacturado}
+        facturado={g.facturado}
         filas={calculo.filas}
         nombre={nombre}
         mesLabel={mesLabel}
@@ -303,6 +342,9 @@ function EstadoLiquidacion({
               ? `Le corresponden ${formatearPesos(l.total)}`
               : `Se le pagaron ${formatearPesos(l.pago!.monto)}`}
           </span>
+          <span className="text-muted text-xs tabular-nums">
+            {usdtAprox(l.estado === "PENDIENTE" ? l.total : l.pago!.monto, l.cotizacionUsdt)}
+          </span>
         </div>
         <p className="text-muted text-small">
           {l.estado === "PENDIENTE"
@@ -363,6 +405,9 @@ function PanelRemito({
             <EstadoLiquidacionBadge l={l} vendedor={r.vendedor.nombre} />
             <span className="text-sm font-semibold">
               Se le pagaron {formatearPesos(pago.monto)}
+            </span>
+            <span className="text-muted text-xs tabular-nums">
+              {usdtAprox(pago.monto, l.cotizacionUsdt)}
             </span>
           </div>
           <p className="text-muted text-small">
@@ -491,11 +536,17 @@ function TablaCategorias({
   categorias,
   total,
   verFacturado,
+  facturado,
+  cotizacion,
 }: {
   categorias: ResumenCategoria[];
   total: string;
   verFacturado: boolean;
+  facturado: FacturadoGanancia;
+  /** Pesos por USDT para el equivalente de la ganancia (que es en pesos). */
+  cotizacion: string | null;
 }) {
+  const vendido = (c: ResumenCategoria): Montos => facturado.porCategoria[c.categoria];
   const columnas = [
     {
       key: "categoria",
@@ -524,7 +575,9 @@ function TablaCategorias({
       key: "monto",
       header: "Ganancia",
       className: "text-right font-semibold",
-      cell: (c: ResumenCategoria) => formatearPesos(c.monto),
+      cell: (c: ResumenCategoria) => (
+        <PesosConUsdt pesos={c.monto} cotizacion={cotizacion} className="items-end" />
+      ),
     },
     ...(verFacturado
       ? [
@@ -532,7 +585,9 @@ function TablaCategorias({
             key: "vendido",
             header: "Total vendido",
             className: "text-right",
-            cell: (c: ResumenCategoria) => formatearPesos(c.totalVendido),
+            cell: (c: ResumenCategoria) => (
+              <Monto montos={vendido(c)} className="items-end whitespace-nowrap" />
+            ),
           },
         ]
       : []),
@@ -548,18 +603,25 @@ function TablaCategorias({
           <div className="bg-card rounded-card flex flex-col gap-2 p-4">
             <div className="flex items-center justify-between gap-3">
               <BadgeCategoria categoria={c.categoria} />
-              <span className="font-semibold tabular-nums">{formatearPesos(c.monto)}</span>
+              <PesosConUsdt
+                pesos={c.monto}
+                cotizacion={cotizacion}
+                className="items-end text-right font-semibold"
+              />
             </div>
             <p className="text-muted text-small tabular-nums">
               {formatearNumero(c.ventas)} {c.ventas === 1 ? "venta" : "ventas"} ·{" "}
               <VapesCategoria c={c} /> × {formatearPesos(c.tarifa)}
-              {verFacturado && ` · vendido ${formatearPesos(c.totalVendido)}`}
+              {verFacturado && ` · vendido ${textoPrincipal(vendido(c))}`}
             </p>
           </div>
         )}
       />
       <p className="text-small flex justify-end gap-2 px-1 font-semibold tabular-nums">
         <span className="text-muted font-medium">Total</span> {formatearPesos(total)}
+        {usdtAprox(total, cotizacion) && (
+          <span className="text-muted font-normal">({usdtAprox(total, cotizacion)})</span>
+        )}
       </p>
     </div>
   );
@@ -582,8 +644,10 @@ function TablaVentas({
   mesLabel,
   rutaVenta,
   verFacturado,
+  facturado,
 }: {
   verFacturado: boolean;
+  facturado: FacturadoGanancia;
   filas: FilaGanancia[];
   nombre: string;
   mesLabel: string;
@@ -645,7 +709,15 @@ function TablaVentas({
             key: "total",
             header: "Total venta",
             className: "text-right",
-            cell: (f: FilaGanancia) => (f.tipo === "VENTA" ? formatearPesos(f.totalVenta) : "—"),
+            cell: (f: FilaGanancia) =>
+              f.tipo === "VENTA" ? (
+                <Monto
+                  montos={facturado.porVenta[f.ventaId]}
+                  className="items-end whitespace-nowrap"
+                />
+              ) : (
+                "—"
+              ),
           },
         ]
       : []),
@@ -679,7 +751,7 @@ function TablaVentas({
                 {Math.abs(f.unidades) === 1 ? "vape" : "vapes"} × {formatearPesos(f.tarifa)}
                 {f.tipo === "VENTA"
                   ? verFacturado
-                    ? ` · venta ${formatearPesos(f.totalVenta)}`
+                    ? ` · venta ${textoPrincipal(facturado.porVenta[f.ventaId])}`
                     : ""
                   : " · devolución"}
               </p>
@@ -731,9 +803,11 @@ function Historial({
                 </span>
               </div>
               <EstadoLiquidacionBadge l={l} />
-              <span className="shrink-0 text-right font-semibold tabular-nums">
-                {formatearPesos(l.total)}
-              </span>
+              <PesosConUsdt
+                pesos={l.total}
+                cotizacion={l.cotizacionUsdt}
+                className="shrink-0 items-end text-right font-semibold"
+              />
             </Link>
           </li>
         ))}

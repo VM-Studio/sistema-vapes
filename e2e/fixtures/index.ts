@@ -4,6 +4,7 @@ import { limpiarNegocio } from "../../scripts/lib/limpieza-negocio";
 import { URL_TEST } from "../../playwright.config";
 import { test } from "../base";
 import { db } from "../db";
+import { columnasUsdt, costoEnPesos } from "./usdt";
 
 /**
  * Datos de negocio de los E2E: el seed base ya no trae catálogo, así que cada
@@ -70,7 +71,8 @@ export async function ventaConfirmadaVapes() {
     db.usuario.findFirstOrThrow({ where: { rol: "OWNER", deletedAt: null } }),
   ]);
   const precio = Number(variante.precioVenta ?? variante.producto.precioVenta);
-  const costo = Number(variante.ultimoCosto ?? 0);
+  const costoUsdt = Number(variante.ultimoCostoUsdt ?? 0);
+  const costo = costoEnPesos(costoUsdt);
   return db.$transaction(async (tx) => {
     const s = await tx.secuencia.update({
       where: { panelId_entidad: { panelId: PANEL, entidad: "VENTA" } },
@@ -93,6 +95,7 @@ export async function ventaConfirmadaVapes() {
         total: precio,
         costoTotal: costo,
         gananciaBruta: precio - costo,
+        ...columnasUsdt(precio, costoUsdt),
         items: {
           create: {
             panelId: PANEL,
@@ -102,6 +105,7 @@ export async function ventaConfirmadaVapes() {
             precioLista: precio,
             precioUnitario: precio,
             costoUnitario: costo,
+            costoUnitarioUsdt: costoUsdt,
             subtotal: precio,
           },
         },

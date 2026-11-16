@@ -56,6 +56,7 @@ import { anularVenta, generarVenta } from "../src/server/services/venta.service"
 const VAPES = "pnl_vapes";
 const db = dbPara(VAPES);
 const DIA = 24 * 3600 * 1000;
+const MIGRACION_USDT = "20261116100000_ganancia_en_usdt";
 const MIGRACION_A1 = "20261004090000_pagos_fiados_transferencias";
 
 let fallos = 0;
@@ -120,7 +121,7 @@ async function main() {
           especificacion: "6000",
           precioVenta: precio,
           variantes: {
-            create: [{ nombre: "Menta", sku: `${sku}-${suf}`, ultimoCosto: "4000.00" }],
+            create: [{ nombre: "Menta", sku: `${sku}-${suf}`, ultimoCostoUsdt: "2.50" }],
           },
         },
         include: { variantes: true },
@@ -166,7 +167,9 @@ async function main() {
     $((await db.cliente.findUniqueOrThrow({ where: { id: clienteId } })).saldoDeudor);
   const hoy = periodoDesdeParams({});
   const porMedio = async () =>
-    Object.fromEntries((await ventasPorMedioPago(ctx, hoy)).map((m) => [m.medio, Number(m.total)]));
+    Object.fromEntries(
+      (await ventasPorMedioPago(ctx, hoy)).map((m) => [m.medio, Number(m.total.pesos)]),
+    );
 
   // ---------------------------------------------------------------------------
   console.log("\n1) Venta de $30.000: Efectivo $20.000 + Transferencia $10.000");
@@ -486,8 +489,8 @@ async function main() {
   );
   const kOwner = await kpis(ctx, hoy);
   check(
-    kOwner.porCobrar === $(await deudaTotal()) && kOwner.cobrado !== null,
-    `al dueño sí: por cobrar ${kOwner.porCobrar}, cobrado hoy ${kOwner.cobrado?.actual}`,
+    kOwner.porCobrar?.pesos === $(await deudaTotal()) && kOwner.cobrado !== null,
+    `al dueño sí: por cobrar ${kOwner.porCobrar?.pesos} (${kOwner.porCobrar?.usdt} USDT), cobrado hoy ${kOwner.cobrado?.actual.pesos}`,
   );
 
   // ---------------------------------------------------------------------------
@@ -619,6 +622,22 @@ async function verificarMigracion(url: string, base: string) {
     ]);
     await mig.$executeRaw`UPDATE "Venta" SET "estado" = 'ANULADA', "anuladaPorId" = 'usr_mig',
       "anuladaAt" = now(), "motivoAnulacion" = 'vieja anulada' WHERE "id" = 'ven_mig3'`;
+    // Hasta antes de la de USDT; después, una cotización (la de USDT pasa las
+    // ventas viejas a USDT con la cotización de su momento: sin ninguna, falla a propósito).
+    const dirUsdt = mkdtempSync(join(tmpdir(), "fiados-mig-usdt-"));
+    mkdirSync(join(dirUsdt, "migrations"));
+    cpSync("prisma/schema.prisma", join(dirUsdt, "schema.prisma"));
+    cpSync(
+      "prisma/migrations/migration_lock.toml",
+      join(dirUsdt, "migrations", "migration_lock.toml"),
+    );
+    for (const m of readdirSync("prisma/migrations")) {
+      if (/^\d/.test(m) && m < MIGRACION_USDT)
+        cpSync(join("prisma/migrations", m), join(dirUsdt, "migrations", m), { recursive: true });
+    }
+    deploy(join(dirUsdt, "schema.prisma"));
+    await mig.$executeRaw`INSERT INTO "TipoCambio" ("id","moneda","tipo","valor","fuente","obtenidoAt") VALUES
+      ('tc_mig_u','USDT','VENTA',1000,'test',now()), ('tc_mig_d','USD_BLUE','VENTA',800,'test',now())`;
     deploy("prisma/schema.prisma");
     const ventas = await mig.$queryRaw<
       {
@@ -655,6 +674,16 @@ async function verificarMigracion(url: string, base: string) {
     check(
       ventas.find((v) => v.estado === "ANULADA")?.pagos === 0,
       "la venta vieja anulada no recibe pagos",
+    );
+    const usdt = await mig.$queryRaw<
+      { codigo: string; totalUsdt: string; ganancia: string; usd: string }[]
+    >`
+      SELECT "codigo", "totalUsdt"::text AS "totalUsdt", "gananciaUsdt"::text AS "ganancia",
+             "tipoCambioUsd"::text AS "usd" FROM "Venta" ORDER BY "numero"`;
+    check(
+      usdt.map((v) => `${v.totalUsdt}/${v.ganancia}/${v.usd}`).join(" ") ===
+        "3.00/3.00/800.00 2.00/2.00/800.00 1.00/1.00/800.00",
+      `migración a USDT: total y ganancia de cada venta vieja a la cotización de su momento (${usdt.map((v) => v.totalUsdt).join(", ")})`,
     );
     const total = confirmadas.reduce((a, v) => a.plus(v.total), new Prisma.Decimal(0));
     const cubierto = confirmadas.reduce(

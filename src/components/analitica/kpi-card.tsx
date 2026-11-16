@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 export function KpiCard({
   label,
   valor,
+  equivalentes,
   anterior,
   etiquetaAnterior,
   deltaPct,
@@ -29,6 +30,8 @@ export function KpiCard({
 }: {
   label: string;
   valor: ReactNode;
+  /** Un monto: lo mismo en pesos y dólares ("$ 21.000 · US$ 13,30"), chiquito bajo el valor. */
+  equivalentes?: string;
   /** Sin `anterior` (un saldo de hoy, no un período) no se muestra la comparación. */
   anterior?: ReactNode;
   /** "Ayer", "Semana pasada"… */
@@ -77,6 +80,9 @@ export function KpiCard({
         <p className="text-foreground text-xl leading-tight font-bold tracking-tight break-words tabular-nums md:text-2xl xl:text-xl 2xl:text-2xl">
           {valor}
         </p>
+        {equivalentes && (
+          <span className="text-subtle text-xs break-words tabular-nums">{equivalentes}</span>
+        )}
         {anterior !== undefined && (
           <div className="text-small mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
             <span

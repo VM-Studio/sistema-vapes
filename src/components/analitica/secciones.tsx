@@ -16,7 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { ChartPlaceholder } from "@/components/ui/chart-theme";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Monto } from "@/components/ui/monto";
 import { formatearNumero, formatearPesos } from "@/lib/format";
+import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { cn, formatearFechaHora } from "@/lib/utils";
 import type { CtxPanel } from "@/server/auth/permissions";
@@ -35,6 +37,7 @@ import {
   ventasPorMedioPago,
   ventasPorTipo,
   type Comparado,
+  type ComparadoMontos,
   type Periodo,
   type RendimientoComparado,
   type RendimientoVendedor,
@@ -59,9 +62,11 @@ export const ETIQUETA_ANTERIOR: Record<Periodo["modo"], string> = {
   PERSONALIZADO: "Anterior",
 };
 
-const pesos = (c: Comparado<string>) => ({
-  valor: formatearPesos(c.actual),
-  anterior: formatearPesos(c.anterior),
+/** KPI de un monto: USDT grande, pesos y dólares chiquitos; compara en USDT. */
+const montos = (c: ComparadoMontos) => ({
+  valor: textoPrincipal(c.actual),
+  equivalentes: textoEquivalentes(c.actual),
+  anterior: textoPrincipal(c.anterior),
   deltaPct: c.deltaPct,
 });
 const numero = (c: Comparado<number>) => ({
@@ -174,21 +179,22 @@ export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Pe
           label="Facturado"
           etiquetaAnterior={ant}
           ayuda="Total vendido, incluye fiados"
-          {...pesos(k.facturado)}
+          {...montos(k.facturado)}
         />
         {k.cobrado && (
           <KpiCard
             label="Cobrado"
             etiquetaAnterior={ant}
             ayuda="Pagos recibidos en el período: al vender y cobros de fiados"
-            {...pesos(k.cobrado)}
+            {...montos(k.cobrado)}
           />
         )}
         {k.porCobrar !== null && (
           <KpiCard
             label="Por cobrar"
-            ayuda="Deuda total de hoy de los clientes (fiados sin cobrar)"
-            valor={formatearPesos(k.porCobrar)}
+            ayuda="Deuda total de hoy de los clientes (fiados sin cobrar), cada venta a su cotización"
+            valor={textoPrincipal(k.porCobrar)}
+            equivalentes={textoEquivalentes(k.porCobrar)}
             extra={
               <Link
                 href={rutaPanel(ctx.panel.slug, "/fiados")}
@@ -204,7 +210,7 @@ export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Pe
           <KpiCard
             label="Ganancia"
             etiquetaAnterior={ant}
-            {...pesos(k.ganancia)}
+            {...montos(k.ganancia)}
             extra={
               k.margenPct !== null
                 ? `margen ${k.margenPct.toLocaleString("es-AR")} %`
@@ -219,7 +225,7 @@ export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Pe
         />
         <KpiCard label="Clientes nuevos" etiquetaAnterior={ant} {...numero(k.clientesNuevos)} />
         <KpiCard label="Ventas" etiquetaAnterior={ant} {...numero(k.cantidadVentas)} />
-        <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...pesos(k.ticketPromedio)} />
+        <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...montos(k.ticketPromedio)} />
       </section>
       {sinVentas && (
         <p className="text-muted text-small" data-testid="sin-ventas-periodo">
@@ -246,7 +252,7 @@ export async function SeccionGrafico({
   return (
     <Tarjeta
       titulo={d.tituloGrafico}
-      subtitulo="Facturado"
+      subtitulo="Facturado, en USDT"
       className={className}
       testId="tarjeta-grafico"
     >
@@ -277,7 +283,8 @@ export async function SeccionMedios({
           datos={medios.map((m) => ({
             etiqueta: m.etiqueta,
             cantidad: m.cantidad,
-            total: Number(m.total),
+            total: Number(m.total.usdt),
+            equivalentes: textoEquivalentes(m.total),
           }))}
         />
       ) : (
@@ -308,7 +315,8 @@ export async function SeccionTipo({
             categorias
             datos={tipos.map((t) => ({
               etiqueta: t.etiqueta,
-              valor: Number(t.total),
+              valor: Number(t.total.usdt),
+              equivalentes: textoEquivalentes(t.total),
               detalle: `${t.cantidad} ${t.cantidad === 1 ? "venta" : "ventas"}`,
             }))}
           />
@@ -349,7 +357,8 @@ export async function SeccionGalpones({
         <BarrasHorizontales
           datos={deps.map((d) => ({
             etiqueta: d.nombre,
-            valor: Number(d.total),
+            valor: Number(d.total.usdt),
+            equivalentes: textoEquivalentes(d.total),
             detalle: `${d.cantidad} ${d.cantidad === 1 ? "venta" : "ventas"}`,
           }))}
         />
@@ -374,14 +383,14 @@ export async function SeccionComprasVentas({
 }) {
   const c = await comprasDelPeriodo(ctx, periodo);
   const ant = ETIQUETA_ANTERIOR[periodo.modo];
-  const filas: { label: string; c: Comparado<string> }[] = [
+  const filas: { label: string; c: ComparadoMontos }[] = [
     { label: "Ventas", c: c.ventas },
     { label: "Costo de lo vendido", c: c.costoVendido },
     { label: `Compras recibidas, costo final (${c.cantidadCompras.actual})`, c: c.compras },
   ];
   // Proporción de lo vendido: cuánto fue costo y cuánto ganancia bruta (escala fija: 1.ª y 2.ª categoría).
-  const ventas = Number(c.ventas.actual);
-  const costo = Math.min(Math.max(Number(c.costoVendido.actual), 0), ventas);
+  const ventas = Number(c.ventas.actual.usdt);
+  const costo = Math.min(Math.max(Number(c.costoVendido.actual.usdt), 0), ventas);
   const pctCosto = ventas > 0 ? (costo / ventas) * 100 : 0;
   const pctGanancia = ventas > 0 ? 100 - pctCosto : 0;
   return (
@@ -419,10 +428,10 @@ export async function SeccionComprasVentas({
               className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
             >
               <dt className="text-muted text-small pt-0.5">{f.label}</dt>
-              <dd className="flex flex-col items-end tabular-nums">
-                <span className="font-semibold">{formatearPesos(f.c.actual)}</span>
+              <dd className="flex flex-col items-end text-right tabular-nums">
+                <Monto montos={f.c.actual} className="items-end font-semibold" />
                 <span className="text-subtle text-small">
-                  {ant}: {formatearPesos(f.c.anterior)}
+                  {ant}: {textoPrincipal(f.c.anterior)}
                 </span>
               </dd>
             </div>
@@ -437,11 +446,11 @@ export async function SeccionComprasVentas({
 
 function ListaTop({ items, hrefDe }: { items: TopItem[]; hrefDe?: (i: TopItem) => string }) {
   if (items.length === 0) return <Vacio>Todavía no hay ventas en este período.</Vacio>;
-  const max = Math.max(...items.map((p) => Number(p.facturado)), 0);
+  const max = Math.max(...items.map((p) => Number(p.facturado.usdt)), 0);
   return (
     <ol className="flex flex-col gap-1">
       {items.map((p, i) => {
-        const pct = max > 0 ? Math.max((Number(p.facturado) / max) * 100, 1.5) : 0;
+        const pct = max > 0 ? Math.max((Number(p.facturado.usdt) / max) * 100, 1.5) : 0;
         const contenido = (
           <>
             <span className="text-subtle w-4 shrink-0 pt-0.5 text-sm font-semibold tabular-nums">
@@ -451,15 +460,15 @@ function ListaTop({ items, hrefDe }: { items: TopItem[]; hrefDe?: (i: TopItem) =
               <span className="flex items-baseline justify-between gap-3">
                 <span className="min-w-0 truncate text-sm font-medium">{p.nombre}</span>
                 <span className="shrink-0 text-sm font-semibold tabular-nums">
-                  {formatearPesos(p.facturado)}
+                  {textoPrincipal(p.facturado)}
                 </span>
               </span>
               <span className="bg-surface-3 block h-2 w-full" aria-hidden>
                 <span className="bg-dato-actual block h-full" style={{ width: `${pct}%` }} />
               </span>
               <span className="text-subtle text-small tabular-nums">
-                {formatearNumero(p.unidades)} u.
-                {p.ganancia !== null && ` · ganancia ${formatearPesos(p.ganancia)}`}
+                {formatearNumero(p.unidades)} u. · {textoEquivalentes(p.facturado)}
+                {p.ganancia !== null && ` · ganancia ${textoPrincipal(p.ganancia)}`}
               </span>
             </span>
           </>
@@ -552,13 +561,17 @@ function DatosRendimiento({
       >
         <Dato label="Unitarias">
           {formatearNumero(r.unitarias.cantidad)}
-          {!sinMontos && ` · ${formatearPesos(r.unitarias.total)}`}
+          {!sinMontos && ` · ${textoPrincipal(r.unitarias.total)}`}
         </Dato>
         <Dato label="Mayoristas">
           {formatearNumero(r.mayoristas.cantidad)}
-          {!sinMontos && ` · ${formatearPesos(r.mayoristas.total)}`}
+          {!sinMontos && ` · ${textoPrincipal(r.mayoristas.total)}`}
         </Dato>
-        {!sinMontos && <Dato label="Total">{formatearPesos(r.facturado)}</Dato>}
+        {!sinMontos && (
+          <Dato label="Total">
+            <Monto montos={r.facturado} />
+          </Dato>
+        )}
         <Dato label="Unidades">{formatearNumero(r.unidades)}</Dato>
       </dl>
       <p className="text-muted text-small tabular-nums">
@@ -567,12 +580,14 @@ function DatosRendimiento({
         {r.clientesNuevos === 1 ? "cliente nuevo" : "clientes nuevos"} ·{" "}
         {formatearNumero(r.ventasAClientesNuevos)}{" "}
         {r.ventasAClientesNuevos === 1 ? "venta" : "ventas"} a clientes nuevos
-        {!sinMontos && ` · ticket ${formatearPesos(r.ticketPromedio)}`}
+        {!sinMontos && ` · ticket ${textoPrincipal(r.ticketPromedio)}`}
       </p>
       {r.comision && !sinMontos && (
         <dl className="border-border flex items-baseline justify-between gap-3 border-t pt-3">
           <dt className="text-muted text-small">Comisión estimada</dt>
-          <dd className="font-semibold tabular-nums">{formatearPesos(r.comision.estimada)}</dd>
+          <dd className="text-right font-semibold tabular-nums">
+            <Monto montos={r.comision.estimada} className="items-end" />
+          </dd>
         </dl>
       )}
     </div>
@@ -631,7 +646,7 @@ export async function SeccionEquipo({
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold">{r.nombre}</p>
                   <p className="text-muted text-small tabular-nums">
-                    {formatearNumero(r.cantidadVentas)} ventas · {formatearPesos(r.facturado)}
+                    {formatearNumero(r.cantidadVentas)} ventas · {textoPrincipal(r.facturado)}
                   </p>
                 </div>
               </div>
@@ -670,7 +685,7 @@ export async function SeccionEquipo({
                 </div>
               </div>
               <div className="flex items-center justify-between gap-4 pl-12 sm:justify-end sm:pl-0">
-                <span className="font-semibold tabular-nums">{formatearPesos(r.facturado)}</span>
+                <Monto montos={r.facturado} className="items-end font-semibold" />
                 <Link
                   href={detalle(r.usuarioId)}
                   className={cn(buttonVariants({ variant: "ghost", size: "md" }), "-mr-2")}
@@ -726,15 +741,15 @@ export function KpisVendedor({
       />
       {!sinMontos && (
         <>
-          <KpiCard label="Total vendido" etiquetaAnterior={ant} {...pesos(r.facturado)} />
-          <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...pesos(r.ticketPromedio)} />
+          <KpiCard label="Total vendido" etiquetaAnterior={ant} {...montos(r.facturado)} />
+          <KpiCard label="Ticket promedio" etiquetaAnterior={ant} {...montos(r.ticketPromedio)} />
         </>
       )}
       {conComision && r.comision && (
         <KpiCard
           label="Comisión estimada"
           etiquetaAnterior={ant}
-          {...pesos(r.comision)}
+          {...montos(r.comision)}
           extra="Orientativa"
         />
       )}
@@ -774,7 +789,7 @@ export async function SeccionMiRendimiento({
             <p className="truncate font-semibold">{r.usuario.nombre}</p>
             <p className="text-muted text-small tabular-nums">
               {formatearNumero(r.actual.cantidadVentas)} ventas
-              {!sinMontos && ` · ${formatearPesos(r.actual.facturado)}`}
+              {!sinMontos && ` · ${textoPrincipal(r.actual.facturado)}`}
             </p>
           </div>
         </div>

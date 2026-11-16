@@ -8,7 +8,9 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { pesosAMoneda } from "@/lib/costos-compra";
+import { formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
+import type { Montos } from "@/lib/moneda";
 import { ESTADO_COMPRA_UI } from "@/lib/movimientos-ui";
 import { rutaPanel } from "@/lib/paneles";
 import { esOwner, puede } from "@/lib/permisos";
@@ -31,7 +33,19 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
     if (e instanceof NotFoundError) notFound();
     throw e;
   });
-  const { comision: c, compra, totales } = d;
+  const { comision: c, compra, totalesMontos: totales } = d;
+  // La compra en USDT (cotización de la compra); sin cotización, en pesos.
+  const vu = d.compraUsdt;
+  const aprox = vu?.aproximado ? "≈ " : "";
+  /** USDT de la compra (principal) con los pesos chiquito; en pesos si no hay cotización. */
+  const usdt = (enUsdt: number | string | undefined, pesos: string): Valor =>
+    vu && enUsdt !== undefined
+      ? { principal: `${aprox}${formatearUsdt(enUsdt)}`, chico: formatearPesos(pesos) }
+      : { principal: formatearPesos(pesos) };
+  const deMontos = (m: Montos, signo = ""): Valor => ({
+    principal: `${signo}${formatearUsdt(signo ? Math.abs(Number(m.usdt)) : m.usdt)}`,
+    chico: `${signo}${formatearPesos(signo ? Math.abs(Number(m.pesos)) : m.pesos)}`,
+  });
   const owner = esOwner(ctx.usuario);
   const verCompra = puede(ctx.usuario, ctx.panelId, Modulo.COMPRAS, "ver");
   const filas: ComisionListada[] = [c, ...d.relacionadas].sort((a, b) =>
@@ -93,19 +107,34 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
                 key: "costo",
                 header: "Costo",
                 className: "text-right tabular-nums",
-                cell: (i) => formatearPesos(i.costoUnitario),
+                cell: (i) => (
+                  <ValorDoble
+                    v={usdt(
+                      vu?.costos.items[compra.items.indexOf(i)]?.costoUnitario,
+                      i.costoUnitario,
+                    )}
+                  />
+                ),
               },
               {
                 key: "final",
                 header: "Costo final",
                 className: "text-right tabular-nums",
-                cell: (i) => formatearPesos(i.costoUnitarioFinal),
+                cell: (i) => (
+                  <ValorDoble
+                    v={usdt(vu?.finalesUsdt[compra.items.indexOf(i)], i.costoUnitarioFinal)}
+                  />
+                ),
               },
               {
                 key: "subtotal",
                 header: "Subtotal",
                 className: "text-right tabular-nums font-medium",
-                cell: (i) => formatearPesos(i.subtotal),
+                cell: (i) => (
+                  <ValorDoble
+                    v={usdt(vu?.costos.items[compra.items.indexOf(i)]?.subtotal, i.subtotal)}
+                  />
+                ),
               },
             ]}
             renderMobile={(i) => (
@@ -114,10 +143,19 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
                   <p className="font-medium">{i.producto}</p>
                   <p className="text-muted text-small">
                     {i.sabor ? `${i.sabor} · ` : ""}
-                    {i.cantidad} u. × {formatearPesos(i.costoUnitario)}
+                    {i.cantidad} u. ×{" "}
+                    {
+                      usdt(
+                        vu?.costos.items[compra.items.indexOf(i)]?.costoUnitario,
+                        i.costoUnitario,
+                      ).principal
+                    }
                   </p>
                 </div>
-                <p className="shrink-0 font-semibold tabular-nums">{formatearPesos(i.subtotal)}</p>
+                <ValorDoble
+                  v={usdt(vu?.costos.items[compra.items.indexOf(i)]?.subtotal, i.subtotal)}
+                  className="shrink-0 font-semibold"
+                />
               </div>
             )}
           />
@@ -126,7 +164,7 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
             aria-label="Total de los productos"
           >
             <span>Total de los productos ({formatearNumero(compra.unidades)} u.)</span>
-            <span className="tabular-nums">{formatearPesos(compra.subtotal)}</span>
+            <ValorDoble v={usdt(vu?.costos.subtotal, compra.subtotal)} />
           </p>
         </SectionCard>
 
@@ -136,37 +174,55 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
             description="Sobre el total de la compra (sin gastos extras)."
           >
             <dl className="flex flex-col gap-2 text-sm" aria-label="Cálculo de la comisión">
-              <Linea label="Productos" valor={formatearPesos(compra.subtotal)} />
+              <Linea label="Productos" valor={usdt(vu?.costos.subtotal, compra.subtotal)} />
               {Number(compra.descuento) > 0 && (
-                <Linea label="Descuento" valor={`− ${formatearPesos(compra.descuento)}`} />
+                <Linea
+                  label="Descuento"
+                  valor={{
+                    ...usdt(vu?.costos.descuento, compra.descuento),
+                    principal: `− ${usdt(vu?.costos.descuento, compra.descuento).principal}`,
+                  }}
+                />
               )}
-              <Linea label="Total de la compra" valor={formatearPesos(original.base)} fuerte />
+              <Linea label="Total de la compra" valor={deMontos(original.baseMontos)} fuerte />
               {original.porcentaje && (
                 <Linea
                   label={`× ${formatearNumero(Number(original.porcentaje))}% del pasista`}
-                  valor={formatearPesos(calcularComision(original.base, original.porcentaje))}
+                  valor={
+                    original.tipo === "ORIGINAL"
+                      ? deMontos(original.montos)
+                      : {
+                          principal: formatearUsdt(
+                            calcularComision(original.baseMontos.usdt, original.porcentaje),
+                          ),
+                          chico: formatearPesos(
+                            calcularComision(original.base, original.porcentaje),
+                          ),
+                        }
+                  }
                 />
               )}
               {ajustes.map((a) => (
                 <Linea
                   key={a.id}
                   label={a.observacion ?? "Ajuste"}
-                  valor={`${Number(a.monto) > 0 ? "+ " : "− "}${formatearPesos(Math.abs(Number(a.monto)))}`}
+                  valor={deMontos(a.montos, Number(a.monto) > 0 ? "+ " : "− ")}
                 />
               ))}
               <div className="border-border mt-1 flex items-baseline justify-between gap-3 border-t pt-2">
                 <dt className="font-semibold">Comisión total</dt>
-                <dd className="text-h3 font-semibold tabular-nums" aria-label="Comisión total">
-                  {formatearPesos(totales.total)}
+                <dd className="text-h3 font-semibold" aria-label="Comisión total">
+                  <ValorDoble v={deMontos(totales.total)} />
                 </dd>
               </div>
-              <Linea label="Pagado" valor={formatearPesos(totales.pagado)} />
-              <Linea label="Pendiente" valor={formatearPesos(totales.pendiente)} fuerte />
+              <Linea label="Pagado" valor={deMontos(totales.pagado)} />
+              <Linea label="Pendiente" valor={deMontos(totales.pendiente)} fuerte />
             </dl>
             {original.base !== compra.total && compra.estado !== "ANULADA" && (
               <p className="text-muted text-small mt-3">
-                La comisión pagada se calculó sobre {formatearPesos(original.base)}; hoy la compra
-                suma {formatearPesos(compra.total)} y la diferencia va como ajuste.
+                La comisión pagada se calculó sobre {formatearUsdt(original.baseMontos.usdt)}; hoy
+                la compra suma {usdt(vu?.costos.total, compra.total).principal} y la diferencia va
+                como ajuste.
               </p>
             )}
             {compra.estado === "ANULADA" && (
@@ -186,7 +242,9 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
                         ? "Ajuste"
                         : `Comisión ${f.porcentaje ? `${formatearNumero(Number(f.porcentaje))}%` : ""}`}
                     </span>
-                    <strong className="text-h3 tabular-nums">{formatearPesos(f.monto)}</strong>
+                    <strong className="text-h3">
+                      <ValorDoble v={deMontos(f.montos)} />
+                    </strong>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     {f.estado === "PAGADA" ? (
@@ -199,7 +257,7 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
                         <MarcarPagado
                           objetivo={{ ids: [f.id] }}
                           titulo={`Marcar pagada la comisión de ${compra.codigo}`}
-                          resumen={formatearPesos(f.monto)}
+                          resumen={`${formatearUsdt(f.montos.usdt)} (${formatearPesos(f.monto)})`}
                           textoBoton="Marcar pagada"
                           variante="secondary"
                           size="sm"
@@ -241,26 +299,43 @@ export default async function ComisionPasistaPage({ params }: { params: Promise<
               </Dato>
               <Dato label="Galpón">{compra.deposito}</Dato>
               <Dato label="Cargada por">{compra.cargadaPor}</Dato>
-              <Dato label="Total de la compra">{formatearPesos(compra.total)}</Dato>
+              <Dato label="Total de la compra">
+                <ValorDoble v={usdt(vu?.costos.total, compra.total)} />
+              </Dato>
               <Dato label="Gastos extras">
-                {formatearPesos(compra.gastosExtrasTotal)}
+                <ValorDoble v={usdt(vu?.costos.gastos, compra.gastosExtrasTotal)} />
                 {compra.gastos.length > 0 && (
                   <ul className="text-subtle mt-1 flex flex-col gap-0.5 text-xs">
                     {compra.gastos.map((g) => (
                       <li key={g.id} className="flex justify-between gap-3">
                         <span className="truncate">{g.motivo}</span>
-                        <span className="tabular-nums">{formatearPesos(g.monto)}</span>
+                        <span className="tabular-nums">
+                          {
+                            usdt(
+                              vu
+                                ? (g.montoUSDT ?? pesosAMoneda(g.monto, vu.tipoCambioUSDT))
+                                : undefined,
+                              g.monto,
+                            ).principal
+                          }
+                        </span>
                       </li>
                     ))}
                   </ul>
                 )}
               </Dato>
               <Dato label="Costo final">
-                <span className={cn("font-semibold")}>
-                  {formatearPesos(compra.costoFinalTotal)}
-                </span>{" "}
+                <ValorDoble
+                  v={usdt(vu?.costos.costoFinalTotal, compra.costoFinalTotal)}
+                  className="font-semibold"
+                />{" "}
                 <span className="text-muted">
-                  ({formatearPesos(compra.costoUnitarioFinalPromedio)} / u.)
+                  (
+                  {
+                    usdt(vu?.costos.costoUnitarioFinalPromedio, compra.costoUnitarioFinalPromedio)
+                      .principal
+                  }{" "}
+                  / u.)
                 </span>
               </Dato>
             </dl>
@@ -280,11 +355,28 @@ function Dato({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function Linea({ label, valor, fuerte }: { label: string; valor: string; fuerte?: boolean }) {
+/** Un monto: el principal (USDT) y, chiquito abajo, los pesos. */
+interface Valor {
+  principal: string;
+  chico?: string;
+}
+
+function ValorDoble({ v, className }: { v: Valor; className?: string }) {
+  return (
+    <span className={cn("inline-flex flex-col items-end text-right", className)}>
+      <span className="tabular-nums">{v.principal}</span>
+      {v.chico && <span className="text-muted text-xs font-normal tabular-nums">{v.chico}</span>}
+    </span>
+  );
+}
+
+function Linea({ label, valor, fuerte }: { label: string; valor: Valor; fuerte?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className={fuerte ? "font-medium" : "text-muted"}>{label}</dt>
-      <dd className={cn("tabular-nums", fuerte && "font-semibold")}>{valor}</dd>
+      <dd className={cn(fuerte && "font-semibold")}>
+        <ValorDoble v={valor} />
+      </dd>
     </div>
   );
 }

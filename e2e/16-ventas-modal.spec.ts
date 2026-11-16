@@ -122,6 +122,7 @@ test("venta completa desde el modal: 2 escaneos + 1 con precio especial, cliente
   expect(venta.cliente.telefono).toBe(normalizado);
   expect(venta.items).toHaveLength(2);
   let costo = 0;
+  let costoUsdt = 0;
   for (const [codigoBarras, cantidad, lista, cobrado, especial] of [
     [mango, 2, "16000", "16000", false],
     [blue, 1, "16500", "15000", true],
@@ -134,11 +135,21 @@ test("venta completa desde el modal: 2 escaneos + 1 con precio especial, cliente
     expect(item.precioLista.toString()).toBe(lista);
     expect(item.precioUnitario.toString()).toBe(cobrado);
     expect(item.esPrecioEspecial).toBe(especial);
-    expect(item.costoUnitario.toString()).toBe((v.ultimoCosto ?? 0).toString());
+    expect(item.costoUnitarioUsdt.toString()).toBe((v.ultimoCostoUsdt ?? 0).toString());
     costo += Number(item.costoUnitario) * cantidad;
+    costoUsdt += Number(item.costoUnitarioUsdt) * cantidad;
+    // Costo en pesos = costo USDT × la cotización congelada en la venta.
+    expect(Number(item.costoUnitario)).toBe(
+      Math.round(Number(item.costoUnitarioUsdt) * Number(venta.tipoCambioUsdt) * 100) / 100,
+    );
   }
   expect(Number(venta.total)).toBe(47000);
   expect(Number(venta.gananciaBruta)).toBe(47000 - costo);
+  // USDT (moneda principal): total ÷ cotización de la venta, ganancia = total − costo.
+  const totalUsdt = Math.round((47000 / Number(venta.tipoCambioUsdt)) * 100) / 100;
+  expect(Number(venta.totalUsdt)).toBe(totalUsdt);
+  expect(Number(venta.costoTotalUsdt)).toBeCloseTo(costoUsdt, 2);
+  expect(Number(venta.gananciaUsdt)).toBeCloseTo(totalUsdt - costoUsdt, 2);
 
   const movimientos = await db.movimientoStock.findMany({
     where: { panelId: PANEL_VAPES, referenciaTipo: "VENTA", referenciaId: venta.id },

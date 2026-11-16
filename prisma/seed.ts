@@ -383,11 +383,32 @@ async function seedPaneles() {
   }
 }
 
+/**
+ * Cotizaciones iniciales (solo desarrollo y tests, y solo si no hay ninguna):
+ * cada venta congela la cotización USDT y la del blue, y sin cotización no se
+ * puede vender. En producción las trae el cron de cambio (o una manual).
+ */
+async function seedCotizaciones() {
+  if (PRODUCCION) return;
+  if ((await prisma.tipoCambio.count()) > 0) return;
+  const obtenidoAt = new Date();
+  const fuente = "semilla (desarrollo)";
+  await prisma.tipoCambio.createMany({
+    data: [
+      { moneda: "USDT", tipo: "COMPRA", valor: "1480.00", fuente, obtenidoAt },
+      { moneda: "USDT", tipo: "VENTA", valor: "1500.00", fuente, obtenidoAt },
+      { moneda: "USD_BLUE", tipo: "COMPRA", valor: "1430.00", fuente, obtenidoAt },
+      { moneda: "USD_BLUE", tipo: "VENTA", valor: "1450.00", fuente, obtenidoAt },
+    ],
+  });
+}
+
 async function main() {
   // Paneles primero: la configuración por panel y los accesos de Trinidad los necesitan.
   await seedPaneles();
   await seedConfiguracion();
   await seedUsuarios();
+  await seedCotizaciones();
 
   const [paneles, depositos, usuarios] = await Promise.all([
     prisma.panel.count({ where: { activo: true } }),

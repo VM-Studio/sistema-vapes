@@ -154,7 +154,7 @@ async function pruebas() {
             nombre,
             sku: `TC-${sufijo}-${i}`,
             codigoBarras: generarEan13(`7797${sufijo}${String(i).padStart(2, "0")}`),
-            ultimoCosto: nombre === "Durazno" ? null : "5000.00",
+            ultimoCostoUsdt: nombre === "Durazno" ? null : "5000.00",
           })),
         },
       },
@@ -167,7 +167,7 @@ async function pruebas() {
             marcaId: marca.id,
             nombre,
             precioVenta: "2500.00",
-            variantes: { create: [{ nombre: "Único", sku, ultimoCosto: "1000.00" }] },
+            variantes: { create: [{ nombre: "Único", sku, ultimoCostoUsdt: "1000.00" }] },
           },
           include: { variantes: true },
         })
@@ -374,10 +374,10 @@ async function pruebas() {
   const variantes = await prisma.variante.findMany({
     where: { id: { in: [uva.id, limon.id, durazno.id] } },
   });
-  const costo = (id: string) => variantes.find((v) => v.id === id)!.ultimoCosto?.toFixed(2);
+  const costo = (id: string) => variantes.find((v) => v.id === id)!.ultimoCostoUsdt?.toFixed(2);
   check(
     costo(uva.id) === "5200.00" && costo(limon.id) === "4800.50" && costo(durazno.id) === "5000.00",
-    `ultimoCosto por sabor: Uva ${costo(uva.id)}, Limón ${costo(limon.id)}, Durazno ${costo(durazno.id)} (antes sin costo)`,
+    `ultimoCostoUsdt por sabor: Uva ${costo(uva.id)}, Limón ${costo(limon.id)}, Durazno ${costo(durazno.id)} (antes sin costo)`,
   );
   const pp = await db.proveedorProducto.findFirstOrThrow({
     where: { proveedorId: prov.id, productoId: producto.id },
@@ -447,8 +447,9 @@ async function pruebas() {
         where: { proveedorId: prov.id, productoId: producto.id },
       })
     ).precio.toFixed(2) === "5000.00" &&
-      (await db.variante.findUniqueOrThrow({ where: { id: uva.id } })).ultimoCosto?.toFixed(2) ===
-        "5300.00",
+      (await db.variante.findUniqueOrThrow({ where: { id: uva.id } })).ultimoCostoUsdt?.toFixed(
+        2,
+      ) === "5300.00",
     "recibir sin «actualizar precio del proveedor»: el precio queda, el último costo cambia",
   );
   await registrarAjuste(actor, {
@@ -775,17 +776,14 @@ async function pruebas() {
       actor,
       crearProveedorSchema.parse({ nombre: `Nuevo ${sufijo}`, nombreTienda: "Sin precios" }),
     );
-    // Sin precio del proveedor: el último costo (en pesos) ÷ cotización, a centavos.
-    const { pesosAMoneda } = await import("../src/lib/costos-compra");
+    // Sin precio del proveedor: el último costo del sabor, que ya está en USDT (sin convertir).
     const uvaAhora = await db.variante.findUniqueOrThrow({ where: { id: uva.id } });
     const sinPrecio = await costoSugerido(actor, nuevo.id, [uva.id]);
     check(
       sinPrecio[uva.id]?.fuente === "ULTIMO_COSTO" &&
-        sinPrecio[uva.id]?.tipoCambio === "1641.40" &&
-        sinPrecio[uva.id]?.pesos === uvaAhora.ultimoCosto?.toFixed(2) &&
-        sinPrecio[uva.id]?.costo ===
-          pesosAMoneda(uvaAhora.ultimoCosto!.toFixed(2), 1641.4).toFixed(2),
-      `proveedor sin precio: último costo $ ${sinPrecio[uva.id]?.pesos} ÷ ${sinPrecio[uva.id]?.tipoCambio} = ${sinPrecio[uva.id]?.costo} USDT`,
+        sinPrecio[uva.id]?.costo === uvaAhora.ultimoCostoUsdt?.toFixed(2) &&
+        sinPrecio[uva.id]?.pesos === undefined,
+      `proveedor sin precio: último costo ${sinPrecio[uva.id]?.costo} USDT (tal cual, ya es USDT)`,
     );
     const cNuevo = await crearCompra(
       actor,
@@ -867,8 +865,8 @@ async function pruebas() {
     await recibirCompra(actor, cf.id, { actualizarPrecioProveedor: false });
     const limonRecibido = await db.variante.findUniqueOrThrow({ where: { id: limon.id } });
     check(
-      limonRecibido.ultimoCosto?.toFixed(2) === "11000.00",
-      `recibir pasa el costo FINAL a ultimoCosto: ${limonRecibido.ultimoCosto?.toFixed(2)}`,
+      limonRecibido.ultimoCostoUsdt?.toFixed(2) === "11000.00",
+      `recibir pasa el costo FINAL a ultimoCostoUsdt: ${limonRecibido.ultimoCostoUsdt?.toFixed(2)}`,
     );
     await agregarGastosCompra(actor, cf.id, [
       { motivo: "Valija", montoUSDT: 50_000 },
@@ -884,8 +882,8 @@ async function pruebas() {
     );
     const limonFinal = await db.variante.findUniqueOrThrow({ where: { id: limon.id } });
     check(
-      limonFinal.ultimoCosto?.toFixed(2) === "11800.00",
-      `compra recibida → ultimoCosto actualizado a ${limonFinal.ultimoCosto?.toFixed(2)}`,
+      limonFinal.ultimoCostoUsdt?.toFixed(2) === "11800.00",
+      `compra recibida → ultimoCostoUsdt actualizado a ${limonFinal.ultimoCostoUsdt?.toFixed(2)}`,
     );
     const historial = await db.costoVarianteHistorial.findMany({
       where: { varianteId: limon.id, compraId: cf.id },
@@ -900,7 +898,7 @@ async function pruebas() {
       `historial de costos: ${historial.map((h) => `${h.origen} ${h.costoAnterior?.toFixed(0)}→${h.costoNuevo.toFixed(0)}`).join(" · ")}`,
     );
 
-    // Una compra posterior del mismo sabor manda: cambiar la vieja no toca ultimoCosto.
+    // Una compra posterior del mismo sabor manda: cambiar la vieja no toca ultimoCostoUsdt.
     const cNueva = await crearCompra(
       actor,
       compraSchema.parse({
@@ -916,8 +914,8 @@ async function pruebas() {
     check(
       c.comisionPasistaMonto === "50000.00" &&
         c.costoFinalTotal === "1130000.00" &&
-        limonDespues.ultimoCosto?.toFixed(2) === "9000.00",
-      `bajar la comisión a 5% de la compra vieja: costo final ${c.costoFinalTotal}, ultimoCosto sigue ${limonDespues.ultimoCosto?.toFixed(2)} (manda la compra nueva)`,
+        limonDespues.ultimoCostoUsdt?.toFixed(2) === "9000.00",
+      `bajar la comisión a 5% de la compra vieja: costo final ${c.costoFinalTotal}, ultimoCostoUsdt sigue ${limonDespues.ultimoCostoUsdt?.toFixed(2)} (manda la compra nueva)`,
     );
     await cambiarComisionPasista(actor, cf.id, null);
     c = await obtenerCompra(actor, cf.id);
@@ -1258,9 +1256,9 @@ async function pruebas() {
       "«Recibido» suma el stock al galpón",
     );
     check(
-      vUva.ultimoCosto?.toFixed(2) === "12500.00" &&
-        vDurazno.ultimoCosto?.toFixed(2) === "23500.00",
-      `ultimoCosto por modelo: ${vUva.ultimoCosto?.toFixed(2)} / ${vDurazno.ultimoCosto?.toFixed(2)}`,
+      vUva.ultimoCostoUsdt?.toFixed(2) === "12500.00" &&
+        vDurazno.ultimoCostoUsdt?.toFixed(2) === "23500.00",
+      `ultimoCostoUsdt por modelo: ${vUva.ultimoCostoUsdt?.toFixed(2)} / ${vDurazno.ultimoCostoUsdt?.toFixed(2)}`,
     );
     const suma = c.items.reduce((a, i) => a + Number(i.costoUnitarioFinal) * i.cantidad, 0);
     check(
@@ -1271,8 +1269,8 @@ async function pruebas() {
     c = await obtenerCompra(actor, conf.id);
     const vUva2 = await db.variante.findUniqueOrThrow({ where: { id: uva.id } });
     check(
-      finales() === "12000.00 / 22500.00" && vUva2.ultimoCosto?.toFixed(2) === "12000.00",
-      `bajar a 5% recalcula por modelo: ${finales()}, ultimoCosto Uva ${vUva2.ultimoCosto?.toFixed(2)}`,
+      finales() === "12000.00 / 22500.00" && vUva2.ultimoCostoUsdt?.toFixed(2) === "12000.00",
+      `bajar a 5% recalcula por modelo: ${finales()}, ultimoCostoUsdt Uva ${vUva2.ultimoCostoUsdt?.toFixed(2)}`,
     );
     check(
       (await error(() =>

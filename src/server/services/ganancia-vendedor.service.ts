@@ -25,16 +25,20 @@ import {
   type FilaGanancia,
   type Mes,
   type ResumenCategoria,
+  type CategoriaGanancia,
   type Tarifas,
   type VentaParaGanancia,
 } from "@/lib/ganancia-vendedor";
+import { MONTOS_CERO, type Montos } from "@/lib/moneda";
 import { esOwner, veFacturado, type SujetoPermisos } from "@/lib/permisos";
 import { ahora } from "@/lib/reloj";
 import { ETIQUETA_MEDIO_PAGO } from "@/lib/ventas-ui";
 import { ZONA_DEFAULT } from "@/lib/zona-horaria";
 import { dbPara, transaccion, type Ctx, type Tx } from "@/server/db/panel-scoped";
 import { DomainError, ForbiddenError, NotFoundError } from "@/server/errors";
+import { sumar, totalDeVenta } from "@/server/moneda/montos-venta";
 import { registrarAuditoria } from "@/server/services/audit.service";
+import { obtenerCotizacion } from "@/server/services/cambio.service";
 
 /**
  * GANANCIA POR UNIDAD DE LOS VENDEDORES y su LIQUIDACIÓN MENSUAL (por panel).
@@ -53,6 +57,11 @@ import { registrarAuditoria } from "@/server/services/audit.service";
  *   PENDIENTE. PENDIENTE → PAGADA al registrar el pago (solo dueños). Pagada,
  *   el snapshot no cambia (trigger).
  * - Lo ve cada dueño de cualquier vendedor y el vendedor lo suyo.
+ * - MONEDA: la tarifa es un monto fijo en PESOS por vape (lo que se le paga),
+ *   así que la ganancia y las liquidaciones quedan en pesos; la UI muestra el
+ *   equivalente en USDT chiquito (`cotizacionUsdt`: hoy si falta pagar, la del
+ *   momento del pago si ya se pagó). Lo VENDIDO (facturado) sí va en USDT:
+ *   Σ totalUsdt de cada venta (congelado a su cotización).
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -342,6 +351,11 @@ export interface Liquidacion {
     registradoAt: Date;
     registradoPor: { id: string; nombre: string };
   } | null;
+  /**
+   * Pesos por USDT para mostrar el equivalente en USDT de `total` / del pago:
+   * la del momento del pago si ya se pagó; si no, la de hoy. null = sin cotización.
+   */
+  cotizacionUsdt: string | null;
 }
 
 function aLiquidacion(l: FilaLiquidacionDb): Liquidacion {
@@ -372,6 +386,77 @@ function aLiquidacion(l: FilaLiquidacionDb): Liquidacion {
             registradoPor: l.pagadaPor,
           }
         : null,
+    cotizacionUsdt: null,
+  };
+}
+
+// --- Cotización USDT (solo para mostrar equivalentes) -------------------------
+
+/** USDT vigente hoy (pesos por USDT, punta venta) o null. Nunca lanza. */
+async function cotizacionUsdtHoy(): Promise<string | null> {
+  const c = await obtenerCotizacion("USDT").catch(() => null);
+  return c && c.valor > 0 ? dec(c.valor) : null;
+}
+
+/** USDT (punta venta) vigente en cada instante: la última obtenida hasta entonces. */
+async function cotizacionesUsdtEn(db: Db, instantes: Date[]): Promise<(string | null)[]> {
+  if (instantes.length === 0) return [];
+  const filas = await db.$queryRaw<{ i: bigint; valor: string | null }[]>`
+    SELECT f."i", (
+      SELECT tc."valor"::text FROM "TipoCambio" tc
+      WHERE tc."moneda" = 'USDT' AND tc."tipo" = 'VENTA'
+        AND tc."obtenidoAt" <= (f."t"::timestamptz AT TIME ZONE 'UTC')
+      ORDER BY tc."obtenidoAt" DESC LIMIT 1
+    ) AS "valor"
+    FROM unnest(${instantes.map((d) => d.toISOString())}::text[]) WITH ORDINALITY AS f("t", "i")`;
+  const porIndice = new Map(filas.map((f) => [Number(f.i), f.valor]));
+  return instantes.map((_, i) => {
+    const v = porIndice.get(i + 1);
+    return v ? dec(v) : null;
+  });
+}
+
+/** Completa `cotizacionUsdt` de cada liquidación (pagadas: la del pago; pendientes: la de hoy). */
+async function conCotizacion(db: Db, liqs: Liquidacion[]): Promise<Liquidacion[]> {
+  if (liqs.length === 0) return liqs;
+  const pagadas = liqs.filter((l) => l.pago);
+  const [hoy, delPago] = await Promise.all([
+    liqs.some((l) => !l.pago) ? cotizacionUsdtHoy() : Promise.resolve(null),
+    cotizacionesUsdtEn(
+      db,
+      pagadas.map((l) => l.pago!.registradoAt),
+    ),
+  ]);
+  const porId = new Map(pagadas.map((l, i) => [l.id, delPago[i] ?? null]));
+  return liqs.map((l) => ({ ...l, cotizacionUsdt: l.pago ? (porId.get(l.id) ?? hoy) : hoy }));
+}
+
+/** Lo vendido (facturado) del cálculo en USDT/pesos/dólares: cada venta a su cotización. */
+export interface FacturadoGanancia {
+  total: Montos;
+  porCategoria: Record<CategoriaGanancia, Montos>;
+  /** Por id de venta. */
+  porVenta: Record<string, Montos>;
+}
+
+async function facturadoDe(db: Db, calculo: CalculoGanancia): Promise<FacturadoGanancia> {
+  const filas = calculo.filas.filter((f) => f.tipo === "VENTA");
+  const ventas = filas.length
+    ? await db.venta.findMany({
+        where: { id: { in: filas.map((f) => f.ventaId) } },
+        select: { id: true, total: true, totalUsdt: true, tipoCambioUsd: true },
+      })
+    : [];
+  const porVenta: Record<string, Montos> = Object.fromEntries(
+    ventas.map((v) => [v.id, totalDeVenta(v)]),
+  );
+  const de = (lista: typeof filas) => sumar(lista.flatMap((f) => porVenta[f.ventaId] ?? []));
+  return {
+    total: filas.length ? de(filas) : MONTOS_CERO,
+    porCategoria: Object.fromEntries(
+      CATEGORIAS_GANANCIA.map((c) => [c, de(filas.filter((f) => f.categoria === c))]),
+    ) as Record<CategoriaGanancia, Montos>,
+    porVenta,
   };
 }
 
@@ -559,6 +644,13 @@ export interface GananciaMes {
   liquidacion: Liquidacion | null;
   /** Calculado a esta hora. */
   calculadoAt: Date;
+  /**
+   * Pesos por USDT para el equivalente en USDT de la ganancia (que es en
+   * pesos): la de la liquidación si la hay, si no la de hoy. null = sin cotización.
+   */
+  cotizacionUsdt: string | null;
+  /** Lo vendido en el mes en USDT (principal), pesos y dólares. */
+  facturado: FacturadoGanancia;
 }
 
 /**
@@ -594,14 +686,21 @@ export async function gananciaDelMes(
     const { ventas, devoluciones } = await datosDelMes(db, usuarioId, mes);
     calculo = calcularGanancia(aTarifas(tarifa!), ventas, devoluciones);
   }
+  const [[liquidacion], cotizacionHoy, facturado] = await Promise.all([
+    conCotizacion(db, liq ? [aLiquidacion(liq)] : []),
+    liq ? Promise.resolve(null) : cotizacionUsdtHoy(),
+    facturadoDe(db, calculo),
+  ]);
   return {
     usuario,
     mes,
     enCurso: mes === actual,
     terminado: mes < actual,
     calculo,
-    liquidacion: liq ? aLiquidacion(liq) : null,
+    liquidacion: liquidacion ?? null,
     calculadoAt: ahora(),
+    cotizacionUsdt: liquidacion ? liquidacion.cotizacionUsdt : cotizacionHoy,
+    facturado,
   };
 }
 
@@ -630,13 +729,14 @@ export async function liquidacionesDe(
   usuarioId: string,
 ): Promise<Liquidacion[]> {
   await exigirVer(ctx, usuarioId);
-  const filas = await dbPara(ctx.panelId).liquidacionVendedor.findMany({
+  const db = dbPara(ctx.panelId);
+  const filas = await db.liquidacionVendedor.findMany({
     where: { usuarioId },
     orderBy: { mes: "desc" },
     take: 36,
     select: filaLiquidacion,
   });
-  return filas.map(aLiquidacion);
+  return conCotizacion(db, filas.map(aLiquidacion));
 }
 
 /**
@@ -646,22 +746,25 @@ export async function liquidacionesDe(
 export async function liquidacionesPendientes(ctx: CtxConUsuario): Promise<Liquidacion[]> {
   await exigirOwner(ctx, "Las liquidaciones pendientes");
   await asegurarDelPanel(ctx);
-  const filas = await dbPara(ctx.panelId).liquidacionVendedor.findMany({
+  const db = dbPara(ctx.panelId);
+  const filas = await db.liquidacionVendedor.findMany({
     where: { estado: EstadoLiquidacion.PENDIENTE },
     orderBy: [{ mes: "desc" }, { usuario: { nombre: "asc" } }],
     select: filaLiquidacion,
   });
-  return filas.map(aLiquidacion);
+  return conCotizacion(db, filas.map(aLiquidacion));
 }
 
 export async function obtenerLiquidacion(ctx: CtxConUsuario, id: string): Promise<Liquidacion> {
-  const l = await dbPara(ctx.panelId).liquidacionVendedor.findUnique({
+  const db = dbPara(ctx.panelId);
+  const l = await db.liquidacionVendedor.findUnique({
     where: { id },
     select: filaLiquidacion,
   });
   if (!l) throw new NotFoundError("La liquidación no existe");
   await exigirVer(ctx, l.usuarioId);
-  return aLiquidacion(l);
+  const [conCot] = await conCotizacion(db, [aLiquidacion(l)]);
+  return conCot!;
 }
 
 // =============================================================================

@@ -10,7 +10,9 @@ import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MenuFila } from "@/components/ui/menu-fila";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatearNumero, formatearPesos } from "@/lib/format";
+import { Monto } from "@/components/ui/monto";
+import { formatearNumero } from "@/lib/format";
+import { sumarMontos, textoEquivalentes, textoPrincipal, type Montos } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
 import { cn } from "@/lib/utils";
 import { requirePaginaPanelOwner } from "@/server/auth/permissions";
@@ -39,6 +41,10 @@ export default async function EquipoPage({ searchParams }: { searchParams: Searc
     `${rutaPanel(ctx.panel.slug, `/equipo/${r.usuarioId}`)}${qs}`;
 
   const suma = (f: (r: RendimientoVendedor) => number) => filas.reduce((a, r) => a + f(r), 0);
+  const sumaMontos = (f: (r: RendimientoVendedor) => Montos | undefined) =>
+    sumarMontos(filas.flatMap((r) => f(r) ?? []));
+  const facturado = sumaMontos((r) => r.facturado);
+  const comisiones = sumaMontos((r) => r.comision?.estimada);
   const conComision = filas.some((r) => r.comision);
 
   const columnas = [
@@ -71,13 +77,14 @@ export default async function EquipoPage({ searchParams }: { searchParams: Searc
       key: "facturado",
       header: "Facturado",
       className: "text-right font-semibold",
-      cell: (r: RendimientoVendedor) => formatearPesos(r.facturado),
+      cell: (r: RendimientoVendedor) => <Monto montos={r.facturado} className="items-end" />,
     },
     {
       key: "comision",
       header: "Comisión estimada",
       className: "text-right",
-      cell: (r: RendimientoVendedor) => (r.comision ? formatearPesos(r.comision.estimada) : "—"),
+      cell: (r: RendimientoVendedor) =>
+        r.comision ? <Monto montos={r.comision.estimada} className="items-end" /> : "—",
     },
     {
       key: "acciones",
@@ -122,15 +129,19 @@ export default async function EquipoPage({ searchParams }: { searchParams: Searc
             aria-label="Totales del equipo"
             className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4"
           >
-            <StatCard label="Facturado" value={formatearPesos(suma((r) => Number(r.facturado)))} />
+            <StatCard
+              label="Facturado"
+              value={textoPrincipal(facturado)}
+              hint={textoEquivalentes(facturado)}
+            />
             <StatCard label="Ventas" value={formatearNumero(suma((r) => r.cantidadVentas))} />
             <StatCard label="Unidades" value={formatearNumero(suma((r) => r.unidades))} />
             <StatCard
               label="Comisiones estimadas"
-              value={
-                conComision ? formatearPesos(suma((r) => Number(r.comision?.estimada ?? 0))) : "—"
+              value={conComision ? textoPrincipal(comisiones) : "—"}
+              hint={
+                conComision ? `Orientativas · ${textoEquivalentes(comisiones)}` : "Orientativas"
               }
-              hint="Orientativas"
             />
           </section>
 
@@ -159,12 +170,10 @@ export default async function EquipoPage({ searchParams }: { searchParams: Searc
                   <p className="text-muted text-small tabular-nums">
                     {formatearNumero(r.cantidadVentas)}{" "}
                     {r.cantidadVentas === 1 ? "venta" : "ventas"} · {formatearNumero(r.unidades)} u.
-                    {r.comision ? ` · comisión ${formatearPesos(r.comision.estimada)}` : ""}
+                    {r.comision ? ` · comisión ${textoPrincipal(r.comision.estimada)}` : ""}
                   </p>
                 </div>
-                <span className="shrink-0 font-semibold tabular-nums">
-                  {formatearPesos(r.facturado)}
-                </span>
+                <Monto montos={r.facturado} className="shrink-0 items-end font-semibold" />
                 <ChevronRight
                   className="text-subtle size-5 shrink-0"
                   strokeWidth={1.75}
