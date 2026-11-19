@@ -15,8 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { StatCard } from "@/components/ui/stat-card";
 import { esFechaISO, fechasDeRango, RANGOS, type Rango } from "@/lib/fechas";
-import { formatearNumero } from "@/lib/format";
-import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
+import { formatearDolares, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { Monto } from "@/components/ui/monto";
 import { rutaPanel } from "@/lib/paneles";
 import { tieneMercadoLibre } from "@/lib/medios-pago";
@@ -179,14 +178,14 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
           <StatCard label="Ventas" value={formatearNumero(r.resumen.cantidad)} />
           <StatCard
             label="Total vendido"
-            value={textoPrincipal(r.resumen.total)}
-            hint={textoEquivalentes(r.resumen.total)}
+            value={formatearPesos(r.resumen.total.pesos)}
+            hint={`${formatearUsdt(r.resumen.total.usdt)} · ${formatearDolares(r.resumen.total.usd)}`}
           />
           {r.resumen.ganancia !== null && (
             <StatCard
               label="Ganancia bruta"
-              value={textoPrincipal(r.resumen.ganancia)}
-              hint={textoEquivalentes(r.resumen.ganancia)}
+              value={formatearPesos(r.resumen.ganancia.pesos)}
+              hint={`${formatearUsdt(r.resumen.ganancia.usdt)} · ${formatearDolares(r.resumen.ganancia.usd)}`}
               className="max-md:col-span-2"
             />
           )}

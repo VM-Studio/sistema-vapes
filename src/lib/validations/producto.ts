@@ -123,6 +123,20 @@ export const productoSchema = z
     sabores: p.sabores.map((s) => ({ ...s, nombre: s.sabor ?? NOMBRE_VARIANTE_UNICA })),
   }));
 
+/**
+ * Un sabor nuevo para un producto existente (desde la hoja del producto en
+ * Compras): mismas reglas que una fila nueva del formulario de producto.
+ */
+export const agregarSaborSchema = z.object({
+  productoId: id,
+  sabor: texto(100),
+  codigoBarras: codigoBarrasOpcional,
+  /** Precio propio del sabor (vacío = usa el del producto). */
+  precioVenta: montoOpcional,
+  stockMinimo: enteroNoNegativo.default(0),
+});
+export type AgregarSabor = z.infer<typeof agregarSaborSchema>;
+
 export const actualizarProductoSchema = z.object({ id, datos: productoSchema });
 
 /**

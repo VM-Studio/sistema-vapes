@@ -161,6 +161,7 @@ export function CompraForm({
   const toast = useToast();
   const feedback = useScanFeedback();
   const puedeCrearProveedor = usePuede(Modulo.PROVEEDORES, "crear");
+  const puedeAgregarSabor = usePuede(Modulo.PRODUCTOS, "editar");
 
   const [compraId, setCompraId] = useState(inicial.id);
   const [idVisible, setIdVisible] = useState(inicial.idVisible ?? null);
@@ -1214,6 +1215,22 @@ export function CompraForm({
           if (p) agregarDesdeHoja(p, sabores, costo);
         }}
         onCambiarProveedor={cambiarProveedor}
+        puedeAgregarSabor={puedeAgregarSabor}
+        onSaborCreado={(productoId, sabor) =>
+          setCatalogo((c) =>
+            c
+              ? {
+                  ...c,
+                  productos: c.productos.map((p) =>
+                    p.productoId === productoId &&
+                    !p.sabores.some((x) => x.varianteId === sabor.varianteId)
+                      ? { ...p, sabores: [...p.sabores, sabor] }
+                      : p,
+                  ),
+                }
+              : c,
+          )
+        }
       />
     </>
   );

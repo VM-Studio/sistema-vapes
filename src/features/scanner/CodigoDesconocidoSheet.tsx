@@ -4,7 +4,7 @@ import { Modulo } from "@prisma/client";
 import { Link2, PackagePlus } from "lucide-react";
 import { useState } from "react";
 
-import { agregarCodigoAlternativoAction } from "@/app/(app)/p/[slug]/productos/actions";
+import { vincularCodigoAction } from "@/app/(app)/p/[slug]/productos/actions";
 import { VariantePicker, type VarianteBuscada } from "@/components/catalogo/variante-picker";
 import { usePuede } from "@/components/layout/usuario-context";
 import { Button } from "@/components/ui/button";
@@ -50,11 +50,8 @@ export function CodigoDesconocidoSheet({
   async function asociar() {
     if (!codigo || !elegida) return;
     setEnviando(true);
-    const r = await agregarCodigoAlternativoAction({
-      varianteId: elegida.varianteId,
-      codigo,
-      descripcion: "Asociado desde el escáner",
-    });
+    // Sin código (cargado a mano): queda como su código principal; si ya tenía, como alternativo.
+    const r = await vincularCodigoAction({ varianteId: elegida.varianteId, codigo });
     if (!r.ok) {
       setEnviando(false);
       setError(r.error.fields?.codigo?.[0] ?? r.error.message);

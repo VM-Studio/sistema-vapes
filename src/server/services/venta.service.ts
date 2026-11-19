@@ -165,6 +165,11 @@ export interface VentaGenerada {
   descuento: string;
   total: string;
   notas: string | null;
+  /**
+   * Sabores que con esta venta se quedaron sin stock en su galpón (se vendió la
+   * última unidad). `enOtrosGalpones`: lo que queda en el resto de los galpones.
+   */
+  agotados: { varianteId: string; titulo: string; enOtrosGalpones: number }[];
 }
 
 const OPCIONES_GENERAR = {
@@ -520,6 +525,25 @@ async function generarEnTx(
     });
   }
 
+  // 6b. Sabores que se quedaron en 0 en este galpón (aviso «se vendió la última unidad»).
+  const despues = await tx.stock.findMany({
+    where: { varianteId: { in: ids } },
+    select: { varianteId: true, depositoId: true, cantidad: true },
+  });
+  const agotados = items
+    .filter(
+      (i) =>
+        (despues.find((s) => s.varianteId === i.varianteId && s.depositoId === deposito.id)
+          ?.cantidad ?? 0) <= 0,
+    )
+    .map((i) => ({
+      varianteId: i.varianteId,
+      titulo: i.titulo,
+      enOtrosGalpones: despues
+        .filter((s) => s.varianteId === i.varianteId && s.depositoId !== deposito.id)
+        .reduce((a, s) => a + Math.max(0, s.cantidad), 0),
+    }));
+
   await registrarAuditoria(tx, {
     usuarioId: ctx.usuarioId,
     accion: AccionAuditoria.CREATE,
@@ -598,6 +622,7 @@ async function generarEnTx(
     descuento: dec(descuento),
     total: dec(total),
     notas: input.notas ?? null,
+    agotados,
   };
 }
 

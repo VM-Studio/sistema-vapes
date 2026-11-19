@@ -120,6 +120,8 @@ export function ModalVenta({
   const [stock, setStock] = useState<Record<string, number>>({});
   const [unidades, setUnidades] = useState(unidadesIniciales);
   const [exito, setExito] = useState<VentaGenerada | null>(null);
+  // «Se vendió la última unidad»: sabores que la venta dejó en 0 en el galpón.
+  const [agotados, setAgotados] = useState<VentaGenerada["agotados"]>([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [avisoCliente, setAvisoCliente] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export function ModalVenta({
     setVenta(inicial);
     setStock({});
     setExito(null);
+    setAgotados([]);
     setError(null);
     setAvisoCliente(null);
     void unidadesPorDepositoAction().then((r) => r.ok && setUnidades(r.data));
@@ -371,6 +374,7 @@ export function ModalVenta({
       }
       invalidarResoluciones();
       setExito(rc.data);
+      setAgotados(rc.data.agotados ?? []);
       router.refresh();
       return;
     }
@@ -425,12 +429,14 @@ export function ModalVenta({
     guardarVentaEnCurso(claveStorage, null);
     invalidarResoluciones();
     setExito(r.data.venta);
+    setAgotados(r.data.venta.agotados ?? []);
     router.refresh();
   }
 
   function nuevaVenta() {
     const depositoId = venta.depositoId;
     setExito(null);
+    setAgotados([]);
     setStock({});
     setError(null);
     setAvisoCliente(null);
@@ -806,6 +812,32 @@ export function ModalVenta({
           </>
         }
       />
+      <Dialog
+        open={agotados.length > 0}
+        onOpenChange={(o) => !o && setAgotados([])}
+        title="Se vendió la última unidad"
+        description={
+          agotados.length === 1
+            ? "Este sabor se quedó sin stock en el galpón:"
+            : "Estos sabores se quedaron sin stock en el galpón:"
+        }
+        footer={
+          <Button onClick={() => setAgotados([])} data-testid="ok-ultima-unidad">
+            OK
+          </Button>
+        }
+      >
+        <ul className="flex flex-col gap-1 text-sm" data-testid="ultima-unidad">
+          {agotados.map((a) => (
+            <li key={a.varianteId}>
+              <span className="font-semibold">{a.titulo}</span>
+              {a.enOtrosGalpones > 0 && (
+                <span className="text-muted"> · quedan {a.enOtrosGalpones} en otros galpones</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Dialog>
       <Dialog
         open={confirmarCierre}
         onOpenChange={setConfirmarCierre}

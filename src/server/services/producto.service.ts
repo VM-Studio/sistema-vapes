@@ -18,6 +18,7 @@ import {
   nombreConSabor,
   normalizarEspecificacion,
   saborVisible,
+  type AgregarSabor,
   type AltaRapida,
   type CargarStock,
   type FiltrosProductos,
@@ -1122,6 +1123,86 @@ export async function actualizar(ctx: Ctx, id: string, input: Producto): Promise
   ).catch(mapearUnico);
 }
 
+/**
+ * Agrega un sabor a un producto existente con la misma lógica que una fila
+ * nueva del formulario de producto (ver `actualizar`): nombre sin repetir,
+ * código libre en el panel, precio propio solo si difiere, SKU automático,
+ * stock en 0 en todos los galpones (o reactiva el sabor dado de baja con ese
+ * nombre) y auditoría del producto antes/después.
+ */
+export async function agregarSabor(
+  ctx: Ctx,
+  input: AgregarSabor,
+): Promise<{ varianteId: string; sabor: string; sku: string; codigoBarras: string | null }> {
+  return transaccion(ctx, async (tx) => {
+    const antes = await tx.producto.findFirst({
+      where: { id: input.productoId, deletedAt: null },
+      select: selectSnapshot,
+    });
+    if (!antes) throw new NotFoundError("El producto no existe o fue dado de baja");
+    const nombre = colapsarEspacios(input.sabor);
+    if (!nombre || nombre === NOMBRE_VARIANTE_UNICA)
+      throw new DomainError("Poné el sabor", "VALIDATION_ERROR", 400, { sabor: ["Poné el sabor"] });
+    const vivas = antes.variantes.filter((v) => v.deletedAt === null);
+    if (vivas.some((v) => v.nombre === NOMBRE_VARIANTE_UNICA))
+      throw new DomainError(
+        `${antes.nombreCompleto} está cargado sin sabores: agregale los sabores desde Productos.`,
+      );
+    const clave = nombre.toLocaleLowerCase("es");
+    if (vivas.some((v) => v.nombre.toLocaleLowerCase("es") === clave)) {
+      const msg = `${antes.nombreCompleto} ya tiene el sabor ${nombre}`;
+      throw new ConflictError(msg, { sabor: [msg] });
+    }
+    const codigo = input.codigoBarras ?? null;
+    if (codigo) {
+      const duenio = await duenioDeCodigo(tx, codigo);
+      if (duenio) {
+        const msg = `El código ${codigo} ya pertenece a ${duenio.nombre}`;
+        throw new DomainError(msg, "CODIGO_EN_USO", 409, { codigoBarras: [msg] });
+      }
+    }
+    const datos = {
+      nombre,
+      codigoBarras: codigo,
+      precioVenta: precioPropio(input.precioVenta, antes.precioVenta),
+      stockMinimo: input.stockMinimo,
+      activo: true,
+    };
+    const eliminada = antes.variantes.find(
+      (v) => v.deletedAt !== null && v.nombre.toLocaleLowerCase("es") === clave,
+    );
+    let variante: { id: string; sku: string };
+    if (eliminada) {
+      variante = await tx.variante.update({
+        where: { id: eliminada.id },
+        data: { ...datos, deletedAt: null },
+        select: { id: true, sku: true },
+      });
+    } else {
+      const sku = await generarSku(tx);
+      variante = await tx.variante.create({
+        data: { ...datos, productoId: input.productoId, sku },
+        select: { id: true, sku: true },
+      });
+      await crearStockEnCero(tx, [variante.id]);
+    }
+    const despues = await tx.producto.findUniqueOrThrow({
+      where: { id: input.productoId },
+      select: selectSnapshot,
+    });
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.UPDATE,
+      entidad: "Producto",
+      entidadId: input.productoId,
+      datosAntes: snapshot(antes),
+      datosDespues: snapshot(despues),
+      meta: ctx.meta,
+    });
+    return { varianteId: variante.id, sabor: nombre, sku: variante.sku, codigoBarras: codigo };
+  }).catch(mapearUnico);
+}
+
 /** Desactiva el producto (deja de venderse y de reconocerse como activo). Su stock e historial quedan. */
 export async function desactivar(ctx: Ctx, id: string): Promise<void> {
   await transaccion(ctx, async (tx) => {
@@ -1182,6 +1263,131 @@ export async function agregarCodigoAlternativo(
       meta: ctx.meta,
     });
     return { id: alt.id, codigo: alt.codigo, descripcion: alt.descripcion };
+  });
+}
+
+// --- Productos sin código de barras (cargados a mano, nunca escaneados) -----
+
+export interface SaborSinCodigo {
+  varianteId: string;
+  productoId: string;
+  titulo: string;
+  sku: string;
+  /** Código interno de etiqueta (si se le imprimió una) o null. */
+  codigoInterno: string | null;
+  stock: number;
+}
+
+/**
+ * Sabores vivos sin código de fábrica: sin código principal (o con uno interno
+ * de etiqueta) y sin códigos alternativos. Son los que se cargaron a mano y
+ * todavía no se escanearon.
+ */
+export async function listarSinCodigo(ctx: CtxCatalogo): Promise<SaborSinCodigo[]> {
+  const db = dbPara(ctx.panelId);
+  const [prefijo, filas] = await Promise.all([
+    prefijoCodigoInterno(ctx, db),
+    db.variante.findMany({
+      where: {
+        deletedAt: null,
+        activo: true,
+        producto: { deletedAt: null, activo: true },
+        codigosAlternativos: { none: {} },
+      },
+      orderBy: [{ producto: { nombreCompleto: "asc" } }, { nombre: "asc" }],
+      select: {
+        id: true,
+        nombre: true,
+        sku: true,
+        codigoBarras: true,
+        productoId: true,
+        producto: { select: { nombreCompleto: true } },
+        stocks: { select: { cantidad: true } },
+      },
+    }),
+  ]);
+  return filas
+    .filter((v) => v.codigoBarras === null || esCodigoInterno(v.codigoBarras, prefijo))
+    .map((v) => ({
+      varianteId: v.id,
+      productoId: v.productoId,
+      titulo: nombreConSabor(v.producto.nombreCompleto, v.nombre),
+      sku: v.sku,
+      codigoInterno: v.codigoBarras,
+      stock: v.stocks.reduce((a, s) => a + s.cantidad, 0),
+    }));
+}
+
+/**
+ * Vincula un código escaneado a un sabor ya cargado: si el sabor no tiene
+ * código, queda como su código principal; si tiene otro (ej. el interno de
+ * una etiqueta o uno de fábrica), se suma como alternativo, así los dos
+ * siguen sirviendo al escanear. El código no puede ser de otro sabor.
+ */
+export async function vincularCodigo(
+  ctx: Ctx,
+  varianteId: string,
+  codigo: string,
+): Promise<{
+  varianteId: string;
+  titulo: string;
+  codigo: string;
+  como: "principal" | "alternativo";
+}> {
+  const c = normalizarCodigo(codigo);
+  if (!c)
+    throw new DomainError("Código de barras inválido", "VALIDATION_ERROR", 400, {
+      codigo: ["Código inválido"],
+    });
+  return transaccion(ctx, async (tx) => {
+    const v = await tx.variante.findFirst({
+      where: { id: varianteId, deletedAt: null },
+      select: {
+        id: true,
+        nombre: true,
+        codigoBarras: true,
+        producto: { select: { nombreCompleto: true } },
+      },
+    });
+    if (!v) throw new NotFoundError("El sabor no existe");
+    const titulo = nombreConSabor(v.producto.nombreCompleto, v.nombre);
+    if (v.codigoBarras === c)
+      throw new DomainError(`${titulo} ya tiene el código ${c}.`, "CODIGO_EN_USO", 409, {
+        codigo: [`Ya es su código`],
+      });
+    const duenio = await duenioDeCodigo(tx, c);
+    if (duenio) {
+      const msg =
+        duenio.varianteId === v.id
+          ? `${titulo} ya tiene el código ${c}.`
+          : `El código ${c} ya pertenece a ${duenio.nombre}`;
+      throw new DomainError(msg, "CODIGO_EN_USO", 409, { codigo: [msg] });
+    }
+    if (v.codigoBarras === null) {
+      await tx.variante.update({ where: { id: v.id }, data: { codigoBarras: c } });
+      await registrarAuditoria(tx, {
+        usuarioId: ctx.usuarioId,
+        accion: AccionAuditoria.UPDATE,
+        entidad: "Variante",
+        entidadId: v.id,
+        datosAntes: { codigoBarras: null },
+        datosDespues: { codigoBarras: c, cambio: "codigo_vinculado" },
+        meta: ctx.meta,
+      });
+      return { varianteId: v.id, titulo, codigo: c, como: "principal" as const };
+    }
+    const alt = await tx.codigoBarrasAlternativo.create({
+      data: { varianteId: v.id, codigo: c, descripcion: "Vinculado al escanear" },
+    });
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.CREATE,
+      entidad: "CodigoBarrasAlternativo",
+      entidadId: alt.id,
+      datosDespues: { varianteId: v.id, codigo: c, descripcion: alt.descripcion },
+      meta: ctx.meta,
+    });
+    return { varianteId: v.id, titulo, codigo: c, como: "alternativo" as const };
   });
 }
 

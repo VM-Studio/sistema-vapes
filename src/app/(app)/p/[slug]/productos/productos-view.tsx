@@ -1,7 +1,16 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { ChevronDown, ChevronRight, History, Package, Plus, ScanLine, Tags } from "lucide-react";
+import {
+  Barcode,
+  ChevronDown,
+  ChevronRight,
+  History,
+  Package,
+  Plus,
+  ScanLine,
+  Tags,
+} from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
 
@@ -29,6 +38,8 @@ interface Props {
   depositos: DepositoBasico[];
   params: Record<string, string>;
   marcas: { value: string; label: string }[];
+  /** Sabores cargados a mano que todavía no tienen código de barras. */
+  sinCodigo: number;
 }
 
 /** Celda de encabezado (mismo aspecto que DataTable). */
@@ -49,7 +60,7 @@ function PrecioSabor({ sabor }: { sabor: SaborListado }) {
   );
 }
 
-export function ProductosView({ resultado, depositos, params, marcas }: Props) {
+export function ProductosView({ resultado, depositos, params, marcas, sinCodigo }: Props) {
   const ruta = useRutaPanel();
   const { actualizar } = useUrlParams();
   const puedeCrear = usePuede(Modulo.PRODUCTOS, "crear");
@@ -89,6 +100,15 @@ export function ProductosView({ resultado, depositos, params, marcas }: Props) {
             >
               <Tags strokeWidth={1.75} /> Etiquetas
             </Link>
+            {sinCodigo > 0 && (
+              <Link
+                href={ruta("/productos/sin-codigo")}
+                className={buttonVariants({ variant: "ghost", size: "lg" })}
+                data-testid="link-sin-codigo"
+              >
+                <Barcode strokeWidth={1.75} /> Sin código de barras ({formatearNumero(sinCodigo)})
+              </Link>
+            )}
             {puedeCrear && (
               <Link
                 href={ruta("/productos/nuevo")}

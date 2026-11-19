@@ -5,6 +5,28 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.11.0] - 2026-11-19 — Aviso de última unidad, productos sin código, sabor desde la compra
+
+### Agregado
+
+- **«Se vendió la última unidad».** Al confirmar una venta que deja un sabor en 0 en su galpón,
+  aparece un aviso con el sabor (y lo que queda en otros galpones, si hay) y el botón «OK».
+- **Productos sin código de barras** (Productos → «Sin código de barras»): los sabores cargados
+  a mano que nunca se escanearon. Tocás «Vincular», escaneás (pistola, cámara o tipeado) y el
+  código le queda cargado; un código que ya es de otro sabor se rechaza. Si el sabor tenía
+  un código interno de etiqueta, el escaneado se suma como alternativo (los dos sirven).
+- **«Agregar sabor» en la hoja del producto de una compra:** se da de alta el sabor sin salir
+  de la compra (misma lógica que Productos: SKU automático, código único —la pistola lo
+  completa—, precio propio opcional, stock mínimo, stock en 0 en todos los galpones) y queda
+  en la lista con la cantidad a comprar.
+
+### Cambiado
+
+- Ventas: en «Total vendido» y «Ganancia bruta», arriba en grande los pesos y abajo, chiquito,
+  USDT y dólares.
+- Escáner → «Este código no existe» → «Asociar»: si el sabor elegido no tenía código, el
+  escaneado queda como su código principal (antes, siempre como alternativo).
+
 ## [2.10.0] - 2026-11-16 — USDT, moneda principal; Fiados para Trinidad
 
 ### Cambiado

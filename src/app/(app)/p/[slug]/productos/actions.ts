@@ -9,6 +9,7 @@ import { puede } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
 import {
   actualizarProductoSchema,
+  agregarSaborSchema,
   altaRapidaSchema,
   cargarStockSchema,
   codigoAlternativoSchema,
@@ -21,6 +22,7 @@ import { ForbiddenError, ValidationError } from "@/server/errors";
 import {
   actualizar,
   agregarCodigoAlternativo,
+  agregarSabor,
   altaRapida,
   asignarCodigosInternos,
   buscarParaAltaRapida,
@@ -31,6 +33,7 @@ import {
   productoPorClave,
   quitarCodigoAlternativo,
   verificarCodigoDisponible,
+  vincularCodigo,
 } from "@/server/services/producto.service";
 
 /**
@@ -60,6 +63,14 @@ export const actualizarProductoAction = actionHandler(async (input: unknown) => 
   return r;
 });
 
+/** Sabor nuevo de un producto existente (desde la hoja del producto en Compras). */
+export const agregarSaborAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.PRODUCTOS, "editar");
+  const r = await agregarSabor(ctx, agregarSaborSchema.parse(input));
+  revalidar();
+  return r;
+});
+
 export const desactivarProductoAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.PRODUCTOS, "editar");
   const { id: productoId } = z.object({ id }).parse(input);
@@ -79,6 +90,18 @@ export const agregarCodigoAlternativoAction = actionHandler(async (input: unknow
   const ctx = await requireCtx(Modulo.PRODUCTOS, "editar");
   const { varianteId, codigo, descripcion } = codigoAlternativoSchema.parse(input);
   const r = await agregarCodigoAlternativo(ctx, varianteId, codigo, descripcion);
+  revalidar();
+  return r;
+});
+
+/**
+ * «Productos sin código de barras»: vincula el código escaneado a un sabor ya
+ * cargado (principal si no tenía, alternativo si ya tenía uno).
+ */
+export const vincularCodigoAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.PRODUCTOS, "editar");
+  const { varianteId, codigo } = codigoAlternativoSchema.parse(input);
+  const r = await vincularCodigo(ctx, varianteId, codigo);
   revalidar();
   return r;
 });

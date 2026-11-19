@@ -4,6 +4,7 @@ import { AlertTriangle, BadgeCheck, ExternalLink, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { AgregarSaborCompra, type SaborCreado } from "@/components/compras/agregar-sabor-compra";
 import { soloDecimal } from "@/components/compras/proveedor-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { pesosAMoneda } from "@/lib/costos-compra";
 import { formatearMonto, formatearNumero, formatearPesos, formatearUsdt } from "@/lib/format";
 import { cn, formatearFecha } from "@/lib/utils";
 import type { ComparacionCompra, OfertaCompra } from "@/server/reportes/comparador";
-import type { ProductoCatalogoCompra } from "@/server/services/compra.service";
+import type { ProductoCatalogoCompra, SaborCatalogoCompra } from "@/server/services/compra.service";
 
 export interface SaborAgregado {
   varianteId: string;
@@ -64,6 +65,8 @@ export function ProductoCompraSheet({
   hrefNuevaCompra,
   onAgregar,
   onCambiarProveedor,
+  puedeAgregarSabor = false,
+  onSaborCreado,
 }: {
   abierto: boolean;
   onCerrar: () => void;
@@ -81,6 +84,10 @@ export function ProductoCompraSheet({
   hrefNuevaCompra: (proveedorId: string) => string;
   onAgregar: (sabores: SaborAgregado[], costo: { valor: string; editado: boolean }) => void;
   onCambiarProveedor: (proveedorId: string) => void;
+  /** PRODUCTOS "editar": muestra «Agregar sabor» (alta del sabor sin salir de la compra). */
+  puedeAgregarSabor?: boolean;
+  /** Sabor recién creado: el catálogo de la compra lo suma a la lista del producto. */
+  onSaborCreado?: (productoId: string, sabor: SaborCatalogoCompra) => void;
 }) {
   const costoInicial = catalogo?.costoUsdt ? String(Number(catalogo.costoUsdt)) : "";
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
@@ -95,6 +102,19 @@ export function ProductoCompraSheet({
   }
 
   const sabores = catalogo?.sabores ?? [];
+  // Un producto cargado sin sabores (variante «Único») se completa desde Productos.
+  const sinSabores = sabores.length === 1 && sabores[0]!.sabor === null;
+
+  function saborCreado(s: SaborCreado) {
+    if (!catalogo) return;
+    if (s.cantidad > 0) setCantidades((c) => ({ ...c, [s.varianteId]: s.cantidad }));
+    onSaborCreado?.(catalogo.productoId, {
+      varianteId: s.varianteId,
+      sabor: s.sabor,
+      sku: s.sku,
+      stock: sabores.some((x) => x.stock !== null) ? 0 : null,
+    });
+  }
   const unidades = Object.values(cantidades).reduce((a, n) => a + n, 0);
   const unico = sabores.length === 1;
 
@@ -203,6 +223,14 @@ export function ProductoCompraSheet({
                   );
                 })}
               </ul>
+            )}
+            {puedeAgregarSabor && onSaborCreado && !sinSabores && (
+              <AgregarSaborCompra
+                key={catalogo.productoId}
+                productoId={catalogo.productoId}
+                nombreProducto={nombreCompleto}
+                onCreado={saborCreado}
+              />
             )}
           </section>
         )}
