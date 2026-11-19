@@ -921,7 +921,7 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
   const v = await db.venta.findUnique({
     where: { id },
     include: {
-      cliente: { select: { id: true, nombre: true, telefono: true } },
+      cliente: { select: { id: true, nombre: true, telefono: true, deletedAt: true } },
       vendedor: { select: { id: true, nombre: true } },
       anuladaPor: { select: { nombre: true } },
       deposito: { select: { id: true, nombre: true, escaneoRemoto: true } },

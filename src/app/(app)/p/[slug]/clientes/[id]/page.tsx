@@ -188,6 +188,7 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
               activo={c.activo}
               puedeEditar={puedeEn(Modulo.CLIENTES, "editar")}
               puedeEliminar={puedeEn(Modulo.CLIENTES, "eliminar")}
+              puedeBorrar={verTotales}
             />
           </div>
         </SectionCard>

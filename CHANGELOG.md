@@ -5,6 +5,16 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.12.0] - 2026-11-19 — Eliminar clientes
+
+### Agregado
+
+- **Eliminar clientes (solo dueños).** En la ficha del cliente, además de «Desactivar», está
+  «Eliminar»: el cliente desaparece de Clientes, de los buscadores, de las carteras y de los
+  reportes, y su teléfono queda libre para otro. Sus ventas, devoluciones y cotizaciones se
+  conservan con su nombre (sin link a la ficha). Si tiene deuda de fiado, no se puede: primero
+  hay que cobrarla (o desactivarlo). Queda en la auditoría.
+
 ## [2.11.0] - 2026-11-19 — Aviso de última unidad, productos sin código, sabor desde la compra
 
 ### Agregado

@@ -408,7 +408,7 @@ const selectListado = {
   estado: true,
   observacion: true,
   ventaId: true,
-  cliente: { select: { id: true, nombre: true, telefono: true } },
+  cliente: { select: { id: true, nombre: true, telefono: true, deletedAt: true } },
   deposito: { select: { id: true, nombre: true } },
   usuario: { select: { nombre: true } },
   venta: { select: { id: true, codigo: true } },

@@ -171,7 +171,7 @@ export default async function DevolucionPage({ params }: { params: Promise<{ id:
             <dd className="text-right">{formatearFechaHora(d.fecha)}</dd>
             <dt className="text-muted">Cliente</dt>
             <dd className="text-right">
-              {verClientes ? (
+              {verClientes && !d.cliente.deletedAt ? (
                 <Link
                   href={rutaPanel(slug, `/clientes/${d.cliente.id}`)}
                   className="text-foreground font-medium hover:underline"

@@ -13,20 +13,21 @@ import {
 import { tieneCarteraClientes } from "@/lib/permisos";
 import { id } from "@/lib/validations/common";
 import { actionHandler } from "@/server/action-handler";
-import { requireCtx, requireCtxAlguno } from "@/server/auth/permissions";
+import { requireCtx, requireCtxAlguno, requireCtxOwner } from "@/server/auth/permissions";
 import {
   actualizarCliente,
   buscarClientes,
   clientePorTelefono,
   crearCliente,
   desactivarCliente,
+  eliminarCliente,
   reactivarCliente,
 } from "@/server/services/cliente.service";
 
 /** Desde dónde se elige un cliente (SelectorCliente). */
 const MODULOS_SELECTOR = [Modulo.CLIENTES, Modulo.VENTAS, Modulo.DEVOLUCIONES, Modulo.COTIZADOR];
 
-/** CLIENTES (en el panel actual): crear → alta · editar → datos · eliminar → desactivar. */
+/** CLIENTES (en el panel actual): crear → alta · editar → datos · eliminar → desactivar · dueños: eliminar (borrado lógico). */
 
 export const crearClienteAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtx(Modulo.CLIENTES, "crear");
@@ -57,6 +58,14 @@ export const reactivarClienteAction = actionHandler(async (input: unknown) => {
   const { id: clienteId } = z.object({ id }).parse(input);
   await reactivarCliente(ctx, clienteId);
   revalidatePath("/p/[slug]/clientes", "layout");
+});
+
+/** Eliminar (borrado lógico): solo dueños. Con deuda de fiado, no. */
+export const eliminarClienteAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtxOwner();
+  const { id: clienteId } = z.object({ id }).parse(input);
+  await eliminarCliente(ctx, clienteId);
+  revalidatePath("/p/[slug]", "layout");
 });
 
 /** Buscador del SelectorCliente (nombre o teléfono, máx. 20, con última compra). */

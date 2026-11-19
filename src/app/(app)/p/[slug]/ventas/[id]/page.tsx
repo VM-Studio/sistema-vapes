@@ -350,7 +350,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                 <div className="min-w-0">
                   <dt className="sr-only">Cliente</dt>
                   <dd>
-                    {puedeHacer(Modulo.CLIENTES) ? (
+                    {puedeHacer(Modulo.CLIENTES) && !v.cliente.deletedAt ? (
                       <Link
                         href={rutaPanel(slug, `/clientes/${v.cliente.id}`)}
                         className="text-foreground block truncate font-semibold hover:underline"

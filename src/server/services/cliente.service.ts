@@ -13,13 +13,15 @@ import { dbPara, enTransaccion, transaccion, type Ctx, type Tx } from "@/server/
 import { DomainError, NotFoundError, ValidationError } from "@/server/errors";
 import { SQL_USD_TOTAL, totalDeVenta } from "@/server/moneda/montos-venta";
 import { registrarAuditoria } from "@/server/services/audit.service";
-import { deudaDeClientes } from "@/server/services/fiado.service";
+import { bloquearCliente, deudaDeClientes } from "@/server/services/fiado.service";
 
 /**
  * CLIENTES (por panel). Nombre + teléfono obligatorio, normalizado ("+54" +
  * dígitos, ver normalizarTelefono) y único dentro del panel entre clientes no
- * borrados (índice único parcial cliente_telefono_unico). Nunca se borran: se
- * desactivan (sus ventas y devoluciones se conservan).
+ * borrados (índice único parcial cliente_telefono_unico). Se desactivan (dejan
+ * de aparecer en los buscadores) o, solo los dueños, se eliminan (borrado
+ * lógico: deletedAt; desaparece de todo el sistema, pero sus ventas y
+ * devoluciones se conservan con su nombre y el teléfono queda libre).
  */
 
 const dec = (d: Prisma.Decimal | null | undefined) => (d ? d.toFixed(2) : "0.00");
@@ -211,6 +213,33 @@ async function cambiarActivo(ctx: Ctx, id: string, activo: boolean): Promise<voi
 /** Deja de aparecer en los buscadores. Nunca se borra: ventas y devoluciones se conservan. */
 export const desactivarCliente = (ctx: Ctx, id: string) => cambiarActivo(ctx, id, false);
 export const reactivarCliente = (ctx: Ctx, id: string) => cambiarActivo(ctx, id, true);
+
+/**
+ * Elimina el cliente (borrado lógico, solo dueños: lo exige la action). Sale de
+ * listados, buscadores, carteras y reportes; sus ventas, devoluciones y
+ * cotizaciones se conservan con su nombre. Con deuda de fiado no se puede
+ * (primero hay que cobrarla). El teléfono queda libre para otro cliente.
+ */
+export async function eliminarCliente(ctx: Ctx, id: string): Promise<void> {
+  await transaccion(ctx, async (tx) => {
+    await bloquearCliente(tx, ctx, id);
+    const c = await tx.cliente.findFirst({ where: { id, deletedAt: null } });
+    if (!c) throw new NotFoundError("El cliente no existe");
+    if (c.saldoDeudor.gt(0))
+      throw new DomainError(
+        `${c.nombre} tiene deuda de fiado sin cobrar: cobrala antes de eliminarlo (o desactivalo)`,
+      );
+    await tx.cliente.update({ where: { id }, data: { deletedAt: new Date() } });
+    await registrarAuditoria(tx, {
+      usuarioId: ctx.usuarioId,
+      accion: AccionAuditoria.DELETE,
+      entidad: "Cliente",
+      entidadId: id,
+      datosAntes: { nombre: c.nombre, telefono: c.telefono, notas: c.notas, activo: c.activo },
+      meta: ctx.meta,
+    });
+  });
+}
 
 // =============================================================================
 // Lectura
