@@ -92,7 +92,10 @@ export default async function ClienteCarteraPage({ params }: { params: Promise<{
         ) : (
           <p className="text-sm">
             <strong>Ya lo tenías:</strong> lo cargaste en tu cartera el{" "}
-            {formatearFecha(c.createdAt)}. Venderle no cuenta como cliente nuevo.
+            {formatearFecha(c.createdAt)}.{" "}
+            {d.vieneDelVendedor
+              ? "Viene de vos: todas tus ventas a este cliente cuentan como cliente nuevo."
+              : "Venderle no cuenta como cliente nuevo (no figura que venga de vos)."}
           </p>
         )}
       </section>

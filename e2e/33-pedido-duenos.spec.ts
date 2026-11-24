@@ -48,6 +48,7 @@ test("Trinidad prepara su cartera y la venta a un cliente nuevo lo suma con esa 
   const hoja = page.getByRole("dialog", { name: "Agregar cliente que ya tenés" });
   await hoja.getByLabel("Nombre").fill(`Previo ${n}`);
   await hoja.getByLabel("Teléfono").fill(`11 6${n.slice(0, 3)} ${n.slice(-4)}`);
+  await hoja.getByLabel(/De quién viene/).selectOption({ label: "Juan Cruz" });
   await hoja.getByRole("button", { name: "Guardar y cargar otro" }).click();
   await expect(page.getByText("Cliente cargado en tu cartera")).toBeVisible();
   await hoja.getByRole("button", { name: "Listo" }).click();
@@ -88,6 +89,9 @@ test("Trinidad prepara su cartera y la venta a un cliente nuevo lo suma con esa 
   await modal(page)
     .getByLabel("Teléfono")
     .fill(`11 3${n.slice(0, 3)} ${n.slice(-4)}`);
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await continuar(page).click();
   await modal(page).getByRole("radio", { name: "Efectivo" }).click();
   await modal(page).getByRole("button", { name: "Confirmar venta" }).click();

@@ -115,7 +115,7 @@ const clienteParaGuardar = (c: ClienteElegido | null) =>
     ? null
     : c.tipo === "existente"
       ? { id: c.id }
-      : { nombre: c.nombre, telefono: c.telefono };
+      : { nombre: c.nombre, telefono: c.telefono, origenId: c.origenId };
 
 /**
  * Armado de una cotización en UNA pantalla (sin pasos): cliente opcional y

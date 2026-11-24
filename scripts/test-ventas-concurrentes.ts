@@ -64,6 +64,7 @@ async function main() {
   const cliente = await crearCliente(ctx, {
     nombre: "Cliente concurrencia",
     telefono: `11${suf}${Math.floor(Math.random() * 90) + 10}`,
+    origenId: ctx.usuarioId,
   });
   const stockDe = async (varianteId: string) =>
     (await db.stock.findFirst({ where: { varianteId, depositoId: deposito.id } }))?.cantidad ?? 0;

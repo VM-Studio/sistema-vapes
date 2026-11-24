@@ -1,4 +1,4 @@
-import { AccionAuditoria, Prisma } from "@prisma/client";
+import { AccionAuditoria, Modulo, Prisma, RolUsuario } from "@prisma/client";
 
 import { finDelDia, fechasDeRango, inicioDelDia } from "@/lib/fechas";
 import { MONTOS_CERO, type Montos } from "@/lib/moneda";
@@ -96,6 +96,52 @@ async function traducirUnicidad(
 }
 
 // =============================================================================
+// «¿De quién viene este cliente?» (Cliente.origenId)
+// =============================================================================
+
+export interface OrigenCliente {
+  id: string;
+  nombre: string;
+}
+
+export const MENSAJE_FALTA_ORIGEN = "Elegí de quién viene el cliente";
+
+/**
+ * Quiénes pueden haber traído un cliente al panel: los dueños y los que
+ * venden en él (VENTAS crear), activos. Es la lista del «¿De quién viene?».
+ */
+export async function listarOrigenesCliente(ctx: Pick<Ctx, "panelId">): Promise<OrigenCliente[]> {
+  return dbPara(ctx.panelId).usuario.findMany({
+    where: {
+      deletedAt: null,
+      activo: true,
+      OR: [
+        { rol: RolUsuario.OWNER },
+        {
+          permisos: {
+            some: { panelId: ctx.panelId, modulo: Modulo.VENTAS, puedeCrear: true },
+          },
+        },
+      ],
+    },
+    orderBy: [{ nombre: "asc" }],
+    select: { id: true, nombre: true },
+  });
+}
+
+/** El origen elegido tiene que ser una de las opciones del panel. */
+async function exigirOrigen(ctx: Ctx, origenId: string | null | undefined): Promise<string> {
+  const o = origenId?.trim();
+  if (!o) throw new ValidationError(MENSAJE_FALTA_ORIGEN, { origenId: [MENSAJE_FALTA_ORIGEN] });
+  const opciones = await listarOrigenesCliente(ctx);
+  if (!opciones.some((x) => x.id === o))
+    throw new ValidationError("Esa persona no puede figurar como origen del cliente", {
+      origenId: ["Elegí una de las opciones"],
+    });
+  return o;
+}
+
+// =============================================================================
 // Escritura
 // =============================================================================
 
@@ -103,6 +149,8 @@ export interface CrearClienteInput {
   nombre: string;
   telefono: string;
   notas?: string | null;
+  /** De quién viene (obligatorio; ver `opciones.sinOrigen`). */
+  origenId?: string | null;
 }
 
 /**
@@ -115,11 +163,20 @@ export async function crearCliente(
   ctx: Ctx,
   input: CrearClienteInput,
   tx?: Tx,
-  opciones: { vendedorId?: string | null } = {},
+  opciones: {
+    vendedorId?: string | null;
+    /**
+     * Solo para la cotización guardada antes de v2.13.0 (cliente sin
+     * registrar y sin «de quién viene»): queda pendiente para los dueños.
+     */
+    sinOrigen?: boolean;
+  } = {},
 ): Promise<ClienteBasico> {
   const nombre = exigirNombre(input.nombre);
   const telefono = exigirTelefono(input.telefono);
   const notas = input.notas?.trim() || null;
+  const origenId =
+    opciones.sinOrigen && !input.origenId ? null : await exigirOrigen(ctx, input.origenId);
   try {
     return await enTransaccion(ctx, tx, async (t) => {
       const otro = await duplicadoDe(t, telefono);
@@ -131,6 +188,7 @@ export async function crearCliente(
           notas,
           creadoPorId: ctx.usuarioId,
           vendedorId: opciones.vendedorId ?? null,
+          origenId,
         },
         select: { id: true, nombre: true, telefono: true },
       });
@@ -143,6 +201,7 @@ export async function crearCliente(
           nombre,
           telefono,
           notas,
+          origenId,
           ...(opciones.vendedorId ? { vendedorId: opciones.vendedorId } : {}),
         },
         meta: ctx.meta,
@@ -158,13 +217,23 @@ export interface ActualizarClienteInput extends CrearClienteInput {
   id: string;
 }
 
+/**
+ * Edita nombre, teléfono y notas. «De quién viene» solo lo cambia un dueño
+ * (`puedeCambiarOrigen`): define la ganancia de cliente nuevo del vendedor.
+ * Sin permiso, el origen que venga se ignora.
+ */
 export async function actualizarCliente(
   ctx: Ctx,
   input: ActualizarClienteInput,
+  opciones: { puedeCambiarOrigen?: boolean } = {},
 ): Promise<ClienteBasico> {
   const nombre = exigirNombre(input.nombre);
   const telefono = exigirTelefono(input.telefono);
   const notas = input.notas?.trim() || null;
+  const origenId =
+    opciones.puedeCambiarOrigen && input.origenId
+      ? await exigirOrigen(ctx, input.origenId)
+      : undefined;
   try {
     return await transaccion(ctx, async (tx) => {
       const antes = await tx.cliente.findFirst({ where: { id: input.id, deletedAt: null } });
@@ -173,7 +242,7 @@ export async function actualizarCliente(
       if (otro) throw new ClienteDuplicadoError(otro);
       const c = await tx.cliente.update({
         where: { id: input.id },
-        data: { nombre, telefono, notas },
+        data: { nombre, telefono, notas, ...(origenId ? { origenId } : {}) },
         select: { id: true, nombre: true, telefono: true },
       });
       await registrarAuditoria(tx, {
@@ -181,8 +250,13 @@ export async function actualizarCliente(
         accion: AccionAuditoria.UPDATE,
         entidad: "Cliente",
         entidadId: input.id,
-        datosAntes: { nombre: antes.nombre, telefono: antes.telefono, notas: antes.notas },
-        datosDespues: { nombre, telefono, notas },
+        datosAntes: {
+          nombre: antes.nombre,
+          telefono: antes.telefono,
+          notas: antes.notas,
+          ...(origenId ? { origenId: antes.origenId } : {}),
+        },
+        datosDespues: { nombre, telefono, notas, ...(origenId ? { origenId } : {}) },
         meta: ctx.meta,
       });
       return c;
@@ -207,6 +281,45 @@ async function cambiarActivo(ctx: Ctx, id: string, activo: boolean): Promise<voi
       datosDespues: { activo },
       meta: ctx.meta,
     });
+  });
+}
+
+/**
+ * Completar «de quién viene» de varios clientes a la vez (solo dueños: lo
+ * exige la action). Pensado para los que se cargaron antes de v2.13.0, pero
+ * sirve para corregir cualquiera. Devuelve cuántos cambiaron.
+ */
+export async function asignarOrigenes(
+  ctx: Ctx,
+  asignaciones: { clienteId: string; origenId: string }[],
+): Promise<number> {
+  if (asignaciones.length === 0) return 0;
+  const opciones = new Set((await listarOrigenesCliente(ctx)).map((o) => o.id));
+  for (const a of asignaciones)
+    if (!opciones.has(a.origenId))
+      throw new ValidationError("Esa persona no puede figurar como origen del cliente");
+  return transaccion(ctx, async (tx) => {
+    const antes = await tx.cliente.findMany({
+      where: { id: { in: asignaciones.map((a) => a.clienteId) }, deletedAt: null },
+      select: { id: true, origenId: true },
+    });
+    let cambiados = 0;
+    for (const a of asignaciones) {
+      const c = antes.find((x) => x.id === a.clienteId);
+      if (!c || c.origenId === a.origenId) continue;
+      await tx.cliente.update({ where: { id: c.id }, data: { origenId: a.origenId } });
+      await registrarAuditoria(tx, {
+        usuarioId: ctx.usuarioId,
+        accion: AccionAuditoria.UPDATE,
+        entidad: "Cliente",
+        entidadId: c.id,
+        datosAntes: { origenId: c.origenId },
+        datosDespues: { origenId: a.origenId },
+        meta: ctx.meta,
+      });
+      cambiados += 1;
+    }
+    return cambiados;
   });
 }
 
@@ -407,6 +520,68 @@ export async function listarClientes(
   };
 }
 
+/** Cuántos clientes (no borrados) todavía no tienen «de quién viene». */
+export async function contarClientesSinOrigen(ctx: Ctx): Promise<number> {
+  return dbPara(ctx.panelId).cliente.count({ where: { deletedAt: null, origenId: null } });
+}
+
+export interface ClienteSinOrigen extends ClienteBasico {
+  activo: boolean;
+  createdAt: Date;
+  /** Quién lo cargó y en qué cartera está: pistas para responder. */
+  creadoPor: string | null;
+  cartera: string | null;
+  compras: number;
+  /** Sugerencia: quien lo cargó o su cartera, si es una de las opciones. */
+  sugerido: string | null;
+}
+
+/** Los clientes que falta completar (para la pantalla de dueños), los más viejos primero. */
+export async function listarClientesSinOrigen(ctx: Ctx): Promise<{
+  clientes: ClienteSinOrigen[];
+  origenes: OrigenCliente[];
+}> {
+  const [filas, origenes] = await Promise.all([
+    dbPara(ctx.panelId).cliente.findMany({
+      where: { deletedAt: null, origenId: null },
+      orderBy: [{ createdAt: "asc" }, { nombre: "asc" }],
+      take: 1000,
+      select: {
+        id: true,
+        nombre: true,
+        telefono: true,
+        activo: true,
+        createdAt: true,
+        creadoPor: { select: { id: true, nombre: true } },
+        vendedor: { select: { id: true, nombre: true } },
+      },
+    }),
+    listarOrigenesCliente(ctx),
+  ]);
+  const resumen = await resumenesDeCompras(
+    ctx,
+    filas.map((c) => c.id),
+  );
+  const ids = new Set(origenes.map((o) => o.id));
+  return {
+    origenes,
+    clientes: filas.map((c) => {
+      const sugerido = [c.vendedor?.id, c.creadoPor?.id].find((x) => x && ids.has(x)) ?? null;
+      return {
+        id: c.id,
+        nombre: c.nombre,
+        telefono: c.telefono,
+        activo: c.activo,
+        createdAt: c.createdAt,
+        creadoPor: c.creadoPor?.nombre ?? null,
+        cartera: c.vendedor?.nombre ?? null,
+        compras: resumen.get(c.id)?.cantidad ?? 0,
+        sugerido,
+      };
+    }),
+  };
+}
+
 /** Clientes dados de alta en el mes calendario actual (hora argentina). */
 export async function clientesNuevosDelMes(ctx: Ctx): Promise<number> {
   const { desde, hasta } = fechasDeRango("mes");
@@ -421,6 +596,7 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
   const c = await db.cliente.findFirst({
     where: { id, deletedAt: null },
     include: {
+      origen: { select: { id: true, nombre: true } },
       vendedor: { select: { id: true, nombre: true } },
       creadoEnVenta: { select: { id: true, codigo: true, fecha: true, vendedorId: true } },
     },
@@ -477,6 +653,8 @@ export async function obtenerCliente(ctx: Ctx, id: string, opciones: OpcionesCli
       notas: c.notas,
       activo: c.activo,
       createdAt: c.createdAt,
+      /** De quién viene (null = cargado antes de v2.13.0 y todavía sin responder). */
+      origen: c.origen,
       /** Deuda de cuenta corriente (ventas fiadas sin cobrar). */
       saldoDeudor: dec(c.saldoDeudor),
       /** La deuda en USDT (principal), pesos y dólares: cada venta a su cotización. */

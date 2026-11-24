@@ -7,6 +7,7 @@ import {
   buscarClientesAction,
   clientePorTelefonoAction,
 } from "@/app/(app)/p/[slug]/clientes/actions";
+import { SelectOrigen } from "@/components/clientes/origen-cliente";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
@@ -16,7 +17,7 @@ import { cn, formatearFecha } from "@/lib/utils";
 
 export type ClienteElegido =
   | { tipo: "existente"; id: string; nombre: string; telefono: string }
-  | { tipo: "nuevo"; nombre: string; telefono: string };
+  | { tipo: "nuevo"; nombre: string; telefono: string; origenId: string };
 
 interface ClienteResultado {
   id: string;
@@ -29,7 +30,7 @@ type Modo = "pregunta" | "nuevo" | "buscar";
 
 /**
  * Elegir el cliente de una operación (venta, devolución). Pregunta grande
- * "¿Es cliente nuevo?": Sí → nombre + teléfono (avisa en vivo si el teléfono
+ * "¿Es cliente nuevo?": Sí → nombre + teléfono + «¿De quién viene?» (avisa en vivo si el teléfono
  * ya es de otro cliente y ofrece seleccionarlo); No → buscador por nombre o
  * teléfono. Sin `permitirNuevo` va directo al buscador.
  */
@@ -168,12 +169,13 @@ function ClienteNuevo({
   onCambiar,
   onSeleccionarExistente,
 }: {
-  inicial: { nombre: string; telefono: string } | null;
+  inicial: { nombre: string; telefono: string; origenId: string } | null;
   onCambiar: (c: ClienteElegido | null) => void;
   onSeleccionarExistente: (c: { id: string; nombre: string; telefono: string }) => void;
 }) {
   const [nombre, setNombre] = useState(inicial?.nombre ?? "");
   const [telefono, setTelefono] = useState(inicial?.telefono ?? "");
+  const [origenId, setOrigenId] = useState(inicial?.origenId ?? "");
   const [existente, setExistente] = useState<{
     id: string;
     nombre: string;
@@ -208,11 +210,11 @@ function ClienteNuevo({
   useEffect(() => {
     const n = nombre.trim();
     onCambiarRef.current(
-      n && normalizado && !existente && !verificando
-        ? { tipo: "nuevo", nombre: n, telefono: normalizado }
+      n && normalizado && origenId && !existente && !verificando
+        ? { tipo: "nuevo", nombre: n, telefono: normalizado, origenId }
         : null,
     );
-  }, [nombre, normalizado, existente, verificando]);
+  }, [nombre, normalizado, origenId, existente, verificando]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -239,6 +241,12 @@ function ClienteNuevo({
           normalizado ? `Se guarda como ${normalizado}` : "Con código de área. Ej: 11 5555 1234"
         }
         error={telefonoInvalido ? "Teléfono inválido: entre 6 y 13 dígitos" : undefined}
+      />
+      <SelectOrigen
+        valor={origenId}
+        onCambiar={setOrigenId}
+        className="h-12 text-base md:h-12"
+        data-testid="origen-cliente-nuevo"
       />
       {verificando && (
         <p className="text-muted flex items-center gap-2 text-sm">

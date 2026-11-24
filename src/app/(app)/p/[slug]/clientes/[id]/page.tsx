@@ -129,6 +129,14 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
               <dd className="text-right">{formatearFecha(c.createdAt)}</dd>
               <dt className="text-muted">Estado</dt>
               <dd className="text-right">{c.activo ? "Activo" : "Desactivado"}</dd>
+              <dt className="text-muted">Viene de</dt>
+              <dd className="text-right" data-testid="origen-cliente">
+                {c.origen ? (
+                  c.origen.nombre
+                ) : (
+                  <span className="text-warning-soft-foreground">Sin responder</span>
+                )}
+              </dd>
               {c.cartera && (
                 <>
                   <dt className="text-muted">Cartera</dt>
@@ -154,6 +162,8 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
                             {c.cartera.ventaAlta.codigo}
                           </Link>
                         </>
+                      ) : c.origen?.id === c.cartera.vendedorId ? (
+                        "Ya lo tenía · viene de este vendedor (cuenta como nuevo)"
                       ) : (
                         "Ya lo tenía (no es nuevo)"
                       )}
@@ -184,11 +194,18 @@ export default async function ClientePage({ params }: { params: Promise<{ id: st
               )}
             </dl>
             <AccionesCliente
-              cliente={{ id: c.id, nombre: c.nombre, telefono: c.telefono, notas: c.notas }}
+              cliente={{
+                id: c.id,
+                nombre: c.nombre,
+                telefono: c.telefono,
+                notas: c.notas,
+                origenId: c.origen?.id ?? null,
+              }}
               activo={c.activo}
               puedeEditar={puedeEn(Modulo.CLIENTES, "editar")}
               puedeEliminar={puedeEn(Modulo.CLIENTES, "eliminar")}
               puedeBorrar={verTotales}
+              puedeCambiarOrigen={verTotales}
             />
           </div>
         </SectionCard>

@@ -20,6 +20,7 @@ export function AccionesCliente({
   puedeEditar,
   puedeEliminar,
   puedeBorrar,
+  puedeCambiarOrigen = false,
 }: {
   cliente: ClienteEditable;
   activo: boolean;
@@ -28,6 +29,8 @@ export function AccionesCliente({
   puedeEliminar: boolean;
   /** Eliminar del todo (borrado lógico): solo dueños. */
   puedeBorrar: boolean;
+  /** «De quién viene»: solo dueños. */
+  puedeCambiarOrigen?: boolean;
 }) {
   const router = useRouter();
   const { slug } = useParams<{ slug: string }>();
@@ -102,6 +105,7 @@ export function AccionesCliente({
           <ClienteForm
             formId="form-cliente-detalle"
             cliente={cliente}
+            puedeCambiarOrigen={puedeCambiarOrigen}
             onEnviando={setEnviando}
             onListo={() => {
               setAbierto(null);

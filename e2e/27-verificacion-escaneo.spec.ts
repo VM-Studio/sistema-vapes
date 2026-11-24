@@ -111,6 +111,9 @@ test("verificar con pistola: Frutilla no corresponde, Mango 2/2, el tercero avis
   await modal(page)
     .getByLabel("Teléfono")
     .fill(`11 6${Date.now().toString().slice(-7)}`);
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await modal(page).getByRole("button", { name: "Continuar", exact: true }).click();
   await modal(page).getByRole("radio", { name: "Efectivo" }).click();
   await modal(page).getByRole("button", { name: "Confirmar venta" }).click();

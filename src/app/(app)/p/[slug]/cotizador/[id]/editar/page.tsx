@@ -76,7 +76,12 @@ export default async function EditarCotizacionPage({
                 nombre: c.cliente.nombre,
                 telefono: c.cliente.telefono ?? "",
               }
-            : { tipo: "nuevo", nombre: c.cliente.nombre, telefono: c.cliente.telefono ?? "" },
+            : {
+                tipo: "nuevo",
+                nombre: c.cliente.nombre,
+                telefono: c.cliente.telefono ?? "",
+                origenId: c.cliente.origenId ?? "",
+              },
         descuento: Number(c.descuento) > 0 ? c.descuento : "",
         notas: c.notas ?? "",
         validezDias,

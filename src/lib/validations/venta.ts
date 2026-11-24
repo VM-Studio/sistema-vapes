@@ -2,6 +2,7 @@ import { Escaneo, EstadoVenta, MedioPago, TipoVenta } from "@prisma/client";
 import { z } from "zod";
 
 import { MEDIOS_PAGO_DEFAULT } from "../medios-pago";
+import { origenClienteObligatorio } from "./cliente";
 import {
   enteroPositivo,
   id,
@@ -48,6 +49,7 @@ export const clienteVentaSchema = z.union([
     nuevo: z.object({
       nombre: texto(100),
       telefono: z.string().trim().min(1, "Ingresá el teléfono").max(40, "Máximo 40 caracteres"),
+      origenId: origenClienteObligatorio,
     }),
   }),
 ]);

@@ -64,6 +64,9 @@ test("vender la última unidad muestra el aviso y se cierra con OK", async ({ pa
   await modal(page)
     .getByLabel("Teléfono")
     .fill(`11 5${suf().slice(0, 3)} ${suf().slice(-4)}`);
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await modal(page).getByRole("button", { name: "Continuar", exact: true }).click();
   await modal(page).getByRole("radio", { name: "Efectivo" }).click();
   await modal(page).getByRole("button", { name: "Confirmar venta" }).click();

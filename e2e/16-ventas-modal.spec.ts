@@ -55,6 +55,9 @@ async function clienteNuevo(page: Page, nombre: string, telefono: string) {
   await modal(page).getByRole("button", { name: "Sí", exact: true }).click();
   await modal(page).getByLabel("Nombre").fill(nombre);
   await modal(page).getByLabel("Teléfono").fill(telefono);
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
 }
 
 const continuar = (page: Page) =>

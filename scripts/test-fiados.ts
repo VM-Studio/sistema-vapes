@@ -143,7 +143,11 @@ async function main() {
   }
   let tel = 0;
   const cliente = (nombre: string) =>
-    crearCliente(ctx, { nombre, telefono: `11${suf.slice(-4)}${String(1000 + tel++)}` });
+    crearCliente(ctx, {
+      nombre,
+      telefono: `11${suf.slice(-4)}${String(1000 + tel++)}`,
+      origenId: owner.id,
+    });
   const venta = (
     c: Ctx,
     clienteId: string,

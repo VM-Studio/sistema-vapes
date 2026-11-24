@@ -215,9 +215,11 @@ export async function obtenerClienteDeCartera(ctx: Ctx, vendedorId: string, id: 
   const db = dbPara(ctx.panelId);
   const c = await db.cliente.findFirst({
     where: { id, vendedorId, deletedAt: null },
-    select: selectCartera,
+    select: { ...selectCartera, origenId: true },
   });
   if (!c) throw new NotFoundError("El cliente no está en tu cartera.");
+  // «¿De quién viene?» = este vendedor: todas sus ventas a este cliente cuentan como nuevo.
+  const vieneDelVendedor = c.origenId === vendedorId;
   const [[cliente], ventas] = await Promise.all([
     conCompras(ctx, vendedorId, [c]),
     db.venta.findMany({
@@ -240,6 +242,7 @@ export async function obtenerClienteDeCartera(ctx: Ctx, vendedorId: string, id: 
   ]);
   return {
     cliente: cliente!,
+    vieneDelVendedor,
     ventas: ventas.map((v) => ({
       id: v.id,
       codigo: v.codigo,
@@ -248,7 +251,8 @@ export async function obtenerClienteDeCartera(ctx: Ctx, vendedorId: string, id: 
       tipo: v.tipo,
       total: dec(v.total),
       totales: totalDeVenta(v),
-      clienteNuevo: v.clienteNuevo,
+      /** Cuenta como cliente nuevo en la ganancia (alta con esa venta, o viene del vendedor). */
+      clienteNuevo: v.clienteNuevo || vieneDelVendedor,
       unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
     })),
   };
@@ -317,7 +321,7 @@ export type ResultadoAlta =
 export async function agregarACartera(
   ctx: Ctx,
   vendedorId: string,
-  input: { nombre: string; telefono: string; notas?: string | null },
+  input: { nombre: string; telefono: string; notas?: string | null; origenId?: string | null },
   opciones: { sumarExistente?: boolean } = {},
 ): Promise<ResultadoAlta> {
   try {
@@ -363,6 +367,8 @@ export async function importarCartera(
   ctx: Ctx,
   vendedorId: string,
   texto: string,
+  /** «De quién viene» de los que se dan de alta (los que ya eran clientes no cambian). */
+  origenId: string,
 ): Promise<FilaImportacion[]> {
   const lineas = texto
     .split(/\r?\n/)
@@ -378,7 +384,12 @@ export async function importarCartera(
       continue;
     }
     try {
-      const r = await agregarACartera(ctx, vendedorId, partido, { sumarExistente: true });
+      const r = await agregarACartera(
+        ctx,
+        vendedorId,
+        { ...partido, origenId },
+        { sumarExistente: true },
+      );
       filas.push({
         ...l,
         resultado: r.tipo,

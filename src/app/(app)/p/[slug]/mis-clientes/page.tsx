@@ -56,8 +56,9 @@ export default async function MisClientesPage({ searchParams }: { searchParams: 
           <h1 className="text-h1 font-semibold">Mis clientes</h1>
           <p className="text-muted text-small max-w-2xl">
             Cargá acá los clientes que ya tenías antes de empezar a vender con el sistema: quedan en
-            tu cartera y venderles <strong>no</strong> cuenta como cliente nuevo. Los que des de
-            alta al vender con «Cliente nuevo» se suman solos, con la venta que los trajo.
+            tu cartera. Si en «¿De quién viene?» figurás vos, todas tus ventas a ese cliente cuentan
+            como cliente nuevo. Los que des de alta al vender con «Cliente nuevo» se suman solos,
+            con la venta que los trajo.
           </p>
         </div>
         <AccionesCartera />

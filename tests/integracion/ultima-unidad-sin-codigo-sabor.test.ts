@@ -58,7 +58,13 @@ function vender(items: { varianteId: string; cantidad: number }[]) {
     ctx(),
     m.valVenta.generarVentaSchema.parse({
       depositoId,
-      cliente: { nuevo: { nombre: `Cliente ${suf}`, telefono: `11${suf}${items.length}9` } },
+      cliente: {
+        nuevo: {
+          nombre: `Cliente ${suf}`,
+          telefono: `11${suf}${items.length}9`,
+          origenId: ownerId,
+        },
+      },
       tipo: "UNITARIA",
       items,
       pagos: [

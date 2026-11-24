@@ -4,6 +4,7 @@ import { ListPlus, Pencil, Plus, UserMinus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { SelectOrigen } from "@/components/clientes/origen-cliente";
 import { useRutaPanel } from "@/components/layout/panel-context";
 import { BarraAccion } from "@/components/ui/barra-accion";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ export function ClienteCarteraForm({
   const [nombre, setNombre] = useState(cliente?.nombre ?? "");
   const [telefono, setTelefono] = useState(cliente?.telefono ?? "");
   const [notas, setNotas] = useState(cliente?.notas ?? "");
+  const [origenId, setOrigenId] = useState("");
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [enviando, setEnviando] = useState(false);
   const [dueno, setDueno] = useState<Dueno>(null);
@@ -75,6 +77,8 @@ export function ClienteCarteraForm({
   }, [tel, cliente?.id, cliente?.telefono]);
 
   const bloqueado = dueno?.de === "OTRO" || (!cliente && dueno?.de === "MIA");
+  // «¿De quién viene?» solo al dar de alta uno nuevo (no al sumar uno que ya era del negocio).
+  const pideOrigen = !cliente && dueno?.de !== "NADIE";
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -83,7 +87,11 @@ export function ClienteCarteraForm({
     const datos = { nombre, telefono, notas };
     const r = cliente
       ? await editarClienteCarteraAction({ ...datos, id: cliente.id })
-      : await agregarClienteCarteraAction({ ...datos, sumarExistente: dueno?.de === "NADIE" });
+      : await agregarClienteCarteraAction({
+          ...datos,
+          ...(pideOrigen ? { origenId } : {}),
+          sumarExistente: dueno?.de === "NADIE",
+        });
     setEnviando(false);
     if (!r.ok) {
       const campos = r.error.fields ?? {};
@@ -108,6 +116,7 @@ export function ClienteCarteraForm({
       setNombre("");
       setTelefono("");
       setNotas("");
+      setOrigenId("");
       setDueno(null);
       nombreRef.current?.focus();
       return;
@@ -149,11 +158,14 @@ export function ClienteCarteraForm({
                 ? `${dueno.cliente.nombre} ya está en tu cartera.`
                 : dueno.de === "OTRO"
                   ? `${dueno.cliente.nombre} está en la cartera de ${dueno.vendedor ?? "otro vendedor"}.`
-                  : `${dueno.cliente.nombre} ya es cliente del negocio: al guardar se suma a tu cartera (no cuenta como nuevo).`}
+                  : `${dueno.cliente.nombre} ya es cliente del negocio: al guardar se suma a tu cartera.`}
             </span>
           )
         }
       />
+      {pideOrigen && (
+        <SelectOrigen valor={origenId} onCambiar={setOrigenId} error={errores.origenId} />
+      )}
       <Textarea
         label="Notas"
         rows={2}
@@ -189,12 +201,13 @@ function CargarVarios({ onListo }: { onListo: () => void }) {
   const router = useRouter();
   const toast = useToast();
   const [texto, setTexto] = useState("");
+  const [origenId, setOrigenId] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [filas, setFilas] = useState<FilaImportacion[] | null>(null);
 
   async function cargar() {
     setEnviando(true);
-    const r = await importarCarteraAction({ texto });
+    const r = await importarCarteraAction({ texto, origenId });
     setEnviando(false);
     if (!r.ok) return toast.error("No se pudo cargar", r.error.message);
     setFilas(r.data);
@@ -226,6 +239,11 @@ function CargarVarios({ onListo }: { onListo: () => void }) {
           "Juan Pérez, 11 2345-6789\nMaría Gómez; 1198765432\nKiosco Lo de Tito\t221 555-1234"
         }
         hint="Podés pegar desde una planilla o los contactos: nombre y teléfono separados por coma, punto y coma o tabulador."
+      />
+      <SelectOrigen
+        valor={origenId}
+        onCambiar={setOrigenId}
+        hint="Para todos los clientes nuevos de la lista (los que ya eran del negocio no cambian)."
       />
       {filas && (
         <section
@@ -259,7 +277,11 @@ function CargarVarios({ onListo }: { onListo: () => void }) {
         <Button variant="secondary" onClick={onListo} disabled={enviando}>
           {filas ? "Listo" : "Cancelar"}
         </Button>
-        <Button onClick={() => void cargar()} loading={enviando} disabled={!texto.trim()}>
+        <Button
+          onClick={() => void cargar()}
+          loading={enviando}
+          disabled={!texto.trim() || !origenId}
+        >
           Cargar
         </Button>
       </div>
@@ -287,7 +309,7 @@ export function AccionesCartera() {
         open={abierta === "uno"}
         onOpenChange={(o) => setAbierta(o ? "uno" : null)}
         title="Agregar cliente que ya tenés"
-        description="Queda en tu cartera y venderle no cuenta como cliente nuevo."
+        description="Queda en tu cartera. Venderle cuenta como cliente nuevo solo si viene de vos."
       >
         {abierta === "uno" && <ClienteCarteraForm cliente={null} onListo={cerrar} otroDespues />}
       </Sheet>
@@ -295,7 +317,7 @@ export function AccionesCartera() {
         open={abierta === "varios"}
         onOpenChange={(o) => setAbierta(o ? "varios" : null)}
         title="Cargar varios clientes"
-        description="Pegá tu lista: todos quedan en tu cartera como clientes que ya tenías."
+        description="Pegá tu lista: todos quedan en tu cartera. Venderles cuenta como cliente nuevo solo si vienen de vos."
       >
         {abierta === "varios" && <CargarVarios onListo={cerrar} />}
       </Sheet>

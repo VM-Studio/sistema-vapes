@@ -115,7 +115,7 @@ export function TarifasDialog({
         open={abierto}
         onOpenChange={setAbierto}
         title={`Ganancia por vape de ${nombre}`}
-        description="Cuánto gana por cada vape vendido, según el tipo de venta y si el cliente es nuevo (se dio de alta con esa venta). Cambia el mes en curso y los que todavía no se liquidaron."
+        description="Cuánto gana por cada vape vendido, según el tipo de venta y si el cliente es nuevo (se dio de alta con esa venta, o viene de este vendedor: «¿De quién viene?» del cliente). Cambia el mes en curso y los que todavía no se liquidaron."
       >
         <form onSubmit={guardar} className="flex flex-col gap-4" aria-label="Ganancia por vape">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

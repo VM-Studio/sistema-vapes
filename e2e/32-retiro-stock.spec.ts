@@ -55,6 +55,9 @@ async function vender(
   await modal(page).getByRole("button", { name: "Sí", exact: true }).click();
   await modal(page).getByLabel("Nombre").fill(cliente);
   await modal(page).getByLabel("Teléfono").fill(telefono());
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await continuar(page).click();
   await modal(page).getByRole("radio", { name: "Efectivo" }).click();
   if (escaneaCharly) await modal(page).getByRole("switch", { name: "Escanea Charly" }).click();

@@ -358,7 +358,11 @@ export function ModalVenta({
               cliente:
                 cliente.tipo === "existente"
                   ? { id: cliente.id }
-                  : { nombre: cliente.nombre, telefono: cliente.telefono },
+                  : {
+                      nombre: cliente.nombre,
+                      telefono: cliente.telefono,
+                      origenId: cliente.origenId,
+                    },
             }
           : {}),
       }).catch(() => null);
@@ -384,7 +388,13 @@ export function ModalVenta({
       cliente:
         cliente.tipo === "existente"
           ? { id: cliente.id }
-          : { nuevo: { nombre: cliente.nombre, telefono: cliente.telefono } },
+          : {
+              nuevo: {
+                nombre: cliente.nombre,
+                telefono: cliente.telefono,
+                origenId: cliente.origenId,
+              },
+            },
       items: (conML ? conML.items : venta.items).map((i) => ({
         varianteId: i.varianteId,
         cantidad: i.cantidad,

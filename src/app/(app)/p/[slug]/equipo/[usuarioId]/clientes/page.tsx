@@ -65,9 +65,9 @@ export default async function CarteraVendedorPage({
         />
         <h1 className="text-h1 font-semibold">Cartera de {usuario.nombre}</h1>
         <p className="text-muted text-small max-w-2xl">
-          «Ya lo tenía»: cargado por {usuario.nombre} antes de venderle, no cuenta como cliente
-          nuevo. «Nuevo»: se dio de alta con esa venta (tocala para verla) y cuenta como cliente
-          nuevo en su ganancia.
+          «Ya lo tenía»: cargado por {usuario.nombre} antes de venderle; cuenta como cliente nuevo
+          solo si en «¿De quién viene?» figura {usuario.nombre}. «Nuevo»: se dio de alta con esa
+          venta (tocala para verla) y cuenta como cliente nuevo en su ganancia.
         </p>
       </header>
       <TarjetasCartera

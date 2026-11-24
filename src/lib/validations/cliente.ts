@@ -50,13 +50,32 @@ export function mostrarTelefono(telefono: string): string {
   return telefono;
 }
 
+/** «¿De quién viene este cliente?»: obligatorio al dar de alta. */
+export const origenClienteObligatorio = z
+  .string({ error: "Elegí de quién viene el cliente" })
+  .trim()
+  .min(1, "Elegí de quién viene el cliente");
+
 export const crearClienteSchema = z.object({
   nombre: texto(100),
   telefono: telefonoObligatorio,
   notas: textoOpcional(2000),
+  origenId: origenClienteObligatorio,
 });
 
-export const actualizarClienteSchema = crearClienteSchema.extend({ id });
+/** Al editar, «de quién viene» es opcional (solo lo cambia un dueño). */
+export const actualizarClienteSchema = crearClienteSchema.extend({
+  id,
+  origenId: z.string().trim().optional(),
+});
+
+/** Dueños: completar «de quién viene» de varios clientes. */
+export const asignarOrigenesSchema = z.object({
+  asignaciones: z
+    .array(z.object({ clienteId: id, origenId: origenClienteObligatorio }))
+    .min(1, "Elegí de quién viene al menos un cliente")
+    .max(1000),
+});
 
 export const buscarClientesSchema = z.object({ q: z.string().trim().max(100).default("") });
 

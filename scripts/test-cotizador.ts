@@ -365,7 +365,7 @@ async function main() {
         { varianteId: usdMango.id, cantidad: 20 },
         { varianteId: usdFrutilla.id, cantidad: 35 },
       ],
-      cliente: { nombre: "Mayorista Dólar", telefono: `11${suf}7` },
+      cliente: { nombre: "Mayorista Dólar", telefono: `11${suf}7`, origenId: owner.id },
     },
     DUENO,
   );
@@ -390,7 +390,7 @@ async function main() {
         { varianteId: usdMango.id, cantidad: 25 },
         { varianteId: usdFrutilla.id, cantidad: 35 },
       ],
-      cliente: { nombre: "Mayorista Dólar", telefono: `11${suf}7` },
+      cliente: { nombre: "Mayorista Dólar", telefono: `11${suf}7`, origenId: owner.id },
     },
     DUENO,
   );
@@ -460,7 +460,7 @@ async function main() {
         { varianteId: mango.id, cantidad: 20 },
         { varianteId: frutilla.id, cantidad: 35 },
       ],
-      cliente: { nombre: "Mayorista Test", telefono: `11${suf}1` },
+      cliente: { nombre: "Mayorista Test", telefono: `11${suf}1`, origenId: owner.id },
       notas: "Retira el viernes",
     },
     SIN_EDITAR,
@@ -549,7 +549,7 @@ async function main() {
     {
       tipo: "UNITARIA",
       items: [{ varianteId: uva.id, cantidad: 2 }],
-      cliente: { nombre: "Otro nombre", telefono: `11${suf}1` },
+      cliente: { nombre: "Otro nombre", telefono: `11${suf}1`, origenId: owner.id },
     },
     SIN_EDITAR,
   );
@@ -643,7 +643,7 @@ async function main() {
     {
       tipo: "UNITARIA",
       items: [{ varianteId: uva.id, cantidad: 2 }],
-      cliente: { nombre: `Cliente aceptada ${suf}`, telefono: telA },
+      cliente: { nombre: `Cliente aceptada ${suf}`, telefono: telA, origenId: owner.id },
     },
     SIN_EDITAR,
   );
@@ -691,7 +691,7 @@ async function main() {
     {
       tipo: "UNITARIA",
       items: [{ varianteId: uva.id, cantidad: 100_000 }],
-      cliente: { nombre: `Cliente aceptada ${suf}`, telefono: telA },
+      cliente: { nombre: `Cliente aceptada ${suf}`, telefono: telA, origenId: owner.id },
     },
     SIN_EDITAR,
   );

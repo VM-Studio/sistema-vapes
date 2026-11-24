@@ -285,6 +285,7 @@ test("unitaria de 3 sabores: PDF y link de WhatsApp", async ({ page }, info) => 
   await page.getByRole("button", { name: "Sí", exact: true }).click();
   await page.getByLabel("Nombre").fill("Lucía Cotiza");
   await page.getByLabel("Teléfono").fill(telefono);
+  await page.getByLabel(/De quién viene/).selectOption({ label: "Juan Cruz" });
   // El selector verifica el teléfono (350 ms) antes de dar el cliente por válido.
   await page.waitForTimeout(1200);
   await page.getByRole("button", { name: "Guardar" }).click();

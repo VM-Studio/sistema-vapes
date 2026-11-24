@@ -82,6 +82,7 @@ test("cliente nuevo con teléfono repetido: avisa y el alta falla con el cliente
   await sheet.getByLabel("Nombre").fill(`Repetido ${s}`);
   // Mismo número, escrito distinto: se normaliza a +54… y se detecta en vivo.
   await sheet.getByLabel("Teléfono").fill(`011 ${s.slice(0, 3)}-${s.slice(3)}1`);
+  await sheet.getByLabel(/De quién viene/).selectOption({ label: "Juan Cruz" });
   await expect(sheet.getByText(`Ese teléfono es de ${existente.nombre}`)).toBeVisible();
   await sheet.getByRole("button", { name: "Crear" }).click();
   await expect(

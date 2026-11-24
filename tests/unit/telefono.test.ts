@@ -50,7 +50,7 @@ describe("normalizarTelefono", () => {
 });
 
 describe("crearClienteSchema.telefono", () => {
-  const base = { nombre: "Ana" };
+  const base = { nombre: "Ana", origenId: "usr_1" };
 
   it("normaliza antes de guardar", () => {
     const r = crearClienteSchema.parse({ ...base, telefono: "011 15-5555-1234" });

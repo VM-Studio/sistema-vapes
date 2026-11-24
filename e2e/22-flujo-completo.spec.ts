@@ -153,6 +153,7 @@ async function venderConClienteNuevo(
   await modal.getByRole("button", { name: "Sí", exact: true }).click();
   await modal.getByLabel("Nombre").fill(cliente.nombre);
   await modal.getByLabel("Teléfono").fill(cliente.telefono);
+  await modal.getByLabel(/De quién viene/).selectOption({ label: "Juan Cruz" });
   await expect(continuar).toBeEnabled();
   await continuar.click();
   await modal.getByRole("radio", { name: "Efectivo" }).click();
@@ -258,6 +259,7 @@ test("Vapes: cargar stock en un galpón → venta con cliente nuevo → garantí
   await page.getByRole("button", { name: "Sí", exact: true }).click();
   await page.getByLabel("Nombre").fill(CLIENTE_MAYORISTA.nombre);
   await page.getByLabel("Teléfono").fill(CLIENTE_MAYORISTA.telefono);
+  await page.getByLabel(/De quién viene/).selectOption({ label: "Juan Cruz" });
   await page.waitForTimeout(1200);
   await page.getByRole("button", { name: "Guardar" }).click();
   await expect(page.getByTestId("codigo-cotizacion")).toHaveText(/^VAP-Q-\d{6}$/);

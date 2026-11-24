@@ -120,6 +120,7 @@ async function main() {
   const previo = await agregarACartera(ctxVend, vendedor.id, {
     nombre: `Cliente Previo ${suf}`,
     telefono: tel(1),
+    origenId: owner.id,
   });
   check(previo.tipo === "CREADO", `alta en la cartera (${previo.tipo})`);
   const filaPrevio = await db.cliente.findUniqueOrThrow({ where: { id: previo.cliente.id } });
@@ -133,7 +134,7 @@ async function main() {
   // ---------------------------------------------------------------------------
   console.log("\n2) «Cliente nuevo» al vender: se crea, se suma a la cartera y queda la venta");
   const vNuevo = await vender(ctxVend, {
-    nuevo: { nombre: `Cliente Nuevo ${suf}`, telefono: tel(2) },
+    nuevo: { nombre: `Cliente Nuevo ${suf}`, telefono: tel(2), origenId: owner.id },
   });
   check(vNuevo.clienteNuevo, "la venta es de cliente nuevo");
   const filaNuevo = await db.cliente.findUniqueOrThrow({ where: { id: vNuevo.cliente.id } });
@@ -167,11 +168,17 @@ async function main() {
 
   // ---------------------------------------------------------------------------
   console.log("\n3) Dueños sin cartera; teléfonos de otros clientes");
-  const vDueno = await vender(ctx, { nuevo: { nombre: `Del Negocio ${suf}`, telefono: tel(3) } });
+  const vDueno = await vender(ctx, {
+    nuevo: { nombre: `Del Negocio ${suf}`, telefono: tel(3), origenId: owner.id },
+  });
   const filaDueno = await db.cliente.findUniqueOrThrow({ where: { id: vDueno.cliente.id } });
   check(filaDueno.vendedorId === null, "el cliente nuevo de un dueño no queda en ninguna cartera");
   const dup = await error(() =>
-    agregarACartera(ctxVend, vendedor.id, { nombre: `Otro nombre ${suf}`, telefono: tel(3) }),
+    agregarACartera(ctxVend, vendedor.id, {
+      nombre: `Otro nombre ${suf}`,
+      telefono: tel(3),
+      origenId: owner.id,
+    }),
   );
   check(dup instanceof ClienteDuplicadoError, `sin «sumar»: teléfono repetido (${msg(dup)})`);
   const sumado = await agregarACartera(
@@ -189,6 +196,7 @@ async function main() {
   const yaEstaba = await agregarACartera(ctxVend, vendedor.id, {
     nombre: `Cliente Previo ${suf}`,
     telefono: tel(1),
+    origenId: owner.id,
   });
   check(yaEstaba.tipo === "YA_ESTABA", "cargar de nuevo uno propio → «ya estaba»");
   const deOtro = await db.cliente.create({
@@ -198,7 +206,7 @@ async function main() {
     agregarACartera(
       ctxVend,
       vendedor.id,
-      { nombre: `De Otro ${suf}`, telefono: tel(4) },
+      { nombre: `De Otro ${suf}`, telefono: tel(4), origenId: owner.id },
       { sumarExistente: true },
     ),
   );
@@ -221,6 +229,7 @@ async function main() {
       "solo un nombre",
       `Kiosco Lo de Tito ${tel(7)}`,
     ].join("\n"),
+    owner.id,
   );
   check(
     filas.map((f) => f.resultado).join() === "CREADO,CREADO,YA_ESTABA,ERROR,CREADO",

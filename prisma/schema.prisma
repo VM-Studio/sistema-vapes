@@ -268,6 +268,8 @@ model Usuario {
   ventasRetiradas        Venta[]                  @relation("VentaRetiradaPor")
   facturasML             FacturaMercadoLibre[]
   carteraClientes        Cliente[]                @relation("ClienteCartera")
+  clientesTraidos        Cliente[]                @relation("ClienteOrigen")
+  cotizacionesOrigen     Cotizacion[]             @relation("CotizacionClienteOrigen")
   borradoresCompra       BorradorCompra[]
 }
 
@@ -622,11 +624,17 @@ model Cliente {
   /// antes de vender (no cuentan como nuevos) y los que se sumaron con una
   /// venta suya (creadoEnVentaId). null = cliente del negocio, sin cartera.
   vendedorId      String?
+  /// «¿De quién viene este cliente?» (dueño o vendedor que lo trajo). Obligatorio
+  /// al dar de alta desde v2.13.0; null solo en los cargados antes, hasta que
+  /// un dueño lo responde. Si lo trajo el vendedor que le vende, esa venta suma
+  /// la ganancia de cliente nuevo (ver src/lib/ganancia-vendedor.ts).
+  origenId        String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
   panel         Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  origen        Usuario?     @relation("ClienteOrigen", fields: [origenId], references: [id], onDelete: Restrict)
   creadoPor     Usuario?     @relation("ClienteCreadoPor", fields: [creadoPorId], references: [id], onDelete: Restrict)
   creadoEnVenta Venta?       @relation("ClienteCreadoEnVenta", fields: [creadoEnVentaId], references: [id], onDelete: Restrict)
   vendedor      Usuario?     @relation("ClienteCartera", fields: [vendedorId], references: [id], onDelete: Restrict)
@@ -639,6 +647,7 @@ model Cliente {
   @@index([panelId, saldoDeudor])
   @@index([panelId, creadoPorId, createdAt])
   @@index([panelId, vendedorId, nombre])
+  @@index([panelId, origenId])
   @@index([nombre(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_nombre_trgm")
   @@index([telefono(ops: raw("gin_trgm_ops"))], type: Gin, map: "cliente_telefono_trgm")
 }
@@ -1483,6 +1492,8 @@ model Cotizacion {
   clienteId            String?
   clienteNombre        String?
   clienteTelefono      String?
+  /// De quién viene el cliente sin registrar (se usa al darlo de alta al convertir).
+  clienteOrigenId      String?
   vendedorId           String
   estado               EstadoCotizacion @default(BORRADOR)
   subtotal             Decimal          @db.Decimal(12, 2)
@@ -1511,6 +1522,7 @@ model Cotizacion {
   panel         Panel            @relation(fields: [panelId], references: [id], onDelete: Restrict)
   cliente       Cliente?         @relation(fields: [clienteId], references: [id], onDelete: Restrict)
   vendedor      Usuario          @relation("CotizacionVendedor", fields: [vendedorId], references: [id], onDelete: Restrict)
+  clienteOrigen Usuario?         @relation("CotizacionClienteOrigen", fields: [clienteOrigenId], references: [id], onDelete: Restrict)
   venta         Venta?           @relation("CotizacionVenta", fields: [ventaId], references: [id], onDelete: Restrict)
   /// Lado inverso de Venta.cotizacionId (la misma venta, vista desde la venta).
   ventaGenerada Venta?           @relation("VentaCotizacion")

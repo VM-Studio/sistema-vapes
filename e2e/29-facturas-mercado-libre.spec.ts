@@ -89,6 +89,9 @@ test("venta ML con precio a mano → pendiente en Facturas → «Cargar» con ar
   await modal(page)
     .getByLabel("Teléfono")
     .fill(`11 6${sufijo().slice(0, 3)} ${sufijo().slice(-4)}`);
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await modal(page).getByRole("button", { name: "Continuar", exact: true }).click();
   await modal(page)
     .getByRole("radiogroup", { name: "Medio de pago" })

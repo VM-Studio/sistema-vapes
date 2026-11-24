@@ -54,7 +54,7 @@ const ctxDe = (usuarioId: string) => ({
 });
 
 async function vender(
-  cliente: { id: string } | { nuevo: { nombre: string; telefono: string } },
+  cliente: { id: string } | { nuevo: { nombre: string; telefono: string; origenId: string } },
   cantidad: number,
   tipo: "UNITARIA" | "MAYORISTA",
 ) {
@@ -137,6 +137,7 @@ beforeAll(async () => {
     await m.clientes.crearCliente(ctxDe(ownerId), {
       nombre: `Cliente viejo ${suf}`,
       telefono: telefono(),
+      origenId: ownerId,
     })
   ).id;
   mesC = m.ganancia.mesActual();
@@ -190,12 +191,16 @@ describe("cálculo del mes", () => {
       await vender({ id: clienteViejo }, 2, "UNITARIA"); // 2 × 1500
       await vender({ id: clienteViejo }, 10, "MAYORISTA"); // 10 × 300
       const v = await vender(
-        { nuevo: { nombre: `Nuevo U ${suf}`, telefono: telefono() } },
+        { nuevo: { nombre: `Nuevo U ${suf}`, telefono: telefono(), origenId: ownerId } },
         1,
         "UNITARIA",
       ); // 2000
       ventaNuevoUnitaria = { id: v.id, clienteId: v.cliente.id };
-      await vender({ nuevo: { nombre: `Nuevo M ${suf}`, telefono: telefono() } }, 5, "MAYORISTA"); // 5 × 500
+      await vender(
+        { nuevo: { nombre: `Nuevo M ${suf}`, telefono: telefono(), origenId: ownerId } },
+        5,
+        "MAYORISTA",
+      ); // 5 × 500
       ventaAnulable = (await vender({ id: clienteViejo }, 4, "UNITARIA")).id;
     });
     // 1° del mes B a las 02:30 UTC = último día del mes A, 23:30 en Argentina → mes A.

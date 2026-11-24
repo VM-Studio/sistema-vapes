@@ -203,6 +203,23 @@ export async function quitarTarifas(ctx: CtxConUsuario, usuarioId: string): Prom
 
 type Db = ReturnType<typeof dbPara> | Tx;
 
+/**
+ * ¿La venta gana la tarifa de CLIENTE NUEVO? Sí si el cliente se dio de alta
+ * con esa venta (Venta.clienteNuevo) o si el cliente VIENE DEL MISMO VENDEDOR
+ * (Cliente.origenId, «¿De quién viene este cliente?»): todas las ventas que le
+ * haga a un cliente que trajo él/ella cuentan como de cliente nuevo, aunque al
+ * vender haya contestado «No» a «¿Es cliente nuevo?». Se mira el origen de
+ * HOY: si un dueño lo completa o lo corrige, cambia el mes en curso y los que
+ * no se liquidaron (como las tarifas); los liquidados quedan como estaban.
+ */
+export function cuentaComoNuevo(
+  clienteNuevo: boolean,
+  origenId: string | null,
+  vendedorId: string,
+): boolean {
+  return clienteNuevo || origenId === vendedorId;
+}
+
 async function datosDelMes(
   db: Db,
   usuarioId: string,
@@ -224,7 +241,7 @@ async function datosDelMes(
         tipo: true,
         clienteNuevo: true,
         total: true,
-        cliente: { select: { nombre: true } },
+        cliente: { select: { nombre: true, origenId: true } },
         items: { select: { cantidad: true } },
       },
     }),
@@ -240,7 +257,14 @@ async function datosDelMes(
         fecha: true,
         ventaId: true,
         cliente: { select: { nombre: true } },
-        venta: { select: { codigo: true, tipo: true, clienteNuevo: true } },
+        venta: {
+          select: {
+            codigo: true,
+            tipo: true,
+            clienteNuevo: true,
+            cliente: { select: { origenId: true } },
+          },
+        },
         items: { select: { cantidad: true } },
       },
     }),
@@ -251,7 +275,7 @@ async function datosDelMes(
       codigo: v.codigo,
       fecha: v.fecha,
       tipo: v.tipo,
-      clienteNuevo: v.clienteNuevo,
+      clienteNuevo: cuentaComoNuevo(v.clienteNuevo, v.cliente.origenId, usuarioId),
       cliente: v.cliente.nombre,
       unidades: v.items.reduce((s, i) => s + i.cantidad, 0),
       total: dec(v.total),
@@ -266,7 +290,11 @@ async function datosDelMes(
               ventaId: d.ventaId,
               ventaCodigo: d.venta.codigo,
               tipo: d.venta.tipo,
-              clienteNuevo: d.venta.clienteNuevo,
+              clienteNuevo: cuentaComoNuevo(
+                d.venta.clienteNuevo,
+                d.venta.cliente.origenId,
+                usuarioId,
+              ),
               cliente: d.cliente.nombre,
               unidades: d.items.reduce((s, i) => s + i.cantidad, 0),
             },

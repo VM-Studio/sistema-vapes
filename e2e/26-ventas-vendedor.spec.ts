@@ -66,6 +66,9 @@ test("Trinidad vende a un cliente nuevo: queda registrado quién lo cargó y en 
   await modal(page).getByRole("button", { name: "Sí", exact: true }).click();
   await modal(page).getByLabel("Nombre").fill(CLIENTE.nombre);
   await modal(page).getByLabel("Teléfono").fill(CLIENTE.telefono);
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await continuar(page).click();
   await modal(page).getByRole("radio", { name: "Efectivo" }).click();
   await modal(page).getByRole("button", { name: "Confirmar venta" }).click();

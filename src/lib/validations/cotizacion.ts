@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prefijoPanel } from "@/lib/paneles";
 
 import { enteroPositivo, id, montoOpcional, texto, textoOpcional, vacioAUndefined } from "./common";
+import { origenClienteObligatorio } from "./cliente";
 import { pagosSchema, verificacionEscaneoSchema } from "./venta";
 
 /**
@@ -111,6 +112,8 @@ export const clienteCotizacionSchema = z
     z.object({
       nombre: texto(100),
       telefono: z.string().trim().min(1, "Ingresá el teléfono").max(40, "Máximo 40 caracteres"),
+      /** De quién viene: obligatorio para un cliente que no está registrado. */
+      origenId: origenClienteObligatorio,
     }),
   ])
   .nullable();

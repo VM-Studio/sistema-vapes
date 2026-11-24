@@ -167,6 +167,7 @@ beforeAll(async () => {
   const cliente = await m.clientes.crearCliente(ctxDe(owner.id), {
     nombre: `Cliente remito ${suf}`,
     telefono: `11${suf.slice(-4)}7777`,
+    origenId: owner.id,
   });
   const mesC = m.ganancia.mesActual();
   const mesA = m.lib.sumarMeses(mesC, -2);

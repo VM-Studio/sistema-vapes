@@ -3,7 +3,11 @@ import type { Metadata } from "next";
 
 import { esOwner } from "@/lib/permisos";
 import { requirePaginaPanel } from "@/server/auth/permissions";
-import { clientesNuevosDelMes, listarClientes } from "@/server/services/cliente.service";
+import {
+  clientesNuevosDelMes,
+  contarClientesSinOrigen,
+  listarClientes,
+} from "@/server/services/cliente.service";
 
 import { ClientesView } from "./clientes-view";
 
@@ -18,15 +22,22 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
     Object.entries(params).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
   const verTotales = esOwner(ctx.usuario);
-  const [r, nuevos] = await Promise.all([
+  const [r, nuevos, sinOrigen] = await Promise.all([
     listarClientes(
       ctx,
       { q: plano.q, page: Math.max(1, Number(plano.page) || 1), pageSize: 30 },
       { verTotales },
     ),
     clientesNuevosDelMes(ctx),
+    verTotales ? contarClientesSinOrigen(ctx) : 0,
   ]);
   return (
-    <ClientesView resultado={r} params={plano} nuevosDelMes={nuevos} verTotales={verTotales} />
+    <ClientesView
+      resultado={r}
+      params={plano}
+      nuevosDelMes={nuevos}
+      verTotales={verTotales}
+      sinOrigen={sinOrigen}
+    />
   );
 }

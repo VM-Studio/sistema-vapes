@@ -56,6 +56,9 @@ async function hastaElPago(page: Page, galpon: string, codigos: string[], client
   await modal(page).getByRole("button", { name: "Sí", exact: true }).click();
   await modal(page).getByLabel("Nombre").fill(cliente);
   await modal(page).getByLabel("Teléfono").fill(telefono());
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await continuar(page).click();
   await modal(page).getByRole("radio", { name: "Efectivo" }).click();
 }

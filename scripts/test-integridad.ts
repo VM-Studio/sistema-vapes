@@ -1748,7 +1748,7 @@ async function main() {
   check(
     v.generarVentaSchema.safeParse({
       depositoId: "d",
-      cliente: { nuevo: { nombre: "Ana", telefono: "11 5555-0000" } },
+      cliente: { nuevo: { nombre: "Ana", telefono: "11 5555-0000", origenId: "u" } },
       pagos: [{ medioPago: "BINANCE", monto: 1 }],
       items: [{ varianteId: "a", cantidad: 1 }],
     }).data?.tipo === "UNITARIA",
@@ -1806,9 +1806,14 @@ async function main() {
     "proveedor con el mismo producto dos veces es error",
   );
   check(
-    v.crearClienteSchema.safeParse({ nombre: "C", telefono: "011 5555-0101" }).data?.telefono ===
-      "+541155550101" && v.normalizarTelefono("+54 9 11 5555-0101") === "+5491155550101",
+    v.crearClienteSchema.safeParse({ nombre: "C", telefono: "011 5555-0101", origenId: "u" }).data
+      ?.telefono === "+541155550101" &&
+      v.normalizarTelefono("+54 9 11 5555-0101") === "+5491155550101",
     "teléfono de cliente → +54 + dígitos",
+  );
+  check(
+    !v.crearClienteSchema.safeParse({ nombre: "C", telefono: "011 5555-0101" }).success,
+    "cliente sin «¿De quién viene?» es error",
   );
   check(
     !v.crearClienteSchema.safeParse({ nombre: "C", telefono: "123" }).success,

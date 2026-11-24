@@ -8,8 +8,9 @@ import { diaEn, limitesRango, ZONA_DEFAULT } from "@/lib/zona-horaria";
  *
  * Cada venta CONFIRMADA del vendedor en el mes cae en una de 4 categorías —
  * tipo de venta (UNITARIA = minorista, MAYORISTA) × cliente nuevo
- * (Venta.clienteNuevo: el cliente se dio de alta con esa venta) — y gana
- * unidades × tarifa de la categoría.
+ * (Venta.clienteNuevo: el cliente se dio de alta con esa venta; o el cliente
+ * VIENE de ese vendedor, Cliente.origenId — ver cuentaComoNuevo en
+ * ganancia-vendedor.service) — y gana unidades × tarifa de la categoría.
  *
  * Criterio de devoluciones (garantías, ver devolucion.service): una devolución
  * REGISTRADA vinculada a una venta CONFIRMADA del vendedor descuenta las

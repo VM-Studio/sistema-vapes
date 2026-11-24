@@ -1,7 +1,7 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { MessageCircle, Plus, UserPlus, Users } from "lucide-react";
+import { ChevronRight, MessageCircle, Plus, UserPlus, UserRoundSearch, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -34,11 +34,14 @@ export function ClientesView({
   params,
   nuevosDelMes,
   verTotales,
+  sinOrigen = 0,
 }: {
   resultado: { clientes: ClienteListado[]; total: number; page: number; pageSize: number };
   params: Record<string, string>;
   nuevosDelMes: number;
   verTotales: boolean;
+  /** Dueños: clientes que todavía no tienen «¿De quién viene?». */
+  sinOrigen?: number;
 }) {
   const router = useRouter();
   const ruta = useRutaPanel();
@@ -74,6 +77,24 @@ export function ClientesView({
           )
         }
       />
+      {sinOrigen > 0 && (
+        <Link
+          href={ruta("/clientes/origen")}
+          className="bg-warning-soft text-warning-soft-foreground rounded-card mb-4 flex min-h-14 items-center gap-3 p-4"
+          data-testid="aviso-clientes-sin-origen"
+        >
+          <UserRoundSearch className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+          <span className="min-w-0 flex-1 text-sm">
+            <span className="font-semibold">
+              {sinOrigen === 1
+                ? "1 cliente no tiene «¿De quién viene?»"
+                : `${formatearNumero(sinOrigen)} clientes no tienen «¿De quién viene?»`}
+            </span>{" "}
+            Completalo para que la ganancia de cliente nuevo de los vendedores salga bien.
+          </span>
+          <ChevronRight className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+        </Link>
+      )}
       <section aria-label="Resumen" className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
         <Card variant="kpi" data-testid="clientes-nuevos-mes">
           <p className="text-muted text-small flex items-center gap-2 font-medium">

@@ -97,7 +97,11 @@ beforeAll(async () => {
     });
     const cliente = await m.clientes.crearCliente(
       ctx,
-      { nombre: `Clienta ML ${suf}`, telefono: `11 5${suf.slice(-3)} ${suf.slice(0, 4)}` },
+      {
+        nombre: `Clienta ML ${suf}`,
+        telefono: `11 5${suf.slice(-3)} ${suf.slice(0, 4)}`,
+        origenId: ctx.usuarioId,
+      },
       tx,
     );
     return { variantes: producto.variantes, cliente };

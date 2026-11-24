@@ -148,15 +148,22 @@ async function resolverCliente(
   clienteId: string | null;
   clienteNombre: string | null;
   clienteTelefono: string | null;
+  clienteOrigenId: string | null;
 }> {
-  if (!cliente) return { clienteId: null, clienteNombre: null, clienteTelefono: null };
+  const vacio = {
+    clienteId: null,
+    clienteNombre: null,
+    clienteTelefono: null,
+    clienteOrigenId: null,
+  };
+  if (!cliente) return vacio;
   if ("id" in cliente) {
     const c = await tx.cliente.findFirst({
       where: { id: cliente.id, deletedAt: null },
       select: { id: true, nombre: true, telefono: true },
     });
     if (!c) throw new NotFoundError("El cliente no existe o fue dado de baja.");
-    return { clienteId: c.id, clienteNombre: c.nombre, clienteTelefono: c.telefono };
+    return { ...vacio, clienteId: c.id, clienteNombre: c.nombre, clienteTelefono: c.telefono };
   }
   const nombre = cliente.nombre.trim().replace(/\s+/g, " ");
   if (!nombre) throw new ValidationError("Ingresá el nombre", { nombre: ["Ingresá el nombre"] });
@@ -170,11 +177,18 @@ async function resolverCliente(
   });
   if (existente)
     return {
+      ...vacio,
       clienteId: existente.id,
       clienteNombre: existente.nombre,
       clienteTelefono: existente.telefono,
     };
-  return { clienteId: null, clienteNombre: nombre, clienteTelefono: telefono };
+  // «De quién viene»: lo exige el schema; solo una cotización vieja duplicada puede no tenerlo.
+  return {
+    clienteId: null,
+    clienteNombre: nombre,
+    clienteTelefono: telefono,
+    clienteOrigenId: cliente.origenId?.trim() || null,
+  };
 }
 
 function exigirDescuento(
@@ -456,11 +470,17 @@ export async function duplicar(ctx: Ctx, id: string): Promise<{ id: string; codi
     .map((i) => ({ varianteId: i.varianteId, cantidad: i.cantidad }));
   if (items.length === 0)
     throw new DomainError("Ninguno de los productos de la cotización está disponible hoy.");
-  const cliente: ClienteCotizacion = c.clienteId
-    ? { id: c.clienteId }
-    : c.clienteNombre && c.clienteTelefono
-      ? { nombre: c.clienteNombre, telefono: c.clienteTelefono }
-      : null;
+  const cliente = (
+    c.clienteId
+      ? { id: c.clienteId }
+      : c.clienteNombre && c.clienteTelefono
+        ? {
+            nombre: c.clienteNombre,
+            telefono: c.clienteTelefono,
+            origenId: c.clienteOrigenId ?? "",
+          }
+        : null
+  ) as ClienteCotizacion;
   return crearCotizacion(
     ctx,
     { tipo: c.tipo, items, cliente, notas: c.notas ?? undefined, aPrecioML: c.aPrecioML },
@@ -621,7 +641,13 @@ export async function obtener(ctx: Ctx, id: string) {
     cliente: c.cliente
       ? { id: c.cliente.id, nombre: c.cliente.nombre, telefono: c.cliente.telefono }
       : c.clienteNombre
-        ? { id: null, nombre: c.clienteNombre, telefono: c.clienteTelefono }
+        ? {
+            id: null,
+            nombre: c.clienteNombre,
+            telefono: c.clienteTelefono,
+            /** De quién viene el cliente sin registrar (null en cotizaciones viejas). */
+            origenId: c.clienteOrigenId,
+          }
         : null,
     vendedor: c.vendedor,
     subtotal: dec(c.subtotal),
@@ -1200,7 +1226,9 @@ export interface PreparacionConversion {
     }[];
   };
   cliente:
-    { id: string; nombre: string; telefono: string } | { nombre: string; telefono: string } | null;
+    | { id: string; nombre: string; telefono: string }
+    | { nombre: string; telefono: string; origenId: string }
+    | null;
   vencida: boolean;
   /** Solo si está vencida: los precios que cambiarían al recalcular a hoy. */
   cambios: { titulo: string; antes: string; despues: string }[];
@@ -1268,7 +1296,11 @@ export async function prepararConversion(ctx: Ctx, id: string): Promise<Preparac
       ? c.cliente.id
         ? { id: c.cliente.id, nombre: c.cliente.nombre, telefono: c.cliente.telefono ?? "" }
         : c.cliente.telefono
-          ? { nombre: c.cliente.nombre, telefono: c.cliente.telefono }
+          ? {
+              nombre: c.cliente.nombre,
+              telefono: c.cliente.telefono,
+              origenId: ("origenId" in c.cliente ? c.cliente.origenId : null) ?? "",
+            }
           : null
       : null,
     vencida: c.vencida,
@@ -1326,9 +1358,16 @@ export async function convertirEnVenta(
           throw new DomainError("Elegí el cliente de la venta.");
         try {
           clienteId = (
-            await crearCliente(ctx, { nombre: c.clienteNombre, telefono: c.clienteTelefono }, tx, {
-              vendedorId: await carteraDeVendedor(tx, ctx.usuarioId),
-            })
+            await crearCliente(
+              ctx,
+              { nombre: c.clienteNombre, telefono: c.clienteTelefono, origenId: c.clienteOrigenId },
+              tx,
+              {
+                vendedorId: await carteraDeVendedor(tx, ctx.usuarioId),
+                // Cotización guardada antes de v2.13.0: queda para que la completen los dueños.
+                sinOrigen: !c.clienteOrigenId,
+              },
+            )
           ).id;
           clienteRecienCreado = true;
         } catch (e) {

@@ -20,6 +20,7 @@ import {
   SkeletonTarjeta,
 } from "@/components/analitica/secciones";
 import { SelectorPeriodo } from "@/components/analitica/selector-periodo";
+import { AvisoClientesSinOrigen } from "@/components/clientes/aviso-sin-origen";
 import { AvisoLiquidacionesInicio, TarjetaMiGanancia } from "@/components/ganancia/tarjetas-inicio";
 import { cardVariants } from "@/components/ui/card";
 import { obtenerConfigFacturacion } from "@/server/services/configuracion.service";
@@ -80,6 +81,7 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
         {avisoEscaneo}
         {owner ? (
           <Suspense fallback={null}>
+            <AvisoClientesSinOrigen ctx={ctx} />
             <AvisoLiquidacionesInicio ctx={ctx} />
           </Suspense>
         ) : (
@@ -165,6 +167,7 @@ export default async function InicioPanelPage({ searchParams }: { searchParams: 
       {avisoEscaneo}
       {owner && (
         <Suspense fallback={null}>
+          <AvisoClientesSinOrigen ctx={ctx} />
           <AvisoLiquidacionesInicio ctx={ctx} />
         </Suspense>
       )}

@@ -52,6 +52,9 @@ async function hastaElPago(page: Page, cliente: string, telefono: string) {
   await modal(page).getByRole("button", { name: "Sí", exact: true }).click();
   await modal(page).getByLabel("Nombre").fill(cliente);
   await modal(page).getByLabel("Teléfono").fill(telefono);
+  await modal(page)
+    .getByLabel(/De quién viene/)
+    .selectOption({ label: "Juan Cruz" });
   await continuar(page).click();
   await expect(modal(page).getByText("¿Cómo paga?")).toBeVisible();
 }

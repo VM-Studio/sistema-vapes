@@ -7,6 +7,7 @@ import { tieneCarteraClientes } from "@/lib/permisos";
 import {
   actualizarClienteSchema,
   crearClienteSchema,
+  origenClienteObligatorio,
   telefonoConsultaSchema,
 } from "@/lib/validations/cliente";
 import { id } from "@/lib/validations/common";
@@ -37,11 +38,12 @@ function revalidar() {
   revalidatePath("/p/[slug]/clientes", "layout");
 }
 
-/** «Ya lo tenía»: alta en la cartera sin venta (no cuenta como cliente nuevo). */
+/** «Ya lo tenía»: alta en la cartera sin venta (cuenta como nuevo solo si viene del vendedor). */
 export const agregarClienteCarteraAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCartera();
+  // «De quién viene» lo exige el servicio solo si se crea (al sumar uno existente no hace falta).
   const { sumarExistente, ...datos } = crearClienteSchema
-    .extend({ sumarExistente: z.boolean().default(false) })
+    .extend({ sumarExistente: z.boolean().default(false), origenId: z.string().trim().optional() })
     .parse(input);
   const r = await agregarACartera(ctx, ctx.usuarioId, datos, { sumarExistente });
   revalidar();
@@ -51,8 +53,10 @@ export const agregarClienteCarteraAction = actionHandler(async (input: unknown) 
 /** «Cargar varios»: una línea por cliente (nombre y teléfono). */
 export const importarCarteraAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCartera();
-  const { texto } = z.object({ texto: z.string().max(60_000) }).parse(input);
-  const r = await importarCartera(ctx, ctx.usuarioId, texto);
+  const { texto, origenId } = z
+    .object({ texto: z.string().max(60_000), origenId: origenClienteObligatorio })
+    .parse(input);
+  const r = await importarCartera(ctx, ctx.usuarioId, texto, origenId);
   revalidar();
   return r;
 });

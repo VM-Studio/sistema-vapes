@@ -78,7 +78,11 @@ export function AceptarCotizacion({
             cliente:
               cliente.tipo === "existente"
                 ? { id: cliente.id }
-                : { nombre: cliente.nombre, telefono: cliente.telefono },
+                : {
+                    nombre: cliente.nombre,
+                    telefono: cliente.telefono,
+                    origenId: cliente.origenId,
+                  },
           }),
     }).catch(() => null);
     setEnviando(false);

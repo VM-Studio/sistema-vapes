@@ -5,6 +5,25 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.13.0] - 2026-11-23 — «¿De quién viene este cliente?» y cliente nuevo de Trinidad
+
+### Agregado
+
+- **«¿De quién viene este cliente?»** (obligatorio en toda alta: Clientes, «¿Es cliente nuevo?»
+  de la venta y del cotizador, «Mis clientes» y «Cargar varios»). Opciones: los dueños y los
+  vendedores del panel. Se ve en la ficha del cliente («Viene de») y solo un dueño lo cambia.
+- **Ganancia de cliente nuevo por cliente propio.** Si el vendedor que vende es de quien viene
+  el cliente, la venta gana la tarifa de cliente nuevo (minorista o mayorista) aunque al vender
+  se contestara «No» a «¿Es cliente nuevo?». Se calcula en vivo: si un dueño completa o corrige
+  el origen, cambia el mes en curso y los no liquidados (los liquidados no cambian).
+- **Clientes → «De quién viene»** (dueños): los clientes cargados antes de esta versión, con un
+  botón por persona para responder cada uno; aviso en Inicio y en Clientes hasta completarlos.
+
+### Migración
+
+- `Cliente.origenId` y `Cotizacion.clienteOrigenId` (nullable, FK a Usuario). Los clientes
+  existentes quedan sin responder hasta que un dueño los completa.
+
 ## [2.12.0] - 2026-11-19 — Eliminar clientes
 
 ### Agregado

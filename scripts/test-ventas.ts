@@ -170,7 +170,7 @@ async function main() {
   const v1 = await generarVenta(
     ctx,
     entrada({
-      cliente: { nuevo: { nombre: "Nico Test", telefono } },
+      cliente: { nuevo: { nombre: "Nico Test", telefono, origenId: owner.id } },
       items: [
         { varianteId: mango.id, cantidad: 2 },
         { varianteId: frutilla.id, cantidad: 1, precioEspecial: 15000 },
@@ -318,7 +318,7 @@ async function main() {
     generarVenta(
       ctx,
       entrada({
-        cliente: { nuevo: { nombre: "No debería existir", telefono: tel3 } },
+        cliente: { nuevo: { nombre: "No debería existir", telefono: tel3, origenId: owner.id } },
         items: [
           { varianteId: mango.id, cantidad: 1 },
           { varianteId: sinCompras.id, cantidad: 50 },
@@ -420,7 +420,7 @@ async function main() {
     generarVenta(
       ctx,
       entrada({
-        cliente: { nuevo: { nombre: "Otro Nico", telefono: `0${telefono}` } },
+        cliente: { nuevo: { nombre: "Otro Nico", telefono: `0${telefono}`, origenId: owner.id } },
         items: [{ varianteId: mango.id, cantidad: 1 }],
       }),
       DUENO,
@@ -567,7 +567,7 @@ async function main() {
     generarVentaSchema.parse({
       depositoId: gCos.id,
       pagos: [{ medioPago: "EFECTIVO", monto: 17000 }],
-      cliente: { nuevo: { nombre: "Clienta Cosmetic", telefono } },
+      cliente: { nuevo: { nombre: "Clienta Cosmetic", telefono, origenId: owner.id } },
       items: [{ varianteId: podCos.variantes[0]!.id, cantidad: 1 }],
     }),
     DUENO,
