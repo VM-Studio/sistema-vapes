@@ -17,6 +17,7 @@ export interface DepositoListado {
   activo: boolean;
   esPrincipal: boolean;
   escaneoRemoto: boolean;
+  conTransito: boolean;
   unidades: number;
 }
 
@@ -57,6 +58,7 @@ export async function listarDepositos(ctx: Pick<Ctx, "panelId">): Promise<Deposi
     activo: d.activo,
     esPrincipal: d.esPrincipal,
     escaneoRemoto: d.escaneoRemoto,
+    conTransito: d.conTransito,
     unidades: porDeposito.get(d.id) ?? 0,
   }));
 }
@@ -73,6 +75,7 @@ function snapshot(d: Deposito): Prisma.InputJsonObject {
     activo: d.activo,
     esPrincipal: d.esPrincipal,
     escaneoRemoto: d.escaneoRemoto,
+    conTransito: d.conTransito,
   };
 }
 
@@ -109,6 +112,7 @@ export async function crearDeposito(ctx: Ctx, input: CrearDeposito): Promise<{ i
           activo: input.activo,
           esPrincipal: false,
           escaneoRemoto: input.escaneoRemoto,
+          conTransito: input.conTransito,
         },
       });
       // El primer depósito activo del panel queda como principal.
@@ -156,6 +160,7 @@ export async function actualizarDeposito(
           direccion: input.direccion ?? null,
           activo: input.activo,
           escaneoRemoto: input.escaneoRemoto,
+          conTransito: input.conTransito,
         },
       });
       if (input.esPrincipal && !antes.esPrincipal) await hacerPrincipal(tx, input.id);

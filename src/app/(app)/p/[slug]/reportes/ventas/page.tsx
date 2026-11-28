@@ -24,6 +24,8 @@ import { requirePaginaPanel } from "@/server/auth/permissions";
 import { exigirPaginaReporteFacturado } from "@/server/reportes/armar";
 import { filtrosVentasSchema, rangoReporte } from "@/server/reportes/filtros";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
+import { comisionesVendedores } from "@/server/services/ganancia-vendedor.service";
+import { restarMontos } from "@/lib/moneda";
 import {
   opcionesFiltros,
   reporteVentas,
@@ -49,11 +51,16 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
   const owner = esOwner(ctx.usuario);
   const r = rangoReporte(plano);
   const f = filtrosVentasSchema.parse(plano);
-  const [v, o, { mediosPago }] = await Promise.all([
+  // Ganancia neta (sin la comisión por vape de Trinidad): dueños, sin filtros que achiquen las ventas.
+  const sinFiltros = !f.vendedorId && !f.depositoId && !f.medioPago && !f.tipo && !f.estado;
+  const [v, o, { mediosPago }, comisiones] = await Promise.all([
     reporteVentas(ctx, r, f, { owner }),
     opcionesFiltros(ctx),
     obtenerConfigVentas(ctx),
+    owner && sinFiltros ? comisionesVendedores(ctx, { inicio: r.inicio, fin: r.fin }) : null,
   ]);
+  const hayComision = comisiones !== null && Number(comisiones.total.pesos) !== 0;
+  const comisionDe = comisiones?.porVendedor.map((c) => c.nombre).join(" y ") ?? "";
   const PATH = rutaPanel(ctx.panel.slug, "/reportes/ventas");
 
   return (
@@ -122,9 +129,16 @@ export default async function ReporteVentasPage({ searchParams }: { searchParams
         />
         {v.resumen.ganancia !== null && (
           <StatCard
-            label="Ganancia bruta"
+            label={hayComision ? "Ganancia total" : "Ganancia bruta"}
             value={textoPrincipal(v.resumen.ganancia)}
             hint={textoEquivalentes(v.resumen.ganancia)}
+          />
+        )}
+        {v.resumen.ganancia !== null && hayComision && comisiones && (
+          <StatCard
+            label="Ganancia neta (dueños)"
+            value={textoPrincipal(restarMontos(v.resumen.ganancia, comisiones.total))}
+            hint={`sin ${textoPrincipal(comisiones.total)} de comisión de ${comisionDe}`}
           />
         )}
       </GrillaKpis>

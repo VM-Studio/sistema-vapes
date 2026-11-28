@@ -1,7 +1,7 @@
 "use client";
 
 import type { MedioPago } from "@prisma/client";
-import { HandCoins, type LucideIcon, Plus, ShoppingBag, Split, X } from "lucide-react";
+import { Bike, HandCoins, type LucideIcon, Plus, ShoppingBag, Split, X } from "lucide-react";
 
 import type { ClienteElegido } from "@/components/clientes/selector-cliente";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,7 @@ export function PasoPago({
   onDescuento,
   onNotas,
   escaneoRemoto = null,
+  retiraMoto = null,
 }: {
   deposito: string;
   cliente: ClienteElegido;
@@ -91,6 +92,8 @@ export function PasoPago({
   onPrecioML?: (varianteId: string, precio: string) => void;
   onDescuento: (d: string) => void;
   onNotas: (n: string) => void;
+  /** «¿La retira una moto?» (Sí / No). null = no se pregunta. */
+  retiraMoto?: { valor: boolean; onCambiar: (moto: boolean) => void } | null;
   /** Galpón con escaneo remoto: «Escanea Charly» (opcional). null = no aplica. */
   escaneoRemoto?: {
     activo: boolean;
@@ -345,6 +348,47 @@ export function PasoPago({
               onChange={(e) => onNotas(e.target.value)}
             />
           </div>
+        )}
+
+        {retiraMoto && (
+          <fieldset
+            className="bg-card rounded-card flex flex-col gap-3 p-4 md:p-5"
+            data-testid="retira-moto"
+          >
+            <legend className="sr-only">¿La retira una moto?</legend>
+            <p className="flex items-center gap-2 font-semibold" aria-hidden>
+              <Bike className="text-muted size-5" strokeWidth={1.75} /> ¿La retira una moto?
+            </p>
+            <div
+              role="radiogroup"
+              aria-label="¿La retira una moto?"
+              className="grid grid-cols-2 gap-2"
+            >
+              {[
+                { v: true, label: "Sí, una moto" },
+                { v: false, label: "No" },
+              ].map((o) => (
+                <button
+                  key={String(o.v)}
+                  type="button"
+                  role="radio"
+                  aria-checked={retiraMoto.valor === o.v}
+                  onClick={() => retiraMoto.onCambiar(o.v)}
+                  className={cn(
+                    "rounded-control min-h-12 border px-3 text-sm font-semibold transition-colors",
+                    retiraMoto.valor === o.v
+                      ? "border-foreground bg-foreground text-primary-foreground"
+                      : "border-foreground bg-surface text-foreground hover:bg-surface-2",
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-muted text-xs">
+              Si la retira un Uber Moto, {NOMBRE_ESCANEO} lo ve al escanear el pedido.
+            </p>
+          </fieldset>
         )}
 
         {escaneoRemoto && (

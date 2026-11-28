@@ -206,7 +206,8 @@ export async function middleware(req: NextRequest) {
 }
 
 /**
- * null = la ruta está permitida. Su pantalla es /p/{slug}/escaneo (las Server
+ * null = la ruta está permitida. Su pantalla es /p/{slug}/escaneo (y la de
+ * solo lectura /p/{slug}/ubicaciones: en qué estante está cada modelo; las Server
  * Actions de esa pantalla se postean a la misma ruta); "/" y /paneles lo llevan
  * ahí; el resto: 403 (API / acciones) o la pantalla de "sin acceso".
  */
@@ -218,7 +219,12 @@ async function restringirSoloEscaneo(
   esAction: boolean,
 ): Promise<NextResponse | null> {
   if (PERMITIDAS_SOLO_ESCANEO.has(pathname)) return null;
-  if (slug && (pathname === `/p/${slug}/escaneo` || pathname === `/p/${slug}/sin-acceso`))
+  if (
+    slug &&
+    (pathname === `/p/${slug}/escaneo` ||
+      pathname === `/p/${slug}/ubicaciones` ||
+      pathname === `/p/${slug}/sin-acceso`)
+  )
     return null;
   if (esApi(pathname) || esAction) return json(403, "FORBIDDEN", "No tenés acceso a esta sección");
   if (pathname === "/" || pathname === "/paneles" || (slug && pathname === `/p/${slug}`)) {

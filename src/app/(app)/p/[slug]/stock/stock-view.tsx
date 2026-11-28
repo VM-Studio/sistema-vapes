@@ -205,6 +205,8 @@ export function StockView({
       ? [{ id: "cantidad", nombre: "Disponible" }]
       : [
           ...depositos.map((d) => ({ id: d.id, nombre: d.nombre })),
+          // Enviado a un depósito con tránsito (Mercado Libre Full) que todavía no llegó.
+          ...(resumen.enTransito.unidades > 0 ? [{ id: "transito", nombre: "En tránsito" }] : []),
           { id: "total", nombre: "Total" },
         ]),
     { id: "escaneado", nombre: "Escaneado" },
@@ -217,7 +219,9 @@ export function StockView({
         ? f.escaneado
         : col === "retirado"
           ? f.retirado
-          : (f.porDeposito[col] ?? 0);
+          : col === "transito"
+            ? f.enTransito
+            : (f.porDeposito[col] ?? 0);
   const destacada = (col: string) => col === "total" || col === "cantidad";
 
   const filaTabla = (f: FilaStock, anidada = false) => (
@@ -383,6 +387,14 @@ export function StockView({
               hint={`${formatearNumero(d.bajoMinimo)} bajo mínimo`}
             />
           ))}
+          {resumen.enTransito.unidades > 0 && (
+            <StatCard
+              label="En tránsito"
+              value={formatearNumero(resumen.enTransito.unidades)}
+              href={ruta("/stock/transferencias?estado=PENDIENTE")}
+              hint={`${resumen.enTransito.envios} envío${resumen.enTransito.envios === 1 ? "" : "s"} a ${resumen.enTransito.destinos.join(", ")} sin llegar`}
+            />
+          )}
           <StatCard
             label="Total del panel"
             value={formatearNumero(resumen.total)}

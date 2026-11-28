@@ -226,6 +226,16 @@ async function datosDelMes(
   mes: Mes,
 ): Promise<{ ventas: VentaParaGanancia[]; devoluciones: DevolucionParaGanancia[] }> {
   const { inicio, fin } = limitesMes(mes);
+  return datosDelRango(db, usuarioId, inicio, fin);
+}
+
+/** Ventas confirmadas del vendedor y devoluciones registradas en [inicio, fin). */
+async function datosDelRango(
+  db: Db,
+  usuarioId: string,
+  inicio: Date,
+  fin: Date,
+): Promise<{ ventas: VentaParaGanancia[]; devoluciones: DevolucionParaGanancia[] }> {
   const [ventas, devoluciones] = await Promise.all([
     db.venta.findMany({
       where: {
@@ -971,3 +981,72 @@ const fechaHora = (d: Date) =>
   }).format(d);
 const fechaCorta = (d: Date) =>
   new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeZone: ZONA_DEFAULT }).format(d);
+
+// =============================================================================
+// Comisión de los vendedores en un período (para la ganancia neta de los dueños)
+// =============================================================================
+
+export interface ComisionesPeriodo {
+  /** Σ ganancia por vape de todos los vendedores con tarifas, cada venta a su cotización. */
+  total: Montos;
+  /** Por vendedor (solo los que tienen algo en el período). */
+  porVendedor: { usuarioId: string; nombre: string; total: Montos }[];
+}
+
+/**
+ * Lo que se lleva cada vendedor con ganancia por vape (Trinidad) por las
+ * ventas de [inicio, fin), con las MISMAS reglas que su liquidación
+ * (calcularGanancia: categoría, cliente nuevo según origen, devoluciones del
+ * período restan) y las tarifas vigentes. Los pesos de cada venta pasan a
+ * USDT / dólares con la cotización de ESA venta (devoluciones: la de su venta).
+ * Solo dueños: es para «Ganancia neta» = ganancia − comisiones.
+ */
+export async function comisionesVendedores(
+  ctx: CtxConUsuario,
+  periodo: { inicio: Date; fin: Date },
+): Promise<ComisionesPeriodo> {
+  await exigirOwner(ctx, "Las comisiones de los vendedores");
+  const db = dbPara(ctx.panelId);
+  const tarifas = await db.tarifaVendedor.findMany({
+    include: { usuario: { select: { id: true, nombre: true } } },
+  });
+  const porVendedor: ComisionesPeriodo["porVendedor"] = [];
+  for (const t of tarifas) {
+    const { ventas, devoluciones } = await datosDelRango(
+      db,
+      t.usuarioId,
+      periodo.inicio,
+      periodo.fin,
+    );
+    if (ventas.length === 0 && devoluciones.length === 0) continue;
+    const calculo = calcularGanancia(aTarifas(t), ventas, devoluciones);
+    const cotizaciones = new Map(
+      (
+        await db.venta.findMany({
+          where: { id: { in: [...new Set(calculo.filas.map((f) => f.ventaId))] } },
+          select: { id: true, tipoCambioUsdt: true, tipoCambioUsd: true },
+        })
+      ).map((v) => [v.id, v]),
+    );
+    const montos = calculo.filas.map((f) => {
+      const v = cotizaciones.get(f.ventaId);
+      const pesos = D(f.ganancia);
+      return {
+        pesos: pesos.toFixed(2),
+        usdt: v
+          ? pesos.div(v.tipoCambioUsdt).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2)
+          : "0.00",
+        usd: v
+          ? pesos.div(v.tipoCambioUsd).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2)
+          : "0.00",
+      };
+    });
+    const total = montos.length ? sumar(montos) : MONTOS_CERO;
+    if (Number(total.pesos) !== 0)
+      porVendedor.push({ usuarioId: t.usuarioId, nombre: t.usuario.nombre, total });
+  }
+  return {
+    total: porVendedor.length ? sumar(porVendedor.map((v) => v.total)) : MONTOS_CERO,
+    porVendedor,
+  };
+}

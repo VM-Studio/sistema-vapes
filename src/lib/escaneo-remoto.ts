@@ -34,6 +34,8 @@ export interface IdentidadVape {
 /** Un ítem de la venta a escanear. */
 export interface ItemEscaneo extends IdentidadVape {
   cantidad: number;
+  /** Dónde está guardado ese modelo («Ubicaciones de productos»); null = sin cargar. */
+  ubicacion?: string | null;
 }
 
 /** Un código escaneado, ya resuelto contra el catálogo del panel (null = no existe). */

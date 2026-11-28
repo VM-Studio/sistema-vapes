@@ -28,7 +28,14 @@ import {
 } from "@/server/services/cliente.service";
 
 /** Desde dónde se elige un cliente (SelectorCliente). */
-const MODULOS_SELECTOR = [Modulo.CLIENTES, Modulo.VENTAS, Modulo.DEVOLUCIONES, Modulo.COTIZADOR];
+// FIADOS: «Cargar fiado anterior» elige (o da de alta) al cliente que debe.
+const MODULOS_SELECTOR = [
+  Modulo.CLIENTES,
+  Modulo.VENTAS,
+  Modulo.DEVOLUCIONES,
+  Modulo.COTIZADOR,
+  Modulo.FIADOS,
+];
 
 /** CLIENTES (en el panel actual): crear → alta · editar → datos · eliminar → desactivar · dueños: eliminar (borrado lógico). */
 

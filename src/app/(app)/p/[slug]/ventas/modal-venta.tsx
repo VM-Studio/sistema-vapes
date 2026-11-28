@@ -350,6 +350,7 @@ export function ModalVenta({
         depositoId: venta.depositoId,
         pagos: resumenPago.pagos,
         fiar,
+        retiraMoto: venta.retiraMoto,
         ...(verificacion ? { verificacion } : {}),
         ...(conversion.recalcular ? { recalcular: true } : {}),
         // El cliente de la cotización lo resuelve el servidor; solo viaja el elegido acá.
@@ -411,6 +412,7 @@ export function ModalVenta({
       ...(descuento && Number(descuento) > 0 ? { descuento } : {}),
       notas: venta.notas,
       escaneoRemoto: pedirEscaneoRemoto,
+      retiraMoto: venta.retiraMoto,
     }).catch(() => null);
     setEnviando(false);
     if (!r) {
@@ -711,6 +713,10 @@ export function ModalVenta({
                     onPago={(p) => cambiar(p)}
                     onDescuento={(descuento) => cambiar({ descuento })}
                     onNotas={(notas) => cambiar({ notas })}
+                    retiraMoto={{
+                      valor: venta.retiraMoto,
+                      onCambiar: (retiraMoto) => cambiar({ retiraMoto }),
+                    }}
                     escaneoRemoto={
                       ofreceEscaneoRemoto
                         ? {

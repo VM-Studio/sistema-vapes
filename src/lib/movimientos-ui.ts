@@ -118,6 +118,16 @@ export const ESTADO_TRANSFERENCIA_UI = {
   ANULADA: { label: "Anulada", variante: "neutral" },
 } as const;
 
+/** Estado para mostrar: una PENDIENTE que ya salió del origen está «En tránsito». */
+export function estadoTransferenciaUi(t: {
+  estado: keyof typeof ESTADO_TRANSFERENCIA_UI;
+  enTransito: boolean;
+}) {
+  return t.estado === "PENDIENTE" && t.enTransito
+    ? ({ label: "En tránsito", variante: "warning" } as const)
+    : ESTADO_TRANSFERENCIA_UI[t.estado];
+}
+
 export const ESTADO_COMPRA_UI = {
   /** «Confirmada · pendiente de recibir»: todavía no sumó stock (ver compra.service). */
   BORRADOR: { label: "Pendiente de recibir", variante: "warning" },

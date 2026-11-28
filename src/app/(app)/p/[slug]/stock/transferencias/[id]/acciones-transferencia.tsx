@@ -21,10 +21,17 @@ export function AccionesTransferencia({
   whatsapp,
   puedeCompletar,
   puedeAnular,
+  enTransito = false,
+  origen,
+  destino,
 }: {
   id: string;
   codigo: string;
   pendiente: boolean;
+  /** Ya salió del origen: al confirmar solo entra al destino; al anular, vuelve al origen. */
+  enTransito?: boolean;
+  origen?: string;
+  destino?: string;
   /** GET /api/p/{slug}/transferencias/{id}/remito (se genera al abrirlo). */
   remitoHref: string;
   whatsapp: string;
@@ -44,7 +51,12 @@ export function AccionesTransferencia({
     setCompletando(false);
     if (!r.ok) return toast.error("No se pudo confirmar la recepción", r.error.message);
     invalidarResoluciones();
-    toast.success(`Transferencia ${codigo} recibida`, `Se movieron ${r.data.unidades} unidades.`);
+    toast.success(
+      `Transferencia ${codigo} recibida`,
+      enTransito
+        ? `Entraron ${r.data.unidades} unidades a ${destino}.`
+        : `Se movieron ${r.data.unidades} unidades.`,
+    );
     router.refresh();
   }
 
@@ -88,7 +100,8 @@ export function AccionesTransferencia({
       </a>
       {puedeCompletar && (
         <Button onClick={() => setCompletando(true)}>
-          <PackageCheck strokeWidth={1.75} /> Confirmar recepción
+          <PackageCheck strokeWidth={1.75} />{" "}
+          {enTransito ? `Llegó a ${destino}` : "Confirmar recepción"}
         </Button>
       )}
 
@@ -96,7 +109,11 @@ export function AccionesTransferencia({
         open={completando}
         onOpenChange={setCompletando}
         title={`¿Confirmar la recepción de ${codigo}?`}
-        description="Se descuenta el stock del origen y se suma en el destino. Si algún producto no alcanza, no se mueve nada y sigue pendiente."
+        description={
+          enTransito
+            ? `La mercadería en tránsito entra al stock de ${destino}.`
+            : "Se descuenta el stock del origen y se suma en el destino. Si algún producto no alcanza, no se mueve nada y sigue pendiente."
+        }
         confirmLabel="Confirmar recepción"
         onConfirm={completar}
       />
@@ -105,7 +122,11 @@ export function AccionesTransferencia({
           open={anulando}
           onOpenChange={setAnulando}
           title={`¿Anular la transferencia ${codigo}?`}
-          description="No mueve stock: solo la descarta."
+          description={
+            enTransito
+              ? `La mercadería en tránsito vuelve al stock de ${origen}.`
+              : "No mueve stock: solo la descarta."
+          }
           footer={
             <>
               <Button variant="secondary" onClick={() => setAnulando(false)} disabled={enviando}>

@@ -18,11 +18,14 @@ import { fechasDeRango, finDelDia, inicioDelDia } from "@/lib/fechas";
 import { formatearNumero } from "@/lib/format";
 import { textoEquivalentes, textoPrincipal } from "@/lib/moneda";
 import { rutaPanel } from "@/lib/paneles";
+import { puede } from "@/lib/permisos";
 import { formatearFecha } from "@/lib/utils";
 import { linkWhatsApp, mostrarTelefono } from "@/lib/validations/cliente";
 import { listarDeudoresSchema } from "@/lib/validations/fiado";
 import { requirePaginaPanel } from "@/server/auth/permissions";
 import { deudores, resumenFiados, type Deudor } from "@/server/services/fiado.service";
+
+import { CargarFiadoAnterior } from "./cargar-fiado-anterior";
 
 export const metadata: Metadata = { title: "Fiados" };
 
@@ -73,7 +76,15 @@ export default async function FiadosPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHeader title="Fiados" subtitle="Cuenta corriente: quién debe, cuánto y desde cuándo" />
+      <PageHeader
+        title="Fiados"
+        subtitle="Cuenta corriente: quién debe, cuánto y desde cuándo"
+        actions={
+          puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "crear") && (
+            <CargarFiadoAnterior variante="primary" />
+          )
+        }
+      />
       <section
         aria-label="Resumen de fiados"
         className="mb-4 grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4"
@@ -120,7 +131,7 @@ export default async function FiadosPage({ searchParams }: { searchParams: Promi
             <EmptyState
               icon={HandCoins}
               title="Nadie debe nada"
-              description="Cuando una venta se cobra en parte, lo pendiente aparece acá."
+              description="Cuando una venta se cobra en parte, lo pendiente aparece acá. Lo que te debían de antes del sistema cargalo con «Cargar fiado anterior»."
             />
           )
         }
@@ -146,7 +157,7 @@ export default async function FiadosPage({ searchParams }: { searchParams: Promi
           },
           {
             key: "ventas",
-            header: "Ventas pendientes",
+            header: "Pendientes",
             className: "text-right tabular-nums",
             cell: (d) => d.ventasPendientes,
           },
@@ -167,7 +178,7 @@ export default async function FiadosPage({ searchParams }: { searchParams: Promi
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{d.nombre}</span>
                 <span className="text-muted text-small block">
-                  {d.ventasPendientes} venta{d.ventasPendientes === 1 ? "" : "s"} pendiente
+                  {d.ventasPendientes} deuda{d.ventasPendientes === 1 ? "" : "s"} pendiente
                   {d.ventasPendientes === 1 ? "" : "s"}
                 </span>
               </span>

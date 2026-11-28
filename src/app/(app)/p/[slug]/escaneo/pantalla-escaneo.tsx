@@ -2,19 +2,23 @@
 
 import {
   ArrowLeft,
+  Bike,
   CheckCircle2,
   ChevronRight,
   CircleAlert,
+  MapPin,
   RefreshCw,
   RotateCcw,
   ScanBarcode,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { useRutaPanel } from "@/components/layout/panel-context";
 import { useUsuario } from "@/components/layout/usuario-context";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cardVariants } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
@@ -58,6 +62,7 @@ export function PantallaEscaneo({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const ruta = useRutaPanel();
   const [ventas, setVentas] = useState(inicial);
   const [actualizando, setActualizando] = useState(false);
   const [seleccionada, setSeleccionada] = useState<VentaParaEscanear | null>(null);
@@ -117,15 +122,24 @@ export function PantallaEscaneo({
             Tocá una venta y escaneá cada vape. La lista se actualiza sola.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={() => void refrescar()}
-          aria-label="Actualizar la lista"
-          disabled={actualizando}
-        >
-          <RefreshCw className={cn(actualizando && "animate-spin")} strokeWidth={1.75} />
-        </Button>
+        <span className="flex shrink-0 items-center gap-2">
+          <Link
+            href={ruta("/ubicaciones")}
+            className={buttonVariants({ variant: "secondary" })}
+            data-testid="ir-ubicaciones"
+          >
+            <MapPin strokeWidth={1.75} /> Ubicaciones
+          </Link>
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => void refrescar()}
+            aria-label="Actualizar la lista"
+            disabled={actualizando}
+          >
+            <RefreshCw className={cn(actualizando && "animate-spin")} strokeWidth={1.75} />
+          </Button>
+        </span>
       </header>
 
       {ventas.length === 0 ? (
@@ -156,9 +170,16 @@ export function PantallaEscaneo({
                       <ChevronRight className="text-subtle size-5" strokeWidth={1.75} aria-hidden />
                     </span>
                   </span>
-                  <span className="text-muted text-small">
-                    {v.vendedor} · {formatearFechaHora(v.fecha)} · {v.deposito}
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-base font-semibold" data-testid="cliente-escaneo">
+                      <span className="text-muted text-small font-normal">Para: </span>
+                      {v.cliente}
+                    </span>
+                    <span className="text-muted text-small">
+                      {v.vendedor} · {formatearFechaHora(v.fecha)} · {v.deposito}
+                    </span>
                   </span>
+                  {v.retiraMoto && <AvisoMoto />}
                   <ul className="border-border flex flex-col gap-1.5 border-t pt-3">
                     {v.items.map((i) => (
                       <li key={i.varianteId} className="flex items-baseline gap-2 text-sm">
@@ -168,6 +189,7 @@ export function PantallaEscaneo({
                         <span className="min-w-0">
                           <span className="block font-medium">{productoDe(i, v)}</span>
                           {i.sabor && <span className="text-muted block">{i.sabor}</span>}
+                          {i.ubicacion && <Ubicacion texto={i.ubicacion} />}
                         </span>
                       </li>
                     ))}
@@ -180,6 +202,32 @@ export function PantallaEscaneo({
       )}
       {pie}
     </div>
+  );
+}
+
+/** «Pedido que lo retira una moto» (la venta se marcó «¿La retira una moto? Sí»). */
+function AvisoMoto() {
+  return (
+    <span
+      className="bg-warning-soft text-warning-soft-foreground rounded-control flex items-center gap-2 px-3 py-2 text-sm font-semibold"
+      data-testid="aviso-moto"
+    >
+      <Bike className="size-5 shrink-0" strokeWidth={1.75} aria-hidden />
+      Pedido que lo retira una moto
+    </span>
+  );
+}
+
+/** «📍 Estante A · fila 2»: dónde buscar el modelo (Ubicaciones de productos). */
+function Ubicacion({ texto }: { texto: string }) {
+  return (
+    <span
+      className="text-marca-azul flex items-center gap-1 text-sm font-semibold"
+      data-testid="ubicacion-item"
+    >
+      <MapPin className="size-4 shrink-0" strokeWidth={2} aria-hidden />
+      {texto}
+    </span>
   );
 }
 
@@ -316,9 +364,14 @@ function ModoEscaneo({
         <h1 className="font-mono text-2xl font-semibold" data-testid="venta-escaneando">
           {venta.codigo}
         </h1>
+        <p className="text-lg font-semibold" data-testid="cliente-escaneando">
+          <span className="text-muted text-small font-normal">Para: </span>
+          {venta.cliente}
+        </p>
         <p className="text-muted text-small">
           {venta.vendedor} · {formatearFechaHora(venta.fecha)} · {venta.deposito}
         </p>
+        {venta.retiraMoto && <AvisoMoto />}
       </header>
 
       <section aria-label="Escanear" className="bg-card rounded-card flex flex-col gap-3 p-4">
@@ -418,6 +471,7 @@ function ModoEscaneo({
                     destacado
                     error={campos.includes("sabor") ? detalle("sabor") : undefined}
                   />
+                  {i.ubicacion && <Ubicacion texto={i.ubicacion} />}
                 </div>
                 <span
                   className={cn(

@@ -34,7 +34,12 @@ export default async function NuevaTransferenciaPage({
   const valido = (id: string | null) => (depositos.some((d) => d.id === id) ? id : null);
   return (
     <NuevaTransferencia
-      depositos={depositos.map((d) => ({ id: d.id, nombre: d.nombre, esPrincipal: d.esPrincipal }))}
+      depositos={depositos.map((d) => ({
+        id: d.id,
+        nombre: d.nombre,
+        esPrincipal: d.esPrincipal,
+        conTransito: d.conTransito,
+      }))}
       unidades={Object.fromEntries(depositos.map((d) => [d.id, d.unidades]))}
       origenInicial={valido(texto("origen"))}
       destinoInicial={valido(texto("destino"))}

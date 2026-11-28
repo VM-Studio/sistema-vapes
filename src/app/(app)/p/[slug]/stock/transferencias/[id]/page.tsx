@@ -8,7 +8,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { formatearNumero } from "@/lib/format";
-import { ESTADO_TRANSFERENCIA_UI } from "@/lib/movimientos-ui";
+import { estadoTransferenciaUi } from "@/lib/movimientos-ui";
 import { rutaPanel } from "@/lib/paneles";
 import { rutaPdf } from "@/lib/pdfs";
 import { puede } from "@/lib/permisos";
@@ -41,7 +41,7 @@ export default async function TransferenciaPage({ params }: { params: Promise<{ 
   ]);
   const pendiente = t.estado === "PENDIENTE";
   const ruta = (r: string) => rutaPanel(ctx.panel.slug, r);
-  const estadoUi = ESTADO_TRANSFERENCIA_UI[t.estado];
+  const estadoUi = estadoTransferenciaUi(t);
 
   return (
     <>
@@ -71,6 +71,9 @@ export default async function TransferenciaPage({ params }: { params: Promise<{ 
             id={t.id}
             codigo={t.codigo}
             pendiente={pendiente}
+            enTransito={pendiente && t.enTransito}
+            destino={t.destino}
+            origen={t.origen}
             remitoHref={rutaPdf.remito(ctx.panel.slug, t.id)}
             whatsapp={whatsapp}
             puedeCompletar={pendiente && puede(ctx.usuario, ctx.panelId, Modulo.STOCK, "editar")}
@@ -156,7 +159,7 @@ export default async function TransferenciaPage({ params }: { params: Promise<{ 
           movimientos={movs}
           conDeposito
           vacio={
-            pendiente
+            pendiente && !t.enTransito
               ? "Todavía no se movió stock: se mueve al confirmar la recepción"
               : "Esta transferencia no movió stock"
           }

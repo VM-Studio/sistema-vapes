@@ -3,7 +3,7 @@
  * Solo la estructura para arrancar, SIN datos de negocio (ni productos, ni
  * marcas, ni categorías, ni proveedores, ni clientes, ni ventas):
  * - Paneles Vapes, Cosmetic y Especiales (con su logo), sus depósitos
- *   (Vapes: Ayres Plaza y Mercedes; Cosmetic y Especiales: Principal) y las
+ *   (Vapes: Ayres Plaza y Mercedes; Cosmetic: Casa y Mercado Libre; Especiales: Principal) y las
  *   secuencias de numeración (VENTA, COMPRA, TRANSFERENCIA, DEVOLUCION,
  *   COTIZACION). La migración de la reforma ya crea casi todo; acá se completa
  *   lo que falte.
@@ -286,7 +286,13 @@ interface PanelSeed {
   etiquetaEspecificacion: string;
   etiquetaUnidades?: string;
   orden: number;
-  depositos: { nombre: string; esPrincipal: boolean; id?: string; escaneoRemoto?: boolean }[];
+  depositos: {
+    nombre: string;
+    esPrincipal: boolean;
+    id?: string;
+    escaneoRemoto?: boolean;
+    conTransito?: boolean;
+  }[];
 }
 
 const PANELES: PanelSeed[] = [
@@ -311,7 +317,16 @@ const PANELES: PanelSeed[] = [
     logoUrl: "/logoCosmetics.png",
     etiquetaEspecificacion: "Contenido",
     orden: 2,
-    depositos: [{ nombre: "Principal", esPrincipal: true, id: "dep_cosmetic_principal" }],
+    // Casa (principal) y Mercado Libre Full: lo enviado a ML queda en tránsito hasta que llega.
+    depositos: [
+      { nombre: "Casa", esPrincipal: true, id: "dep_cosmetic_principal" },
+      {
+        nombre: "Mercado Libre",
+        esPrincipal: false,
+        id: "dep_pnl_cosmetic_mercado_libre",
+        conTransito: true,
+      },
+    ],
   },
   {
     id: "pnl_especiales",
@@ -332,6 +347,7 @@ const ENTIDADES_SECUENCIA = [
   "DEVOLUCION",
   "COTIZACION",
   "FACTURA",
+  "FIADO_ANTERIOR",
 ];
 
 /** Logos estáticos de /public: un logo subido desde la app (storage) no se pisa. */
@@ -370,6 +386,7 @@ async function seedPaneles() {
           nombre: d.nombre,
           esPrincipal: d.esPrincipal,
           escaneoRemoto: d.escaneoRemoto ?? false,
+          conTransito: d.conTransito ?? false,
         },
       });
     }

@@ -64,6 +64,8 @@ export interface VentaEnCurso {
   preciosML: Record<string, string>;
   /** «Escanea Charly» (solo galpones con escaneo remoto). */
   escaneoRemoto: boolean;
+  /** «¿La retira una moto?» (Uber Moto): Charly lo ve al escanear. */
+  retiraMoto: boolean;
 }
 
 export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
@@ -81,6 +83,7 @@ export const ventaVacia = (depositoId: string | null = null): VentaEnCurso => ({
   verificadas: {},
   preciosML: {},
   escaneoRemoto: false,
+  retiraMoto: false,
 });
 
 /** ¿Hay algo que se perdería al cerrar? */

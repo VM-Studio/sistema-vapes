@@ -1,6 +1,6 @@
 "use client";
 
-import { PackageCheck } from "lucide-react";
+import { Bike, PackageCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { formatearFechaHora } from "@/lib/utils";
@@ -38,6 +38,12 @@ export function ListasParaRetirar({ ventas }: { ventas: VentaParaRetirar[] }) {
               </span>
               <Badge variant="success">{unidades(v.unidades)}</Badge>
             </div>
+            {v.retiraMoto && (
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <Bike className="size-5 shrink-0" strokeWidth={1.75} aria-hidden /> Pedido que lo
+                retira una moto
+              </p>
+            )}
             <p className="text-small">
               {v.cliente} · {v.vendedor} · {v.deposito}
               {v.escaneadaAt && ` · escaneada ${formatearFechaHora(v.escaneadaAt)}`}

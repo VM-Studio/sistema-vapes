@@ -185,6 +185,7 @@ export const convertirCotizacionAction = actionHandler(async (input: unknown) =>
     depositoId: datos.depositoId,
     pagos: datos.pagos,
     fiar: datos.fiar,
+    retiraMoto: datos.retiraMoto,
     ...(clienteId ? { clienteId } : {}),
     ...(datos.recalcular ? { recalcular: true } : {}),
     ...(datos.verificacion ? { verificacion: datos.verificacion } : {}),

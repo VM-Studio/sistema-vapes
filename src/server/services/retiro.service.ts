@@ -119,6 +119,8 @@ export interface VentaParaRetirar {
   deposito: string;
   escaneadaAt: Date | null;
   escaneadaPor: string | null;
+  /** «¿La retira una moto?» */
+  retiraMoto: boolean;
   unidades: number;
   items: { titulo: string; cantidad: number }[];
 }
@@ -146,6 +148,7 @@ export async function listarEscaneadasSinRetirar(
       codigo: true,
       fecha: true,
       escaneadaAt: true,
+      retiraMoto: true,
       cliente: { select: { nombre: true } },
       vendedor: { select: { nombre: true } },
       deposito: { select: { nombre: true } },
@@ -168,6 +171,7 @@ export async function listarEscaneadasSinRetirar(
     deposito: v.deposito.nombre,
     escaneadaAt: v.escaneadaAt,
     escaneadaPor: v.escaneadaPor?.nombre ?? null,
+    retiraMoto: v.retiraMoto,
     unidades: v.items.reduce((a, i) => a + i.cantidad, 0),
     items: v.items.map((i) => ({
       titulo: nombreConSabor(i.variante.producto.nombreCompleto, i.variante.nombre),

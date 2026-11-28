@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { id, montoPositivo, sinDuplicados, texto, textoOpcional, vacioAUndefined } from "./common";
-import { medioPagoSchema } from "./venta";
+import { clienteVentaSchema, medioPagoSchema } from "./venta";
 
 /**
  * Fiados (cuenta corriente): el cliente manda cuánto cobró, con qué medio y,
@@ -37,10 +37,28 @@ export const anularCobroSchema = z.object({
   motivo: texto(500).refine((m) => m.length >= 3, "Contá brevemente por qué se anula"),
 });
 
+/**
+ * «Cargar fiado anterior»: lo que un cliente ya debía antes del sistema.
+ * Cliente existente o nuevo (como en una venta), monto en pesos, desde cuándo
+ * debe (vacío = hoy; no futuro) y qué debe (opcional).
+ */
+export const cargarFiadoAnteriorSchema = z.object({
+  cliente: clienteVentaSchema,
+  monto: montoPositivo,
+  fecha: fechaISO,
+  concepto: textoOpcional(200),
+});
+
+export const anularFiadoAnteriorSchema = z.object({
+  fiadoId: id,
+  motivo: texto(500).refine((m) => m.length >= 3, "Contá brevemente por qué se anula"),
+});
+
 export const listarDeudoresSchema = z.object({
   q: z.preprocess(vacioAUndefined, z.string().trim().max(100).optional()).catch(undefined),
   page: z.coerce.number().int().min(1).catch(1),
 });
 
 export type RegistrarCobro = z.output<typeof registrarCobroSchema>;
+export type CargarFiadoAnterior = z.output<typeof cargarFiadoAnteriorSchema>;
 export type FiltrosDeudores = z.output<typeof listarDeudoresSchema>;

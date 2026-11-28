@@ -25,6 +25,7 @@ import { NotFoundError } from "@/server/errors";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { cuentaCorriente, type MovimientoCC } from "@/server/services/fiado.service";
 
+import { AnularFiadoAnterior, CargarFiadoAnterior } from "../cargar-fiado-anterior";
 import { AnularCobro, RegistrarCobro } from "./acciones-fiado";
 
 export const metadata: Metadata = { title: "Cuenta corriente" };
@@ -52,6 +53,7 @@ export default async function CuentaCorrientePage({
   const { cliente: c } = cc;
   const owner = esOwner(ctx.usuario);
   const puedeCobrar = puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "editar");
+  const puedeCargar = puede(ctx.usuario, ctx.panelId, Modulo.FIADOS, "crear");
   const verVentas = puede(ctx.usuario, ctx.panelId, Modulo.VENTAS, "ver");
   const verCliente = puede(ctx.usuario, ctx.panelId, Modulo.CLIENTES, "ver");
   const masVieja = cc.pendientes[0];
@@ -69,8 +71,32 @@ export default async function CuentaCorrientePage({
       <span className="font-mono font-semibold">{codigo}</span>
     );
 
+  // Fiado anterior (deuda de antes del sistema) que se puede anular: dueños, vigente y sin cobros.
+  const anulableFiado = (m: MovimientoCC) =>
+    owner &&
+    m.tipo === "VENTA" &&
+    m.fiadoAnterior !== null &&
+    !m.fiadoAnterior.anulado &&
+    m.saldoVenta === m.total;
+
   const detalle = (m: MovimientoCC) =>
-    m.tipo === "VENTA" ? (
+    m.tipo === "VENTA" && m.fiadoAnterior ? (
+      <span className={cn("flex flex-col", m.fiadoAnterior.anulado && "text-muted")}>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className={cn(m.fiadoAnterior.anulado && "line-through")}>
+            Fiado anterior <span className="font-mono font-semibold">{m.codigo}</span>
+          </span>
+          {m.fiadoAnterior.anulado ? <Badge>Anulado</Badge> : <Badge>Antes del sistema</Badge>}
+        </span>
+        <span className="text-muted text-xs">
+          {m.fiadoAnterior.concepto ? `${m.fiadoAnterior.concepto} · ` : ""}
+          Cargó {m.fiadoAnterior.usuario}
+          {m.fiadoAnterior.anulado &&
+            m.fiadoAnterior.motivoAnulacion &&
+            ` · ${m.fiadoAnterior.motivoAnulacion}`}
+        </span>
+      </span>
+    ) : m.tipo === "VENTA" ? (
       <span className="flex flex-col">
         <span>Venta {codigoVenta(m.ventaId, m.codigo)}</span>
         <span className="text-muted text-xs">
@@ -128,17 +154,22 @@ export default async function CuentaCorrientePage({
           </span>
         }
         actions={
-          // Sin deuda el botón queda deshabilitado (montado: después de cobrar todo, el
-          // Sheet sigue abierto con el recibo aunque la página se refresque).
-          puedeCobrar && (
-            <RegistrarCobro
-              cliente={{ id: c.id, nombre: c.nombre, telefono: c.telefono }}
-              saldo={c.saldo}
-              deuda={c.deuda}
-              pendientes={cc.pendientes}
-              medios={configVentas.mediosPago}
-            />
-          )
+          <>
+            {puedeCargar && c.activo && (
+              <CargarFiadoAnterior cliente={{ id: c.id, nombre: c.nombre, telefono: c.telefono }} />
+            )}
+            {/* Sin deuda el botón queda deshabilitado (montado: después de cobrar todo, el
+                Sheet sigue abierto con el recibo aunque la página se refresque). */}
+            {puedeCobrar && (
+              <RegistrarCobro
+                cliente={{ id: c.id, nombre: c.nombre, telefono: c.telefono }}
+                saldo={c.saldo}
+                deuda={c.deuda}
+                pendientes={cc.pendientes}
+                medios={configVentas.mediosPago}
+              />
+            )}
+          </>
         }
       />
       <section
@@ -146,7 +177,7 @@ export default async function CuentaCorrientePage({
         className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4"
       >
         <StatCard label="Debe" value={textoPrincipal(c.deuda)} hint={textoEquivalentes(c.deuda)} />
-        <StatCard label="Ventas pendientes" value={String(cc.pendientes.length)} />
+        <StatCard label="Deudas pendientes" value={String(cc.pendientes.length)} />
         <StatCard
           label="Fiado más viejo"
           value={masVieja ? `${masVieja.diasAntiguedad} días` : "—"}
@@ -188,7 +219,14 @@ export default async function CuentaCorrientePage({
                 className: "text-right tabular-nums",
                 cell: (m) =>
                   m.tipo === "VENTA" ? (
-                    <Monto montos={m.montos} className="items-end whitespace-nowrap" />
+                    <Monto
+                      montos={m.montos}
+                      tachado={m.fiadoAnterior?.anulado}
+                      className={cn(
+                        "items-end whitespace-nowrap",
+                        m.fiadoAnterior?.anulado && "text-muted",
+                      )}
+                    />
                   ) : (
                     ""
                   ),
@@ -228,6 +266,12 @@ export default async function CuentaCorrientePage({
                       cell: (m: MovimientoCC) =>
                         m.tipo === "COBRO" && !m.anulado ? (
                           <AnularCobro pagoId={m.pagoId} monto={m.importe} />
+                        ) : anulableFiado(m) && m.tipo === "VENTA" ? (
+                          <AnularFiadoAnterior
+                            fiadoId={m.ventaId}
+                            codigo={m.codigo}
+                            monto={m.total}
+                          />
                         ) : null,
                     },
                   ]
@@ -240,7 +284,9 @@ export default async function CuentaCorrientePage({
                   <span
                     className={cn(
                       "flex shrink-0 flex-col items-end font-semibold tabular-nums",
-                      m.tipo === "COBRO" && m.anulado && "text-muted line-through",
+                      ((m.tipo === "COBRO" && m.anulado) ||
+                        (m.tipo === "VENTA" && m.fiadoAnterior?.anulado)) &&
+                        "text-muted line-through",
                     )}
                   >
                     <span>
@@ -263,20 +309,25 @@ export default async function CuentaCorrientePage({
                     <AnularCobro pagoId={m.pagoId} monto={m.importe} />
                   </div>
                 )}
+                {anulableFiado(m) && m.tipo === "VENTA" && (
+                  <div className="-mb-2 flex justify-end">
+                    <AnularFiadoAnterior fiadoId={m.ventaId} codigo={m.codigo} monto={m.total} />
+                  </div>
+                )}
               </div>
             )}
           />
         </SectionCard>
 
         <SectionCard
-          title="Ventas pendientes"
+          title="Deudas pendientes"
           description="Los cobros se imputan de la más vieja a la más nueva"
         >
           {cc.pendientes.length === 0 ? (
             <EmptyState
               icon={HandCoins}
               title="Al día"
-              description="No debe ninguna venta."
+              description="No debe nada."
               className="bg-surface py-8"
             />
           ) : (
@@ -284,7 +335,17 @@ export default async function CuentaCorrientePage({
               {cc.pendientes.map((v) => (
                 <li key={v.id} className="flex items-start justify-between gap-3 py-3 text-sm">
                   <span className="flex min-w-0 flex-col gap-0.5">
-                    {codigoVenta(v.id, v.codigo)}
+                    {v.fiadoAnterior ? (
+                      <span>
+                        <span className="font-mono font-semibold">{v.codigo}</span>{" "}
+                        <span className="text-muted text-xs">fiado anterior</span>
+                      </span>
+                    ) : (
+                      codigoVenta(v.id, v.codigo)
+                    )}
+                    {v.fiadoAnterior?.concepto && (
+                      <span className="text-xs">{v.fiadoAnterior.concepto}</span>
+                    )}
                     <span className="text-muted text-xs">
                       {formatearFecha(v.fecha)} · total {formatearUsdt(v.totalMontos.usdt)} (
                       {formatearPesos(v.total)})

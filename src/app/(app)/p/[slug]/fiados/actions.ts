@@ -3,14 +3,21 @@
 import { Modulo } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
-import { anularCobroSchema, registrarCobroSchema } from "@/lib/validations/fiado";
+import {
+  anularCobroSchema,
+  anularFiadoAnteriorSchema,
+  cargarFiadoAnteriorSchema,
+  registrarCobroSchema,
+} from "@/lib/validations/fiado";
 import { actionHandler } from "@/server/action-handler";
 import { requireCtx, requireCtxOwner } from "@/server/auth/permissions";
+import { anularFiadoAnterior, cargarFiadoAnterior } from "@/server/services/fiado-anterior.service";
 import { anularCobro, registrarCobro } from "@/server/services/fiado.service";
 
 /**
  * FIADOS (en el panel actual): ver → deudores y cuenta corriente ·
- * editar → registrar cobros · anular un cobro → solo dueños.
+ * crear → cargar un fiado anterior al sistema · editar → registrar cobros ·
+ * anular un cobro o un fiado anterior → solo dueños.
  * Saldos e imputación los calcula el servicio.
  */
 
@@ -33,6 +40,22 @@ export const anularCobroAction = actionHandler(async (input: unknown) => {
   const ctx = await requireCtxOwner();
   const { pagoId, motivo } = anularCobroSchema.parse(input);
   const r = await anularCobro(ctx, pagoId, motivo);
+  revalidar();
+  return r;
+});
+
+/** «Cargar fiado anterior»: deuda de antes del sistema (cliente existente o nuevo). */
+export const cargarFiadoAnteriorAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtx(Modulo.FIADOS, "crear");
+  const r = await cargarFiadoAnterior(ctx, cargarFiadoAnteriorSchema.parse(input));
+  revalidar();
+  return r;
+});
+
+export const anularFiadoAnteriorAction = actionHandler(async (input: unknown) => {
+  const ctx = await requireCtxOwner();
+  const { fiadoId, motivo } = anularFiadoAnteriorSchema.parse(input);
+  const r = await anularFiadoAnterior(ctx, fiadoId, motivo);
   revalidar();
   return r;
 });

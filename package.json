@@ -1,6 +1,6 @@
 {
   "name": "sistema-vapes",
-  "version": "2.13.0",
+  "version": "2.14.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -30,6 +30,9 @@
     "test:unit": "vitest run",
     "test:compras": "PRISMA_LOG=silent CAMBIO_SIN_RED=1 tsx --conditions=react-server --env-file=.env scripts/test-compras.ts",
     "test:ventas": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-ventas.ts",
+    "test:fiado-anterior": "PRISMA_LOG=silent LOG_LEVEL=warn CAMBIO_SIN_RED=1 tsx --conditions=react-server --env-file=.env scripts/test-fiado-anterior.ts",
+    "test:transito": "PRISMA_LOG=silent LOG_LEVEL=warn CAMBIO_SIN_RED=1 tsx --conditions=react-server --env-file=.env scripts/test-transito.ts",
+    "test:ubicaciones": "PRISMA_LOG=silent LOG_LEVEL=warn CAMBIO_SIN_RED=1 tsx --conditions=react-server --env-file=.env scripts/test-ubicaciones.ts",
     "test:fiados": "PRISMA_LOG=silent LOG_LEVEL=warn tsx --conditions=react-server --env-file=.env scripts/test-fiados.ts",
     "test:cartera": "PRISMA_LOG=silent CAMBIO_SIN_RED=1 tsx --conditions=react-server --env-file=.env scripts/test-cartera.ts",
     "test:retiro": "PRISMA_LOG=silent tsx --conditions=react-server --env-file=.env scripts/test-retiro.ts",

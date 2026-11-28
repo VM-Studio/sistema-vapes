@@ -170,6 +170,11 @@ export function SkeletonTarjeta({
 export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Periodo }) {
   const k = await kpis(ctx, periodo);
   const ant = ETIQUETA_ANTERIOR[periodo.modo];
+  // Ganancia total y neta (sin la comisión por vape de Trinidad): solo dueños, si hay comisión.
+  const hayComision =
+    k.comisiones !== null &&
+    (Number(k.comisiones.actual.pesos) !== 0 || Number(k.comisiones.anterior.pesos) !== 0);
+  const comisionDe = k.comisionDe.length ? k.comisionDe.join(" y ") : "los vendedores";
   const sinVentas = k.cantidadVentas.actual === 0;
   const cantidad = 5 + (k.ganancia ? 1 : 0) + (k.cobrado ? 2 : 0);
   return (
@@ -208,7 +213,12 @@ export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Pe
         )}
         {k.ganancia && (
           <KpiCard
-            label="Ganancia"
+            label={hayComision ? "Ganancia total" : "Ganancia"}
+            ayuda={
+              hayComision
+                ? `Lo vendido menos lo que costó la mercadería. Incluye lo que se lleva ${comisionDe} por vape.`
+                : "Lo vendido menos lo que costó la mercadería."
+            }
             etiquetaAnterior={ant}
             {...montos(k.ganancia)}
             extra={
@@ -216,6 +226,15 @@ export async function SeccionKpis({ ctx, periodo }: { ctx: CtxPanel; periodo: Pe
                 ? `margen ${k.margenPct.toLocaleString("es-AR")} %`
                 : "sin ventas"
             }
+          />
+        )}
+        {hayComision && k.gananciaNeta && k.comisiones && (
+          <KpiCard
+            label="Ganancia neta (dueños)"
+            ayuda={`La ganancia total menos la comisión de ${comisionDe}: lo que queda para los dueños.`}
+            etiquetaAnterior={ant}
+            {...montos(k.gananciaNeta)}
+            extra={`sin ${textoPrincipal(k.comisiones.actual)} de comisión de ${comisionDe}`}
           />
         )}
         <KpiCard

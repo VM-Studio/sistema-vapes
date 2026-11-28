@@ -468,6 +468,10 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                 <dd className="text-right">{v.vendedor.nombre}</dd>
                 <dt className="text-muted">Galpón</dt>
                 <dd className="text-right">{v.deposito.nombre}</dd>
+                <dt className="text-muted">¿La retira una moto?</dt>
+                <dd className="text-right" data-testid="detalle-retira-moto">
+                  {v.retiraMoto ? <Badge variant="warning">Sí, una moto</Badge> : "No"}
+                </dd>
                 {v.notas && (
                   <>
                     <dt className="text-muted col-span-2">Notas</dt>

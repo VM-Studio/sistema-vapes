@@ -50,6 +50,11 @@ export function formatearIdCompra(slug: string, numero: number): string {
   return `${prefijoPanel(slug)}-C-${String(numero).padStart(6, "0")}`;
 }
 
+/** ID de fiado anterior (deuda de antes del sistema) visible: VAP-FA-000001. */
+export function formatearIdFiadoAnterior(slug: string, numero: number): string {
+  return `${prefijoPanel(slug)}-FA-${String(numero).padStart(6, "0")}`;
+}
+
 /** "VAP-000123" / "vap-123" / "123" → 123 (null si no es un ID de venta). */
 export function numeroDeIdVenta(texto: string): number | null {
   const m = texto.trim().match(/^(?:[a-z]{1,3}-)?0*(\d{1,9})$/i);

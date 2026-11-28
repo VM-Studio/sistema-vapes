@@ -160,6 +160,8 @@ export const convertirCotizacionSchema = z.object({
   recalcular: z.boolean().optional(),
   /** "Verificar con pistola" sobre los ítems fijos de la cotización. */
   verificacion: verificacionEscaneoSchema,
+  /** «¿La retira una moto?» */
+  retiraMoto: z.boolean().default(false),
 });
 
 /**

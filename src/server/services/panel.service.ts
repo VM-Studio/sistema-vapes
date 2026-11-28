@@ -37,6 +37,7 @@ export const ENTIDADES_NUMERADAS = [
   "DEVOLUCION",
   "COTIZACION",
   "FACTURA",
+  "FIADO_ANTERIOR",
 ] as const;
 
 /** Paneles activos a los que accede el usuario, en orden. */

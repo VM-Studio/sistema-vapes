@@ -47,6 +47,8 @@ interface Deposito {
   id: string;
   nombre: string;
   esPrincipal: boolean;
+  /** Recibe en tránsito (Mercado Libre Full): al enviar, el stock sale ya del origen. */
+  conTransito: boolean;
 }
 
 interface Item {
@@ -61,6 +63,8 @@ interface Resultado {
   whatsapp: string;
   /** true = "Mover ahora" (ya se movió); false = envío pendiente de recepción. */
   movida: boolean;
+  /** Envío a un depósito con tránsito: ya salió del origen, entra al confirmar que llegó. */
+  enTransito: boolean;
   origen: string;
   destino: string;
   sabores: number;
@@ -171,6 +175,7 @@ export function NuevaTransferencia({
       unidades: r.data.unidades,
       whatsapp: r.data.whatsapp,
       movida: modo === "ahora",
+      enTransito: modo === "envio" && destino.conTransito,
       origen: origen.nombre,
       destino: destino.nombre,
       sabores: items.length,
@@ -303,7 +308,9 @@ export function NuevaTransferencia({
               {resultado.sabores === 1 ? "sabor" : "sabores"}
               {resultado.movida
                 ? ". El stock ya se movió."
-                : ". El stock se mueve cuando confirmes la recepción."}
+                : resultado.enTransito
+                  ? `. Ya salió de ${resultado.origen} y queda en tránsito: entra a ${resultado.destino} cuando confirmes que llegó.`
+                  : ". El stock se mueve cuando confirmes la recepción."}
             </p>
           </div>
           <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3">
@@ -443,6 +450,13 @@ export function NuevaTransferencia({
               {error}
             </p>
           )}
+          {destino?.conTransito && (
+            <p className="bg-surface rounded-control px-4 py-3 text-sm" role="note">
+              <strong>{destino.nombre} recibe en tránsito.</strong> Con «Enviar» la mercadería sale
+              de {origen?.nombre} ahora y queda <strong>en tránsito</strong> (no se puede vender)
+              hasta que confirmes que llegó a {destino.nombre}.
+            </p>
+          )}
           <div className="flex flex-col-reverse gap-2 md:flex-row md:items-center md:justify-between">
             <Button
               variant="ghost"
@@ -459,8 +473,10 @@ export function NuevaTransferencia({
                 loading={enviando === "envio"}
                 disabled={enviando !== null}
               >
-                {enviando !== "envio" && <Truck strokeWidth={1.75} />} Registrar envío, confirmar al
-                recibir
+                {enviando !== "envio" && <Truck strokeWidth={1.75} />}{" "}
+                {destino?.conTransito
+                  ? `Enviar (en tránsito hasta que llegue)`
+                  : "Registrar envío, confirmar al recibir"}
               </Button>
               <Button
                 size="lg"

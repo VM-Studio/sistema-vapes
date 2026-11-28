@@ -307,13 +307,13 @@ export function RegistrarCobro({
               <legend className="text-small mb-1 font-medium">Imputar a</legend>
               <Radio
                 name="imputar"
-                label="De la venta más vieja a la más nueva"
+                label="De la deuda más vieja a la más nueva"
                 checked={!elegir}
                 onChange={() => setElegir(false)}
               />
               <Radio
                 name="imputar"
-                label="Elegir ventas"
+                label="Elegir qué deudas"
                 checked={elegir}
                 onChange={() => setElegir(true)}
               />
@@ -326,7 +326,10 @@ export function RegistrarCobro({
                           <span className="flex w-full justify-between gap-3">
                             <span>
                               <span className="font-mono font-semibold">{v.codigo}</span>{" "}
-                              <span className="text-muted">{formatearFecha(v.fecha)}</span>
+                              <span className="text-muted">
+                                {formatearFecha(v.fecha)}
+                                {v.fiadoAnterior && " · fiado anterior"}
+                              </span>
                             </span>
                             <span className="tabular-nums">{formatearPesos(v.saldoPendiente)}</span>
                           </span>

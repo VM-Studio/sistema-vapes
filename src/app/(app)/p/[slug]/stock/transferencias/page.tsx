@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { hrefCon, Pagination } from "@/components/ui/pagination";
 import { formatearNumero } from "@/lib/format";
-import { ESTADO_TRANSFERENCIA_UI } from "@/lib/movimientos-ui";
+import { ESTADO_TRANSFERENCIA_UI, estadoTransferenciaUi } from "@/lib/movimientos-ui";
 import { rutaPanel } from "@/lib/paneles";
 import { rutaPdf } from "@/lib/pdfs";
 import { puede } from "@/lib/permisos";
@@ -49,9 +49,7 @@ export default async function TransferenciasPage({ searchParams }: { searchParam
   const puedeCrear = puede(ctx.usuario, ctx.panelId, Modulo.STOCK, "crear") && depositos.length > 1;
 
   const estadoBadge = (t: TransferenciaListada) => (
-    <Badge variant={ESTADO_TRANSFERENCIA_UI[t.estado].variante}>
-      {ESTADO_TRANSFERENCIA_UI[t.estado].label}
-    </Badge>
+    <Badge variant={estadoTransferenciaUi(t).variante}>{estadoTransferenciaUi(t).label}</Badge>
   );
   const recorrido = (t: TransferenciaListada) => (
     <span className="inline-flex items-center gap-1.5">

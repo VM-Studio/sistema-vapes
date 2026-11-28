@@ -462,6 +462,7 @@ async function generarEnTx(
       notas: input.notas ?? null,
       clienteNuevo,
       verificadaPorEscaneo: verificada,
+      retiraMoto: input.retiraMoto === true,
       ...(input.escaneoRemoto
         ? {
             escaneoRemoto: Escaneo.PENDIENTE,
@@ -1015,6 +1016,8 @@ export async function obtenerVenta(ctx: Ctx, id: string, opciones: OpcionesLectu
     /** Cotizaciones de la venta (pesos por unidad). */
     cotizaciones: { usdt: dec(v.tipoCambioUsdt), usd: dec(v.tipoCambioUsd) },
     notas: v.notas,
+    /** «¿La retira una moto?» */
+    retiraMoto: v.retiraMoto,
     anulacion: v.anuladaAt
       ? { por: v.anuladaPor?.nombre ?? "", at: v.anuladaAt, motivo: v.motivoAnulacion }
       : null,

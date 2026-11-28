@@ -1,7 +1,7 @@
 "use client";
 
 import { Modulo } from "@prisma/client";
-import { Pencil, Plus, ScanBarcode, Star, Warehouse } from "lucide-react";
+import { Pencil, Plus, ScanBarcode, Star, Truck, Warehouse } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -58,6 +58,11 @@ export function DepositosView({ depositos }: { depositos: DepositoListado[] }) {
       {d.escaneoRemoto && (
         <Badge title={`Admite «Escanea ${NOMBRE_ESCANEO}»`}>
           <ScanBarcode strokeWidth={1.75} aria-hidden /> Escaneo remoto
+        </Badge>
+      )}
+      {d.conTransito && (
+        <Badge title="Lo que se le envía queda en tránsito hasta que llega">
+          <Truck strokeWidth={1.75} aria-hidden /> Recibe en tránsito
         </Badge>
       )}
     </span>
@@ -214,6 +219,7 @@ function DepositoForm({
       activo: deposito?.activo ?? true,
       esPrincipal: deposito?.esPrincipal ?? false,
       escaneoRemoto: deposito?.escaneoRemoto ?? false,
+      conTransito: deposito?.conTransito ?? false,
     },
   });
   const enviando = form.formState.isSubmitting;
@@ -251,6 +257,11 @@ function DepositoForm({
         name="escaneoRemoto"
         label={`Escaneo remoto («Escanea ${NOMBRE_ESCANEO}»)`}
         hint={`Las ventas de este depósito pueden pedir que ${NOMBRE_ESCANEO} escanee los productos antes de retirarlos.`}
+      />
+      <FormSwitch
+        name="conTransito"
+        label="Recibe en tránsito (p. ej. Mercado Libre Full)"
+        hint="Al enviarle mercadería, sale del origen en el momento y queda «en tránsito» hasta que confirmes que llegó."
       />
     </Form>
   );

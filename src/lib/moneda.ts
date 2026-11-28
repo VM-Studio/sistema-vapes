@@ -38,6 +38,13 @@ export function sumarMontos(lista: readonly Montos[]): Montos {
   return { usdt: s("usdt"), pesos: s("pesos"), usd: s("usd") };
 }
 
+/** a − b en las tres monedas (en centavos: sin errores de coma flotante). */
+export function restarMontos(a: Montos, b: Montos): Montos {
+  const r = (k: keyof Montos) =>
+    ((Math.round(Number(a[k]) * 100) - Math.round(Number(b[k]) * 100)) / 100).toFixed(2);
+  return { usdt: r("usdt"), pesos: r("pesos"), usd: r("usd") };
+}
+
 /** "USDT $ 1.679 · Blue $ 1.575" (cotizaciones con las que se convirtió). */
 export const textoCotizaciones = (c: { usdt: string | number; usd: string | number }): string =>
   `USDT ${formatearPesos(c.usdt)} · Blue ${formatearPesos(c.usd)}`;

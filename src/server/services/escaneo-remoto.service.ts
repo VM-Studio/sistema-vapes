@@ -41,6 +41,10 @@ export interface VentaParaEscanear {
   codigo: string;
   fecha: Date;
   vendedor: string;
+  /** A quién le pertenece (el nombre que va en la bolsa). */
+  cliente: string;
+  /** «¿La retira una moto?»: Charly ve «Pedido que lo retira una moto». */
+  retiraMoto: boolean;
   deposito: string;
   pedidoAt: Date;
   pedidoPor: string;
@@ -73,6 +77,7 @@ const selectItemsEscaneo = {
             especificacion: true,
             nombreCompleto: true,
             marca: { select: { nombre: true } },
+            ubicacion: { select: { nombre: true } },
           },
         },
       },
@@ -93,6 +98,7 @@ function aItem(i: FilaItem): ItemEscaneo {
     sabor: saborVisible(i.variante.nombre),
     titulo: nombreConSabor(p.nombreCompleto, i.variante.nombre),
     cantidad: i.cantidad,
+    ubicacion: p.ubicacion?.nombre ?? null,
   };
 }
 
@@ -238,7 +244,9 @@ const selectParaEscanear = {
   codigo: true,
   fecha: true,
   escaneoPedidoAt: true,
+  retiraMoto: true,
   vendedor: { select: { nombre: true } },
+  cliente: { select: { nombre: true } },
   escaneoPedidoPor: { select: { nombre: true } },
   deposito: { select: { nombre: true } },
   items: selectItemsEscaneo,
@@ -252,6 +260,8 @@ function aParaEscanear(v: FilaParaEscanear, etiqueta: string): VentaParaEscanear
     codigo: v.codigo,
     fecha: v.fecha,
     vendedor: v.vendedor.nombre,
+    cliente: v.cliente.nombre,
+    retiraMoto: v.retiraMoto,
     deposito: v.deposito.nombre,
     pedidoAt: v.escaneoPedidoAt ?? v.fecha,
     pedidoPor: v.escaneoPedidoPor?.nombre ?? v.vendedor.nombre,

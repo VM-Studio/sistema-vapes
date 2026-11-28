@@ -6,9 +6,11 @@ import {
   Building2,
   FileSpreadsheet,
   Calculator,
+  Coins,
   Contact,
   HandCoins,
   Home,
+  MapPin,
   Package,
   ReceiptText,
   PackageOpen,
@@ -124,6 +126,17 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     descripcion: "Productos, sabores, precios y carga de stock",
   },
   {
+    // Dueños (arman los lugares) y el perfil de escaneo (Charly: las ve).
+    modulo: Modulo.ESCANEO,
+    label: "Ubicaciones",
+    href: "/ubicaciones",
+    icon: MapPin,
+    grupo: "Operación",
+    enBottomBar: false,
+    ordenMobile: 11.2,
+    descripcion: "En qué estante está cada modelo",
+  },
+  {
     modulo: Modulo.DEVOLUCIONES,
     label: "Devoluciones",
     href: "/devoluciones",
@@ -203,6 +216,16 @@ export const NAVEGACION: readonly ItemNavegacion[] = [
     enBottomBar: false,
     ordenMobile: 14,
     descripcion: "Comisión del pasista por compra y por mes",
+  },
+  {
+    modulo: "OWNER",
+    label: "Costos",
+    href: "/costos",
+    icon: Coins,
+    grupo: "Compras",
+    enBottomBar: false,
+    ordenMobile: 14.5,
+    descripcion: "A cuánto se compra cada producto",
   },
   // Los accesos directos (/cotizador/…/nueva) también coinciden con el listado (/cotizador):
   // gana el más específico (itemActivo).

@@ -23,13 +23,15 @@ export interface DepositoStock {
   id: string;
   nombre: string;
   esPrincipal: boolean;
+  /** Recibe en tránsito (Mercado Libre Full): lo enviado sale ya del origen. */
+  conTransito: boolean;
 }
 
 /** Depósitos activos del panel, principal primero (columnas y selector Global/depósito). */
 export async function depositosActivosPanel(ctx: Ctx): Promise<DepositoStock[]> {
   return dbPara(ctx.panelId).deposito.findMany({
     where: { activo: true },
-    select: { id: true, nombre: true, esPrincipal: true },
+    select: { id: true, nombre: true, esPrincipal: true, conTransito: true },
     orderBy: [{ esPrincipal: "desc" }, { nombre: "asc" }],
   });
 }
@@ -100,6 +102,11 @@ export interface FilaStock {
   retirado: number;
   /** Físico en el galpón = disponible + vendido sin retirar (escaneado o no). */
   fisico: number;
+  /**
+   * Enviado y todavía sin llegar (transferencias en tránsito, p. ej. Casa →
+   * Mercado Libre Full): ya salió del origen y no está en ningún depósito.
+   */
+  enTransito: number;
   estado: EstadoStockUI;
 }
 
@@ -405,8 +412,29 @@ function aFila(r: FilaSql, depositos: DepositoStock[]): FilaStock {
     sinEscanear: r.sin_escanear,
     retirado: r.retirado,
     fisico: r.cantidad + r.escaneado + r.sin_escanear,
+    enTransito: 0,
     estado: estadoDeStock(r.cantidad, r.stock_minimo),
   };
+}
+
+/**
+ * Unidades en tránsito por sabor: ítems de transferencias PENDIENTES que ya
+ * salieron del origen (`enTransito`). Sin `varianteIds`, de todo el panel.
+ */
+export async function enTransitoPorVariante(
+  ctx: Ctx,
+  varianteIds?: string[],
+): Promise<Map<string, number>> {
+  if (varianteIds && varianteIds.length === 0) return new Map();
+  const filas = await dbPara(ctx.panelId).transferenciaItem.groupBy({
+    by: ["varianteId"],
+    where: {
+      transferencia: { estado: "PENDIENTE", enTransito: true },
+      ...(varianteIds ? { varianteId: { in: varianteIds } } : {}),
+    },
+    _sum: { cantidad: true },
+  });
+  return new Map(filas.map((f) => [f.varianteId, f._sum.cantidad ?? 0]));
 }
 
 /** Un depositoId que no es un depósito activo del panel se ignora (vista Global). */
@@ -427,10 +455,17 @@ export async function obtenerStock(ctx: Ctx, filtros: FiltrosStock): Promise<Res
     consultar(ctx, f, depositos, true),
     consultarTotales(ctx, f),
   ]);
+  const transito = await enTransitoPorVariante(
+    ctx,
+    filas.map((r) => r.variante_id),
+  );
   return {
     depositos,
     deposito: depositos.find((d) => d.id === f.depositoId) ?? null,
-    filas: filas.map((r) => aFila(r, depositos)),
+    filas: filas.map((r) => ({
+      ...aFila(r, depositos),
+      enTransito: transito.get(r.variante_id) ?? 0,
+    })),
     totales,
     total: filas[0]?.total_resultados ?? 0,
     page: f.page,

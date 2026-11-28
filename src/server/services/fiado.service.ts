@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   AccionAuditoria,
+  EstadoFiadoAnterior,
   EstadoPago,
   EstadoVenta,
   MedioPago,
@@ -37,7 +38,14 @@ import { obtenerConfigVentas } from "@/server/services/configuracion.service";
  *   (FOR UPDATE) y después toca sus ventas: mismo orden en ventas fiadas,
  *   cobros y anulaciones, sin deadlocks entre ellas.
  * - Permisos de FIADOS: ver = deudas y cuenta corriente · crear = vender fiado
- *   · editar = registrar cobros · anular cobros = solo dueños.
+ *   y cargar fiados anteriores · editar = registrar cobros · anular cobros y
+ *   fiados anteriores = solo dueños.
+ * - FIADO ANTERIOR (FiadoAnterior): lo que el cliente ya debía antes del
+ *   sistema, cargado a mano. Para la cuenta corriente es una deuda más (se
+ *   muestra y se cobra como una venta fiada, de la más vieja a la más nueva,
+ *   con PagoFiadoAnterior), pero no es una venta: no está en ventas, stock,
+ *   vendido ni ganancia. `saldoDeudor` = Σ saldo de ventas + Σ saldo de fiados
+ *   anteriores vigentes (trigger diferido).
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -150,6 +158,24 @@ const sqlSumaMontos = (pesos: Prisma.Sql) => Prisma.sql`
   COALESCE(SUM(${pesos}), 0)::text AS "pesos",
   COALESCE(SUM(ROUND(${pesos} / v."tipoCambioUsd", 2)), 0)::text AS "usd"`;
 
+/**
+ * Todo lo que se debe HOY en el panel (alias `v` al usarlo): saldo de las
+ * ventas confirmadas y de los fiados anteriores vigentes, cada uno con SUS
+ * cotizaciones. Columnas: clienteId, saldoPendiente, tipoCambioUsdt,
+ * tipoCambioUsd, fecha. `filtro` va en los dos WHERE (columnas sin alias).
+ */
+function sqlDeudasPendientes(panelId: string, filtro: Prisma.Sql = Prisma.empty) {
+  return Prisma.sql`(
+    SELECT "clienteId", "saldoPendiente", "tipoCambioUsdt", "tipoCambioUsd", "fecha"
+    FROM "Venta"
+    WHERE "panelId" = ${panelId} AND "estado" = 'CONFIRMADA' AND "saldoPendiente" > 0 ${filtro}
+    UNION ALL
+    SELECT "clienteId", "saldoPendiente", "tipoCambioUsdt", "tipoCambioUsd", "fecha"
+    FROM "FiadoAnterior"
+    WHERE "panelId" = ${panelId} AND "estado" = 'VIGENTE' AND "saldoPendiente" > 0 ${filtro}
+  )`;
+}
+
 export interface DeudaCliente {
   deuda: Montos;
   ventasPendientes: number;
@@ -172,9 +198,10 @@ export async function deudaDeClientes(
   >`
     SELECT v."clienteId", ${sqlSumaMontos(Prisma.sql`v."saldoPendiente"`)},
       COUNT(*)::int AS "ventas", MIN(v."fecha") AS "masVieja"
-    FROM "Venta" v
-    WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
-      AND v."saldoPendiente" > 0 AND v."clienteId" IN (${Prisma.join([...clienteIds])})
+    FROM ${sqlDeudasPendientes(
+      ctx.panelId,
+      Prisma.sql`AND "clienteId" IN (${Prisma.join([...clienteIds])})`,
+    )} v
     GROUP BY v."clienteId"`;
   return new Map(
     filas.map((f) => [
@@ -284,6 +311,18 @@ export interface MovimientoVentaCC {
   saldoAcumulado: string;
   /** Saldo acumulado en las tres monedas (cada venta a su cotización). */
   saldoMontos: Montos;
+  /**
+   * Fiado anterior al sistema cargado a mano (no es una venta: `ventaId` es el
+   * id del fiado y `codigo` su "VAP-FA-…"). null = venta fiada.
+   */
+  fiadoAnterior: FiadoAnteriorCC | null;
+}
+
+export interface FiadoAnteriorCC {
+  concepto: string | null;
+  anulado: boolean;
+  motivoAnulacion: string | null;
+  usuario: string;
 }
 
 export interface MovimientoCobroCC {
@@ -321,6 +360,8 @@ export interface VentaPendiente {
   totalMontos: Montos;
   estadoPago: EstadoPago;
   diasAntiguedad: number;
+  /** Fiado anterior al sistema (no es una venta); null = venta. */
+  fiadoAnterior: { concepto: string | null } | null;
 }
 
 export interface CuentaCorriente {
@@ -394,11 +435,67 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
     },
   });
 
+  // Fiados anteriores al sistema: se cuentan como una venta fiada más (sin pago al vender).
+  const fiados = await db.fiadoAnterior.findMany({
+    where: { clienteId },
+    orderBy: [{ fecha: "asc" }, { numero: "asc" }],
+    select: {
+      id: true,
+      codigo: true,
+      fecha: true,
+      concepto: true,
+      monto: true,
+      montoPagado: true,
+      saldoPendiente: true,
+      tipoCambioUsdt: true,
+      tipoCambioUsd: true,
+      estado: true,
+      motivoAnulacion: true,
+      usuario: { select: { nombre: true } },
+      pagos: {
+        orderBy: [{ fecha: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          medioPago: true,
+          monto: true,
+          referencia: true,
+          cobroId: true,
+          fecha: true,
+          anulado: true,
+          motivoAnulacion: true,
+          usuario: { select: { nombre: true } },
+        },
+      },
+    },
+  });
+  const documentos = [
+    ...ventas.map((v) => ({ ...v, fiado: null as FiadoAnteriorCC | null })),
+    ...fiados.map((f) => ({
+      id: f.id,
+      codigo: f.codigo,
+      fecha: f.fecha,
+      total: f.monto,
+      totalUsdt: aUsdt(f.monto, f),
+      tipoCambioUsdt: f.tipoCambioUsdt,
+      tipoCambioUsd: f.tipoCambioUsd,
+      montoPagado: f.montoPagado,
+      saldoPendiente: f.saldoPendiente,
+      estadoPago: estadoPagoDe(f.montoPagado, f.saldoPendiente),
+      pagos: f.pagos.map((p) => ({ ...p, esCobroPosterior: true })),
+      fiado: {
+        concepto: f.concepto,
+        anulado: f.estado === EstadoFiadoAnterior.ANULADO,
+        motivoAnulacion: f.motivoAnulacion,
+        usuario: f.usuario.nombre,
+      } as FiadoAnteriorCC | null,
+    })),
+  ].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+
   type SinSaldo<T> = Omit<T, "saldoAcumulado" | "saldoMontos">;
   const movimientos: (SinSaldo<MovimientoVentaCC> | SinSaldo<MovimientoCobroCC>)[] = [];
   const cobros = new Map<string, SinSaldo<MovimientoCobroCC>>();
   const cotizacion = new Map<string, CotizacionVenta>();
-  for (const v of ventas) {
+  for (const v of documentos) {
     cotizacion.set(v.id, v);
     const pagadoAlVender = v.pagos
       .filter((p) => !p.esCobroPosterior && !p.anulado)
@@ -415,6 +512,7 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
       importe: dec(importe),
       montos: montosDePesosDeVenta(importe, v),
       saldoVenta: dec(v.saldoPendiente),
+      fiadoAnterior: v.fiado,
     });
     for (const p of v.pagos.filter((x) => x.esCobroPosterior)) {
       const clave = p.cobroId ?? p.id;
@@ -474,8 +572,10 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
       .plus(enDolares(despues, v.tipoCambioUsd));
   };
   const conSaldo: MovimientoCC[] = movimientos.map((m) => {
-    if (m.tipo === "VENTA") mover(m.ventaId, D(m.importe));
-    else if (!m.anulado) for (const i of m.imputaciones) mover(i.ventaId, D(i.monto).neg());
+    if (m.tipo === "VENTA") {
+      // Un fiado anterior anulado queda a la vista pero no suma deuda.
+      if (!m.fiadoAnterior?.anulado) mover(m.ventaId, D(m.importe));
+    } else if (!m.anulado) for (const i of m.imputaciones) mover(i.ventaId, D(i.monto).neg());
     return {
       ...m,
       saldoAcumulado: dec(saldo),
@@ -484,7 +584,7 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
   });
 
   const hoy = ahora();
-  const pendientes: VentaPendiente[] = ventas
+  const pendientes: VentaPendiente[] = documentos
     .filter((v) => v.saldoPendiente.greaterThan(0))
     .map((v) => ({
       id: v.id,
@@ -497,6 +597,7 @@ export async function cuentaCorriente(ctx: Ctx, clienteId: string): Promise<Cuen
       totalMontos: { ...montosDePesosDeVenta(v.total, v), usdt: dec(v.totalUsdt) },
       estadoPago: v.estadoPago,
       diasAntiguedad: diasDesde(v.fecha, hoy),
+      fiadoAnterior: v.fiado ? { concepto: v.fiado.concepto } : null,
     }));
   return {
     cliente: {
@@ -632,25 +733,50 @@ async function cobrar(
         );
       }
 
-      const pendientes = await tx.venta.findMany({
-        where: {
-          clienteId: cliente.id,
-          estado: EstadoVenta.CONFIRMADA,
-          saldoPendiente: { gt: 0 },
-          ...(input.ventaIds?.length ? { id: { in: input.ventaIds } } : {}),
-        },
-        orderBy: [{ fecha: "asc" }, { numero: "asc" }],
-        select: {
-          id: true,
-          codigo: true,
-          fecha: true,
-          montoPagado: true,
-          saldoPendiente: true,
-          estadoPago: true,
-        },
-      });
+      const soloElegidas = input.ventaIds?.length ? { id: { in: input.ventaIds } } : {};
+      const [ventasPend, fiadosPend] = await Promise.all([
+        tx.venta.findMany({
+          where: {
+            clienteId: cliente.id,
+            estado: EstadoVenta.CONFIRMADA,
+            saldoPendiente: { gt: 0 },
+            ...soloElegidas,
+          },
+          orderBy: [{ fecha: "asc" }, { numero: "asc" }],
+          select: {
+            id: true,
+            codigo: true,
+            fecha: true,
+            numero: true,
+            montoPagado: true,
+            saldoPendiente: true,
+          },
+        }),
+        tx.fiadoAnterior.findMany({
+          where: {
+            clienteId: cliente.id,
+            estado: EstadoFiadoAnterior.VIGENTE,
+            saldoPendiente: { gt: 0 },
+            ...soloElegidas,
+          },
+          orderBy: [{ fecha: "asc" }, { numero: "asc" }],
+          select: {
+            id: true,
+            codigo: true,
+            fecha: true,
+            numero: true,
+            montoPagado: true,
+            saldoPendiente: true,
+          },
+        }),
+      ]);
+      // De la deuda más vieja a la más nueva (a igual fecha, el fiado anterior primero).
+      const pendientes = [
+        ...fiadosPend.map((f) => ({ ...f, fiadoAnterior: true })),
+        ...ventasPend.map((v) => ({ ...v, fiadoAnterior: false })),
+      ].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
       if (input.ventaIds?.length && pendientes.length !== input.ventaIds.length)
-        throw new DomainError("Alguna de las ventas elegidas no existe o ya está saldada.");
+        throw new DomainError("Alguna de las deudas elegidas no existe o ya está saldada.");
       const deudaElegida = pendientes.reduce((a, v) => a.plus(v.saldoPendiente), CERO);
       if (monto.greaterThan(deudaElegida)) {
         throw new DomainError(
@@ -667,27 +793,47 @@ async function cobrar(
       for (const v of pendientes) {
         if (restante.lessThanOrEqualTo(0)) break;
         if (fecha < v.fecha)
-          throw new DomainError(`La fecha del cobro es anterior a la venta ${v.codigo}.`);
+          throw new DomainError(
+            `La fecha del cobro es anterior a ${v.fiadoAnterior ? "el fiado" : "la venta"} ${v.codigo}.`,
+          );
         const aplicado = Prisma.Decimal.min(restante, v.saldoPendiente);
         const montoPagado = v.montoPagado.plus(aplicado);
         const saldoPendiente = v.saldoPendiente.minus(aplicado);
         const estadoPago = estadoPagoDe(montoPagado, saldoPendiente);
-        await tx.pagoVenta.create({
-          data: {
-            ventaId: v.id,
-            medioPago: input.medioPago,
-            monto: aplicado,
-            referencia: input.referencia ?? null,
-            esCobroPosterior: true,
-            cobroId,
-            fecha,
-            usuarioId: ctx.usuarioId,
-          },
-        });
-        await tx.venta.update({
-          where: { id: v.id },
-          data: { montoPagado, saldoPendiente, estadoPago },
-        });
+        if (v.fiadoAnterior) {
+          await tx.pagoFiadoAnterior.create({
+            data: {
+              fiadoId: v.id,
+              medioPago: input.medioPago,
+              monto: aplicado,
+              referencia: input.referencia ?? null,
+              cobroId,
+              fecha,
+              usuarioId: ctx.usuarioId,
+            },
+          });
+          await tx.fiadoAnterior.update({
+            where: { id: v.id },
+            data: { montoPagado, saldoPendiente },
+          });
+        } else {
+          await tx.pagoVenta.create({
+            data: {
+              ventaId: v.id,
+              medioPago: input.medioPago,
+              monto: aplicado,
+              referencia: input.referencia ?? null,
+              esCobroPosterior: true,
+              cobroId,
+              fecha,
+              usuarioId: ctx.usuarioId,
+            },
+          });
+          await tx.venta.update({
+            where: { id: v.id },
+            data: { montoPagado, saldoPendiente, estadoPago },
+          });
+        }
         imputaciones.push({
           ventaId: v.id,
           codigo: v.codigo,
@@ -760,7 +906,8 @@ export async function anularCobro(
       });
       if (usuario?.rol !== RolUsuario.OWNER)
         throw new ForbiddenError("Solo un dueño puede anular cobros.");
-      const pago = await tx.pagoVenta.findUnique({
+      // El pago puede ser de una venta o de un fiado anterior (mismo cobroId en los dos).
+      const pagoVenta = await tx.pagoVenta.findUnique({
         where: { id: pagoId },
         select: {
           id: true,
@@ -769,27 +916,51 @@ export async function anularCobro(
           venta: { select: { clienteId: true } },
         },
       });
-      if (!pago) throw new NotFoundError("El cobro no existe");
-      if (!pago.esCobroPosterior)
+      const pagoFiado = pagoVenta
+        ? null
+        : await tx.pagoFiadoAnterior.findUnique({
+            where: { id: pagoId },
+            select: { id: true, cobroId: true, fiado: { select: { clienteId: true } } },
+          });
+      if (!pagoVenta && !pagoFiado) throw new NotFoundError("El cobro no existe");
+      if (pagoVenta && !pagoVenta.esCobroPosterior)
         throw new DomainError("Los pagos hechos al vender no se anulan solos: anulá la venta.");
-      const clienteId = pago.venta.clienteId;
+      const pago = (pagoVenta ?? pagoFiado)!;
+      const clienteId = pagoVenta ? pagoVenta.venta.clienteId : pagoFiado!.fiado.clienteId;
       await bloquearCliente(tx, ctx, clienteId);
 
-      const pagos = await tx.pagoVenta.findMany({
-        where: pago.cobroId ? { cobroId: pago.cobroId } : { id: pago.id },
-        orderBy: { id: "asc" },
-        select: {
-          id: true,
-          monto: true,
-          anulado: true,
-          ventaId: true,
-          venta: {
-            select: { codigo: true, estado: true, montoPagado: true, saldoPendiente: true },
+      const [pagos, pagosFiado] = await Promise.all([
+        pago.cobroId || pagoVenta
+          ? tx.pagoVenta.findMany({
+              where: pago.cobroId ? { cobroId: pago.cobroId } : { id: pago.id },
+              orderBy: { id: "asc" },
+              select: {
+                id: true,
+                monto: true,
+                anulado: true,
+                ventaId: true,
+                venta: {
+                  select: { codigo: true, estado: true, montoPagado: true, saldoPendiente: true },
+                },
+              },
+            })
+          : [],
+        tx.pagoFiadoAnterior.findMany({
+          where: pago.cobroId ? { cobroId: pago.cobroId } : { id: pago.id },
+          orderBy: { id: "asc" },
+          select: {
+            id: true,
+            monto: true,
+            anulado: true,
+            fiadoId: true,
+            fiado: { select: { codigo: true, estado: true } },
           },
-        },
-      });
+        }),
+      ]);
       const vigentes = pagos.filter((p) => !p.anulado);
-      if (vigentes.length === 0) throw new DomainError("El cobro ya está anulado.");
+      const vigentesFiado = pagosFiado.filter((p) => !p.anulado);
+      if (vigentes.length === 0 && vigentesFiado.length === 0)
+        throw new DomainError("El cobro ya está anulado.");
       const enAnulada = vigentes.find((p) => p.venta.estado !== EstadoVenta.CONFIRMADA);
       if (enAnulada)
         throw new DomainError(
@@ -797,6 +968,12 @@ export async function anularCobro(
         );
 
       const cuando = ahora();
+      const anulacion = {
+        anulado: true,
+        anuladoPorId: ctx.usuarioId,
+        anuladoAt: cuando,
+        motivoAnulacion: m,
+      };
       let total = CERO;
       for (const p of vigentes) {
         await tx.$queryRaw`
@@ -808,15 +985,7 @@ export async function anularCobro(
         });
         const montoPagado = v.montoPagado.minus(p.monto);
         const saldoPendiente = v.saldoPendiente.plus(p.monto);
-        await tx.pagoVenta.update({
-          where: { id: p.id },
-          data: {
-            anulado: true,
-            anuladoPorId: ctx.usuarioId,
-            anuladoAt: cuando,
-            motivoAnulacion: m,
-          },
-        });
+        await tx.pagoVenta.update({ where: { id: p.id }, data: anulacion });
         await tx.venta.update({
           where: { id: p.ventaId },
           data: {
@@ -824,6 +993,17 @@ export async function anularCobro(
             saldoPendiente,
             estadoPago: estadoPagoDe(montoPagado, saldoPendiente),
           },
+        });
+        total = total.plus(p.monto);
+      }
+      for (const p of vigentesFiado) {
+        await tx.$queryRaw`
+          SELECT "id" FROM "FiadoAnterior" WHERE "id" = ${p.fiadoId} AND "panelId" = ${ctx.panelId} FOR UPDATE
+        `;
+        await tx.pagoFiadoAnterior.update({ where: { id: p.id }, data: anulacion });
+        await tx.fiadoAnterior.update({
+          where: { id: p.fiadoId },
+          data: { montoPagado: { decrement: p.monto }, saldoPendiente: { increment: p.monto } },
         });
         total = total.plus(p.monto);
       }
@@ -844,7 +1024,7 @@ export async function anularCobro(
           motivo: m,
           clienteId,
           monto: dec(total),
-          pagos: vigentes.map((p) => p.id),
+          pagos: [...vigentes, ...vigentesFiado].map((p) => p.id),
           saldoDeudor: dec(cliente.saldoDeudor),
         },
         meta: ctx.meta,
@@ -864,12 +1044,12 @@ export async function anularCobro(
  * cotización de SU venta y después sumado.
  */
 export interface ResumenFiados {
-  /** Σ saldo deudor actual de todos los clientes (Σ saldoPendiente de ventas confirmadas). */
+  /** Σ saldo deudor actual de todos los clientes (ventas confirmadas + fiados anteriores). */
   porCobrar: Montos;
   deudores: number;
   /** Lo que quedó debiendo en las ventas del período (total − pagado al vender). */
   fiadoPeriodo: Montos;
-  /** Cobros de cuenta corriente del período (no anulados). */
+  /** Cobros de cuenta corriente del período (no anulados; también los de fiados anteriores). */
   cobradoPeriodo: Montos;
 }
 
@@ -889,9 +1069,7 @@ export async function resumenFiados(
     db.cliente.count({ where: { saldoDeudor: { gt: 0 } } }),
     db.$queryRaw<FilaMontos[]>`
       SELECT ${sqlSumaMontos(Prisma.sql`v."saldoPendiente"`)}
-      FROM "Venta" v
-      WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
-        AND v."saldoPendiente" > 0`,
+      FROM ${sqlDeudasPendientes(ctx.panelId)} v`,
     db.$queryRaw<FilaMontos[]>`
       SELECT ${sqlSumaMontos(Prisma.sql`(v."total" - COALESCE(p."pagado", 0))`)}
       FROM "Venta" v
@@ -903,11 +1081,19 @@ export async function resumenFiados(
       WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA'
         AND v."fecha" >= ${ts(periodo.desde)} AND v."fecha" < ${ts(periodo.hasta)}`,
     db.$queryRaw<FilaMontos[]>`
-      SELECT ${sqlSumaMontos(Prisma.sql`pv."monto"`)}
-      FROM "PagoVenta" pv
-      JOIN "Venta" v ON v."id" = pv."ventaId"
-      WHERE pv."panelId" = ${ctx.panelId} AND pv."esCobroPosterior" AND NOT pv."anulado"
-        AND pv."fecha" >= ${ts(periodo.desde)} AND pv."fecha" < ${ts(periodo.hasta)}`,
+      SELECT ${sqlSumaMontos(Prisma.sql`v."monto"`)}
+      FROM (
+        SELECT pv."monto", pv."fecha", v."tipoCambioUsdt", v."tipoCambioUsd"
+        FROM "PagoVenta" pv
+        JOIN "Venta" v ON v."id" = pv."ventaId"
+        WHERE pv."panelId" = ${ctx.panelId} AND pv."esCobroPosterior" AND NOT pv."anulado"
+        UNION ALL
+        SELECT pf."monto", pf."fecha", f."tipoCambioUsdt", f."tipoCambioUsd"
+        FROM "PagoFiadoAnterior" pf
+        JOIN "FiadoAnterior" f ON f."id" = pf."fiadoId"
+        WHERE pf."panelId" = ${ctx.panelId} AND NOT pf."anulado"
+      ) v
+      WHERE v."fecha" >= ${ts(periodo.desde)} AND v."fecha" < ${ts(periodo.hasta)}`,
   ]);
   return {
     porCobrar: montosDeFila(deuda),

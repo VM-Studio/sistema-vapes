@@ -89,6 +89,8 @@ export const generarVentaSchema = z.object({
   verificacion: verificacionEscaneoSchema,
   /** «Escanea Charly»: pedir el escaneo remoto (solo galpones con escaneo remoto; lo valida el servicio). */
   escaneoRemoto: z.boolean().default(false),
+  /** «¿La retira una moto?»: la retira un Uber Moto (Charly ve el aviso al escanear). */
+  retiraMoto: z.boolean().default(false),
 });
 
 export const ventaIdSchema = z.object({ ventaId: id });

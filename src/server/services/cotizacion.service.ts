@@ -1334,6 +1334,8 @@ export async function convertirEnVenta(
     verificacion?: { varianteId: string; unidades: number }[];
     /** «Escanea Charly» al generarla (galpones con escaneo remoto). */
     escaneoRemoto?: boolean;
+    /** «¿La retira una moto?» */
+    retiraMoto?: boolean;
     /** Aceptada desde la lista: sin pagos, pendiente de pago (ver aceptarYVender). */
     pendienteDePago?: boolean;
   },
@@ -1426,6 +1428,7 @@ export async function convertirEnVenta(
           // Desde el modal de Ventas «Escanea Charly» se pide después, desde el
           // detalle de la venta; al aceptarla desde la lista se puede pedir ya.
           escaneoRemoto: opciones.escaneoRemoto ?? false,
+          retiraMoto: opciones.retiraMoto ?? false,
           descuento: descuento.greaterThan(0) ? descuento.toNumber() : undefined,
           notas: `Cotización ${c.codigo}`,
           verificacion: opciones.verificacion,

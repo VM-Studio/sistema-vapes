@@ -271,6 +271,10 @@ model Usuario {
   clientesTraidos        Cliente[]                @relation("ClienteOrigen")
   cotizacionesOrigen     Cotizacion[]             @relation("CotizacionClienteOrigen")
   borradoresCompra       BorradorCompra[]
+  fiadosAnteriores       FiadoAnterior[]          @relation("FiadoAnteriorUsuario")
+  fiadosAnterioresAnul   FiadoAnterior[]          @relation("FiadoAnteriorAnuladoPor")
+  pagosFiadoAnterior     PagoFiadoAnterior[]      @relation("PagoFiadoAnteriorUsuario")
+  pagosFiadoAnteriorAnul PagoFiadoAnterior[]      @relation("PagoFiadoAnteriorAnuladoPor")
 }
 
 /// Sesión de login (el JWT lleva su id como `sid`). Revocarla corta el acceso
@@ -477,6 +481,9 @@ model Panel {
   enviosRemito              EnvioRemito[]
   secuencias                Secuencia[]
   borradoresCompra          BorradorCompra[]
+  fiadosAnteriores          FiadoAnterior[]
+  pagosFiadoAnterior        PagoFiadoAnterior[]
+  ubicaciones               Ubicacion[]
   auditLogs                 AuditLog[]
 
   @@index([activo, orden])
@@ -510,6 +517,10 @@ model Deposito {
   esPrincipal   Boolean  @default(false)
   /// Admite «Escanea Charly»: sus ventas pueden pedir el escaneo remoto (Vapes: Mercedes).
   escaneoRemoto Boolean  @default(false)
+  /// Recibe en tránsito (Cosmética: Mercado Libre Full): al registrar un envío
+  /// hacia este depósito, el stock sale del origen en el momento y queda «en
+  /// tránsito» hasta confirmar que llegó (recién ahí entra acá).
+  conTransito   Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -523,6 +534,28 @@ model Deposito {
   devoluciones          Devolucion[]
 
   @@unique([panelId, nombre])
+}
+
+/// «Ubicaciones de productos»: los lugares del galpón que arman los dueños a
+/// mano (estante, fila, sector…). Cada modelo (Producto) se asigna a una; en
+/// la pantalla de escaneo Charly ve dónde buscar cada vape.
+model Ubicacion {
+  id          String   @id @default(cuid())
+  panelId     String   @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// "Estante A · fila 2".
+  nombre      String
+  /// Aclaración opcional ("arriba de todo, a la izquierda").
+  descripcion String?
+  /// Orden en la lista (como están en el galpón).
+  orden       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  panel     Panel      @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  productos Producto[]
+
+  @@unique([panelId, nombre])
+  @@index([panelId, orden])
 }
 
 model Categoria {
@@ -633,15 +666,17 @@ model Cliente {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  panel         Panel        @relation(fields: [panelId], references: [id], onDelete: Restrict)
-  origen        Usuario?     @relation("ClienteOrigen", fields: [origenId], references: [id], onDelete: Restrict)
-  creadoPor     Usuario?     @relation("ClienteCreadoPor", fields: [creadoPorId], references: [id], onDelete: Restrict)
-  creadoEnVenta Venta?       @relation("ClienteCreadoEnVenta", fields: [creadoEnVentaId], references: [id], onDelete: Restrict)
-  vendedor      Usuario?     @relation("ClienteCartera", fields: [vendedorId], references: [id], onDelete: Restrict)
-  ventas        Venta[]
-  devoluciones  Devolucion[]
-  cotizaciones  Cotizacion[]
-  facturas      Factura[]
+  panel            Panel           @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  origen           Usuario?        @relation("ClienteOrigen", fields: [origenId], references: [id], onDelete: Restrict)
+  creadoPor        Usuario?        @relation("ClienteCreadoPor", fields: [creadoPorId], references: [id], onDelete: Restrict)
+  creadoEnVenta    Venta?          @relation("ClienteCreadoEnVenta", fields: [creadoEnVentaId], references: [id], onDelete: Restrict)
+  vendedor         Usuario?        @relation("ClienteCartera", fields: [vendedorId], references: [id], onDelete: Restrict)
+  ventas           Venta[]
+  devoluciones     Devolucion[]
+  cotizaciones     Cotizacion[]
+  facturas         Factura[]
+  /// Deudas de antes del sistema cargadas a mano («Cargar fiado anterior»).
+  fiadosAnteriores FiadoAnterior[]
 
   @@index([panelId, nombre])
   @@index([panelId, saldoDeudor])
@@ -677,12 +712,15 @@ model Producto {
   /// Precio de venta por Mercado Libre de todos sus sabores (null = no se vende por ML).
   precioVentaML      Decimal?  @db.Decimal(12, 2)
   imagenUrl          String?
+  /// Dónde está guardado en el galpón («Ubicaciones de productos»: estante, fila…). Por modelo.
+  ubicacionId        String?
   activo             Boolean   @default(true)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
   panel                     Panel                        @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  ubicacion                 Ubicacion?                   @relation(fields: [ubicacionId], references: [id], onDelete: SetNull)
   categoria                 Categoria?                   @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
   marca                     Marca                        @relation(fields: [marcaId], references: [id], onDelete: Restrict)
   variantes                 Variante[]
@@ -1108,6 +1146,8 @@ model Venta {
   escaneadaAt          DateTime?
   /// Lo escaneado al confirmar: [{ codigo, varianteId }] (auditoría del escaneo).
   escaneoDetalle       Json?
+  /// «¿La retira una moto?» (lo marca quien vende): Charly ve «Pedido que lo retira una moto».
+  retiraMoto           Boolean     @default(false)
   /// «Retirado»: el cliente se llevó la mercadería (null = pendiente de retiro).
   /// Se marca una sola vez y no se deshace (trigger). Con escaneo PENDIENTE no se
   /// puede (CHECK): primero lo escanea Charly. No mueve stock: la venta ya lo descontó.
@@ -1220,6 +1260,88 @@ model PagoVenta {
   @@index([panelId, cobroId])
 }
 
+enum EstadoFiadoAnterior {
+  VIGENTE
+  ANULADO
+}
+
+/// FIADO ANTERIOR: lo que un cliente ya debía ANTES de usar el sistema, cargado
+/// a mano (Fiados → «Cargar fiado anterior»). No es una venta: no mueve stock
+/// ni cuenta como vendido ni como ganancia; solo suma a la deuda del cliente
+/// (Cliente.saldoDeudor = Σ saldo de sus ventas + Σ saldo de sus fiados
+/// anteriores, lo verifica un trigger) y se cobra igual que un fiado (cobros
+/// con el mismo `cobroId` que los de ventas). Monto en pesos; USDT y dólares
+/// con la cotización del momento en que se cargó. Se anula (solo dueños, sin
+/// cobros vigentes); no se edita.
+model FiadoAnterior {
+  id              String              @id @default(cuid())
+  panelId         String              @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  /// Correlativo por panel (Secuencia FIADO_ANTERIOR).
+  numero          Int
+  /// ID visible: "VAP-FA-000001".
+  codigo          String
+  clienteId       String
+  /// Desde cuándo debe (puede ser una fecha vieja; no futura).
+  fecha           DateTime
+  /// Qué debe ("Vapes de agosto", "cuenta vieja"…).
+  concepto        String?
+  /// > 0, en pesos.
+  monto           Decimal             @db.Decimal(12, 2)
+  /// Σ PagoFiadoAnterior no anulados. Vigente: montoPagado + saldoPendiente = monto (CHECK).
+  montoPagado     Decimal             @default(0) @db.Decimal(12, 2)
+  saldoPendiente  Decimal             @db.Decimal(12, 2)
+  /// Cotizaciones al cargarlo (para mostrar la deuda en USDT y dólares).
+  tipoCambioUsdt  Decimal             @db.Decimal(14, 2)
+  tipoCambioUsd   Decimal             @db.Decimal(14, 2)
+  estado          EstadoFiadoAnterior @default(VIGENTE)
+  usuarioId       String
+  anuladoPorId    String?
+  anuladoAt       DateTime?
+  motivoAnulacion String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  panel      Panel               @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  cliente    Cliente             @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  usuario    Usuario             @relation("FiadoAnteriorUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  anuladoPor Usuario?            @relation("FiadoAnteriorAnuladoPor", fields: [anuladoPorId], references: [id], onDelete: Restrict)
+  pagos      PagoFiadoAnterior[]
+
+  @@unique([panelId, numero])
+  @@unique([panelId, codigo])
+  @@index([panelId, clienteId])
+  @@index([panelId, estado, saldoPendiente])
+}
+
+/// Cobro (o parte de un cobro) imputado a un fiado anterior. Inmutable: se anula.
+model PagoFiadoAnterior {
+  id              String    @id @default(cuid())
+  panelId         String    @default(dbgenerated("current_setting('app.panel_id'::text, true)"))
+  fiadoId         String
+  medioPago       MedioPago
+  /// > 0 (CHECK).
+  monto           Decimal   @db.Decimal(12, 2)
+  referencia      String?
+  /// Mismo `cobroId` que los PagoVenta del mismo cobro.
+  cobroId         String?
+  fecha           DateTime  @default(now())
+  usuarioId       String
+  anulado         Boolean   @default(false)
+  anuladoPorId    String?
+  anuladoAt       DateTime?
+  motivoAnulacion String?
+  createdAt       DateTime  @default(now())
+
+  panel      Panel         @relation(fields: [panelId], references: [id], onDelete: Restrict)
+  fiado      FiadoAnterior @relation(fields: [fiadoId], references: [id], onDelete: Restrict)
+  usuario    Usuario       @relation("PagoFiadoAnteriorUsuario", fields: [usuarioId], references: [id], onDelete: Restrict)
+  anuladoPor Usuario?      @relation("PagoFiadoAnteriorAnuladoPor", fields: [anuladoPorId], references: [id], onDelete: Restrict)
+
+  @@index([panelId, fiadoId])
+  @@index([panelId, cobroId])
+  @@index([panelId, fecha])
+}
+
 /// Devolución por GARANTÍA: al cliente se le entrega una unidad nueva, que
 /// sale del stock del galpón elegido (movimiento GARANTIA). La unidad nueva
 /// puede ser del mismo sabor, de otro sabor o de otro modelo (si no hay stock
@@ -1323,6 +1445,10 @@ model Transferencia {
   remitoUrl         String?
   usuarioId         String
   completadaAt      DateTime?
+  /// PENDIENTE con la mercadería en viaje: la SALIDA del origen ya se registró
+  /// al enviarla (destino con `conTransito`); al completarla solo entra al
+  /// destino y al anularla vuelve al origen.
+  enTransito        Boolean             @default(false)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 

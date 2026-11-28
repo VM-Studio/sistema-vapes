@@ -358,6 +358,8 @@ export interface ResumenStockPanel {
   total: number;
   /** Sabores activos con total del panel por debajo del mínimo. */
   bajoMinimo: number;
+  /** Enviado y sin llegar todavía (transferencias en tránsito, p. ej. a Mercado Libre Full). */
+  enTransito: { unidades: number; envios: number; destinos: string[] };
 }
 
 const resumenSqlSchema = z.array(
@@ -396,6 +398,13 @@ export async function resumenStock(ctx: Ctx): Promise<ResumenStockPanel> {
     db.$queryRaw`
       SELECT COUNT(*) AS bajo FROM vw_alertas_stock WHERE panel_id = ${ctx.panelId}`,
   ]);
+  const transito = await db.transferencia.findMany({
+    where: { estado: "PENDIENTE", enTransito: true },
+    select: {
+      depositoDestino: { select: { nombre: true } },
+      items: { select: { cantidad: true } },
+    },
+  });
   const filas = new Map(resumenSqlSchema.parse(porDeposito).map((f) => [f.deposito_id, f]));
   const lista = depositos.map((d) => ({
     ...d,
@@ -406,6 +415,11 @@ export async function resumenStock(ctx: Ctx): Promise<ResumenStockPanel> {
     porDeposito: lista,
     total: lista.reduce((a, d) => a + d.unidades, 0),
     bajoMinimo: conteoSqlSchema.parse(global)[0]?.bajo ?? 0,
+    enTransito: {
+      unidades: transito.reduce((a, t) => a + t.items.reduce((b, i) => b + i.cantidad, 0), 0),
+      envios: transito.length,
+      destinos: [...new Set(transito.map((t) => t.depositoDestino.nombre))],
+    },
   };
 }
 

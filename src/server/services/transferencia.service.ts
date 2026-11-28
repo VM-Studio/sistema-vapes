@@ -1,4 +1,4 @@
-import { AccionAuditoria, EstadoTransferencia, Prisma } from "@prisma/client";
+import { AccionAuditoria, EstadoTransferencia, Prisma, TipoMovimiento } from "@prisma/client";
 import {
   PDFDocument,
   StandardFonts,
@@ -28,6 +28,7 @@ import { nombreNegocio } from "@/server/services/identidad.service";
 import {
   bloquearStock,
   movimientos,
+  registrarMovimiento,
   transferirStock,
   type MovimientoListado,
 } from "@/server/services/stock.service";
@@ -43,6 +44,11 @@ import { urlAbsoluta } from "@/server/storage";
  *   alcanza, falla entera con el detalle y no queda nada.
  * - "Registrar envío, confirmar al recibir" → crearTransferencia (PENDIENTE,
  *   no mueve nada) + completarTransferencia cuando llega la mercadería.
+ * - EN TRÁNSITO (destino con `conTransito`, Cosmética → Mercado Libre Full):
+ *   al registrar el envío la SALIDA del origen se hace en el momento (la
+ *   mercadería ya no está para vender) y la transferencia queda PENDIENTE con
+ *   `enTransito`; al confirmar que llegó solo hay ENTRADA en el destino; al
+ *   anularla, vuelve al origen (ENTRADA en el origen).
  * - Remito PDF (pdfRemito): se genera al abrirlo, cacheado en el storage.
  *
  * Regla de oro: el stock SOLO cambia vía transferirStock (motor de stock).
@@ -137,6 +143,8 @@ export async function crearTransferencia(
   ctx: Ctx,
   input: CrearTransferencia,
   txExterna?: Tx,
+  /** enTransito: además registra YA la salida del origen (ver arriba). */
+  opciones: { enTransito?: boolean } = {},
 ): Promise<TransferenciaCreada> {
   return enTransaccion(ctx, txExterna, async (tx) => {
     if (input.depositoOrigenId === input.depositoDestinoId)
@@ -147,6 +155,10 @@ export async function crearTransferencia(
       tx,
       input.items.map((i) => i.varianteId),
     );
+    if (opciones.enTransito) {
+      for (const i of porVariante(input.items))
+        await bloquearStock(tx, ctx.panelId, i.varianteId, [input.depositoOrigenId]);
+    }
     const sinStock = await faltantes(tx, input.depositoOrigenId, input.items, variantes);
     if (sinStock.length) {
       throw new DomainError(
@@ -170,6 +182,7 @@ export async function crearTransferencia(
         fecha: input.fecha ?? new Date(),
         observacion: input.observacion ?? null,
         usuarioId: ctx.usuarioId,
+        enTransito: opciones.enTransito === true,
         items: {
           create: porVariante(input.items).map((i) => ({
             varianteId: i.varianteId,
@@ -179,6 +192,21 @@ export async function crearTransferencia(
         },
       },
     });
+    if (opciones.enTransito) {
+      // La mercadería sale del origen ahora: queda en tránsito hasta que llegue.
+      for (const i of porVariante(input.items)) {
+        await registrarMovimiento(tx, {
+          tipo: TipoMovimiento.TRANSFERENCIA_SALIDA,
+          varianteId: i.varianteId,
+          depositoId: input.depositoOrigenId,
+          cantidad: i.cantidad,
+          usuarioId: ctx.usuarioId,
+          motivo: `Transferencia ${codigo} (en tránsito)`,
+          referenciaTipo: "TRANSFERENCIA",
+          referenciaId: t.id,
+        });
+      }
+    }
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
       accion: AccionAuditoria.CREATE,
@@ -186,6 +214,7 @@ export async function crearTransferencia(
       entidadId: t.id,
       datosDespues: {
         codigo,
+        enTransito: opciones.enTransito === true,
         origen: input.depositoOrigenId,
         destino: input.depositoDestinoId,
         observacion: input.observacion ?? null,
@@ -221,55 +250,76 @@ export async function completarTransferencia(
           `La transferencia ${t.codigo} está ${t.estado.toLowerCase()}: solo se completan las pendientes.`,
         );
       }
-      const origen = await depositoActivo(tx, t.depositoOrigenId, "El galpón de origen");
-      await depositoActivo(tx, t.depositoDestinoId, "El galpón de destino");
       const items = porVariante(t.items);
-      const variantes = await variantesVivas(
-        tx,
-        items.map((i) => i.varianteId),
-      );
-
-      // Bloquear todo primero (orden fijo) y reportar todos los faltantes juntos.
-      for (const i of items)
-        await bloquearStock(tx, ctx.panelId, i.varianteId, [
-          t.depositoOrigenId,
-          t.depositoDestinoId,
-        ]);
-      const sinStock = await faltantes(tx, t.depositoOrigenId, items, variantes);
-      if (sinStock.length) {
-        throw new DomainError(
-          `No se pudo completar la transferencia ${t.codigo}: stock insuficiente en ${origen.nombre}. ${sinStock.join(" · ")}. Sigue pendiente.`,
-          "STOCK_INSUFICIENTE",
-          409,
-        );
-      }
-
-      try {
+      if (t.enTransito) {
+        // Ya salió del origen al enviarla: solo entra al destino.
+        await depositoActivo(tx, t.depositoDestinoId, "El galpón de destino");
         for (const i of items) {
-          await transferirStock(tx, {
+          await registrarMovimiento(tx, {
+            tipo: TipoMovimiento.TRANSFERENCIA_ENTRADA,
             varianteId: i.varianteId,
-            depositoOrigenId: t.depositoOrigenId,
-            depositoDestinoId: t.depositoDestinoId,
+            depositoId: t.depositoDestinoId,
             cantidad: i.cantidad,
             usuarioId: ctx.usuarioId,
-            motivo: `Transferencia ${t.codigo}`,
+            motivo: `Transferencia ${t.codigo} (llegó)`,
+            referenciaTipo: "TRANSFERENCIA",
             referenciaId: t.id,
           });
         }
-      } catch (e) {
-        if (e instanceof StockInsuficienteError) {
+      } else {
+        const origen = await depositoActivo(tx, t.depositoOrigenId, "El galpón de origen");
+        await depositoActivo(tx, t.depositoDestinoId, "El galpón de destino");
+        const variantes = await variantesVivas(
+          tx,
+          items.map((i) => i.varianteId),
+        );
+
+        // Bloquear todo primero (orden fijo) y reportar todos los faltantes juntos.
+        for (const i of items)
+          await bloquearStock(tx, ctx.panelId, i.varianteId, [
+            t.depositoOrigenId,
+            t.depositoDestinoId,
+          ]);
+        const sinStock = await faltantes(tx, t.depositoOrigenId, items, variantes);
+        if (sinStock.length) {
           throw new DomainError(
-            `No se pudo completar la transferencia ${t.codigo}: ${e.message}. Sigue pendiente.`,
+            `No se pudo completar la transferencia ${t.codigo}: stock insuficiente en ${origen.nombre}. ${sinStock.join(" · ")}. Sigue pendiente.`,
             "STOCK_INSUFICIENTE",
             409,
           );
         }
-        throw e;
+
+        try {
+          for (const i of items) {
+            await transferirStock(tx, {
+              varianteId: i.varianteId,
+              depositoOrigenId: t.depositoOrigenId,
+              depositoDestinoId: t.depositoDestinoId,
+              cantidad: i.cantidad,
+              usuarioId: ctx.usuarioId,
+              motivo: `Transferencia ${t.codigo}`,
+              referenciaId: t.id,
+            });
+          }
+        } catch (e) {
+          if (e instanceof StockInsuficienteError) {
+            throw new DomainError(
+              `No se pudo completar la transferencia ${t.codigo}: ${e.message}. Sigue pendiente.`,
+              "STOCK_INSUFICIENTE",
+              409,
+            );
+          }
+          throw e;
+        }
       }
 
       await tx.transferencia.update({
         where: { id },
-        data: { estado: EstadoTransferencia.COMPLETADA, completadaAt: new Date() },
+        data: {
+          estado: EstadoTransferencia.COMPLETADA,
+          completadaAt: new Date(),
+          enTransito: false,
+        },
       });
       await registrarAuditoria(tx, {
         usuarioId: ctx.usuarioId,
@@ -318,18 +368,31 @@ export async function crearYCompletarTransferencia(
 
 /**
  * "Registrar envío, confirmar al recibir": la transferencia queda PENDIENTE
- * (no mueve stock) con su remito para que viaje con la mercadería.
+ * con su remito para que viaje con la mercadería. No mueve stock, salvo que
+ * el destino reciba en tránsito (Mercado Libre Full): ahí sale ya del origen.
  */
 export async function registrarEnvioTransferencia(
   ctx: Ctx,
   input: CrearTransferencia,
 ): Promise<TransferenciaMovida> {
-  const creada = await crearTransferencia(ctx, input);
+  const destino = await dbPara(ctx.panelId).deposito.findUnique({
+    where: { id: input.depositoDestinoId },
+    select: { conTransito: true },
+  });
+  const creada = await enTransaccion(
+    ctx,
+    undefined,
+    (tx) => crearTransferencia(ctx, input, tx, { enTransito: destino?.conTransito === true }),
+    { timeout: 60_000, maxRetries: 2 },
+  );
   const unidades = input.items.reduce((a, i) => a + i.cantidad, 0);
   return { ...creada, unidades };
 }
 
-/** Anula una transferencia PENDIENTE (no movió stock, no hay nada que revertir). */
+/**
+ * Anula una transferencia PENDIENTE. Si no movió stock no hay nada que
+ * revertir; si estaba en tránsito, la mercadería vuelve al origen.
+ */
 export async function anularTransferencia(
   ctx: Ctx,
   id: string,
@@ -345,10 +408,30 @@ export async function anularTransferencia(
         `La transferencia ${t.codigo} está ${t.estado.toLowerCase()}: solo se anulan las pendientes.`,
       );
     }
+    if (t.enTransito) {
+      const items = porVariante(
+        await tx.transferenciaItem.findMany({
+          where: { transferenciaId: id },
+          select: { varianteId: true, cantidad: true },
+        }),
+      );
+      for (const i of items) {
+        await registrarMovimiento(tx, {
+          tipo: TipoMovimiento.TRANSFERENCIA_ENTRADA,
+          varianteId: i.varianteId,
+          depositoId: t.depositoOrigenId,
+          cantidad: i.cantidad,
+          usuarioId: ctx.usuarioId,
+          motivo: `Transferencia ${t.codigo} anulada: vuelve al origen`,
+          referenciaTipo: "TRANSFERENCIA",
+          referenciaId: t.id,
+        });
+      }
+    }
     const observacion = [t.observacion, `[Anulada] ${motivo}`].filter(Boolean).join("\n");
     await tx.transferencia.update({
       where: { id },
-      data: { estado: EstadoTransferencia.ANULADA, observacion },
+      data: { estado: EstadoTransferencia.ANULADA, observacion, enTransito: false },
     });
     await registrarAuditoria(tx, {
       usuarioId: ctx.usuarioId,
@@ -379,6 +462,8 @@ export interface TransferenciaListada {
   unidades: number;
   usuario: string;
   completadaAt: Date | null;
+  /** Pendiente que ya salió del origen (envío a un depósito con tránsito). */
+  enTransito: boolean;
 }
 
 /** Transferencias del panel; con `depositoId`, las que salen o entran a ese depósito. */
@@ -433,6 +518,7 @@ export async function listarTransferencias(
       unidades: t.items.reduce((a, i) => a + i.cantidad, 0),
       usuario: t.usuario.nombre,
       completadaAt: t.completadaAt,
+      enTransito: t.enTransito,
     })),
     total,
     page: filtros.page,
@@ -520,6 +606,7 @@ export async function obtenerTransferencia(ctx: Ctx, id: string): Promise<Transf
     depositoDestinoId: t.depositoDestinoId,
     usuario: t.usuario.nombre,
     completadaAt: t.completadaAt,
+    enTransito: t.enTransito,
     observacion: t.observacion,
     unidades: items.reduce((a, i) => a + i.cantidad, 0),
     items,

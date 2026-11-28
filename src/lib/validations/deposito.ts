@@ -12,6 +12,8 @@ export const crearDepositoSchema = z.object({
   esPrincipal: z.boolean().default(false),
   /** «Escanea Charly»: las ventas de este depósito pueden pedir el escaneo remoto. */
   escaneoRemoto: z.boolean().default(false),
+  /** Recibe en tránsito (Mercado Libre Full): lo enviado sale ya del origen y entra al llegar. */
+  conTransito: z.boolean().default(false),
 });
 
 export const actualizarDepositoSchema = crearDepositoSchema.extend({ id });

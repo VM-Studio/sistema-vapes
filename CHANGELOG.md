@@ -5,6 +5,41 @@ Todos los cambios importantes de este proyecto se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [2.14.0] - 2026-11-27 — Costos, fiados anteriores, Mercado Libre Full, ganancia neta, ubicaciones y moto
+
+### Agregado
+
+- **Costos** (Compras → Costos, solo dueños): todos los productos del panel juntos con su costo
+  (USDT, pesos y dólares). Vapes, cosmética y especiales por igual.
+- **Fiados → «Cargar fiado anterior»**: lo que alguien ya debía antes de usar el sistema (cliente
+  existente o nuevo, cuánto en pesos, desde cuándo y qué debe). No es una venta: no toca stock ni
+  ganancias; suma a la cuenta y se cobra como cualquier fiado (primero lo más viejo). En la
+  cuenta corriente se ve como «Fiado anterior · Antes del sistema»; un dueño lo puede anular si se
+  cargó mal (sin cobros). Entra en «Por cobrar» y en «Cobrado» del Inicio y de Fiados.
+- **Cosmética: Casa y Mercado Libre (Full)**. El depósito principal pasa a llamarse «Casa» y se
+  crea «Mercado Libre», que **recibe en tránsito**: al «Enviar» mercadería de Casa a Mercado
+  Libre sale de Casa en el momento y queda **en tránsito** hasta tocar «Llegó a Mercado Libre»
+  (anular el envío la devuelve a Casa). Stock muestra Casa, Mercado Libre, En tránsito y Total.
+  Al vender se elige de qué depósito sale. La opción se puede activar en cualquier depósito
+  (Configuración → Depósitos → «Recibe en tránsito»).
+- **Ganancia total y ganancia neta de los dueños** (solo dueños): la ganancia de siempre es la
+  TOTAL (vendido − costo de la mercadería, incluye lo de Trinidad); la nueva «Ganancia neta
+  (dueños)» le resta la comisión por vape de Trinidad del período. En Inicio y en Reportes → Ventas.
+- **Ubicaciones de productos** (dueños las arman; Charly las ve): lugares del galpón («Estante A ·
+  fila 2») y en cuál está cada modelo. En la pantalla de escaneo cada vape muestra su ubicación.
+- **Charly ve para quién es cada venta** («Para: nombre del cliente») al escanear.
+- **«¿La retira una moto?»** al vender (Sí / No). Si es sí, Charly ve «Pedido que lo retira una
+  moto»; también se ve en el detalle de la venta.
+
+### Migración
+
+- `20261127100000_fiado_anterior`: tablas `FiadoAnterior` y `PagoFiadoAnterior`;
+  `Cliente.saldoDeudor` = ventas + fiados anteriores (trigger); secuencia `FIADO_ANTERIOR`.
+- `20261127110000_stock_en_transito`: `Deposito.conTransito`, `Transferencia.enTransito`;
+  Cosmetic: «Principal» → «Casa» y alta de «Mercado Libre».
+- `20261127120000_ubicaciones_retira_moto`: tabla `Ubicacion`, `Producto.ubicacionId`,
+  `Venta.retiraMoto`.
+
 ## [2.13.0] - 2026-11-23 — «¿De quién viene este cliente?» y cliente nuevo de Trinidad
 
 ### Agregado

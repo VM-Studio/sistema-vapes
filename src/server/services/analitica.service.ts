@@ -43,6 +43,7 @@ import {
 } from "@/server/moneda/montos-venta";
 import { obtenerConfigVentas } from "@/server/services/configuracion.service";
 import { puedeFiados } from "@/server/services/fiado.service";
+import { comisionesVendedores } from "@/server/services/ganancia-vendedor.service";
 
 /**
  * ANALÍTICA del panel (dashboard, rendimiento del equipo, reportes).
@@ -557,8 +558,17 @@ export interface KpisPeriodo {
   porCobrar: Montos | null;
   cantidadVentas: Comparado<number>;
   unidadesVendidas: Comparado<number>;
-  /** Solo dueños (null para el resto). */
+  /**
+   * Ganancia TOTAL (bruta): lo vendido − lo que costó la mercadería. Incluye
+   * lo que se lleva el vendedor por vape (Trinidad). Solo dueños.
+   */
   ganancia: ComparadoMontos | null;
+  /** Lo que se llevan los vendedores por vape en el período (Trinidad). Solo dueños. */
+  comisiones: ComparadoMontos | null;
+  /** Quiénes cobran esa comisión en el período actual ("Trinidad"). */
+  comisionDe: string[];
+  /** Ganancia NETA de los dueños = ganancia − comisiones. Solo dueños. */
+  gananciaNeta: ComparadoMontos | null;
   /** Ganancia / facturado del período actual (en USDT), en %. Solo dueños. */
   margenPct: number | null;
   clientesNuevos: Comparado<number>;
@@ -618,7 +628,8 @@ async function ventasActualAnterior(
 }
 
 /**
- * Movimientos de plata del panel: los pagos de ventas (no anulados) y las
+ * Movimientos de plata del panel: los pagos de ventas (no anulados), los
+ * cobros de fiados anteriores al sistema y las
  * diferencias de precio de las devoluciones con cambio (registradas): > 0 la
  * pagó el cliente, < 0 se le devolvió. Columnas: fecha, monto (pesos),
  * medioPago y las cotizaciones de su venta ("tcUsdt", "tcUsd") para pasarlo
@@ -631,6 +642,13 @@ function movimientosDePlata(ctx: Ctx) {
     FROM "PagoVenta" pv
     JOIN "Venta" v ON v."id" = pv."ventaId"
     WHERE pv."panelId" = ${ctx.panelId} AND NOT pv."anulado"
+    UNION ALL
+    -- Cobros de fiados anteriores al sistema (deudas viejas cargadas a mano).
+    SELECT pf."fecha", pf."monto", pf."medioPago",
+           f."tipoCambioUsdt" AS "tcUsdt", f."tipoCambioUsd" AS "tcUsd"
+    FROM "PagoFiadoAnterior" pf
+    JOIN "FiadoAnterior" f ON f."id" = pf."fiadoId"
+    WHERE pf."panelId" = ${ctx.panelId} AND NOT pf."anulado"
     UNION ALL
     SELECT d."fecha", d."diferencia", d."medioPagoDiferencia",
            COALESCE(v."tipoCambioUsdt", ${cotizacionEn("USDT", Prisma.sql`d."fecha"`)}),
@@ -675,8 +693,14 @@ async function cobranzas(ctx: Ctx, p: Periodo) {
           ),
           "total",
         )}
-        FROM "Venta" v
-        WHERE v."panelId" = ${ctx.panelId} AND v."estado" = 'CONFIRMADA' AND v."saldoPendiente" > 0`,
+        FROM (
+          SELECT "saldoPendiente", "tipoCambioUsdt", "tipoCambioUsd" FROM "Venta"
+          WHERE "panelId" = ${ctx.panelId} AND "estado" = 'CONFIRMADA' AND "saldoPendiente" > 0
+          UNION ALL
+          -- Fiados anteriores al sistema (deudas viejas cargadas a mano).
+          SELECT "saldoPendiente", "tipoCambioUsdt", "tipoCambioUsd" FROM "FiadoAnterior"
+          WHERE "panelId" = ${ctx.panelId} AND "estado" = 'VIGENTE' AND "saldoPendiente" > 0
+        ) v`,
     ),
   ]);
   const de = (f: z.output<typeof filaCobrado> | undefined) =>
@@ -731,6 +755,18 @@ export async function kpis(ctx: Ctx, p: Periodo): Promise<KpisPeriodo> {
   const va = ventas.actual;
   const vb = ventas.anterior;
   const cobros = verCobranzas ? await cobranzas(ctx, p) : null;
+  const [comA, comB] = owner
+    ? await Promise.all([
+        comisionesVendedores(
+          { ...ctx, usuario: { rol: "OWNER" } },
+          { inicio: a.inicio, fin: a.fin },
+        ),
+        comisionesVendedores(
+          { ...ctx, usuario: { rol: "OWNER" } },
+          { inicio: b.inicio, fin: b.fin },
+        ),
+      ])
+    : [null, null];
   return {
     periodo: p,
     anterior,
@@ -743,6 +779,15 @@ export async function kpis(ctx: Ctx, p: Periodo): Promise<KpisPeriodo> {
       unidades.find((u) => !u.actual)?.unidades ?? 0,
     ),
     ganancia: owner ? compararMontos(va.ganancia, vb.ganancia) : null,
+    comisiones: comA && comB ? compararMontos(comA.total, comB.total) : null,
+    comisionDe: comA?.porVendedor.map((v) => v.nombre) ?? [],
+    gananciaNeta:
+      comA && comB
+        ? compararMontos(
+            restarMontos(va.ganancia, comA.total),
+            restarMontos(vb.ganancia, comB.total),
+          )
+        : null,
     margenPct:
       owner && Number(va.facturado.usdt) > 0
         ? Math.round((Number(va.ganancia.usdt) / Number(va.facturado.usdt)) * 1000) / 10

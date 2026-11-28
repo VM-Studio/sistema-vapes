@@ -12,7 +12,7 @@ import { aWinAnsi, cargarLogoPdf, COLOR_PDF, recortar, rectRedondeado } from "@/
 import { clavePdf, pdfCacheado } from "@/server/pdf-http";
 import { nombreNegocio } from "@/server/services/identidad.service";
 
-/** Un cobro de cuenta corriente (todos los PagoVenta con el mismo `cobroId`). */
+/** Un cobro de cuenta corriente (todos los PagoVenta y PagoFiadoAnterior con el mismo `cobroId`). */
 export interface ReciboCobro {
   cobroId: string;
   fecha: Date;
@@ -27,43 +27,59 @@ export interface ReciboCobro {
 }
 
 export async function obtenerReciboCobro(ctx: Ctx, cobroId: string): Promise<ReciboCobro> {
-  const pagos = await dbPara(ctx.panelId).pagoVenta.findMany({
-    where: { cobroId, esCobroPosterior: true },
-    orderBy: { createdAt: "asc" },
-    include: {
-      usuario: { select: { nombre: true } },
-      venta: {
-        select: {
-          codigo: true,
-          fecha: true,
-          total: true,
-          saldoPendiente: true,
-          cliente: { select: { nombre: true, telefono: true, saldoDeudor: true } },
+  const db = dbPara(ctx.panelId);
+  const cliente = { select: { nombre: true, telefono: true, saldoDeudor: true } };
+  // Un cobro puede tocar ventas y fiados anteriores (deudas de antes del sistema).
+  const [deVentas, deFiados] = await Promise.all([
+    db.pagoVenta.findMany({
+      where: { cobroId, esCobroPosterior: true },
+      orderBy: { createdAt: "asc" },
+      include: {
+        usuario: { select: { nombre: true } },
+        venta: {
+          select: { codigo: true, fecha: true, total: true, saldoPendiente: true, cliente },
         },
       },
-    },
-  });
+    }),
+    db.pagoFiadoAnterior.findMany({
+      where: { cobroId },
+      orderBy: { createdAt: "asc" },
+      include: {
+        usuario: { select: { nombre: true } },
+        fiado: {
+          select: { codigo: true, fecha: true, monto: true, saldoPendiente: true, cliente },
+        },
+      },
+    }),
+  ]);
+  const pagos = [
+    ...deFiados.map((p) => ({
+      ...p,
+      doc: { ...p.fiado, total: p.fiado.monto },
+    })),
+    ...deVentas.map((p) => ({ ...p, doc: p.venta })),
+  ].sort((a, b) => a.doc.fecha.getTime() - b.doc.fecha.getTime());
   const primero = pagos[0];
-  if (!primero?.venta.cliente) throw new NotFoundError("El cobro no existe.");
-  const cliente = primero.venta.cliente;
+  if (!primero?.doc.cliente) throw new NotFoundError("El cobro no existe.");
+  const c = primero.doc.cliente;
   return {
     cobroId,
     fecha: primero.fecha,
     cliente: {
-      nombre: cliente.nombre,
-      telefono: cliente.telefono,
-      saldoActual: cliente.saldoDeudor.toFixed(2),
+      nombre: c.nombre,
+      telefono: c.telefono,
+      saldoActual: c.saldoDeudor.toFixed(2),
     },
     medioPago: ETIQUETA_MEDIO_PAGO[primero.medioPago],
     referencia: primero.referencia,
     monto: pagos.reduce((a, p) => a + Number(p.monto), 0).toFixed(2),
     usuario: primero.usuario.nombre,
     imputaciones: pagos.map((p) => ({
-      codigo: p.venta.codigo,
-      fecha: p.venta.fecha,
-      total: p.venta.total.toFixed(2),
+      codigo: p.doc.codigo,
+      fecha: p.doc.fecha,
+      total: p.doc.total.toFixed(2),
       monto: p.monto.toFixed(2),
-      saldoHoy: p.venta.saldoPendiente.toFixed(2),
+      saldoHoy: p.doc.saldoPendiente.toFixed(2),
     })),
     anulado: pagos.every((p) => p.anulado),
     motivoAnulacion: primero.motivoAnulacion,
